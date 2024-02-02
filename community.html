@@ -36,14 +36,6 @@
             position: relative;
         }
 
-        .comment {
-            margin-left: 20px;
-            padding: 5px;
-            background-color: #f5f5f5;
-            border-radius: 4px;
-            border: 1px solid #ccc;
-        }
-
         .input-container {
             display: flex;
             align-items: flex-end;
@@ -90,6 +82,12 @@
             font-size: 12px;
             color: #657786;
         }
+
+        .sub-answer {
+            font-size: 14px;
+            margin-left: 20px;
+            color: #657786;
+        }
     </style>
 </head>
 <body>
@@ -109,26 +107,12 @@
         const questionsAndAnswers = [];
 
         function submitAnswer(qIndex) {
-            const answer = document.getElementById('newAnswer' + qIndex).value;
+            const answer = prompt('Type your answer:');
             if (answer && answer.trim() !== '') {
-                const userIdentifier = getUserIdentifier();
                 questionsAndAnswers[qIndex].answers.push({
                     content: answer,
                     type: 'answer',
-                    userIdentifier: userIdentifier,
-                    comments: [],
-                });
-                displayQuestionsAndAnswers();
-            }
-        }
-
-        function submitComment(qIndex, aIndex) {
-            const comment = prompt('Type your comment:');
-            if (comment && comment.trim() !== '') {
-                const userIdentifier = getUserIdentifier();
-                questionsAndAnswers[qIndex].answers[aIndex].comments.push({
-                    content: comment,
-                    userIdentifier: userIdentifier,
+                    userIdentifier: 'User' + questionsAndAnswers[qIndex].answers.length,
                 });
                 displayQuestionsAndAnswers();
             }
@@ -177,19 +161,11 @@
             }
         }
 
-        function getUserIdentifier() {
-            // For simplicity, generating a user identifier based on IP address
-            const ip = Math.random().toString(36).substring(2, 7);
-            return '#' + ip.toUpperCase();
-        }
-
         function searchQuestions() {
             const searchQuery = document.getElementById('searchQuery').value.toLowerCase();
             const filteredQuestionsAndAnswers = questionsAndAnswers.filter(qa =>
                 qa.content.toLowerCase().includes(searchQuery) ||
-                qa.answers.some(answer => answer.content.toLowerCase().includes(searchQuery) ||
-                    answer.comments.some(comment => comment.content.toLowerCase().includes(searchQuery))
-                )
+                qa.answers.some(answer => answer.content.toLowerCase().includes(searchQuery))
             );
             displayQuestionsAndAnswers(filteredQuestionsAndAnswers);
         }
@@ -210,6 +186,8 @@
                 editButton.onclick = () => {
                     if (qa.type === 'question') {
                         editQuestion(qIndex);
+                    } else {
+                        editAnswer(qIndex, -1); // -1 represents the question itself
                     }
                 };
 
@@ -218,6 +196,8 @@
                 deleteButton.onclick = () => {
                     if (qa.type === 'question') {
                         deleteQuestion(qIndex);
+                    } else {
+                        deleteAnswer(qIndex, -1); // -1 represents the question itself
                     }
                 };
 
@@ -229,67 +209,80 @@
                 const contentElement = document.createElement('span');
                 contentElement.innerText = qa.content;
 
-                if (qa.type === 'answer') {
-                    const userIdentifier = document.createElement('div');
-                    userIdentifier.className = 'user-identifier';
-                    userIdentifier.innerText = 'User: ' + qa.userIdentifier;
-                    qaElement.appendChild(userIdentifier);
+                const userIdentifier = document.createElement('div');
+                userIdentifier.className = 'user-identifier';
+                userIdentifier.innerText = 'User: ' + (qa.userIdentifier || '');
 
-                    const commentsContainer = document.createElement('div');
-                    commentsContainer.className = 'comments-container';
+                qaElement.appendChild(contentElement);
+                qaElement.appendChild(userIdentifier);
 
-                    qa.comments.forEach((comment, cIndex) => {
-                        const commentElement = document.createElement('div');
-                        commentElement.className = 'comment';
-                        commentElement.innerText = `${comment.userIdentifier}: ${comment.content}`;
+                if (qa.type === 'answer' && qa.parentIndex !== undefined) {
+                    contentElement.className = 'sub-answer';
+                }
 
-                        const commentOptions = document.createElement('div');
-                        commentOptions.className = 'edit-options';
+                const inputContainer = document.createElement('div');
+                inputContainer.className = 'input-container';
 
-                        const deleteCommentButton = document.createElement('button');
-                        deleteCommentButton.innerHTML = '<i class="fas fa-trash-alt"></i>';
-                        deleteCommentButton.onclick = () => deleteComment(qIndex, cIndex);
+                const textarea = document.createElement('textarea');
+                textarea.value = qa.newAnswer || '';
+                textarea.placeholder = 'Type your answer...';
+                textarea.oninput = (event) => {
+                    qa.newAnswer = event.target.value;
+                };
 
-                        commentOptions.appendChild(deleteCommentButton);
-                        commentElement.appendChild(commentOptions);
-                        commentsContainer.appendChild(commentElement);
+                const submitButton = document.createElement('button');
+                submitButton.innerText = 'Answer';
+                submitButton.onclick = () => {
+                    if (qa.type === 'answer') {
+                        submitAnswer(qIndex);
+                    } else {
+                        submitAnswer(qIndex, -1); // -1 represents the question itself
+                    }
+                };
+
+                inputContainer.appendChild(textarea);
+                inputContainer.appendChild(submitButton);
+
+                qaElement.appendChild(contentElement);
+                qaElement.appendChild(userIdentifier);
+
+                if (qa.type === 'question') {
+                    const answersContainer = document.createElement('div');
+                    answersContainer.className = 'answers-container';
+
+                    qa.answers.forEach((answer, aIndex) => {
+                        const answerElement = document.createElement('div');
+                        answerElement.className = 'answer';
+
+                        const subEditOptions = document.createElement('div');
+                        subEditOptions.className = 'edit-options';
+
+                        const subEditButton = document.createElement('button');
+                        subEditButton.innerHTML = '<i class="fas fa-edit"></i>';
+                        subEditButton.onclick = () => editAnswer(qIndex, aIndex);
+
+                        const subDeleteButton = document.createElement('button');
+                        subDeleteButton.innerHTML = '<i class="fas fa-trash-alt"></i>';
+                        subDeleteButton.onclick = () => deleteAnswer(qIndex, aIndex);
+
+                        subEditOptions.appendChild(subEditButton);
+                        subEditOptions.appendChild(subDeleteButton);
+
+                        answerElement.appendChild(subEditOptions);
+
+                        const subContentElement = document.createElement('span');
+                        subContentElement.innerText = answer.content;
+
+                        answerElement.appendChild(subContentElement);
+
+                        answersContainer.appendChild(answerElement);
                     });
 
-                    const commentInputContainer = document.createElement('div');
-                    commentInputContainer.className = 'input-container';
-
-                    const commentTextarea = document.createElement('textarea');
-                    commentTextarea.placeholder = 'Type your comment...';
-
-                    const commentSubmitButton = document.createElement('button');
-                    commentSubmitButton.innerText = 'Comment';
-                    commentSubmitButton.onclick = () => submitComment(qIndex);
-
-                    commentInputContainer.appendChild(commentTextarea);
-                    commentInputContainer.appendChild(commentSubmitButton);
-
-                    qaElement.appendChild(commentsContainer);
-                    qaElement.appendChild(commentInputContainer);
-                } else {
-                    const inputContainer = document.createElement('div');
-                    inputContainer.className = 'input-container';
-
-                    const textarea = document.createElement('textarea');
-                    textarea.id = 'newAnswer' + qIndex;
-                    textarea.placeholder = 'Type your answer...';
-
-                    const submitButton = document.createElement('button');
-                    submitButton.innerText = 'Answer';
-                    submitButton.onclick = () => submitAnswer(qIndex);
-
-                    inputContainer.appendChild(textarea);
-                    inputContainer.appendChild(submitButton);
-
-                    qaElement.appendChild(contentElement);
-                    qaElement.appendChild(inputContainer);
+                    qaElement.appendChild(answersContainer);
                 }
 
                 container.appendChild(qaElement);
+                container.appendChild(inputContainer);
             });
         }
 
