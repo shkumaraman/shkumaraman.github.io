@@ -97,6 +97,11 @@
             cursor: pointer;
         }
 
+        .click-count {
+            font-size: 14px;
+            margin-left: 5px;
+        }
+
         .poll {
             margin-top: 10px;
         }
@@ -118,14 +123,11 @@
     <script>
         const questionsAndAnswers = [];
 
-        function submitAnswer(qIndex, aIndex = -1, rIndex = -1) {
+        function submitAnswer(qIndex, aIndex = -1) {
             const answer = document.getElementById('newAnswer').value;
             if (answer && answer.trim() !== '') {
                 if (aIndex === -1) {
-                    const reactions = {
-                        thumbsUp: 0,
-                        thumbsDown: 0,
-                    };
+                    const reactions = { thumbsUp: 0, thumbsDown: 0 };
                     questionsAndAnswers[qIndex].answers.push({
                         content: answer,
                         type: 'answer',
@@ -133,17 +135,11 @@
                         reactions,
                         replies: [],
                     });
-                } else if (rIndex === -1) {
+                } else {
                     questionsAndAnswers[qIndex].answers[aIndex].replies.push({
                         content: answer,
                         type: 'reply',
                         userIdentifier: 'User' + questionsAndAnswers[qIndex].answers[aIndex].replies.length,
-                    });
-                } else {
-                    questionsAndAnswers[qIndex].answers[aIndex].replies[rIndex].replies.push({
-                        content: answer,
-                        type: 'reply',
-                        userIdentifier: 'User' + questionsAndAnswers[qIndex].answers[aIndex].replies[rIndex].replies.length,
                     });
                 }
 
@@ -209,18 +205,12 @@
             }
         }
 
-        function react(qIndex, aIndex, rIndex, reaction) {
-            let target;
-            if (rIndex === -1) {
-                target = aIndex === -1 ? questionsAndAnswers[qIndex] : questionsAndAnswers[qIndex].answers[aIndex];
-            } else {
-                target = questionsAndAnswers[qIndex].answers[aIndex].replies[rIndex];
-            }
-
+        function react(qIndex, aIndex, reaction) {
+            const answer = questionsAndAnswers[qIndex].answers[aIndex];
             if (reaction === '👍') {
-                target.reactions.thumbsUp += 1;
+                answer.reactions.thumbsUp++;
             } else if (reaction === '👎') {
-                target.reactions.thumbsDown += 1;
+                answer.reactions.thumbsDown++;
             }
 
             displayQuestionsAndAnswers();
@@ -243,7 +233,7 @@
                     if (qa.type === 'question') {
                         editQuestion(qIndex);
                     } else {
-                        editAnswer(qIndex, -1); // -1 represents the question itself
+                        editAnswer(qIndex, -1);
                     }
                 };
 
@@ -253,7 +243,7 @@
                     if (qa.type === 'question') {
                         deleteQuestion(qIndex);
                     } else {
-                        deleteAnswer(qIndex, -1); // -1 represents the question itself
+                        deleteAnswer(qIndex, -1);
                     }
                 };
 
@@ -277,21 +267,11 @@
 
                 const textarea = document.createElement('textarea');
                 textarea.id = 'newAnswer';
-                textarea.value = qa.newAnswer || '';
                 textarea.placeholder = 'Type your answer...';
-                textarea.oninput = (event) => {
-                    qa.newAnswer = event.target.value;
-                };
 
                 const submitButton = document.createElement('button');
                 submitButton.innerText = 'Answer';
-                submitButton.onclick = () => {
-                    if (qa.type === 'answer') {
-                        submitAnswer(qIndex);
-                    } else {
-                        submitAnswer(qIndex, -1); // -1 represents the question itself
-                    }
-                };
+                submitButton.onclick = () => submitAnswer(qIndex);
 
                 inputContainer.appendChild(textarea);
                 inputContainer.appendChild(submitButton);
@@ -299,17 +279,22 @@
                 const reactionsContainer = document.createElement('div');
                 reactionsContainer.className = 'reactions';
 
-                ['👍', '👎'].forEach(reaction => {
-                    const reactionButton = document.createElement('button');
-                    reactionButton.innerText = qa.type === 'reply' ? '' : (qa.type === 'answer' ? qa.reactions[reaction === '👍' ? 'thumbsUp' : 'thumbsDown'] : 0);
-                    reactionButton.onclick = () => react(qIndex, -1, -1, reaction);
-                    reactionsContainer.appendChild(reactionButton);
-                });
+                const thumbsUpButton = document.createElement('button');
+                thumbsUpButton.innerText = '👍 ' + qa.answers.length;
+                thumbsUpButton.onclick = () => react(qIndex, -1, '👍');
+
+                const thumbsDownButton = document.createElement('button');
+                thumbsDownButton.innerText = '👎 ' + qa.answers.length;
+                thumbsDownButton.onclick = () => react(qIndex, -1, '👎');
+
+                reactionsContainer.appendChild(thumbsUpButton);
+                reactionsContainer.appendChild(thumbsDownButton);
 
                 qaElement.appendChild(reactionsContainer);
 
                 qaElement.appendChild(contentElement);
                 qaElement.appendChild(userIdentifier);
+                qaElement.appendChild(inputContainer);
 
                 if (qa.type === 'question') {
                     const answersContainer = document.createElement('div');
@@ -408,7 +393,31 @@
                         answersContainer.appendChild(answerElement);
                     });
 
+                    const pollContainer = document.createElement('div');
+                    pollContainer.className = 'poll';
+
+                    const pollQuestion = document.createElement('span');
+                    pollQuestion.innerText = 'Create a Poll: ';
+
+                    const pollTextarea = document.createElement('textarea');
+                    pollTextarea.value = qa.newPoll || '';
+                    pollTextarea.placeholder = 'Enter Poll Question...';
+                    pollTextarea.oninput = (event) => {
+                        qa.newPoll = event.target.value;
+                    };
+
+                    const pollSubmitButton = document.createElement('button');
+                    pollSubmitButton.innerText = 'Create Poll';
+                    pollSubmitButton.onclick = () => {
+                        submitAnswer(qIndex);
+                    };
+
+                    pollContainer.appendChild(pollQuestion);
+                    pollContainer.appendChild(pollTextarea);
+                    pollContainer.appendChild(pollSubmitButton);
+
                     qaElement.appendChild(answersContainer);
+                    qaElement.appendChild(pollContainer);
                 }
 
                 container.appendChild(qaElement);
