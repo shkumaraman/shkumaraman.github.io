@@ -97,16 +97,42 @@
         <div id="questionsAndAnswers"></div>
     </div>
 
+    <script src="https://www.gstatic.com/firebasejs/9.0.2/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.0.2/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.0.2/firebase-database.js"></script>
     <script>
-        const questionsAndAnswers = [];
+        const firebaseConfig = {
+            apiKey: 'YOUR_API_KEY',
+            authDomain: 'YOUR_AUTH_DOMAIN',
+            projectId: 'YOUR_PROJECT_ID',
+            storageBucket: 'YOUR_STORAGE_BUCKET',
+            messagingSenderId: 'YOUR_MESSAGING_SENDER_ID',
+            appId: 'YOUR_APP_ID',
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const database = firebase.database();
+
+        let currentUser;
+
+        auth.onAuthStateChanged((user) => {
+            if (user) {
+                currentUser = user;
+            } else {
+                currentUser = null;
+            }
+            displayQuestionsAndAnswers();
+        });
 
         function submitAnswer(qIndex) {
             const answer = prompt('Type your answer:');
             if (answer && answer.trim() !== '') {
+                const userIdentifier = currentUser ? currentUser.uid : 'Guest';
                 questionsAndAnswers[qIndex].answers.push({
                     content: answer,
                     type: 'answer',
-                    userIdentifier: 'User' + questionsAndAnswers[qIndex].answers.length,
+                    userIdentifier,
                 });
                 displayQuestionsAndAnswers();
             }
@@ -115,7 +141,13 @@
         function submitQuestion() {
             const question = document.getElementById('newQuestion').value;
             if (question && question.trim() !== '') {
-                questionsAndAnswers.push({ content: question, answers: [], type: 'question' });
+                const userIdentifier = currentUser ? currentUser.uid : 'Guest';
+                questionsAndAnswers.push({
+                    content: question,
+                    answers: [],
+                    type: 'question',
+                    userIdentifier,
+                });
                 document.getElementById('newQuestion').value = '';
                 displayQuestionsAndAnswers();
             }
