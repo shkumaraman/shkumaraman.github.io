@@ -24,8 +24,7 @@
         }
 
         .question,
-        .answer,
-        .reply {
+        .answer {
             font-size: 18px;
             font-weight: bold;
             margin-bottom: 25px;
@@ -45,7 +44,7 @@
         }
 
         .sub-answer,
-        .sub-reply {
+        .reply {
             font-size: 14px;
             margin-top: 25px;
             margin-bottom: 25px;
@@ -97,7 +96,7 @@
         }
 
         .sub-answer,
-        .sub-reply {
+        .reply {
             margin-left: 20px;
         }
     </style>
@@ -119,18 +118,29 @@
         const questionsAndAnswers = [];
 
         function submitAnswer(qIndex, aIndex = -1, rIndex = -1) {
-            const content = document.getElementById('newAnswer').value.trim();
-            if (content !== '') {
-                const newAnswer = { content, type: 'answer', userIdentifier: 'User' + questionsAndAnswers[qIndex].answers.length, replies: [] };
-                if (rIndex === -1) {
-                    if (aIndex === -1) {
-                        questionsAndAnswers[qIndex].answers.push(newAnswer);
-                    } else {
-                        questionsAndAnswers[qIndex].answers[aIndex].replies.push(newAnswer);
-                    }
+            const answer = document.getElementById('newAnswer').value.trim();
+            if (answer !== '') {
+                if (aIndex === -1) {
+                    questionsAndAnswers[qIndex].answers.push({
+                        content: answer,
+                        type: 'answer',
+                        userIdentifier: 'User' + questionsAndAnswers[qIndex].answers.length,
+                        replies: [],
+                    });
+                } else if (rIndex === -1) {
+                    questionsAndAnswers[qIndex].answers[aIndex].replies.push({
+                        content: answer,
+                        type: 'reply',
+                        userIdentifier: 'User' + questionsAndAnswers[qIndex].answers[aIndex].replies.length,
+                    });
                 } else {
-                    questionsAndAnswers[qIndex].answers[aIndex].replies[rIndex].replies.push(newAnswer);
+                    questionsAndAnswers[qIndex].answers[aIndex].replies[rIndex].replies.push({
+                        content: answer,
+                        type: 'reply',
+                        userIdentifier: 'User' + questionsAndAnswers[qIndex].answers[aIndex].replies[rIndex].replies.length,
+                    });
                 }
+
                 displayQuestionsAndAnswers();
                 document.getElementById('newAnswer').value = '';
             }
@@ -145,63 +155,61 @@
             }
         }
 
-        function editContent(qIndex, aIndex = -1, rIndex = -1) {
-            const newContent = prompt('Edit your content:', getContent(qIndex, aIndex, rIndex));
+        function editQuestion(qIndex) {
+            const newContent = prompt('Edit your question:', questionsAndAnswers[qIndex].content);
             if (newContent !== null) {
-                setContent(qIndex, aIndex, rIndex, newContent);
+                questionsAndAnswers[qIndex].content = newContent;
                 displayQuestionsAndAnswers();
             }
         }
 
-        function deleteContent(qIndex, aIndex = -1, rIndex = -1) {
-            if (confirm('Are you sure you want to delete this content?')) {
-                if (rIndex === -1) {
-                    if (aIndex === -1) {
-                        questionsAndAnswers.splice(qIndex, 1);
-                    } else {
-                        questionsAndAnswers[qIndex].answers.splice(aIndex, 1);
-                    }
-                } else {
-                    questionsAndAnswers[qIndex].answers[aIndex].replies.splice(rIndex, 1);
-                }
+        function saveEdit(qIndex) {
+            displayQuestionsAndAnswers();
+        }
+
+        function deleteQuestion(qIndex) {
+            if (confirm('Are you sure you want to delete this question?')) {
+                questionsAndAnswers.splice(qIndex, 1);
                 displayQuestionsAndAnswers();
             }
         }
 
-        function getContent(qIndex, aIndex = -1, rIndex = -1) {
-            if (rIndex === -1) {
-                if (aIndex === -1) {
-                    return questionsAndAnswers[qIndex].content;
-                } else {
-                    return questionsAndAnswers[qIndex].answers[aIndex].content;
-                }
-            } else {
-                return questionsAndAnswers[qIndex].answers[aIndex].replies[rIndex].content;
+        function editAnswer(qIndex, aIndex) {
+            const newContent = prompt('Edit your answer:', questionsAndAnswers[qIndex].answers[aIndex].content);
+            if (newContent !== null) {
+                questionsAndAnswers[qIndex].answers[aIndex].content = newContent;
+                displayQuestionsAndAnswers();
             }
         }
 
-        function setContent(qIndex, aIndex = -1, rIndex = -1, newContent) {
-            if (rIndex === -1) {
-                if (aIndex === -1) {
-                    questionsAndAnswers[qIndex].content = newContent;
-                } else {
-                    questionsAndAnswers[qIndex].answers[aIndex].content = newContent;
-                }
-            } else {
+        function deleteAnswer(qIndex, aIndex) {
+            if (confirm('Are you sure you want to delete this answer?')) {
+                questionsAndAnswers[qIndex].answers.splice(aIndex, 1);
+                displayQuestionsAndAnswers();
+            }
+        }
+
+        function editReply(qIndex, aIndex, rIndex) {
+            const newContent = prompt('Edit your reply:', questionsAndAnswers[qIndex].answers[aIndex].replies[rIndex].content);
+            if (newContent !== null) {
                 questionsAndAnswers[qIndex].answers[aIndex].replies[rIndex].content = newContent;
+                displayQuestionsAndAnswers();
+            }
+        }
+
+        function deleteReply(qIndex, aIndex, rIndex) {
+            if (confirm('Are you sure you want to delete this reply?')) {
+                questionsAndAnswers[qIndex].answers[aIndex].replies.splice(rIndex, 1);
+                displayQuestionsAndAnswers();
             }
         }
 
         function searchQuestions() {
-            const searchQuery = document.getElementById('searchQuery').value.toLowerCase();
-            const filteredQuestionsAndAnswers = questionsAndAnswers.filter(qa =>
-                qa.content.toLowerCase().includes(searchQuery) ||
-                qa.answers.some(answer =>
-                    answer.content.toLowerCase().includes(searchQuery) ||
-                    answer.replies.some(reply =>
-                        reply.content.toLowerCase().includes(searchQuery)
-                    )
-                )
+            const query = document.getElementById('searchQuery').value.toLowerCase();
+            const filteredQuestionsAndAnswers = questionsAndAnswers.filter(
+                (qa) => qa.content.toLowerCase().includes(query) ||
+                    (qa.answers.some((a) => a.content.toLowerCase().includes(query))) ||
+                    (qa.answers.some((a) => a.replies.some((r) => r.content.toLowerCase().includes(query))))
             );
             displayQuestionsAndAnswers(filteredQuestionsAndAnswers);
         }
@@ -219,11 +227,23 @@
 
                 const editButton = document.createElement('button');
                 editButton.innerHTML = '<i class="fas fa-edit"></i>';
-                editButton.onclick = () => editContent(qIndex);
+                editButton.onclick = () => {
+                    if (qa.type === 'question') {
+                        editQuestion(qIndex);
+                    } else {
+                        editAnswer(qIndex, -1);
+                    }
+                };
 
                 const deleteButton = document.createElement('button');
                 deleteButton.innerHTML = '<i class="fas fa-trash-alt"></i>';
-                deleteButton.onclick = () => deleteContent(qIndex);
+                deleteButton.onclick = () => {
+                    if (qa.type === 'question') {
+                        deleteQuestion(qIndex);
+                    } else {
+                        deleteAnswer(qIndex, -1);
+                    }
+                };
 
                 editOptions.appendChild(editButton);
                 editOptions.appendChild(deleteButton);
@@ -242,8 +262,6 @@
 
                 if (qa.type === 'answer' && qa.parentIndex !== undefined) {
                     contentElement.className = 'sub-answer';
-                } else if (qa.type === 'reply') {
-                    contentElement.className = 'sub-reply';
                 }
 
                 const inputContainer = document.createElement('div');
@@ -256,7 +274,13 @@
 
                 const submitButton = document.createElement('button');
                 submitButton.innerText = 'Answer';
-                submitButton.onclick = () => submitAnswer(qIndex);
+                submitButton.onclick = () => {
+                    if (qa.type === 'answer') {
+                        submitAnswer(qIndex);
+                    } else {
+                        submitAnswer(qIndex, -1);
+                    }
+                };
 
                 inputContainer.appendChild(textarea);
                 inputContainer.appendChild(submitButton);
@@ -277,11 +301,11 @@
 
                         const subEditButton = document.createElement('button');
                         subEditButton.innerHTML = '<i class="fas fa-edit"></i>';
-                        subEditButton.onclick = () => editContent(qIndex, aIndex);
+                        subEditButton.onclick = () => editAnswer(qIndex, aIndex);
 
                         const subDeleteButton = document.createElement('button');
                         subDeleteButton.innerHTML = '<i class="fas fa-trash-alt"></i>';
-                        subDeleteButton.onclick = () => deleteContent(qIndex, aIndex);
+                        subDeleteButton.onclick = () => deleteAnswer(qIndex, aIndex);
 
                         subEditOptions.appendChild(subEditButton);
                         subEditOptions.appendChild(subDeleteButton);
@@ -311,11 +335,11 @@
 
                                 const replyEditButton = document.createElement('button');
                                 replyEditButton.innerHTML = '<i class="fas fa-edit"></i>';
-                                replyEditButton.onclick = () => editContent(qIndex, aIndex, rIndex);
+                                replyEditButton.onclick = () => editReply(qIndex, aIndex, rIndex);
 
                                 const replyDeleteButton = document.createElement('button');
                                 replyDeleteButton.innerHTML = '<i class="fas fa-trash-alt"></i>';
-                                replyDeleteButton.onclick = () => deleteContent(qIndex, aIndex, rIndex);
+                                replyDeleteButton.onclick = () => deleteReply(qIndex, aIndex, rIndex);
 
                                 replyEditOptions.appendChild(replyEditButton);
                                 replyEditOptions.appendChild(replyDeleteButton);
@@ -331,6 +355,25 @@
 
                                 replyElement.appendChild(replyContentElement);
                                 replyElement.appendChild(replyUserIdentifier);
+
+                                const replyInputContainer = document.createElement('div');
+                                replyInputContainer.className = 'input-container';
+
+                                const replyTextarea = document.createElement('textarea');
+                                replyTextarea.id = 'newAnswer';
+                                replyTextarea.value = '';
+                                replyTextarea.placeholder = 'Type your reply...';
+
+                                const replySubmitButton = document.createElement('button');
+                                replySubmitButton.innerText = 'Reply';
+                                replySubmitButton.onclick = () => {
+                                    submitAnswer(qIndex, aIndex, rIndex);
+                                };
+
+                                replyInputContainer.appendChild(replyTextarea);
+                                replyInputContainer.appendChild(replySubmitButton);
+
+                                replyElement.appendChild(replyInputContainer);
 
                                 repliesContainer.appendChild(replyElement);
                             });
