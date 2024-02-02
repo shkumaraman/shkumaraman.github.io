@@ -25,6 +25,7 @@
             border-radius: 8px;
             border: 1px solid #e1e8ed;
             color: #14171a;
+            position: relative;
         }
 
         .answer {
@@ -72,12 +73,41 @@
             border: 1px solid #e1e8ed;
             width: 80%;
         }
+
+        .edit-options {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+        }
+
+        .edit-options button {
+            margin-left: 5px;
+        }
     </style>
 </head>
 <body>
     <div id="app">
-        <div v-for="(qa, index) in questionsAndAnswers" :key="index" class="question">{{ qa.question }}
-            <div v-for="(answer, answerIndex) in qa.answers" :key="answerIndex" class="answer">{{ answer }}</div>
+        <div v-for="(qa, index) in questionsAndAnswers" :key="index" class="question">
+            <div v-if="!qa.editing" class="edit-options">
+                <button @click="editQuestion(index)">Edit</button>
+                <button @click="deleteQuestion(index)">Delete</button>
+            </div>
+            <span v-if="qa.editing">
+                <textarea v-model="qa.question" placeholder="Edit your question..."></textarea>
+                <button @click="saveEdit(index)">Save</button>
+            </span>
+            <span v-else>{{ qa.question }}</span>
+            <div v-for="(answer, answerIndex) in qa.answers" :key="answerIndex" class="answer">
+                <div v-if="!qa.editingAnswer[answerIndex]" class="edit-options">
+                    <button @click="editAnswer(index, answerIndex)">Edit</button>
+                    <button @click="deleteAnswer(index, answerIndex)">Delete</button>
+                </div>
+                <span v-if="qa.editingAnswer[answerIndex]">
+                    <textarea v-model="qa.answers[answerIndex]" placeholder="Edit your answer..."></textarea>
+                    <button @click="saveAnswerEdit(index, answerIndex)">Save</button>
+                </span>
+                <span v-else>{{ answer }}</span>
+            </div>
             <div class="input-container">
                 <textarea v-model="qa.newAnswer" placeholder="Type your answer..."></textarea>
                 <button @click="submitAnswer(index)">Submit Answer</button>
@@ -95,11 +125,7 @@
         new Vue({
             el: '#app',
             data: {
-                questionsAndAnswers: [
-                    { question: 'What is your favorite color?', answers: [] },
-                    { question: 'How old are you?', answers: [] },
-                    // Add more questions as needed
-                ],
+                questionsAndAnswers: [],
                 newQuestion: '',
             },
             methods: {
@@ -113,9 +139,27 @@
                 submitQuestion() {
                     const question = this.newQuestion.trim();
                     if (question !== '') {
-                        this.questionsAndAnswers.push({ question, answers: [] });
+                        this.questionsAndAnswers.push({ question, answers: [], newAnswer: '', editing: false, editingAnswer: [] });
                         this.newQuestion = '';
                     }
+                },
+                editQuestion(qIndex) {
+                    this.questionsAndAnswers[qIndex].editing = true;
+                },
+                saveEdit(qIndex) {
+                    this.questionsAndAnswers[qIndex].editing = false;
+                },
+                deleteQuestion(qIndex) {
+                    this.questionsAndAnswers.splice(qIndex, 1);
+                },
+                editAnswer(qIndex, aIndex) {
+                    this.questionsAndAnswers[qIndex].editingAnswer[aIndex] = true;
+                },
+                saveAnswerEdit(qIndex, aIndex) {
+                    this.questionsAndAnswers[qIndex].editingAnswer[aIndex] = false;
+                },
+                deleteAnswer(qIndex, aIndex) {
+                    this.questionsAndAnswers[qIndex].answers.splice(aIndex, 1);
                 },
             },
         });
