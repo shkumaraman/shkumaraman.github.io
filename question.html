@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>User-Generated Q&A</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.2/css/all.min.css" integrity="sha512-6vlz5J+yhY9Rg7k8C8eM5ZzCgzo3W4KGgo/3IK5vgsfesv4npkBSzOcaG3Crz3JWnZehB8UMe8f6FmsS1lg8xg==" crossorigin="anonymous" />
     <style>
         body {
             font-family: 'Helvetica Neue', sans-serif;
@@ -36,6 +37,7 @@
             margin-bottom: 10px;
             font-size: 16px;
             color: #14171a;
+            position: relative;
         }
 
         .input-container {
@@ -78,37 +80,39 @@
             position: absolute;
             top: 5px;
             right: 5px;
+            display: flex;
+            align-items: center;
         }
 
         .edit-options button {
             margin-left: 5px;
+        }
+
+        .user-identifier {
+            position: absolute;
+            bottom: 5px;
+            left: 5px;
+            font-size: 12px;
+            color: #657786;
         }
     </style>
 </head>
 <body>
     <div id="app">
         <div v-for="(qa, index) in questionsAndAnswers" :key="index" class="question">
-            <div v-if="!qa.editing" class="edit-options">
-                <button @click="editQuestion(index)">Edit</button>
-                <button @click="deleteQuestion(index)">Delete</button>
+            <div class="edit-options">
+                <button v-if="qa.type === 'question'" @click="editQuestion(index)"><i class="fas fa-edit"></i> Edit</button>
+                <button v-if="qa.type === 'question'" @click="deleteQuestion(index)"><i class="fas fa-trash-alt"></i> Delete</button>
+                <button v-if="qa.type === 'answer'" @click="editAnswer(index)"><i class="fas fa-edit"></i> Edit</button>
+                <button v-if="qa.type === 'answer'" @click="deleteAnswer(index)"><i class="fas fa-trash-alt"></i> Delete</button>
             </div>
             <span v-if="qa.editing">
-                <textarea v-model="qa.question" placeholder="Edit your question..."></textarea>
+                <textarea v-model="qa.content" placeholder="Edit your {{ qa.type }}..."></textarea>
                 <button @click="saveEdit(index)">Save</button>
             </span>
-            <span v-else>{{ qa.question }}</span>
-            <div v-for="(answer, answerIndex) in qa.answers" :key="answerIndex" class="answer">
-                <div v-if="!qa.editingAnswer[answerIndex]" class="edit-options">
-                    <button @click="editAnswer(index, answerIndex)">Edit</button>
-                    <button @click="deleteAnswer(index, answerIndex)">Delete</button>
-                </div>
-                <span v-if="qa.editingAnswer[answerIndex]">
-                    <textarea v-model="qa.answers[answerIndex]" placeholder="Edit your answer..."></textarea>
-                    <button @click="saveAnswerEdit(index, answerIndex)">Save</button>
-                </span>
-                <span v-else>{{ answer }}</span>
-            </div>
-            <div class="input-container">
+            <span v-else>{{ qa.content }}</span>
+            <div class="user-identifier" v-if="qa.type === 'answer'">User: {{ qa.userIdentifier }}</div>
+            <div class="input-container" v-if="qa.type === 'answer'">
                 <textarea v-model="qa.newAnswer" placeholder="Type your answer..."></textarea>
                 <button @click="submitAnswer(index)">Submit Answer</button>
             </div>
@@ -146,7 +150,12 @@
                 submitAnswer(qIndex) {
                     const answer = this.questionsAndAnswers[qIndex].newAnswer.trim();
                     if (answer !== '') {
-                        this.questionsAndAnswers[qIndex].answers.push(answer);
+                        this.questionsAndAnswers[qIndex].answers.push({
+                            content: answer,
+                            type: 'answer',
+                            editing: false,
+                            userIdentifier: 'User' + this.questionsAndAnswers[qIndex].answers.length, // Replace with actual user identification
+                        });
                         this.questionsAndAnswers[qIndex].newAnswer = '';
                         this.saveData();
                     }
@@ -154,7 +163,7 @@
                 submitQuestion() {
                     const question = this.newQuestion.trim();
                     if (question !== '') {
-                        this.questionsAndAnswers.push({ question, answers: [], newAnswer: '', editing: false, editingAnswer: [] });
+                        this.questionsAndAnswers.push({ content: question, answers: [], newAnswer: '', type: 'question', editing: false });
                         this.newQuestion = '';
                         this.saveData();
                     }
@@ -170,15 +179,11 @@
                     this.questionsAndAnswers.splice(qIndex, 1);
                     this.saveData();
                 },
-                editAnswer(qIndex, aIndex) {
-                    this.questionsAndAnswers[qIndex].editingAnswer[aIndex] = true;
+                editAnswer(qIndex) {
+                    this.questionsAndAnswers[qIndex].editing = true;
                 },
-                saveAnswerEdit(qIndex, aIndex) {
-                    this.questionsAndAnswers[qIndex].editingAnswer[aIndex] = false;
-                    this.saveData();
-                },
-                deleteAnswer(qIndex, aIndex) {
-                    this.questionsAndAnswers[qIndex].answers.splice(aIndex, 1);
+                deleteAnswer(qIndex) {
+                    this.questionsAndAnswers[qIndex].answers.splice(qIndex, 1);
                     this.saveData();
                 },
                 saveData() {
