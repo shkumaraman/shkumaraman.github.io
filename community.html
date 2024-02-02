@@ -25,8 +25,7 @@
 
         .question,
         .answer,
-        .reply,
-        .poll {
+        .reply {
             font-size: 18px;
             font-weight: bold;
             margin-bottom: 5px;
@@ -98,18 +97,8 @@
             cursor: pointer;
         }
 
-        .poll-icon {
-            font-size: 24px;
-            color: #1da1f2;
-            cursor: pointer;
-        }
-
-        .highlight {
-            color: #1da1f2;
-        }
-
-        .reacted {
-            color: #1da1f2;
+        .poll {
+            margin-top: 10px;
         }
     </style>
 </head>
@@ -120,7 +109,6 @@
             <button onclick="searchQuestions()">Search</button>
         </div>
         <div class="ask-question">
-            <i class="fas fa-poll poll-icon" onclick="createPoll()"></i>
             <textarea id="newQuestion" placeholder="Ask a Question..."></textarea>
             <button onclick="submitQuestion()">Ask</button>
         </div>
@@ -134,7 +122,10 @@
             const answer = document.getElementById('newAnswer').value;
             if (answer && answer.trim() !== '') {
                 if (aIndex === -1) {
-                    const reactions = [];
+                    const reactions = {
+                        thumbsUp: 0,
+                        thumbsDown: 0,
+                    };
                     questionsAndAnswers[qIndex].answers.push({
                         content: answer,
                         type: 'answer',
@@ -213,13 +204,13 @@
         }
 
         function react(qIndex, aIndex, reaction) {
-            const answer = aIndex === -1 ? questionsAndAnswers[qIndex] : questionsAndAnswers[qIndex].answers[aIndex];
+            const answer = questionsAndAnswers[qIndex].answers[aIndex];
+            const existingReactionIndex = answer.reactions[reaction];
 
-            const existingReactionIndex = answer.reactions.indexOf(reaction);
-            if (existingReactionIndex === -1) {
-                answer.reactions.push(reaction);
+            if (existingReactionIndex === 0) {
+                answer.reactions[reaction] = 1;
             } else {
-                answer.reactions.splice(existingReactionIndex, 1);
+                answer.reactions[reaction] = 0;
             }
 
             displayQuestionsAndAnswers();
@@ -242,7 +233,7 @@
                     if (qa.type === 'question') {
                         editQuestion(qIndex);
                     } else {
-                        editAnswer(qIndex, -1);
+                        editAnswer(qIndex, -1); // -1 represents the question itself
                     }
                 };
 
@@ -252,7 +243,7 @@
                     if (qa.type === 'question') {
                         deleteQuestion(qIndex);
                     } else {
-                        deleteAnswer(qIndex, -1);
+                        deleteAnswer(qIndex, -1); // -1 represents the question itself
                     }
                 };
 
@@ -271,6 +262,10 @@
                 qaElement.appendChild(contentElement);
                 qaElement.appendChild(userIdentifier);
 
+                if (qa.type === 'answer' && qa.parentIndex !== undefined) {
+                    contentElement.className = 'sub-answer';
+                }
+
                 const inputContainer = document.createElement('div');
                 inputContainer.className = 'input-container';
 
@@ -288,7 +283,7 @@
                     if (qa.type === 'answer') {
                         submitAnswer(qIndex);
                     } else {
-                        submitAnswer(qIndex, -1);
+                        submitAnswer(qIndex, -1); // -1 represents the question itself
                     }
                 };
 
@@ -297,10 +292,6 @@
 
                 const reactionsContainer = document.createElement('div');
                 reactionsContainer.className = 'reactions';
-
-                const reactionCount = document.createElement('span');
-                reactionCount.innerText = formatReactionCount(qa.reactions.length);
-                reactionsContainer.appendChild(reactionCount);
 
                 ['👍', '👎'].forEach(reaction => {
                     const reactionButton = document.createElement('button');
@@ -411,78 +402,12 @@
                         answersContainer.appendChild(answerElement);
                     });
 
-                    const pollContainer = document.createElement('div');
-                    pollContainer.className = 'poll';
-
-                    const pollQuestion = document.createElement('span');
-                    pollQuestion.innerText = 'Create a Poll: ';
-
-                    const pollTextarea = document.createElement('textarea');
-                    pollTextarea.value = qa.newPoll || '';
-                    pollTextarea.placeholder = 'Enter Poll Question...';
-                    pollTextarea.oninput = (event) => {
-                        qa.newPoll = event.target.value;
-                    };
-
-                    const pollSubmitButton = document.createElement('button');
-                    pollSubmitButton.innerText = 'Create Poll';
-                    pollSubmitButton.onclick = () => {
-                        submitAnswer(qIndex);
-                    };
-
-                    pollContainer.appendChild(pollQuestion);
-                    pollContainer.appendChild(pollTextarea);
-                    pollContainer.appendChild(pollSubmitButton);
-
-                    container.appendChild(pollContainer);
-                    container.appendChild(inputContainer);
-                    container.appendChild(answersContainer);
+                    qaElement.appendChild(answersContainer);
                 }
+
+                container.appendChild(qaElement);
+                container.appendChild(inputContainer);
             });
-
-            if (data === questionsAndAnswers) {
-                const searchButton = document.createElement('button');
-                searchButton.innerText = 'Search';
-                searchButton.onclick = searchQuestions;
-
-                const searchContainer = document.createElement('div');
-                searchContainer.className = 'search-bar';
-
-                const searchTextarea = document.createElement('textarea');
-                searchTextarea.id = 'searchQuery';
-                searchTextarea.placeholder = 'Search Questions...';
-
-                searchContainer.appendChild(searchTextarea);
-                searchContainer.appendChild(searchButton);
-
-                container.insertBefore(searchContainer, container.firstChild);
-            }
-        }
-
-        function searchQuestions() {
-            const query = document.getElementById('searchQuery').value.toLowerCase();
-            const results = questionsAndAnswers.filter(qa => qa.content.toLowerCase().includes(query));
-            displayQuestionsAndAnswers(results);
-        }
-
-        function createPoll() {
-            const pollQuestion = prompt('Enter your poll question:');
-            if (pollQuestion !== null) {
-                questionsAndAnswers.push({ content: pollQuestion, answers: [], type: 'question', newPoll: '' });
-                displayQuestionsAndAnswers();
-            }
-        }
-
-        function formatReactionCount(count) {
-            if (count >= 1000000000) {
-                return (count / 1000000000).toFixed(1) + 'b';
-            } else if (count >= 1000000) {
-                return (count / 1000000).toFixed(1) + 'm';
-            } else if (count >= 1000) {
-                return (count / 1000).toFixed(1) + 'k';
-            } else {
-                return count.toString();
-            }
         }
 
         // Initial display
