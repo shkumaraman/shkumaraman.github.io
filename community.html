@@ -100,12 +100,6 @@
         .poll {
             margin-top: 10px;
         }
-
-        .reaction-count {
-            margin-left: 5px;
-            font-size: 12px;
-            color: #657786;
-        }
     </style>
 </head>
 <body>
@@ -124,13 +118,13 @@
     <script>
         const questionsAndAnswers = [];
 
-        function submitAnswer(qIndex, aIndex = -1) {
+        function submitAnswer(qIndex, aIndex = -1, rIndex = -1) {
             const answer = document.getElementById('newAnswer').value;
             if (answer && answer.trim() !== '') {
                 if (aIndex === -1) {
                     const reactions = {
-                        thumbsUp: { count: 0, reacted: false },
-                        thumbsDown: { count: 0, reacted: false },
+                        thumbsUp: 0,
+                        thumbsDown: 0,
                     };
                     questionsAndAnswers[qIndex].answers.push({
                         content: answer,
@@ -139,11 +133,17 @@
                         reactions,
                         replies: [],
                     });
-                } else {
+                } else if (rIndex === -1) {
                     questionsAndAnswers[qIndex].answers[aIndex].replies.push({
                         content: answer,
                         type: 'reply',
                         userIdentifier: 'User' + questionsAndAnswers[qIndex].answers[aIndex].replies.length,
+                    });
+                } else {
+                    questionsAndAnswers[qIndex].answers[aIndex].replies[rIndex].replies.push({
+                        content: answer,
+                        type: 'reply',
+                        userIdentifier: 'User' + questionsAndAnswers[qIndex].answers[aIndex].replies[rIndex].replies.length,
                     });
                 }
 
@@ -209,14 +209,20 @@
             }
         }
 
-        function react(qIndex, aIndex, reaction) {
-            const answer = questionsAndAnswers[qIndex].answers[aIndex];
-            if (answer.reactions[reaction].reacted) {
-                answer.reactions[reaction].count--;
+        function react(qIndex, aIndex, rIndex, reaction) {
+            let target;
+            if (rIndex === -1) {
+                target = aIndex === -1 ? questionsAndAnswers[qIndex] : questionsAndAnswers[qIndex].answers[aIndex];
             } else {
-                answer.reactions[reaction].count++;
+                target = questionsAndAnswers[qIndex].answers[aIndex].replies[rIndex];
             }
-            answer.reactions[reaction].reacted = !answer.reactions[reaction].reacted;
+
+            if (reaction === '👍') {
+                target.reactions.thumbsUp += 1;
+            } else if (reaction === '👎') {
+                target.reactions.thumbsDown += 1;
+            }
+
             displayQuestionsAndAnswers();
         }
 
@@ -266,10 +272,6 @@
                 qaElement.appendChild(contentElement);
                 qaElement.appendChild(userIdentifier);
 
-                if (qa.type === 'answer' && qa.parentIndex !== undefined) {
-                    contentElement.className = 'sub-answer';
-                }
-
                 const inputContainer = document.createElement('div');
                 inputContainer.className = 'input-container';
 
@@ -299,8 +301,8 @@
 
                 ['👍', '👎'].forEach(reaction => {
                     const reactionButton = document.createElement('button');
-                    reactionButton.innerText = reaction + ' ' + qa.reactions[reaction].count;
-                    reactionButton.onclick = () => react(qIndex, -1, reaction);
+                    reactionButton.innerText = qa.type === 'reply' ? '' : (qa.type === 'answer' ? qa.reactions[reaction === '👍' ? 'thumbsUp' : 'thumbsDown'] : 0);
+                    reactionButton.onclick = () => react(qIndex, -1, -1, reaction);
                     reactionsContainer.appendChild(reactionButton);
                 });
 
@@ -418,5 +420,4 @@
         displayQuestionsAndAnswers();
     </script>
 </body>
-    </html>
-    
+</html>
