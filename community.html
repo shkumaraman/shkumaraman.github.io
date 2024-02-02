@@ -24,7 +24,8 @@
         }
 
         .question,
-        .answer {
+        .answer,
+        .reply {
             font-size: 18px;
             font-weight: bold;
             margin-bottom: 5px;
@@ -79,19 +80,25 @@
             position: absolute;
             bottom: 5px;
             left: 5px;
-            font-size: 12px;
+            font-size: 10px;
             color: #657786;
         }
 
-        .sub-answer {
-            font-size: 14px;
-            margin-left: 20px;
-            color: #657786;
+        .reactions {
+            margin-top: 10px;
+            display: flex;
+            align-items: center;
         }
 
-        .reply-container {
-            margin-left: 40px;
-            margin-top: 5px;
+        .reactions button {
+            margin-right: 10px;
+            background-color: #ffffff;
+            border: none;
+            cursor: pointer;
+        }
+
+        .poll {
+            margin-top: 10px;
         }
     </style>
 </head>
@@ -112,13 +119,15 @@
         const questionsAndAnswers = [];
 
         function submitAnswer(qIndex, aIndex = -1) {
-            const answer = prompt('Type your answer:');
+            const answer = document.getElementById('newAnswer').value;
             if (answer && answer.trim() !== '') {
                 if (aIndex === -1) {
+                    const reactions = [];
                     questionsAndAnswers[qIndex].answers.push({
                         content: answer,
                         type: 'answer',
                         userIdentifier: 'User' + questionsAndAnswers[qIndex].answers.length,
+                        reactions,
                         replies: [],
                     });
                 } else {
@@ -191,16 +200,17 @@
             }
         }
 
-        function searchQuestions() {
-            const searchQuery = document.getElementById('searchQuery').value.toLowerCase();
-            const filteredQuestionsAndAnswers = questionsAndAnswers.filter(qa =>
-                qa.content.toLowerCase().includes(searchQuery) ||
-                qa.answers.some(answer =>
-                    answer.content.toLowerCase().includes(searchQuery) ||
-                    answer.replies.some(reply => reply.content.toLowerCase().includes(searchQuery))
-                )
-            );
-            displayQuestionsAndAnswers(filteredQuestionsAndAnswers);
+        function react(qIndex, aIndex, reaction) {
+            const answer = questionsAndAnswers[qIndex].answers[aIndex];
+            const existingReactionIndex = answer.reactions.findIndex(r => r === reaction);
+
+            if (existingReactionIndex === -1) {
+                answer.reactions.push(reaction);
+            } else {
+                answer.reactions.splice(existingReactionIndex, 1);
+            }
+
+            displayQuestionsAndAnswers();
         }
 
         function displayQuestionsAndAnswers(data = questionsAndAnswers) {
@@ -257,6 +267,7 @@
                 inputContainer.className = 'input-container';
 
                 const textarea = document.createElement('textarea');
+                textarea.id = 'newAnswer';
                 textarea.value = qa.newAnswer || '';
                 textarea.placeholder = 'Type your answer...';
                 textarea.oninput = (event) => {
@@ -275,6 +286,18 @@
 
                 inputContainer.appendChild(textarea);
                 inputContainer.appendChild(submitButton);
+
+                const reactionsContainer = document.createElement('div');
+                reactionsContainer.className = 'reactions';
+
+                ['👍', '👎', '❤️'].forEach(reaction => {
+                    const reactionButton = document.createElement('button');
+                    reactionButton.innerText = reaction;
+                    reactionButton.onclick = () => react(qIndex, -1, reaction);
+                    reactionsContainer.appendChild(reactionButton);
+                });
+
+                qaElement.appendChild(reactionsContainer);
 
                 qaElement.appendChild(contentElement);
                 qaElement.appendChild(userIdentifier);
@@ -313,50 +336,94 @@
                         answerElement.appendChild(subContentElement);
                         answerElement.appendChild(subUserIdentifier);
 
-                        if (answer.replies.length > 0) {
-                            const repliesContainer = document.createElement('div');
-                            repliesContainer.className = 'reply-container';
+                        const replyContainer = document.createElement('div');
+                        replyContainer.className = 'reply-container';
 
-                            answer.replies.forEach((reply, rIndex) => {
-                                const replyElement = document.createElement('div');
-                                replyElement.className = 'answer';
+                        answer.replies.forEach((reply, rIndex) => {
+                            const replyElement = document.createElement('div');
+                            replyElement.className = 'reply';
 
-                                const replyEditOptions = document.createElement('div');
-                                replyEditOptions.className = 'edit-options';
+                            const replyEditOptions = document.createElement('div');
+                            replyEditOptions.className = 'edit-options';
 
-                                const replyEditButton = document.createElement('button');
-                                replyEditButton.innerHTML = '<i class="fas fa-edit"></i>';
-                                replyEditButton.onclick = () => editReply(qIndex, aIndex, rIndex);
+                            const replyEditButton = document.createElement('button');
+                            replyEditButton.innerHTML = '<i class="fas fa-edit"></i>';
+                            replyEditButton.onclick = () => editReply(qIndex, aIndex, rIndex);
 
-                                const replyDeleteButton = document.createElement('button');
-                                replyDeleteButton.innerHTML = '<i class="fas fa-trash-alt"></i>';
-                                replyDeleteButton.onclick = () => deleteReply(qIndex, aIndex, rIndex);
+                            const replyDeleteButton = document.createElement('button');
+                            replyDeleteButton.innerHTML = '<i class="fas fa-trash-alt"></i>';
+                            replyDeleteButton.onclick = () => deleteReply(qIndex, aIndex, rIndex);
 
-                                replyEditOptions.appendChild(replyEditButton);
-                                replyEditOptions.appendChild(replyDeleteButton);
+                            replyEditOptions.appendChild(replyEditButton);
+                            replyEditOptions.appendChild(replyDeleteButton);
 
-                                replyElement.appendChild(replyEditOptions);
+                            replyElement.appendChild(replyEditOptions);
 
-                                const replyContentElement = document.createElement('span');
-                                replyContentElement.innerText = reply.content;
+                            const replyContentElement = document.createElement('span');
+                            replyContentElement.innerText = reply.content;
 
-                                const replyUserIdentifier = document.createElement('div');
-                                replyUserIdentifier.className = 'user-identifier';
-                                replyUserIdentifier.innerText = 'User: ' + (reply.userIdentifier || '');
+                            const replyUserIdentifier = document.createElement('div');
+                            replyUserIdentifier.className = 'user-identifier';
+                            replyUserIdentifier.innerText = 'User: ' + (reply.userIdentifier || '');
 
-                                replyElement.appendChild(replyContentElement);
-                                replyElement.appendChild(replyUserIdentifier);
+                            replyElement.appendChild(replyContentElement);
+                            replyElement.appendChild(replyUserIdentifier);
 
-                                repliesContainer.appendChild(replyElement);
-                            });
+                            replyContainer.appendChild(replyElement);
+                        });
 
-                            answerElement.appendChild(repliesContainer);
-                        }
+                        const replyInputContainer = document.createElement('div');
+                        replyInputContainer.className = 'input-container';
+
+                        const replyTextarea = document.createElement('textarea');
+                        replyTextarea.value = answer.newReply || '';
+                        replyTextarea.placeholder = 'Type your reply...';
+                        replyTextarea.oninput = (event) => {
+                            answer.newReply = event.target.value;
+                        };
+
+                        const replySubmitButton = document.createElement('button');
+                        replySubmitButton.innerText = 'Reply';
+                        replySubmitButton.onclick = () => {
+                            submitAnswer(qIndex, aIndex);
+                        };
+
+                        replyInputContainer.appendChild(replyTextarea);
+                        replyInputContainer.appendChild(replySubmitButton);
+
+                        answerElement.appendChild(subContentElement);
+                        answerElement.appendChild(subUserIdentifier);
+                        answerElement.appendChild(replyContainer);
+                        answerElement.appendChild(replyInputContainer);
 
                         answersContainer.appendChild(answerElement);
                     });
 
+                    const pollContainer = document.createElement('div');
+                    pollContainer.className = 'poll';
+
+                    const pollQuestion = document.createElement('span');
+                    pollQuestion.innerText = 'Create a Poll: ';
+
+                    const pollTextarea = document.createElement('textarea');
+                    pollTextarea.value = qa.newPoll || '';
+                    pollTextarea.placeholder = 'Enter Poll Question...';
+                    pollTextarea.oninput = (event) => {
+                        qa.newPoll = event.target.value;
+                    };
+
+                    const pollSubmitButton = document.createElement('button');
+                    pollSubmitButton.innerText = 'Create Poll';
+                    pollSubmitButton.onclick = () => {
+                        submitAnswer(qIndex);
+                    };
+
+                    pollContainer.appendChild(pollQuestion);
+                    pollContainer.appendChild(pollTextarea);
+                    pollContainer.appendChild(pollSubmitButton);
+
                     qaElement.appendChild(answersContainer);
+                    qaElement.appendChild(pollContainer);
                 }
 
                 container.appendChild(qaElement);
