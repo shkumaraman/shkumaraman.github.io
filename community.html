@@ -88,6 +88,11 @@
             margin-left: 20px;
             color: #657786;
         }
+
+        .reply-container {
+            margin-left: 40px;
+            margin-top: 5px;
+        }
     </style>
 </head>
 <body>
@@ -106,14 +111,24 @@
     <script>
         const questionsAndAnswers = [];
 
-        function submitAnswer(qIndex) {
+        function submitAnswer(qIndex, aIndex = -1) {
             const answer = prompt('Type your answer:');
             if (answer && answer.trim() !== '') {
-                questionsAndAnswers[qIndex].answers.push({
-                    content: answer,
-                    type: 'answer',
-                    userIdentifier: 'User' + questionsAndAnswers[qIndex].answers.length,
-                });
+                if (aIndex === -1) {
+                    questionsAndAnswers[qIndex].answers.push({
+                        content: answer,
+                        type: 'answer',
+                        userIdentifier: 'User' + questionsAndAnswers[qIndex].answers.length,
+                        replies: [],
+                    });
+                } else {
+                    questionsAndAnswers[qIndex].answers[aIndex].replies.push({
+                        content: answer,
+                        type: 'reply',
+                        userIdentifier: 'User' + questionsAndAnswers[qIndex].answers[aIndex].replies.length,
+                    });
+                }
+
                 displayQuestionsAndAnswers();
             }
         }
@@ -161,11 +176,29 @@
             }
         }
 
+        function editReply(qIndex, aIndex, rIndex) {
+            const newContent = prompt('Edit your reply:', questionsAndAnswers[qIndex].answers[aIndex].replies[rIndex].content);
+            if (newContent !== null) {
+                questionsAndAnswers[qIndex].answers[aIndex].replies[rIndex].content = newContent;
+                displayQuestionsAndAnswers();
+            }
+        }
+
+        function deleteReply(qIndex, aIndex, rIndex) {
+            if (confirm('Are you sure you want to delete this reply?')) {
+                questionsAndAnswers[qIndex].answers[aIndex].replies.splice(rIndex, 1);
+                displayQuestionsAndAnswers();
+            }
+        }
+
         function searchQuestions() {
             const searchQuery = document.getElementById('searchQuery').value.toLowerCase();
             const filteredQuestionsAndAnswers = questionsAndAnswers.filter(qa =>
                 qa.content.toLowerCase().includes(searchQuery) ||
-                qa.answers.some(answer => answer.content.toLowerCase().includes(searchQuery))
+                qa.answers.some(answer =>
+                    answer.content.toLowerCase().includes(searchQuery) ||
+                    answer.replies.some(reply => reply.content.toLowerCase().includes(searchQuery))
+                )
             );
             displayQuestionsAndAnswers(filteredQuestionsAndAnswers);
         }
@@ -273,7 +306,52 @@
                         const subContentElement = document.createElement('span');
                         subContentElement.innerText = answer.content;
 
+                        const subUserIdentifier = document.createElement('div');
+                        subUserIdentifier.className = 'user-identifier';
+                        subUserIdentifier.innerText = 'User: ' + (answer.userIdentifier || '');
+
                         answerElement.appendChild(subContentElement);
+                        answerElement.appendChild(subUserIdentifier);
+
+                        if (answer.replies.length > 0) {
+                            const repliesContainer = document.createElement('div');
+                            repliesContainer.className = 'reply-container';
+
+                            answer.replies.forEach((reply, rIndex) => {
+                                const replyElement = document.createElement('div');
+                                replyElement.className = 'answer';
+
+                                const replyEditOptions = document.createElement('div');
+                                replyEditOptions.className = 'edit-options';
+
+                                const replyEditButton = document.createElement('button');
+                                replyEditButton.innerHTML = '<i class="fas fa-edit"></i>';
+                                replyEditButton.onclick = () => editReply(qIndex, aIndex, rIndex);
+
+                                const replyDeleteButton = document.createElement('button');
+                                replyDeleteButton.innerHTML = '<i class="fas fa-trash-alt"></i>';
+                                replyDeleteButton.onclick = () => deleteReply(qIndex, aIndex, rIndex);
+
+                                replyEditOptions.appendChild(replyEditButton);
+                                replyEditOptions.appendChild(replyDeleteButton);
+
+                                replyElement.appendChild(replyEditOptions);
+
+                                const replyContentElement = document.createElement('span');
+                                replyContentElement.innerText = reply.content;
+
+                                const replyUserIdentifier = document.createElement('div');
+                                replyUserIdentifier.className = 'user-identifier';
+                                replyUserIdentifier.innerText = 'User: ' + (reply.userIdentifier || '');
+
+                                replyElement.appendChild(replyContentElement);
+                                replyElement.appendChild(replyUserIdentifier);
+
+                                repliesContainer.appendChild(replyElement);
+                            });
+
+                            answerElement.appendChild(repliesContainer);
+                        }
 
                         answersContainer.appendChild(answerElement);
                     });
