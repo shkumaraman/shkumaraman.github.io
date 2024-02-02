@@ -17,21 +17,76 @@
             margin: auto;
         }
 
-        .question,
+        .search-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+
+        .question {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 5px;
+            background-color: #ffffff;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #e1e8ed;
+            color: #14171a;
+            position: relative;
+        }
+
         .answer {
+            background-color: #ffffff;
+            border: 1px solid #e1e8ed;
+            border-radius: 8px;
+            padding: 10px;
+            margin-bottom: 10px;
             font-size: 16px;
+            color: #14171a;
+            position: relative;
+        }
+
+        .input-container {
+            display: flex;
+            align-items: flex-end;
+            margin-top: 10px;
+        }
+
+        textarea {
+            width: 70%;
+            padding: 8px;
+            margin-right: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+
+        button {
+            background-color: #1da1f2;
+            color: #ffffff;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .ask-question {
+            display: flex;
+            justify-content: space-between;
             background-color: #ffffff;
             padding: 10px;
             border-radius: 8px;
             border: 1px solid #e1e8ed;
             margin-bottom: 10px;
-            position: relative;
         }
 
         .edit-options {
             position: absolute;
             top: 5px;
             right: 5px;
+            display: flex;
+            align-items: center;
         }
 
         .edit-options button {
@@ -45,77 +100,132 @@
             font-size: 12px;
             color: #657786;
         }
-
-        .search-bar {
-            position: fixed;
-            top: 0;
-            left: 50%;
-            transform: translateX(-50%);
-            background-color: #ffffff;
-            padding: 10px;
-            border-radius: 8px;
-            border: 1px solid #e1e8ed;
-            width: 80%;
-        }
     </style>
 </head>
 <body>
     <div id="app">
         <div class="search-bar">
-            <input id="searchInput" placeholder="Search Questions..." oninput="searchQuestions()" />
+            <input v-model="searchQuery" placeholder="Search Questions" />
+            <button @click="searchQuestions"><i class="fas fa-search"></i> Search</button>
         </div>
-        <div id="questionsContainer"></div>
+
+        <div v-for="(qa, index) in displayedQuestionsAndAnswers" :key="index" class="question">
+            <div class="edit-options">
+                <button v-if="qa.type === 'question'" @click="editQuestion(index)"><i class="fas fa-edit"></i> Edit</button>
+                <button v-if="qa.type === 'question'" @click="deleteQuestion(index)"><i class="fas fa-trash-alt"></i> Delete</button>
+                <button v-if="qa.type === 'answer'" @click="editAnswer(index)"><i class="fas fa-edit"></i> Edit</button>
+                <button v-if="qa.type === 'answer'" @click="deleteAnswer(index)"><i class="fas fa-trash-alt"></i> Delete</button>
+            </div>
+            <span v-if="qa.editing">
+                <textarea v-model="qa.content" placeholder="Edit your {{ qa.type }}..."></textarea>
+                <button @click="saveEdit(index)">Save</button>
+            </span>
+            <span v-else>{{ qa.content }}</span>
+            <div class="user-identifier" v-if="qa.type === 'answer'">User: {{ qa.userIdentifier }}</div>
+            <div class="input-container" v-if="qa.type === 'answer'">
+                <textarea v-model="qa.newAnswer" placeholder="Type your answer..."></textarea>
+                <button @click="submitAnswer(index)">Submit Answer</button>
+            </div>
+        </div>
 
         <div class="ask-question">
-            <textarea id="newQuestion" placeholder="Ask a Question..."></textarea>
-            <button onclick="submitQuestion()">Submit Question</button>
+            <textarea v-model="newQuestion" placeholder="Ask a Question..."></textarea>
+            <button @click="submitQuestion">Submit Question</button>
         </div>
     </div>
-<script src="https://www.gstatic.com/firebasejs/9.0.2/firebase-app.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.0.2/firebase-database.js"></script>
 
-<script>
-  const firebaseConfig = {
-  apiKey: "AIzaSyDJBDX8TQi0wUBm7NYca42wq8Jk_t_w2Z4",
-  authDomain: "community-ce63b.firebaseapp.com",
-  databaseURL: "https://community-ce63b-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "community-ce63b",
-  storageBucket: "community-ce63b.appspot.com",
-  messagingSenderId: "606470613232",
-  appId: "1:606470613232:web:657f5e8378573f9f293a35",
-  measurementId: "G-00WYM2DQWX"
-};
-  firebase.initializeApp(firebaseConfig);
-  const database = firebase.database();
+    <script src="https://cdn.jsdelivr.net/npm/vue@2"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.0.2/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.0.2/firebase-database.js"></script>
+    <script>
+        const firebaseConfig = {
+            apiKey: 'YOUR_API_KEY',
+            authDomain: 'YOUR_AUTH_DOMAIN',
+            projectId: 'YOUR_PROJECT_ID',
+            storageBucket: 'YOUR_STORAGE_BUCKET',
+            messagingSenderId: 'YOUR_MESSAGING_SENDER_ID',
+            appId: 'YOUR_APP_ID',
+        };
 
-  function renderQuestions(questions) {
-    const questionsContainer = document.getElementById('questionsContainer');
-    questionsContainer.innerHTML = '';
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
 
-    questions.forEach(question => {
-      const questionDiv = document.createElement('div');
-      questionDiv.textContent = question.content;
-      questionsContainer.appendChild(questionDiv);
-    });
-  }
-
-  function submitQuestion() {
-    const newQuestionInput = document.getElementById('newQuestion');
-    const newQuestion = newQuestionInput.value.trim();
-
-    if (newQuestion !== '') {
-      const newQuestionObject = { content: newQuestion };
-      database.ref('questions').push(newQuestionObject);
-      newQuestionInput.value = '';
-    }
-  }
-
-  database.ref('questions').on('value', (snapshot) => {
-    const data = snapshot.val();
-    const questionsArray = data ? Object.values(data) : [];
-    renderQuestions(questionsArray);
-  });
-</script>
-
+        new Vue({
+            el: '#app',
+            data: {
+                questionsAndAnswers: [],
+                newQuestion: '',
+                searchQuery: '',
+            },
+            computed: {
+                displayedQuestionsAndAnswers() {
+                    if (this.searchQuery === '') {
+                        return this.questionsAndAnswers;
+                    } else {
+                        const query = this.searchQuery.toLowerCase();
+                        return this.questionsAndAnswers.filter(qa => qa.content.toLowerCase().includes(query));
+                    }
+                }
+            },
+            methods: {
+                submitAnswer(qIndex) {
+                    const answer = this.questionsAndAnswers[qIndex].newAnswer.trim();
+                    if (answer !== '') {
+                        this.questionsAndAnswers[qIndex].answers.push({
+                            content: answer,
+                            type: 'answer',
+                            editing: false,
+                            userIdentifier: 'User' + this.questionsAndAnswers[qIndex].answers.length, // Replace with actual user identification
+                        });
+                        this.questionsAndAnswers[qIndex].newAnswer = '';
+                        this.saveData();
+                    }
+                },
+                submitQuestion() {
+                    const question = this.newQuestion.trim();
+                    if (question !== '') {
+                        this.questionsAndAnswers.push({ content: question, answers: [], newAnswer: '', type: 'question', editing: false });
+                        this.newQuestion = '';
+                        this.saveData();
+                    }
+                },
+                editQuestion(qIndex) {
+                    this.questionsAndAnswers[qIndex].editing = true;
+                },
+                saveEdit(qIndex) {
+                    this.questionsAndAnswers[qIndex].editing = false;
+                    this.saveData();
+                },
+                deleteQuestion(qIndex) {
+                    this.questionsAndAnswers.splice(qIndex, 1);
+                    this.saveData();
+                },
+                editAnswer(qIndex) {
+                    this.questionsAndAnswers[qIndex].editing = true;
+                },
+                deleteAnswer(qIndex) {
+                    this.questionsAndAnswers[qIndex].answers.splice(qIndex, 1);
+                    this.saveData();
+                },
+                searchQuestions() {
+                    // Perform search if needed
+                    // You can extend this function based on your requirements
+                },
+                saveData() {
+                    // Save data to Firebase
+                    database.ref('qna').set(this.questionsAndAnswers);
+                },
+            },
+            mounted() {
+                // Load data from Firebase on component mount
+                database.ref('qna').on('value', (snapshot) => {
+                    const data = snapshot.val();
+                    if (data) {
+                        this.questionsAndAnswers = data;
+                    }
+                });
+            },
+        });
+    </script>
 </body>
 </html>
