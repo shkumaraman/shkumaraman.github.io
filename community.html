@@ -96,8 +96,8 @@
             <button @click="searchQuestions">Search</button>
         </div>
         <div class="ask-question">
-                <textarea v-model="newQuestion" placeholder="Ask a Question..."></textarea>
-                <button @click="submitQuestion">Ask</button>
+            <textarea v-model="newQuestion" placeholder="Ask a Question..."></textarea>
+            <button @click="submitQuestion">Ask</button>
         </div>
         <div v-for="(qa, index) in displayedQuestionsAndAnswers" :key="index" class="question">
             <div class="edit-options">
@@ -116,6 +116,12 @@
                 <textarea v-model="qa.newAnswer" placeholder="Type your answer..."></textarea>
                 <button @click="submitAnswer(index)">Answer</button>
             </div>
+            
+            <!-- Display answers for each question -->
+            <div v-for="(answer, answerIndex) in qa.answers" :key="answerIndex" class="answer">
+                {{ answer.content }}
+                <div class="user-identifier">User: {{ answer.userIdentifier }}</div>
+            </div>
         </div>
     </div>
 
@@ -123,14 +129,16 @@
     <script src="https://www.gstatic.com/firebasejs/9.0.2/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.0.2/firebase-database.js"></script>
     <script>
-            const firebaseConfig = {
-                apiKey: "AIzaSyD0h3tnkshN4rjSA9Iju08ntGJ72SM2LlY",
-                authDomain: "fir-3d4fe.firebaseapp.com",
-                projectId: "fir-3d4fe",
-                storageBucket: "fir-3d4fe.appspot.com",
-                messagingSenderId: "1055090212601",
-                appId: "1:1055090212601:web:26a02d69edade66cf0ac28"
-            };
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY",
+            authDomain: "YOUR_AUTH_DOMAIN",
+            databaseURL: "YOUR_DATABASE_URL",
+            projectId: "YOUR_PROJECT_ID",
+            storageBucket: "YOUR_STORAGE_BUCKET",
+            messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+            appId: "YOUR_APP_ID",
+            measurementId: "YOUR_MEASUREMENT_ID"
+        };
 
         firebase.initializeApp(firebaseConfig);
         const database = firebase.database();
@@ -156,65 +164,37 @@
                 submitAnswer(qIndex) {
                     const answer = this.questionsAndAnswers[qIndex].newAnswer.trim();
                     if (answer !== '') {
+                        const userIdentifier = 'User' + this.questionsAndAnswers[qIndex].answers.length;
+
                         this.questionsAndAnswers[qIndex].answers.push({
                             content: answer,
                             type: 'answer',
                             editing: false,
-                            userIdentifier: 'User' + this.questionsAndAnswers[qIndex].answers.length, // Replace with actual user identification
+                            userIdentifier: userIdentifier,
                         });
+
+                        // Save data to Firebase under 'qna' folder
+                        database.ref('qna').set(this.questionsAndAnswers)
+                            .then(() => console.log('Data saved to Firebase'))
+                            .catch(error => console.error('Error saving data to Firebase:', error));
+
                         this.questionsAndAnswers[qIndex].newAnswer = '';
-                        this.saveData();
                     }
                 },
                 submitQuestion() {
                     const question = this.newQuestion.trim();
                     if (question !== '') {
                         this.questionsAndAnswers.push({ content: question, answers: [], newAnswer: '', type: 'question', editing: false });
+                        
+                        // Save data to Firebase under 'qna' folder
+                        database.ref('qna').set(this.questionsAndAnswers)
+                            .then(() => console.log('Data saved to Firebase'))
+                            .catch(error => console.error('Error saving data to Firebase:', error));
+
                         this.newQuestion = '';
-                        this.saveData();
                     }
                 },
-                editQuestion(qIndex) {
-                    this.questionsAndAnswers[qIndex].editing = true;
-                },
-                saveEdit(qIndex) {
-                    this.questionsAndAnswers[qIndex].editing = false;
-                    this.saveData();
-                },
-                deleteQuestion(qIndex) {
-                    this.questionsAndAnswers.splice(qIndex, 1);
-                    this.saveData();
-                },
-                editAnswer(qIndex) {
-                    this.questionsAndAnswers[qIndex].editing = true;
-                },
-                deleteAnswer(qIndex) {
-                    this.questionsAndAnswers[qIndex].answers.pop();
-                    this.saveData();
-                },
-                searchQuestions() {
-                    // You can implement search logic if needed
-                    // For now, it's a simple text search
-                },
-                saveData() {
-                    // Save data to Firebase under 'qna' folder
-                    database.ref('qna').set(this.questionsAndAnswers)
-                        .then(() => console.log('Data saved to Firebase'))
-                        .catch(error => console.error('Error saving data to Firebase:', error));
-                },
-                fetchData() {
-                    // Fetch data from Firebase under 'qna' folder
-                    database.ref('qna').on('value', (snapshot) => {
-                        const data = snapshot.val();
-                        console.log('Firebase Data:', data);
-
-                        if (data) {
-                            this.questionsAndAnswers = data;
-                        }
-                    }, (error) => {
-                        console.error('Error fetching data from Firebase:', error);
-                    });
-                },
+                // ... (your existing methods)
             },
             mounted() {
                 // Load data from Firebase on component mount
