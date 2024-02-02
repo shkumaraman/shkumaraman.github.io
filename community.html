@@ -12,11 +12,6 @@
             margin: 10px;
         }
 
-        #app {
-            max-width: 600px;
-            margin: auto;
-        }
-
         .search-bar,
         .ask-question {
             display: flex;
@@ -60,8 +55,8 @@
             background-color: #1da1f2;
             color: #ffffff;
             border: none;
-            height: 30px;
-            width: 30px;
+            height: 50px;
+            width: 100px;
             border-radius: 4px;
             cursor: pointer;
         }
@@ -76,6 +71,8 @@
 
         .edit-options button {
             margin-left: 5px;
+            height: 30px;
+            width: 30px;
         }
 
         .user-identifier {
@@ -90,135 +87,155 @@
 <body>
     <div id="app">
         <div class="search-bar">
-            <textarea v-model="searchQuery" placeholder="Search Questions..." class="search-textarea"></textarea>
-            <button @click="searchQuestions">Search</button>
+            <textarea id="searchQuery" placeholder="Search Questions..." class="search-textarea"></textarea>
+            <button onclick="searchQuestions()">Search</button>
         </div>
         <div class="ask-question">
-                <textarea v-model="newQuestion" placeholder="Ask a Question..."></textarea>
-                <button @click="submitQuestion">Ask</button>
+            <textarea id="newQuestion" placeholder="Ask a Question..."></textarea>
+            <button onclick="submitQuestion()">Ask</button>
         </div>
-        <div v-for="(qa, index) in displayedQuestionsAndAnswers" :key="index" class="question">
-            <div class="edit-options">
-                <button v-if="qa.type === 'question' && !qa.editing" @click="editQuestion(index)"><i class="fas fa-edit"></i></button>
-                <button v-if="qa.type === 'question' && !qa.editing" @click="deleteQuestion(index)"><i class="fas fa-trash-alt"></i></button>
-                <button v-if="qa.type === 'question' && qa.editing" @click="saveEdit(index)"><i class="fa-solid fa-check"></i></button>
-                <button v-if="qa.type === 'answer' && !qa.editing" @click="editAnswer(index)"><i class="fas fa-edit"></i></button>
-                <button v-if="qa.type === 'answer' && !qa.editing" @click="deleteAnswer(index)"><i class="fas fa-trash-alt"></i></button>
-            </div>
-            <span v-if="qa.editing">
-                <textarea v-model="qa.content" placeholder="Edit your {{ qa.type }}..."></textarea>
-            </span>
-            <span v-else>{{ qa.content }}</span>
-            <div class="user-identifier" v-if="qa.type === 'answer'">User: {{ qa.userIdentifier }}</div>
-            <div class="input-container" v-if="qa.type === 'answer' && !qa.editing">
-                <textarea v-model="qa.newAnswer" placeholder="Type your answer..."></textarea>
-                <button @click="submitAnswer(index)">Answer</button>
-            </div>
-        </div>
+        <div id="questionsAndAnswers"></div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/vue@2"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.0.2/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.0.2/firebase-database.js"></script>
     <script>
-        const firebaseConfig = {
-            apiKey: 'YOUR_API_KEY',
-            authDomain: 'YOUR_AUTH_DOMAIN',
-            projectId: 'YOUR_PROJECT_ID',
-            storageBucket: 'YOUR_STORAGE_BUCKET',
-            messagingSenderId: 'YOUR_MESSAGING_SENDER_ID',
-            appId: 'YOUR_APP_ID',
-        };
+        const questionsAndAnswers = [];
 
-        firebase.initializeApp(firebaseConfig);
-        const database = firebase.database();
+        function submitAnswer(qIndex) {
+            const answer = prompt('Type your answer:');
+            if (answer && answer.trim() !== '') {
+                questionsAndAnswers[qIndex].answers.push({
+                    content: answer,
+                    type: 'answer',
+                    userIdentifier: 'User' + questionsAndAnswers[qIndex].answers.length,
+                });
+                displayQuestionsAndAnswers();
+            }
+        }
 
-        new Vue({
-            el: '#app',
-            data: {
-                questionsAndAnswers: [],
-                newQuestion: '',
-                searchQuery: '',
-            },
-            computed: {
-                displayedQuestionsAndAnswers() {
-                    if (this.searchQuery === '') {
-                        return this.questionsAndAnswers;
+        function submitQuestion() {
+            const question = document.getElementById('newQuestion').value;
+            if (question && question.trim() !== '') {
+                questionsAndAnswers.push({ content: question, answers: [], type: 'question' });
+                document.getElementById('newQuestion').value = '';
+                displayQuestionsAndAnswers();
+            }
+        }
+
+        function editQuestion(qIndex) {
+            const newContent = prompt('Edit your question:', questionsAndAnswers[qIndex].content);
+            if (newContent !== null) {
+                questionsAndAnswers[qIndex].content = newContent;
+                displayQuestionsAndAnswers();
+            }
+        }
+
+        function saveEdit(qIndex) {
+            displayQuestionsAndAnswers();
+        }
+
+        function deleteQuestion(qIndex) {
+            if (confirm('Are you sure you want to delete this question?')) {
+                questionsAndAnswers.splice(qIndex, 1);
+                displayQuestionsAndAnswers();
+            }
+        }
+
+        function editAnswer(qIndex) {
+            const newContent = prompt('Edit your answer:', questionsAndAnswers[qIndex].content);
+            if (newContent !== null) {
+                questionsAndAnswers[qIndex].content = newContent;
+                displayQuestionsAndAnswers();
+            }
+        }
+
+        function deleteAnswer(qIndex) {
+            if (confirm('Are you sure you want to delete this answer?')) {
+                questionsAndAnswers[qIndex].answers.pop();
+                displayQuestionsAndAnswers();
+            }
+        }
+
+        function searchQuestions() {
+            const searchQuery = document.getElementById('searchQuery').value.toLowerCase();
+            const filteredQuestionsAndAnswers = questionsAndAnswers.filter(qa =>
+                qa.content.toLowerCase().includes(searchQuery) ||
+                qa.answers.some(answer => answer.content.toLowerCase().includes(searchQuery))
+            );
+            displayQuestionsAndAnswers(filteredQuestionsAndAnswers);
+        }
+
+        function displayQuestionsAndAnswers(data = questionsAndAnswers) {
+            const container = document.getElementById('questionsAndAnswers');
+            container.innerHTML = '';
+
+            data.forEach((qa, index) => {
+                const qaElement = document.createElement('div');
+                qaElement.className = qa.type;
+
+                const editOptions = document.createElement('div');
+                editOptions.className = 'edit-options';
+
+                const editButton = document.createElement('button');
+                editButton.innerHTML = '<i class="fas fa-edit"></i>';
+                editButton.onclick = () => {
+                    if (qa.type === 'question') {
+                        editQuestion(index);
                     } else {
-                        const query = this.searchQuery.toLowerCase();
-                        return this.questionsAndAnswers.filter(qa => qa.content.toLowerCase().includes(query));
+                        editAnswer(index);
                     }
-                }
-            },
-            methods: {
-                submitAnswer(qIndex) {
-                    const answer = this.questionsAndAnswers[qIndex].newAnswer.trim();
-                    if (answer !== '') {
-                        this.questionsAndAnswers[qIndex].answers.push({
-                            content: answer,
-                            type: 'answer',
-                            editing: false,
-                            userIdentifier: 'User' + this.questionsAndAnswers[qIndex].answers.length, // Replace with actual user identification
-                        });
-                        this.questionsAndAnswers[qIndex].newAnswer = '';
-                        this.saveData();
-                    }
-                },
-                submitQuestion() {
-                    const question = this.newQuestion.trim();
-                    if (question !== '') {
-                        this.questionsAndAnswers.push({ content: question, answers: [], newAnswer: '', type: 'question', editing: false });
-                        this.newQuestion = '';
-                        this.saveData();
-                    }
-                },
-                editQuestion(qIndex) {
-                    this.questionsAndAnswers[qIndex].editing = true;
-                },
-                saveEdit(qIndex) {
-                    this.questionsAndAnswers[qIndex].editing = false;
-                    this.saveData();
-                },
-                deleteQuestion(qIndex) {
-                    this.questionsAndAnswers.splice(qIndex, 1);
-                    this.saveData();
-                },
-                editAnswer(qIndex) {
-                    this.questionsAndAnswers[qIndex].editing = true;
-                },
-                deleteAnswer(qIndex) {
-                    this.questionsAndAnswers[qIndex].answers.pop();
-                    this.saveData();
-                },
-                searchQuestions() {
-                    // You can implement search logic if needed
-                    // For now, it's a simple text search
-                },
-                saveData() {
-                    // Save data to Firebase under 'qna' folder
-                    database.ref('qna').set(this.questionsAndAnswers)
-                        .then(() => console.log('Data saved to Firebase'))
-                        .catch(error => console.error('Error saving data to Firebase:', error));
-                },
-                fetchData() {
-                    // Fetch data from Firebase under 'qna' folder
-                    database.ref('qna').on('value', (snapshot) => {
-                        const data = snapshot.val();
-                        console.log('Firebase Data:', data);
+                };
 
-                        if (data) {
-                            this.questionsAndAnswers = data;
-                        }
-                    }, (error) => {
-                        console.error('Error fetching data from Firebase:', error);
-                    });
-                },
-            },
-            mounted() {
-                // Load data from Firebase on component mount
-                this.fetchData();
-            },
-        });
+                const deleteButton = document.createElement('button');
+                deleteButton.innerHTML = '<i class="fas fa-trash-alt"></i>';
+                deleteButton.onclick = () => {
+                    if (qa.type === 'question') {
+                        deleteQuestion(index);
+                    } else {
+                        deleteAnswer(index);
+                    }
+                };
+
+                editOptions.appendChild(editButton);
+                editOptions.appendChild(deleteButton);
+
+                qaElement.appendChild(editOptions);
+
+                const contentElement = document.createElement('span');
+                contentElement.innerText = qa.content;
+
+                if (qa.type === 'answer') {
+                    const userIdentifier = document.createElement('div');
+                    userIdentifier.className = 'user-identifier';
+                    userIdentifier.innerText = 'User: ' + qa.userIdentifier;
+                    qaElement.appendChild(userIdentifier);
+                }
+
+                const inputContainer = document.createElement('div');
+                inputContainer.className = 'input-container';
+
+                const textarea = document.createElement('textarea');
+                textarea.value = qa.newAnswer || '';
+                textarea.placeholder = 'Type your answer...';
+                textarea.oninput = (event) => {
+                    qa.newAnswer = event.target.value;
+                };
+
+                const submitButton = document.createElement('button');
+                submitButton.innerText = 'Answer';
+                submitButton.onclick = () => submitAnswer(index);
+
+                inputContainer.appendChild(textarea);
+                inputContainer.appendChild(submitButton);
+
+                qaElement.appendChild(contentElement);
+                qaElement.appendChild(inputContainer);
+
+                container.appendChild(qaElement);
+            });
+        }
+
+        // Initial display
+        displayQuestionsAndAnswers();
     </script>
 </body>
 </html>
