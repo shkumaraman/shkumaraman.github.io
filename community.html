@@ -3,139 +3,130 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Facebook Comment System</title>
+  <title>Comment System</title>
   <style>
-.comment-system {
-  border: 1px solid #ccc;
-  padding: 10px;
-}
+    body {
+      font-family: Arial, sans-serif;
+    }
 
-.comment {
-  margin-bottom: 10px;
-}
+    #comments-container {
+      margin-top: 20px;
+    }
 
-.comment-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
+    .comment {
+      border: 1px solid #ccc;
+      margin-bottom: 10px;
+      padding: 10px;
+    }
 
-.comment-author {
-  font-weight: bold;
-}
+    .comment textarea {
+      width: 100%;
+      margin-bottom: 5px;
+    }
 
-.comment-timestamp {
-  font-size: 12px;
-  color: #ccc;
-}
+    .comment .user {
+      font-weight: bold;
+    }
 
-.comment-body {
-  margin-top: 5px;
-}
+    .comment .timestamp {
+      color: #888;
+      font-size: 12px;
+    }
 
-.comment-actions {
-  margin-top: 5px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.comment-reply-button {
-  margin-right: 10px;
-}
-
-.comment-mention-button {
-  margin-left: 10px;
-}
-
-.comment-reply {
-  margin-left: 20px;
-}
-    
-</style>
+    #comment-form {
+      margin-top: 20px;
+    }
+  </style>
 </head>
 <body>
-  <div class="comment-system">
-    <div class="comment">
-      <div class="comment-header">
-        <div class="comment-author">
-          #001
-        </div>
-        <div class="comment-timestamp">
-          1 minute ago
-        </div>
-      </div>
-      <div class="comment-body">
-        This is a comment.
-      </div>
-      <div class="comment-actions">
-        <button class="comment-reply-button">Reply</button>
-        <button class="comment-mention-button">Mention</button>
-      </div>
-    </div>
-    <div class="comment-reply">
-      <div class="comment-header">
-        <div class="comment-author">
-          #002
-        </div>
-        <div class="comment-timestamp">
-          30 seconds ago
-        </div>
-      </div>
-      <div class="comment-body">
-        This is a reply to the comment.
-      </div>
-      <div class="comment-actions">
-        <button class="comment-reply-button">Reply</button>
-        <button class="comment-mention-button">Mention</button>
-      </div>
-    </div>
-  </div>
-  <script>
-    const commentSystem = document.querySelector('.comment-system');
 
-const commentReplyButtons = commentSystem.querySelectorAll('.comment-reply-button');
+<div id="comments-container"></div>
 
-for (const commentReplyButton of commentReplyButtons) {
-  commentReplyButton.addEventListener('click', () => {
-    // Add a new comment reply form below the comment.
-  });
-}
+<!-- Form to add comments -->
+<div id="comment-form">
+  <textarea id="comment-text" placeholder="Write a comment..."></textarea>
+  <button onclick="postComment()">Post</button>
+</div>
 
-const commentMentionButtons = commentSystem.querySelectorAll('.comment-mention-button');
+<script src="https://www.gstatic.com/firebasejs/9.6.2/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.6.2/firebase-firestore.js"></script>
+<script>
+  const firebaseConfig = {
+    apiKey: 'YOUR_API_KEY',
+    authDomain: 'YOUR_AUTH_DOMAIN',
+    projectId: 'YOUR_PROJECT_ID',
+    storageBucket: 'YOUR_STORAGE_BUCKET',
+    messagingSenderId: 'YOUR_MESSAGING_SENDER_ID',
+    appId: 'YOUR_APP_ID'
+  };
 
-for (const commentMentionButton of commentMentionButtons) {
-  commentMentionButton.addEventListener('click', () => {
-    // Open a modal window where the user can select a user to mention.
-  });
-}
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
 
-// Connect to Firebase.
+  function postComment() {
+    const commentText = document.getElementById('comment-text').value;
 
-const firebase = firebase.initializeApp({
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_AUTH_DOMAIN",
-  databaseURL: "YOUR_DATABASE_URL",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_STORAGE_BUCKET",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID"
-});
+    if (commentText.trim() !== '') {
+      const comment = {
+        text: commentText,
+        user: 'User#' + generateUserId(), // Replace with actual user authentication
+        timestamp: new Date()
+      };
 
-// Get the current user's ID.
+      db.collection('comments').add(comment)
+        .then(() => {
+          document.getElementById('comment-text').value = '';
+          loadComments();
+        })
+        .catch(error => console.error('Error adding comment: ', error));
+    }
+  }
 
-const currentUser = firebase.auth().currentUser;
+  function generateUserId() {
+    // Replace this with your logic for generating user IDs
+    return Math.floor(Math.random() * 1000);
+  }
 
-// Listen for new comments.
+  function loadComments() {
+    const commentsContainer = document.getElementById('comments-container');
+    commentsContainer.innerHTML = '';
 
-firebase.database().ref('comments').on('child_added', (snapshot) => {
-  // Add a new comment to the comment system.
-});
+    db.collection('comments').orderBy('timestamp', 'desc').get()
+      .then(querySnapshot => {
+        querySnapshot.forEach(doc => {
+          const commentData = doc.data();
+          const commentElement = createCommentElement(commentData);
+          commentsContainer.appendChild(commentElement);
+        });
+      })
+      .catch(error => console.error('Error getting comments: ', error));
+  }
 
-// Listen for new comment replies.
+  function createCommentElement(commentData) {
+    const commentDiv = document.createElement('div');
+    commentDiv.className = 'comment';
 
-firebase.database().ref('commentReplies').
-                                       
-  </script>
+    const userSpan = document.createElement('span');
+    userSpan.className = 'user';
+    userSpan.textContent = commentData.user;
+
+    const timestampSpan = document.createElement('span');
+    timestampSpan.className = 'timestamp';
+    timestampSpan.textContent = commentData.timestamp.toDate().toLocaleString();
+
+    const textParagraph = document.createElement('p');
+    textParagraph.textContent = commentData.text;
+
+    commentDiv.appendChild(userSpan);
+    commentDiv.appendChild(timestampSpan);
+    commentDiv.appendChild(textParagraph);
+
+    return commentDiv;
+  }
+
+  // Initial load
+  loadComments();
+</script>
+
 </body>
 </html>
