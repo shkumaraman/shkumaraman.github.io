@@ -2,18 +2,17 @@
 
 // Replace with your Firebase configuration
 const firebaseConfig = {
-    apiKey: "YOUR_API_KEY",
-    authDomain: "YOUR_AUTH_DOMAIN",
-    databaseURL: "YOUR_DATABASE_URL",
-    projectId: "YOUR_PROJECT_ID",
-    storageBucket: "YOUR_STORAGE_BUCKET",
-    messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-    appId: "YOUR_APP_ID"
+    apiKey: "AIzaSyBtYxPpS_Nl4uXVUHIYglGgw5NC8vYr7mo",
+  authDomain: "chat-a1f20.firebaseapp.com",
+  projectId: "chat-a1f20",
+  storageBucket: "chat-a1f20.appspot.com",
+  messagingSenderId: "462806461629",
+  appId: "1:462806461629:web:ed02a01b6d3806fef15bd4",
+  measurementId: "G-0EXE84FWPZ"
 };
 
 firebase.initializeApp(firebaseConfig);
 const database = firebase.database();
-// app.js continued
 
 const chatMessages = document.getElementById('chat-messages');
 const messageInput = document.getElementById('message-input');
@@ -34,3 +33,4 @@ database.ref('messages').on('child_added', (snapshot) => {
     const message = snapshot.val().message;
     chatMessages.innerHTML += `<div>${message}</div>`;
 });
+        
