@@ -10,29 +10,57 @@ const firebaseConfig = {
   measurementId: "G-YQCNYER0EK"
 };
 
+
 // Initialize Firebase
 firebase.initializeApp(firebaseConfig);
 
-// Check username availability
+const db = firebase.firestore();
+let currentUser;
+
+// Check username availability and register user
 function checkAvailability() {
   const username = document.getElementById('username').value;
 
-  // Implement Firebase logic to check username availability
-  // Show suggestion if username is not available
-  document.getElementById('suggestion').innerText = 'Suggested username: ' + username + '123';
+  db.collection("users").where("username", "==", username)
+    .get()
+    .then((querySnapshot) => {
+      if (querySnapshot.empty) {
+        // Username is available, register the user
+        registerUser(username);
+      } else {
+        // Username is not available, suggest a new one
+        document.getElementById('suggestion').innerText = 'Suggested username: ' + username + '123';
+      }
+    })
+    .catch((error) => {
+      console.error("Error checking username availability: ", error);
+    });
+}
+
+// Register user and open wallet page
+function registerUser(username) {
+  firebase.auth().createUserWithEmailAndPassword(username + "@example.com", "password")
+    .then((userCredential) => {
+      currentUser = userCredential.user;
+      // Save user data to Firestore
+      db.collection("users").doc(currentUser.uid).set({
+        username: username,
+        walletBalance: 0
+      })
+      .then(() => {
+        openWalletPage();
+      })
+      .catch((error) => {
+        console.error("Error saving user data: ", error);
+      });
+    })
+    .catch((error) => {
+      console.error("Error registering user: ", error);
+    });
 }
 
 // Open wallet page
 function openWalletPage() {
   document.getElementById('registration-page').style.display = 'none';
   document.getElementById('wallet-page').style.display = 'block';
-}
-
-// Deposit/Withdraw from wallet
-function depositWithdraw() {
-  const amount = parseFloat(document.getElementById('amount').value);
-  
-  // Implement Firebase logic for wallet transactions
-  // Update wallet balance and transaction history
-  document.getElementById('wallet-balance').innerText = 'Balance: $' + amount;
 }
