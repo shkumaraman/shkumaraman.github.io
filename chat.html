@@ -3,122 +3,180 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Stranger Chat</title>
+    <title>Random Stranger Chat</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
+        * {
             margin: 0;
             padding: 0;
-            display: flex;
-            flex-direction: column;
-            min-height: 100vh;
-            background-color: #f0f0f0;
+            box-sizing: border-box;
         }
 
-        #chat-container {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            position: relative;
-            overflow: hidden;
+        body {
+            font-family: sans-serif;
+            background-color: #f5f5f5;
         }
 
-        #messages {
-            flex: 1;
-            overflow-y: auto;
+        .container {
+            width: 800px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background-color: #333;
+            color: #fff;
             padding: 10px;
+            text-align: center;
+        }
+
+        .main {
+            padding: 20px;
+        }
+
+        .chat-area {
+            height: 400px;
+            overflow-y: scroll;
+            border: 1px solid #ccc;
+            padding: 10px;
+        }
+
+        .messages {
+            list-style: none;
+            padding: 0;
         }
 
         .message {
-            max-width: 70%;
-            margin: 8px;
+            margin-bottom: 10px;
             padding: 10px;
-            border-radius: 8px;
-            word-wrap: break-word;
-        }
-
-        .message.sent {
-            background-color: #4caf50;
-            align-self: flex-end;
-            color: white;
-        }
-
-        .message.received {
-            background-color: #ddd;
-            align-self: flex-start;
-        }
-
-        #input-container {
-            display: flex;
-            padding: 10px;
-            background-color: #fff;
-            position: sticky;
-            bottom: 0;
-        }
-
-        #message-input {
-            flex: 1;
-            margin-right: 10px;
-            padding: 8px;
             border: 1px solid #ccc;
-            border-radius: 4px;
+            border-radius: 5px;
         }
 
-        #send-button {
-            padding: 8px 16px;
-            background-color: #4caf50;
-            color: #fff;
-            border: none;
-            border-radius: 4px;
+        .message.self {
+            float: right;
+            background-color: #fafafa;
+        }
+
+        .input-area {
+            margin-top: 20px;
+        }
+
+        .input-area input {
+            width: 700px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+
+        .input-area button {
+            margin-left: 10px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
             cursor: pointer;
+        }
+
+        .footer {
+            background-color: #333;
+            color: #fff;
+            padding: 10px;
+            text-align: center;
+        }
+
+        .online-count {
+            color: #00ff00;
         }
     </style>
 </head>
 <body>
-    <div id="chat-container">
-        <div id="messages"></div>
-        <div id="input-container">
-            <input type="text" id="message-input" placeholder="Type your message">
-            <button id="send-button" onclick="sendMessage()">Send</button>
+    <div class="container">
+        <div class="header">
+            <h1>Random Stranger Chat</h1>
+        </div>
+        <div class="main">
+            <div class="chat-area">
+                <ul class="messages"></ul>
+            </div>
+            <div class="input-area">
+                <input type="text" placeholder="Enter your message here..." />
+                <button>Send</button>
+            </div>
+        </div>
+        <div class="footer">
+            <p>There are currently <span class="online-count">0</span> users online.</p>
         </div>
     </div>
-
-    <script src="https://js.pusher.com/8.2.0/pusher.min.js"></script>
     <script>
-        const pusher = new Pusher('e181bc1753989e072d46', {
-            cluster: 'ap2',
-            encrypted: true
-        });
+    // Initialize Pusher (replace with your actual Pusher credentials)
+const pusher = new Pusher("e181bc1753989e072d46", {
+    cluster: "ap2",
+    encrypted: true,
+});
 
-        const channel = pusher.subscribe('stranger-chat-channel');
+// Subscribe to the chat channel
+const channel = pusher.subscribe("chat");
 
-        const user = {
-            id: Math.random().toString(36).substring(7),
-        };
+// Function to update the online user count
+function updateOnlineCount(count) {
+    const onlineCountElement = document.querySelector(".online-count");
+    onlineCountElement.textContent = count;
+}
 
-        function sendMessage() {
-            const messageInput = document.getElementById('message-input');
-            const message = messageInput.value.trim();
+// Function to create a new message element
+function createMessage(message, self) {
+    const messageElement = document.createElement("li");
+    messageElement.classList.add("message");
+    if (self) {
+        messageElement.classList.add("self");
+    }
+    messageElement.textContent = message;
+    return messageElement;
+}
 
-            if (message !== '') {
-                channel.trigger('client-stranger-chat-event', {
-                    user: user.id,
-                    message: message
-                });
+// Function to add a message to the chat area
+function addMessage(message, self) {
+    const chatArea = document.querySelector(".chat-area");
+    const messagesList = chatArea.querySelector(".messages");
+    const newMessage = createMessage(message, self);
+    messagesList.appendChild(newMessage);
+    chatArea.scrollTop = chatArea.scrollHeight; // Scroll to the latest message
+}
 
-                messageInput.value = '';
-            }
-        }
+// Send message on button click
+const sendButton = document.querySelector(".input-area button");
+sendButton.addEventListener("click", () => {
+    const input = document.querySelector(".input-area input");
+    const message = input.value.trim();
+    if (message) {
+        // Broadcast the message to the chat channel
+        channel.trigger("message", { message: message, self: true });
+        // Clear the input field
+        input.value = "";
+    }
+});
 
-        const messagesContainer = document.getElementById('messages');
+// Listen for incoming messages from Pusher
+channel.on("message", function(data) {
+    addMessage(data.message, data.self);
+});
 
-        channel.bind('client-stranger-chat-event', function(data) {
-            const newMessage = document.createElement('div');
-            newMessage.textContent = `${data.user}: ${data.message}`;
-            newMessage.className = `message ${data.user === user.id ? 'sent' : 'received'}`;
-            messagesContainer.appendChild(newMessage);
-            messagesContainer.scrollTop = messagesContainer.scrollHeight; // Auto-scroll to the bottom
-        });
-    </script>
-</body>
-</html>
+// Listen for changes in online user count (if applicable)
+pusher.connection.bind("pusher:connection_established", function () {
+    // Get initial online count
+    channel.members.count().then(function (membersCount) {
+        updateOnlineCount(membersCount.count);
+    });
+});
+
+// Update online count whenever a user joins or leaves the channel
+channel.members.bind("member-added", function (member) {
+    updateOnlineCount(channel.members.count().then(function (membersCount) {
+        return membersCount.count;
+    }));
+});
+
+channel.members.bind("member-removed", function (member) {
+    updateOnlineCount(channel.members.count().then(function (membersCount) {
+        return membersCount.count;
+    }));
+});
+</script>
