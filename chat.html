@@ -61,22 +61,45 @@
         </div>
     </div>
 
-    <script src="https://js.pusher.com/7.0/pusher.min.js"></script>
+    <script src="https://js.pusher.com/8.2.0/pusher.min.js"></script>
     <script>
         const pusher = new Pusher('be6600d2f0dfa5d7f6b7', {
             cluster: 'ap2',
             encrypted: true
         });
 
-        const channel = pusher.subscribe('chat-channel');
+        const channel = pusher.subscribe('random-chat-channel');
+
+        const user = {
+            id: Math.random().toString(36).substring(7),
+            online: true
+        };
+
+        // Simulate online users using local storage
+        const onlineUsers = JSON.parse(localStorage.getItem('onlineUsers')) || [];
+        onlineUsers.push(user);
+        localStorage.setItem('onlineUsers', JSON.stringify(onlineUsers));
+
+        // Listen for presence events
+        channel.bind('pusher:member_added', function(member) {
+            if (member.info.id !== user.id) {
+                alert(`${member.info.id} is online`);
+            }
+        });
+
+        channel.bind('pusher:member_removed', function(member) {
+            if (member.info.id !== user.id) {
+                alert(`${member.info.id} left the chat`);
+            }
+        });
 
         function sendMessage() {
             const messageInput = document.getElementById('message-input');
             const message = messageInput.value.trim();
 
             if (message !== '') {
-                channel.trigger('chat-event', {
-                    user: 'User', // Replace with actual user identification logic
+                channel.trigger('client-random-chat-event', {
+                    user: user.id,
                     message: message
                 });
 
@@ -86,7 +109,7 @@
 
         const messagesContainer = document.getElementById('messages');
 
-        channel.bind('chat-event', function(data) {
+        channel.bind('client-random-chat-event', function(data) {
             messagesContainer.innerHTML += `<div>${data.user}: ${data.message}</div>`;
         });
     </script>
