@@ -7,6 +7,7 @@
     <meta name="description" content="Convert your images effortlessly between JPEG, PNG, and WebP formats with this online image format converter. Change image formats quickly and download the converted files.">
     <meta name="keywords" content="JPEG to PNG, PNG to JPEG, WebP converter, Image format changer, Online image converter, Convert images, Image conversion tool, JPEG, PNG, WebP">
     <title>Image Format Changer</title>
+    <script src="https://cdn.jsdelivr.net/npm/convertapi-js@1.0.0/dist/convertapi.min.js"></script>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -151,6 +152,7 @@
         <button id="jpegButton" value="jpeg" onclick="selectFormat('jpeg')">JPEG</button>
         <button id="pngButton" value="png" onclick="selectFormat('png')">PNG</button>
         <button id="webpButton" value="webp" onclick="selectFormat('webp')">WebP</button>
+        <button id="pdfButton" value="pdf" onclick="selectFormat('pdf')">PDF</button>
     </div>
     <button id="convertButton" onclick="changeFormat()">Convert Image</button>
     <div id="loadingScreen">
@@ -163,25 +165,12 @@
         <br>
         <a id="downloadLink" download="converted_image">Download Converted Image</a>
     </div>
-
-    <script>
+<script>
         let selectedFormat = '';
 
         function selectFormat(format) {
             selectedFormat = format;
             updateButtonStyles();
-        }
-
-        function updateButtonStyles() {
-            const formatButtons = ['jpeg', 'png', 'webp'];
-            for (const format of formatButtons) {
-                const button = document.getElementById(`${format}Button`);
-                if (format === selectedFormat) {
-                    button.classList.add('selected');
-                } else {
-                    button.classList.remove('selected');
-                }
-            }
         }
 
         async function changeFormat() {
@@ -193,7 +182,7 @@
             const loadingScreen = document.getElementById('loadingScreen');
 
             if (fileInput.files.length === 0 && !urlInput.value.trim()) {
-                alert('Please select an image file or enter a valid URL.');
+                alert('Please select a media file or enter a valid URL.');
                 return;
             }
 
@@ -203,21 +192,32 @@
             if (fileInput.files.length > 0) {
                 processedFile = fileInput.files[0];
             } else {
-                const imageUrl = urlInput.value.trim();
-                processedFile = await fetch(imageUrl)
+                const mediaUrl = urlInput.value.trim();
+                processedFile = await fetch(mediaUrl)
                     .then(response => response.blob())
-                    .then(blob => new File([blob], 'image', { type: blob.type }));
+                    .then(blob => new File([blob], 'media', { type: blob.type }));
             }
 
-            const convertedImage = await convertImageFormat(processedFile, selectedFormat);
+            let convertedMedia;
+
+            if (selectedFormat === 'pdf') {
+                convertedMedia = await convertToPdf(processedFile);
+            } else {
+                convertedMedia = await convertImageFormat(processedFile, selectedFormat);
+            }
 
             loadingScreen.style.display = 'none';
 
-            if (convertedImage) {
-                outputImage.src = URL.createObjectURL(convertedImage);
-                outputContainer.style.display = 'block';
-                downloadLink.href = outputImage.src;
-                downloadLink.style.display = 'inline-block';
+            if (convertedMedia) {
+                if (selectedFormat === 'pdf') {
+                    // Handle PDF conversion result
+                    alert('PDF conversion successful!'); // Add appropriate handling
+                } else {
+                    outputImage.src = URL.createObjectURL(convertedMedia);
+                    outputContainer.style.display = 'block';
+                    downloadLink.href = outputImage.src;
+                    downloadLink.style.display = 'inline-block';
+                }
             }
         }
 
@@ -236,11 +236,27 @@
                 const dataUrl = canvas.toDataURL(`image/${format}`);
                 return fetch(dataUrl).then(res => res.blob());
             } catch (error) {
-                console.error('Error converting image format:', error);
-                alert('Error converting image format. Please try again.');
+                console.error('Error converting media format:', error);
+                alert('Error converting media format. Please try again.');
                 return null;
             }
         }
-    </script>
+
+        async function convertToPdf(mediaFile) {
+            try {
+                const convertApi = ConvertApi.auth('RWdeQeIgEKIPbsFp');
+                const params = convertApi.createParams();
+                params.add('File', mediaFile);
+
+                const result = await convertApi.convert('html', 'pdf', params);
+                const pdfBlob = await result.files[0].blob();
+                return new File([pdfBlob], 'converted_file.pdf', { type: 'application/pdf' });
+            } catch (error) {
+                console.error('Error converting to PDF:', error);
+                alert('Error converting to PDF. Please try again.');
+                return null;
+            }
+        }
+</script>
 </body>
 </html>
