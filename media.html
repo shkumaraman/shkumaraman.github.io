@@ -17,7 +17,8 @@
             color: #4CAF50;
         }
 
-        input[type="file"] {
+        input[type="file"],
+        input[type="url"] {
             padding: 10px;
             border: 2px solid #4CAF50;
             border-radius: 5px;
@@ -29,26 +30,6 @@
 
         #formatButtons {
             margin-bottom: 20px;
-        }
-
-        input[type="radio"] {
-            display: none;
-        }
-
-        label {
-            padding: 10px;
-            background-color: #4CAF50;
-            color: #fff;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            margin: 5px;
-            display: inline-block;
-        }
-
-        input[type="radio"]:checked + label {
-            background-color: #3498db;
-            color: #fff;
         }
 
         button {
@@ -89,23 +70,16 @@
 </head>
 <body>
     <h1>Image Format Changer</h1>
-    <input type="file" id="fileInput" accept="image/*,.pdf">
+    <input type="file" id="fileInput" accept="image/*">
+    <br>
+    <input type="url" id="urlInput" placeholder="Enter Image URL">
     <br>
     <div id="formatButtons">
-        <input type="radio" id="jpegRadio" name="format" value="jpeg">
-        <label for="jpegRadio">JPEG</label>
-
-        <input type="radio" id="jpgRadio" name="format" value="jpg">
-        <label for="jpgRadio">JPG</label>
-
-        <input type="radio" id="pngRadio" name="format" value="png">
-        <label for="pngRadio">PNG</label>
-
-        <input type="radio" id="pdfRadio" name="format" value="pdf">
-        <label for="pdfRadio">PDF to Image</label>
-
-        <input type="radio" id="webpRadio" name="format" value="webp">
-        <label for="webpRadio">WebP</label>
+        <button id="jpegButton" value="jpeg" onclick="selectFormat('jpeg')">JPEG</button>
+        <button id="jpgButton" value="jpg" onclick="selectFormat('jpg')">JPG</button>
+        <button id="pngButton" value="png" onclick="selectFormat('png')">PNG</button>
+        <button id="pdfButton" value="pdf" onclick="selectFormat('pdf')">PDF</button>
+        <button id="webpButton" value="webp" onclick="selectFormat('webp')">WebP</button>
     </div>
     <button onclick="changeFormat()">Change Format</button>
     <br>
@@ -114,40 +88,52 @@
     <a id="downloadLink" download="converted_image">Download Converted Image</a>
 
     <script>
-        async function changeFormat() {
-            const fileInput = document.getElementById('fileInput');
-            const formatButtons = document.getElementsByName('format');
-            const outputImage = document.getElementById('outputImage');
-            const downloadLink = document.getElementById('downloadLink');
+        let selectedFormat = '';
 
-            if (fileInput.files.length === 0) {
-                alert('Please select an image or PDF file.');
-                return;
-            }
+        function selectFormat(format) {
+            selectedFormat = format;
+            updateButtonStyles();
+        }
 
-            const inputFile = fileInput.files[0];
-            const selectedFormat = getSelectedRadioButtonValue(formatButtons);
-
-            let convertedFile;
-            if (selectedFormat === 'pdf') {
-                convertedFile = await convertPdfToImage(inputFile);
-            } else {
-                convertedFile = await convertImageFormat(inputFile, selectedFormat);
-            }
-
-            if (convertedFile) {
-                outputImage.src = URL.createObjectURL(convertedFile);
-                outputImage.style.display = 'block';
-                downloadLink.href = outputImage.src;
-                downloadLink.style.display = 'inline-block';
+        function updateButtonStyles() {
+            const formatButtons = ['jpeg', 'jpg', 'png', 'pdf', 'webp'];
+            for (const format of formatButtons) {
+                const button = document.getElementById(`${format}Button`);
+                if (format === selectedFormat) {
+                    button.style.backgroundColor = '#3498db';
+                    button.style.color = '#fff';
+                } else {
+                    button.style.backgroundColor = '#4CAF50';
+                    button.style.color = '#fff';
+                }
             }
         }
 
-        function getSelectedRadioButtonValue(radioButtons) {
-            for (const radioButton of radioButtons) {
-                if (radioButton.checked) {
-                    return radioButton.value;
-                }
+        async function changeFormat() {
+            const fileInput = document.getElementById('fileInput');
+            const urlInput = document.getElementById('urlInput');
+            const outputImage = document.getElementById('outputImage');
+            const downloadLink = document.getElementById('downloadLink');
+
+            if (fileInput.files.length === 0 && !urlInput.value.trim()) {
+                alert('Please select an image file or enter a valid URL.');
+                return;
+            }
+
+            let processedFile;
+            if (fileInput.files.length > 0) {
+                processedFile = fileInput.files[0];
+            } else {
+                processedFile = { name: 'inputFile', data: new TextEncoder().encode(urlInput.value.trim()) };
+            }
+
+            const convertedImage = await convertImageFormat(processedFile, selectedFormat);
+
+            if (convertedImage) {
+                outputImage.src = URL.createObjectURL(convertedImage);
+                outputImage.style.display = 'block';
+                downloadLink.href = outputImage.src;
+                downloadLink.style.display = 'inline-block';
             }
         }
 
@@ -167,31 +153,6 @@
             } catch (error) {
                 console.error('Error converting image format:', error);
                 alert('Error converting image format. Please try again.');
-                return null;
-            }
-        }
-
-        async function convertPdfToImage(pdfFile) {
-            try {
-                const pdfBuffer = await pdfFile.arrayBuffer();
-                const typedArray = new Uint8Array(pdfBuffer);
-
-                const pdfDoc = await pdfjsLib.getDocument(typedArray).promise;
-                const page = await pdfDoc.getPage(1);
-
-                const viewport = page.getViewport({ scale: 1.0 });
-                const canvas = document.createElement('canvas');
-                const ctx = canvas.getContext('2d');
-
-                canvas.width = viewport.width;
-                canvas.height = viewport.height;
-
-                await page.render({ canvasContext: ctx, viewport: viewport }).promise;
-
-                return fetch(canvas.toDataURL('image/jpeg')).then(res => res.blob());
-            } catch (error) {
-                console.error('Error converting PDF to image:', error);
-                alert('Error converting PDF to image. Please try again.');
                 return null;
             }
         }
