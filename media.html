@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video to MP3 Converter</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f0f0;
+            color: #333;
+            text-align: center;
+            margin: 20px;
+        }
+
+        h1 {
+            color: #4CAF50;
+        }
+
+        input[type="file"] {
+            padding: 10px;
+            border: 2px solid #4CAF50;
+            border-radius: 5px;
+            background-color: #fff;
+            color: #333;
+            cursor: pointer;
+            margin-bottom: 20px;
+        }
+
+        button {
+            padding: 10px;
+            background-color: #4CAF50;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
+
+        a {
+            display: inline-block;
+            padding: 10px;
+            background-color: #4CAF50;
+            color: #fff;
+            text-decoration: none;
+            border-radius: 5px;
+            margin-top: 20px;
+            display: none;
+        }
+
+        a:hover {
+            background-color: #45a049;
+        }
+
+        #optionsContainer {
+            margin-top: 20px;
+            display: none;
+        }
+
+        select, #downloadLink {
+            margin-right: 10px;
+        }
+
+        #formatSelect {
+            margin-right: 10px;
+        }
+
+        #sizeInfo {
+            margin-top: 10px;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <h1>Video to MP3 Converter</h1>
+    <input type="file" id="fileInput" accept="video/*,audio/*">
+    <br>
+    <button onclick="convertToMP3()">Convert to MP3</button>
+    <br>
+    <div id="optionsContainer">
+        <label for="formatSelect">Select Format or Quality:</label>
+        <select id="formatSelect">
+            <!-- Options will be dynamically added after processing -->
+        </select>
+
+        <a id="downloadLink" style="display: none;" download="output.mp3">Download MP3</a>
+        <span id="sizeInfo"></span>
+    </div>
+
+    <script src="https://github.com/Kagami/ffmpeg.js/releases/download/v0.10.0/ffmpeg.min.js"></script>
+    <script>
+        let processedFile;
+        let optionsContainer = document.getElementById('optionsContainer');
+
+        document.getElementById('fileInput').addEventListener('change', handleFileSelect);
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                processedFile = file;
+                displayOptions();
+            }
+        }
+
+        function displayOptions() {
+            optionsContainer.style.display = 'block';
+            updateFormatOptions();
+        }
+
+        function updateFormatOptions() {
+            const formatSelect = document.getElementById('formatSelect');
+            // Clear previous options
+            formatSelect.innerHTML = '';
+
+            const supportedFormats = ['mp3', 'ogg', 'aac'];
+            supportedFormats.forEach(format => {
+                const option = document.createElement('option');
+                option.value = format;
+                option.text = format.toUpperCase();
+                formatSelect.add(option);
+            });
+        }
+
+        function convertToMP3() {
+            const format = document.getElementById('formatSelect').value;
+
+            const worker = new Worker('https://github.com/Kagami/ffmpeg.js/releases/download/v0.10.0/ffmpeg-worker-mp3.js');
+
+            worker.onmessage = function (e) {
+                const data = e.data;
+                switch (data.type) {
+                    case 'stdout':
+                    case 'stderr':
+                        console.log(data.data);
+                        break;
+                    case 'done':
+                        const audioBlob = new Blob([data.data.MEMFS[0].data], { type: `audio/${format}` });
+                        const downloadLink = document.getElementById('downloadLink');
+                        downloadLink.href = URL.createObjectURL(audioBlob);
+                        downloadLink.style.display = 'inline-block';
+
+                        const sizeInfo = document.getElementById('sizeInfo');
+                        sizeInfo.innerText = `File Size: ${(audioBlob.size / (1024 * 1024)).toFixed(2)} MB`;
+                        break;
+                }
+            };
+
+            worker.postMessage({
+                type: 'run',
+                arguments: [
+                    '-i', 'inputFile',
+                    '-acodec', 'libmp3lame',
+                    '-q:a', '2',
+                    '-y', `output.${format}`
+                ],
+                MEMFS: [{ name: 'inputFile', data: new Uint8Array(await processedFile.arrayBuffer()) }]
+            });
+        }
+    </script>
+</body>
+</html>
