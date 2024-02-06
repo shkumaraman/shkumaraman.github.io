@@ -93,12 +93,12 @@
         <span id="sizeInfo"></span>
     </div>
 
-    <script src="https://github.com/Kagami/ffmpeg.js/releases/download/v0.10.0/ffmpeg.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg/ffmpeg.min.js"></script>
     <script>
         let processedFile;
         let optionsContainer = document.getElementById('optionsContainer');
 
-        function processFile() {
+        async function processFile() {
             const fileInput = document.getElementById('fileInput');
             const urlInput = document.getElementById('urlInput');
             const formatSelect = document.getElementById('formatSelect');
@@ -122,36 +122,21 @@
             processedFile = file;
             updateFormatOptions();
 
-            const worker = new Worker('https://github.com/Kagami/ffmpeg.js/releases/download/v0.10.0/ffmpeg-worker-mp3.js');
+            await ffmpeg.load();
 
-            worker.onmessage = function (e) {
-                const data = e.data;
-                switch (data.type) {
-                    case 'stdout':
-                    case 'stderr':
-                        console.log(data.data);
-                        break;
-                    case 'done':
-                        const outputFileType = formatSelect.value === 'mp3' ? 'mp3' : 'ogg';
-                        const audioBlob = new Blob([data.data.MEMFS[0].data], { type: `audio/${outputFileType}` });
-                        downloadLink.href = URL.createObjectURL(audioBlob);
-                        downloadLink.style.display = 'inline-block';
+            const { createFFmpeg } = ffmpeg;
+            const ffmpegInstance = createFFmpeg({ log: true });
 
-                        sizeInfo.innerText = `File Size: ${(audioBlob.size / (1024 * 1024)).toFixed(2)} MB`;
-                        break;
-                }
-            };
+            await ffmpegInstance.write('inputFile', new Uint8Array(await processedFile.arrayBuffer()));
+            await ffmpegInstance.run('-i', 'inputFile', '-acodec', 'libmp3lame', '-q:a', '2', 'output.mp3');
 
-            worker.postMessage({
-                type: 'run',
-                arguments: [
-                    '-i', 'inputFile',
-                    '-acodec', 'libmp3lame',
-                    '-q:a', '2',
-                    '-y', `output.${formatSelect.value}`
-                ],
-                MEMFS: [{ name: 'inputFile', data: new Uint8Array(await file.arrayBuffer()) }]
-            });
+            const data = ffmpegInstance.read('output.mp3');
+            const audioBlob = new Blob([data], { type: 'audio/mp3' });
+
+            downloadLink.href = URL.createObjectURL(audioBlob);
+            downloadLink.style.display = 'inline-block';
+
+            sizeInfo.innerText = `File Size: ${(audioBlob.size / (1024 * 1024)).toFixed(2)} MB`;
         }
 
         function updateFormatOptions() {
