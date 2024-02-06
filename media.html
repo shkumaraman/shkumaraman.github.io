@@ -47,7 +47,7 @@
         }
 
         input[type="radio"]:checked + label {
-            background-color: #45a049;
+            background-color: #3498db;
             color: #fff;
         }
 
@@ -89,7 +89,7 @@
 </head>
 <body>
     <h1>Image Format Changer</h1>
-    <input type="file" id="fileInput" accept="image/*">
+    <input type="file" id="fileInput" accept="image/*,.pdf">
     <br>
     <div id="formatButtons">
         <input type="radio" id="jpegRadio" name="format" value="jpeg">
@@ -102,7 +102,7 @@
         <label for="pngRadio">PNG</label>
 
         <input type="radio" id="pdfRadio" name="format" value="pdf">
-        <label for="pdfRadio">PDF</label>
+        <label for="pdfRadio">PDF to Image</label>
 
         <input type="radio" id="webpRadio" name="format" value="webp">
         <label for="webpRadio">WebP</label>
@@ -121,17 +121,22 @@
             const downloadLink = document.getElementById('downloadLink');
 
             if (fileInput.files.length === 0) {
-                alert('Please select an image file.');
+                alert('Please select an image or PDF file.');
                 return;
             }
 
-            const imageFile = fileInput.files[0];
+            const inputFile = fileInput.files[0];
             const selectedFormat = getSelectedRadioButtonValue(formatButtons);
 
-            const convertedImage = await convertImageFormat(imageFile, selectedFormat);
+            let convertedFile;
+            if (selectedFormat === 'pdf') {
+                convertedFile = await convertPdfToImage(inputFile);
+            } else {
+                convertedFile = await convertImageFormat(inputFile, selectedFormat);
+            }
 
-            if (convertedImage) {
-                outputImage.src = URL.createObjectURL(convertedImage);
+            if (convertedFile) {
+                outputImage.src = URL.createObjectURL(convertedFile);
                 outputImage.style.display = 'block';
                 downloadLink.href = outputImage.src;
                 downloadLink.style.display = 'inline-block';
@@ -162,6 +167,31 @@
             } catch (error) {
                 console.error('Error converting image format:', error);
                 alert('Error converting image format. Please try again.');
+                return null;
+            }
+        }
+
+        async function convertPdfToImage(pdfFile) {
+            try {
+                const pdfBuffer = await pdfFile.arrayBuffer();
+                const typedArray = new Uint8Array(pdfBuffer);
+
+                const pdfDoc = await pdfjsLib.getDocument(typedArray).promise;
+                const page = await pdfDoc.getPage(1);
+
+                const viewport = page.getViewport({ scale: 1.0 });
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+
+                canvas.width = viewport.width;
+                canvas.height = viewport.height;
+
+                await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+
+                return fetch(canvas.toDataURL('image/jpeg')).then(res => res.blob());
+            } catch (error) {
+                console.error('Error converting PDF to image:', error);
+                alert('Error converting PDF to image. Please try again.');
                 return null;
             }
         }
