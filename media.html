@@ -61,12 +61,13 @@
             display: none;
         }
 
-        select, #downloadLink {
-            margin-right: 10px;
+        input[type="radio"] {
+            margin: 5px;
         }
 
-        #formatSelect {
-            margin-right: 10px;
+        #downloadLink {
+            margin-top: 10px;
+            display: none;
         }
 
         #sizeInfo {
@@ -84,10 +85,26 @@
     <button onclick="processFile()">Process File</button>
     <br>
     <div id="optionsContainer">
-        <label for="formatSelect">Select Format or Quality:</label>
-        <select id="formatSelect">
-            <!-- Options will be dynamically added after processing -->
-        </select>
+        <label>Select Format:</label>
+        <input type="radio" name="format" value="mp4" checked> MP4 (Video)
+        <input type="radio" name="format" value="mp3"> MP3 (Audio)
+        <input type="radio" name="format" value="ogg"> OGG (Audio)
+
+        <br>
+
+        <label>Select Quality (for Video):</label>
+        <input type="radio" name="quality" value="1080p" checked> 1080p
+        <input type="radio" name="quality" value="720p"> 720p
+        <input type="radio" name="quality" value="480p"> 480p
+
+        <br>
+
+        <label>Select Bitrate (for Audio):</label>
+        <input type="radio" name="bitrate" value="192k" checked> 192kbps
+        <input type="radio" name="bitrate" value="128k"> 128kbps
+        <input type="radio" name="bitrate" value="64k"> 64kbps
+
+        <br>
 
         <a id="downloadLink" style="display: none;" download="output">Download Converted File</a>
         <span id="sizeInfo"></span>
@@ -101,9 +118,11 @@
         async function processFile() {
             const fileInput = document.getElementById('fileInput');
             const urlInput = document.getElementById('urlInput');
-            const formatSelect = document.getElementById('formatSelect');
             const downloadLink = document.getElementById('downloadLink');
             const sizeInfo = document.getElementById('sizeInfo');
+            const formatRadioButtons = document.getElementsByName('format');
+            const qualityRadioButtons = document.getElementsByName('quality');
+            const bitrateRadioButtons = document.getElementsByName('bitrate');
 
             if (fileInput.files.length === 0 && !urlInput.value.trim()) {
                 alert('Please select a file or enter a valid URL.');
@@ -120,7 +139,6 @@
             }
 
             processedFile = file;
-            updateFormatOptions();
 
             await ffmpeg.load();
 
@@ -128,28 +146,46 @@
             const ffmpegInstance = createFFmpeg({ log: true });
 
             await ffmpegInstance.write('inputFile', new Uint8Array(await processedFile.arrayBuffer()));
-            await ffmpegInstance.run('-i', 'inputFile', '-acodec', 'libmp3lame', '-q:a', '2', 'output.mp3');
 
-            const data = ffmpegInstance.read('output.mp3');
-            const audioBlob = new Blob([data], { type: 'audio/mp3' });
+            const format = getSelectedRadioButtonValue(formatRadioButtons);
 
-            downloadLink.href = URL.createObjectURL(audioBlob);
+            if (format === 'mp4') {
+                const quality = getSelectedRadioButtonValue(qualityRadioButtons);
+                await ffmpegInstance.run(
+                    '-i', 'inputFile',
+                    '-c:v', 'libx264',
+                    '-preset', 'slow',
+                    '-b:v', '2M',
+                    '-c:a', 'aac',
+                    '-b:a', '192k',
+                    '-y', `output.${format}`
+                );
+            } else {
+                const bitrate = getSelectedRadioButtonValue(bitrateRadioButtons);
+                await ffmpegInstance.run(
+                    '-i', 'inputFile',
+                    '-c:a', 'libmp3lame',
+                    '-b:a', bitrate,
+                    '-y', `output.${format}`
+                );
+            }
+
+            const data = ffmpegInstance.read(`output.${format}`);
+            const blobType = format === 'mp4' ? 'video/mp4' : 'audio/mp3';
+            const convertedBlob = new Blob([data], { type: blobType });
+
+            downloadLink.href = URL.createObjectURL(convertedBlob);
             downloadLink.style.display = 'inline-block';
 
-            sizeInfo.innerText = `File Size: ${(audioBlob.size / (1024 * 1024)).toFixed(2)} MB`;
+            sizeInfo.innerText = `File Size: ${(convertedBlob.size / (1024 * 1024)).toFixed(2)} MB`;
         }
 
-        function updateFormatOptions() {
-            const formatSelect = document.getElementById('formatSelect');
-            formatSelect.innerHTML = '';
-
-            const supportedFormats = ['mp3', 'ogg', 'aac'];
-            supportedFormats.forEach(format => {
-                const option = document.createElement('option');
-                option.value = format;
-                option.text = format.toUpperCase();
-                formatSelect.add(option);
-            });
+        function getSelectedRadioButtonValue(radioButtons) {
+            for (const radioButton of radioButtons) {
+                if (radioButton.checked) {
+                    return radioButton.value;
+                }
+            }
         }
     </script>
 </body>
