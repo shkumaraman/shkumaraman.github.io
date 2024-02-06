@@ -56,12 +56,6 @@
             margin: 5px;
         }
 
-        button.selected {
-            background-color: #fff;
-            color: #000;
-            border: 1px solid #000;
-        }
-
         button:hover {
             background-color: #45a049;
         }
@@ -70,6 +64,21 @@
             max-width: 100%;
             height: auto;
             margin-top: 20px;
+        }
+
+        #loadingSpinner {
+            border: 8px solid #f3f3f3;
+            border-top: 8px solid #3498db;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            display: none;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
 
         a {
@@ -86,40 +95,9 @@
         a:hover {
             background-color: #45a049;
         }
-
-        #loadingScreen {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(255, 255, 255, 0.8);
-            justify-content: center;
-            align-items: center;
-            z-index: 9999;
-        }
-
-        #loadingSpinner {
-            border: 8px solid #f3f3f3;
-            border-top: 8px solid #3498db;
-            border-radius: 50%;
-            width: 50px;
-            height: 50px;
-            animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
     </style>
 </head>
 <body>
-    <div id="loadingScreen">
-        <div id="loadingSpinner"></div>
-    </div>
-
     <h1>Image Format Changer</h1>
     <label for="fileInput">Browse for Image</label>
     <input type="file" id="fileInput" accept="image/*">
@@ -128,11 +106,14 @@
     <br>
     <div id="formatButtons">
         <button id="jpegButton" value="jpeg" onclick="selectFormat('jpeg')">JPEG</button>
+        <button id="jpgButton" value="jpg" onclick="selectFormat('jpg')">JPG</button>
         <button id="pngButton" value="png" onclick="selectFormat('png')">PNG</button>
+        <button id="pdfButton" value="pdf" onclick="selectFormat('pdf')">PDF</button>
         <button id="webpButton" value="webp" onclick="selectFormat('webp')">WebP</button>
         <button id="helcButton" value="helc" onclick="selectFormat('helc')">HELC</button>
     </div>
     <button onclick="changeFormat()">Change Format</button>
+    <div id="loadingSpinner"></div>
     <br>
     <img id="outputImage" alt="Converted Image" style="display: none;">
     <br>
@@ -147,13 +128,15 @@
         }
 
         function updateButtonStyles() {
-            const formatButtons = ['jpeg', 'png', 'webp', 'helc'];
+            const formatButtons = ['jpeg', 'jpg', 'png', 'pdf', 'webp', 'helc'];
             for (const format of formatButtons) {
                 const button = document.getElementById(`${format}Button`);
                 if (format === selectedFormat) {
-                    button.classList.add('selected');
+                    button.style.backgroundColor = '#3498db';
+                    button.style.color = '#fff';
                 } else {
-                    button.classList.remove('selected');
+                    button.style.backgroundColor = '#4CAF50';
+                    button.style.color = '#fff';
                 }
             }
         }
@@ -163,14 +146,14 @@
             const urlInput = document.getElementById('urlInput');
             const outputImage = document.getElementById('outputImage');
             const downloadLink = document.getElementById('downloadLink');
-            const loadingScreen = document.getElementById('loadingScreen');
+            const loadingSpinner = document.getElementById('loadingSpinner');
 
             if (fileInput.files.length === 0 && !urlInput.value.trim()) {
                 alert('Please select an image file or enter a valid URL.');
                 return;
             }
 
-            loadingScreen.style.display = 'flex';
+            loadingSpinner.style.display = 'inline-block';
 
             let processedFile;
             if (fileInput.files.length > 0) {
@@ -184,30 +167,51 @@
 
             const convertedImage = await convertImageFormat(processedFile, selectedFormat);
 
+            loadingSpinner.style.display = 'none';
+
             if (convertedImage) {
                 outputImage.src = URL.createObjectURL(convertedImage);
                 outputImage.style.display = 'block';
                 downloadLink.href = outputImage.src;
                 downloadLink.style.display = 'inline-block';
             }
-
-            loadingScreen.style.display = 'none';
         }
 
         async function convertImageFormat(imageFile, format) {
             try {
                 const image = await createImageBitmap(imageFile);
 
-                const canvas = document.createElement('canvas');
-                const ctx = canvas.getContext('2d');
+                if (format === 'pdf') {
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
 
-                canvas.width = image.width;
-                canvas.height = image.height;
+                    canvas.width = image.width;
+                    canvas.height = image.height;
 
-                ctx.drawImage(image, 0, 0);
+                    ctx.drawImage(image, 0, 0);
 
-                const dataUrl = canvas.toDataURL(`image/${format}`);
-                return fetch(dataUrl).then(res => res.blob());
+                    const pdfDataUrl = canvas.toDataURL('image/jpeg');
+                    const pdf = await fetch(pdfDataUrl)
+                        .then(res => res.blob())
+                        .then(blob => new File([blob], 'image.pdf', { type: 'application/pdf' }));
+
+                    return pdf;
+                } else if (format === 'helc') {
+                    // Simulate HELC conversion (replace with actual implementation)
+                    alert('HELC format conversion not implemented yet.');
+                    return null;
+                } else {
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+
+                    canvas.width = image.width;
+                    canvas.height = image.height;
+
+                    ctx.drawImage(image, 0, 0);
+
+                    const dataUrl = canvas.toDataURL(`image/${format}`);
+                    return fetch(dataUrl).then(res => res.blob());
+                }
             } catch (error) {
                 console.error('Error converting image format:', error);
                 alert('Error converting image format. Please try again.');
