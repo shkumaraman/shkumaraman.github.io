@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Video to MP3 Converter</title>
+    <title>Media Converter</title>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -17,7 +17,7 @@
             color: #4CAF50;
         }
 
-        input[type="file"] {
+        input[type="file"], input[type="url"] {
             padding: 10px;
             border: 2px solid #4CAF50;
             border-radius: 5px;
@@ -76,8 +76,10 @@
     </style>
 </head>
 <body>
-    <h1>Video to MP3 Converter</h1>
+    <h1>Media Converter</h1>
     <input type="file" id="fileInput" accept="video/*,audio/*">
+    <br>
+    <input type="url" id="urlInput" placeholder="Enter media file URL">
     <br>
     <button onclick="processFile()">Process File</button>
     <br>
@@ -87,7 +89,7 @@
             <!-- Options will be dynamically added after processing -->
         </select>
 
-        <a id="downloadLink" style="display: none;" download="output.mp3">Download MP3</a>
+        <a id="downloadLink" style="display: none;" download="output">Download Converted File</a>
         <span id="sizeInfo"></span>
     </div>
 
@@ -98,18 +100,25 @@
 
         function processFile() {
             const fileInput = document.getElementById('fileInput');
+            const urlInput = document.getElementById('urlInput');
             const formatSelect = document.getElementById('formatSelect');
             const downloadLink = document.getElementById('downloadLink');
             const sizeInfo = document.getElementById('sizeInfo');
 
-            const file = fileInput.files[0];
-
-            if (!file) {
-                alert('Please select a file.');
+            if (fileInput.files.length === 0 && !urlInput.value.trim()) {
+                alert('Please select a file or enter a valid URL.');
                 return;
             }
 
             optionsContainer.style.display = 'block';
+
+            let file;
+            if (fileInput.files.length > 0) {
+                file = fileInput.files[0];
+            } else {
+                file = { name: 'inputFile', data: new TextEncoder().encode(urlInput.value.trim()) };
+            }
+
             processedFile = file;
             updateFormatOptions();
 
@@ -123,7 +132,8 @@
                         console.log(data.data);
                         break;
                     case 'done':
-                        const audioBlob = new Blob([data.data.MEMFS[0].data], { type: `audio/${formatSelect.value}` });
+                        const outputFileType = formatSelect.value === 'mp3' ? 'mp3' : 'ogg';
+                        const audioBlob = new Blob([data.data.MEMFS[0].data], { type: `audio/${outputFileType}` });
                         downloadLink.href = URL.createObjectURL(audioBlob);
                         downloadLink.style.display = 'inline-block';
 
