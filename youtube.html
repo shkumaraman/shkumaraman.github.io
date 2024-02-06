@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description"
+        content="Download YouTube videos and audio with different quality and frequency options.">
+    <meta name="keywords" content="YouTube downloader, video download, audio download, quality options, frequency options">
+    <title>YouTube Downloader</title>
+    <script src="https://www.youtube.com/iframe_api"></script>
+    <script src="https://code.jquery.com/jquery-3.6.4.min.js"
+        integrity="sha256-oP6HI/t1fG5uqO+5D6beq+MlVPW6dDZxQJl1l9L2t4M=" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f0f0;
+            color: #333;
+            text-align: center;
+            margin: 20px;
+        }
+
+        h2 {
+            color: #4CAF50;
+        }
+
+        .line {
+            border: 1px solid #4CAF50;
+        }
+
+        input[type="text"] {
+            padding: 10px;
+            border: 2px solid #4CAF50;
+            border-radius: 5px;
+            background-color: #fff;
+            color: #333;
+            margin-bottom: 20px;
+            width: 80%;
+        }
+
+        #qualityButtons,
+        #frequencyButtons {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 20px;
+        }
+
+        .button {
+            padding: 10px;
+            background-color: #4CAF50;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        .button:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+
+<body>
+    <h2>YouTube Downloader</h2>
+    <hr class="line">
+    <p>Enter YouTube Video URL:</p>
+    <input type="text" id="searchInput" placeholder="Paste YouTube video URL here">
+    <br>
+    <button id="downloadButton" class="button">Download</button>
+    <div id="qualityButtons"></div>
+    <div id="frequencyButtons"></div>
+
+    <div id="player"></div>
+
+    <script>
+        let player;
+
+        function onYouTubeIframeAPIReady() {
+            player = new YT.Player('player', {
+                height: '360',
+                width: '640',
+                playerVars: {
+                    'origin': window.location.origin,
+                    'enablejsapi': 1,
+                    'fs': 0,
+                    'controls': 1,
+                    'rel': 0,
+                    'modestbranding': 1,
+                    'iv_load_policy': 3,
+                    'autoplay': 0,
+                    'showinfo': 0,
+                    'disablekb': 1,
+                },
+                events: {
+                    'onReady': onPlayerReady,
+                    'onStateChange': onPlayerStateChange
+                }
+            });
+
+            $('#downloadButton').on('click', function () {
+                const videoUrl = $('#searchInput').val();
+                if (videoUrl.trim() !== '') {
+                    player.loadVideoByUrl({ mediaContentUrl: videoUrl });
+                }
+            });
+        }
+
+        function onPlayerReady(event) {
+            const qualities = ['2160p', '1440p', '1080p', '720p', '480p', '360p', '240p', '144p'];
+            const frequencies = ['48kHz', '24kHz', '16kHz', '128kHz', '64kHz', '32kHz'];
+
+            const qualityButtons = document.getElementById('qualityButtons');
+            const frequencyButtons = document.getElementById('frequencyButtons');
+
+            qualities.forEach(quality => {
+                const button = createButton(quality, 'video');
+                qualityButtons.appendChild(button);
+            });
+
+            frequencies.forEach(frequency => {
+                const button = createButton(frequency, 'audio');
+                frequencyButtons.appendChild(button);
+            });
+        }
+
+        function createButton(label, type) {
+            const button = document.createElement('button');
+            button.classList.add('button');
+            button.textContent = label;
+
+            button.addEventListener('click', () => {
+                if (type === 'video') {
+                    downloadVideo(label);
+                } else if (type === 'audio') {
+                    downloadAudio(label);
+                }
+            });
+
+            return button;
+        }
+
+        function onPlayerStateChange(event) {
+            if (event.data === YT.PlayerState.PLAYING) {
+                const duration = player.getDuration();
+                console.log('Video duration:', duration);
+                // Additional logic can be added based on video state change
+            }
+        }
+
+        function downloadVideo(quality) {
+            const videoId = player.getVideoData().video_id;
+            const videoUrl = `https://www.youtube.com/watch?v=${videoId}&quality=${quality}`;
+            saveAs(videoUrl, `video_${quality}`);
+        }
+
+        function downloadAudio(frequency) {
+            const videoId = player.getVideoData().video_id;
+            const audioUrl = `https://www.youtube.com/watch?v=${videoId}&frequency=${frequency}`;
+            saveAs(audioUrl, `audio_${frequency}`);
+        }
+
+        function saveAs(url, filename) {
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+    </script>
+</body>
+
+</html>
