@@ -34,6 +34,7 @@
             border: none;
             border-radius: 5px;
             cursor: pointer;
+            margin: 5px;
         }
 
         button:hover {
@@ -78,7 +79,7 @@
     <h1>Video to MP3 Converter</h1>
     <input type="file" id="fileInput" accept="video/*,audio/*">
     <br>
-    <button onclick="convertToMP3()">Convert to MP3</button>
+    <button onclick="processFile()">Process File</button>
     <br>
     <div id="optionsContainer">
         <label for="formatSelect">Select Format or Quality:</label>
@@ -95,37 +96,22 @@
         let processedFile;
         let optionsContainer = document.getElementById('optionsContainer');
 
-        document.getElementById('fileInput').addEventListener('change', handleFileSelect);
-
-        function handleFileSelect(event) {
-            const file = event.target.files[0];
-            if (file) {
-                processedFile = file;
-                displayOptions();
-            }
-        }
-
-        function displayOptions() {
-            optionsContainer.style.display = 'block';
-            updateFormatOptions();
-        }
-
-        function updateFormatOptions() {
+        function processFile() {
+            const fileInput = document.getElementById('fileInput');
             const formatSelect = document.getElementById('formatSelect');
-            // Clear previous options
-            formatSelect.innerHTML = '';
+            const downloadLink = document.getElementById('downloadLink');
+            const sizeInfo = document.getElementById('sizeInfo');
 
-            const supportedFormats = ['mp3', 'ogg', 'aac'];
-            supportedFormats.forEach(format => {
-                const option = document.createElement('option');
-                option.value = format;
-                option.text = format.toUpperCase();
-                formatSelect.add(option);
-            });
-        }
+            const file = fileInput.files[0];
 
-        function convertToMP3() {
-            const format = document.getElementById('formatSelect').value;
+            if (!file) {
+                alert('Please select a file.');
+                return;
+            }
+
+            optionsContainer.style.display = 'block';
+            processedFile = file;
+            updateFormatOptions();
 
             const worker = new Worker('https://github.com/Kagami/ffmpeg.js/releases/download/v0.10.0/ffmpeg-worker-mp3.js');
 
@@ -137,12 +123,10 @@
                         console.log(data.data);
                         break;
                     case 'done':
-                        const audioBlob = new Blob([data.data.MEMFS[0].data], { type: `audio/${format}` });
-                        const downloadLink = document.getElementById('downloadLink');
+                        const audioBlob = new Blob([data.data.MEMFS[0].data], { type: `audio/${formatSelect.value}` });
                         downloadLink.href = URL.createObjectURL(audioBlob);
                         downloadLink.style.display = 'inline-block';
 
-                        const sizeInfo = document.getElementById('sizeInfo');
                         sizeInfo.innerText = `File Size: ${(audioBlob.size / (1024 * 1024)).toFixed(2)} MB`;
                         break;
                 }
@@ -154,9 +138,22 @@
                     '-i', 'inputFile',
                     '-acodec', 'libmp3lame',
                     '-q:a', '2',
-                    '-y', `output.${format}`
+                    '-y', `output.${formatSelect.value}`
                 ],
-                MEMFS: [{ name: 'inputFile', data: new Uint8Array(await processedFile.arrayBuffer()) }]
+                MEMFS: [{ name: 'inputFile', data: new Uint8Array(await file.arrayBuffer()) }]
+            });
+        }
+
+        function updateFormatOptions() {
+            const formatSelect = document.getElementById('formatSelect');
+            formatSelect.innerHTML = '';
+
+            const supportedFormats = ['mp3', 'ogg', 'aac'];
+            supportedFormats.forEach(format => {
+                const option = document.createElement('option');
+                option.value = format;
+                option.text = format.toUpperCase();
+                formatSelect.add(option);
             });
         }
     </script>
