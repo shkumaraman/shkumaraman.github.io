@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Media Converter</title>
+    <title>Image Format Changer</title>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -17,7 +17,17 @@
             color: #4CAF50;
         }
 
-        input[type="file"], input[type="url"] {
+        input[type="file"] {
+            padding: 10px;
+            border: 2px solid #4CAF50;
+            border-radius: 5px;
+            background-color: #fff;
+            color: #333;
+            cursor: pointer;
+            margin-bottom: 20px;
+        }
+
+        select {
             padding: 10px;
             border: 2px solid #4CAF50;
             border-radius: 5px;
@@ -41,215 +51,69 @@
             background-color: #45a049;
         }
 
-        a {
-            display: inline-block;
-            padding: 10px;
-            background-color: #4CAF50;
-            color: #fff;
-            text-decoration: none;
-            border-radius: 5px;
+        img {
+            max-width: 100%;
+            height: auto;
             margin-top: 20px;
-            display: none;
-        }
-
-        a:hover {
-            background-color: #45a049;
-        }
-
-        #optionsContainer {
-            margin-top: 20px;
-            display: none;
-        }
-
-        input[type="radio"] {
-            margin: 5px;
-        }
-
-        #downloadLink {
-            margin-top: 10px;
-            display: none;
-        }
-
-        #sizeInfo {
-            margin-top: 10px;
-            display: block;
-        }
-
-        #loadingScreen {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(255, 255, 255, 0.8);
-            justify-content: center;
-            align-items: center;
-            z-index: 9999;
-        }
-
-        #loadingText {
-            font-size: 24px;
         }
     </style>
 </head>
 <body>
-    <div id="loadingScreen">
-        <div id="loadingText">Processing...</div>
-    </div>
-
-    <h1>Media Converter</h1>
-    <input type="file" id="fileInput" accept="video/*,audio/*">
+    <h1>Image Format Changer</h1>
+    <input type="file" id="fileInput" accept="image/*">
     <br>
-    <input type="url" id="urlInput" placeholder="Enter media file URL">
+    <select id="formatSelect">
+        <option value="jpeg">JPEG</option>
+        <option value="jpg">JPG</option>
+        <option value="png">PNG</option>
+        <option value="pdf">PDF</option>
+        <option value="webp">WebP</option>
+        <!-- Add more format options as needed -->
+    </select>
     <br>
-    <button onclick="processFile()">Process File</button>
+    <button onclick="changeFormat()">Change Format</button>
     <br>
-    <div id="optionsContainer">
-        <label>Select Format:</label>
-        <input type="radio" name="format" value="mp4"> MP4 (Video)
-        <input type="radio" name="format" value="mp3"> MP3 (Audio)
-        <input type="radio" name="format" value="ogg"> OGG (Audio)
+    <img id="outputImage" alt="Converted Image" style="display: none;">
 
-        <br>
-
-        <label>Select Quality (for Video):</label>
-        <input type="radio" name="quality" value="1080p"> 1080p
-        <input type="radio" name="quality" value="720p"> 720p
-        <input type="radio" name="quality" value="480p"> 480p
-
-        <br>
-
-        <label>Select Bitrate (for Audio):</label>
-        <input type="radio" name="bitrate" value="192k"> 192kbps
-        <input type="radio" name="bitrate" value="128k"> 128kbps
-        <input type="radio" name="bitrate" value="64k"> 64kbps
-
-        <br>
-
-        <a id="downloadLink" download="output">Download Converted File</a>
-        <span id="sizeInfo"></span>
-    </div>
-
-    <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg/ffmpeg.min.js"></script>
     <script>
-        let processedFile;
-        let optionsContainer = document.getElementById('optionsContainer');
-        let downloadLink = document.getElementById('downloadLink');
-        let loadingScreen = document.getElementById('loadingScreen');
-        let loadingText = document.getElementById('loadingText');
-
-        async function processFile() {
+        async function changeFormat() {
             const fileInput = document.getElementById('fileInput');
-            const urlInput = document.getElementById('urlInput');
-            const sizeInfo = document.getElementById('sizeInfo');
-            const formatRadioButtons = document.getElementsByName('format');
-            const qualityRadioButtons = document.getElementsByName('quality');
-            const bitrateRadioButtons = document.getElementsByName('bitrate');
+            const formatSelect = document.getElementById('formatSelect');
+            const outputImage = document.getElementById('outputImage');
 
-            // Clear radio button selections
-            formatRadioButtons.forEach(button => (button.checked = false));
-            qualityRadioButtons.forEach(button => (button.checked = false));
-            bitrateRadioButtons.forEach(button => (button.checked = false));
-
-            if (fileInput.files.length === 0 && !urlInput.value.trim()) {
-                alert('Please select a file or enter a valid URL.');
+            if (fileInput.files.length === 0) {
+                alert('Please select an image file.');
                 return;
             }
 
-            // Show loading screen
-            loadingScreen.style.display = 'flex';
+            const imageFile = fileInput.files[0];
+            const selectedFormat = formatSelect.value;
 
-            optionsContainer.style.display = 'block';
+            const convertedImage = await convertImageFormat(imageFile, selectedFormat);
 
-            let file;
-            if (fileInput.files.length > 0) {
-                file = fileInput.files[0];
-            } else {
-                file = { name: 'inputFile', data: new TextEncoder().encode(urlInput.value.trim()) };
+            if (convertedImage) {
+                outputImage.src = URL.createObjectURL(convertedImage);
+                outputImage.style.display = 'block';
             }
-
-            processedFile = file;
-
-            await ffmpeg.load();
-
-            const { createFFmpeg } = ffmpeg;
-            const ffmpegInstance = createFFmpeg({ log: true });
-
-            await ffmpegInstance.write('inputFile', new Uint8Array(await processedFile.arrayBuffer()));
-
-            const isVideo = file.type.startsWith('video');
-            const isAudio = file.type.startsWith('audio');
-
-            if (isVideo) {
-                // Show video-related options
-                document.querySelector('input[value="mp4"]').style.display = 'inline-block';
-                document.querySelector('input[value="mp3"]').style.display = 'none';
-                document.querySelector('input[value="ogg"]').style.display = 'none';
-
-                document.querySelector('label[for="format"]').innerText = 'Select Video Format:';
-                document.querySelector('label[for="quality"]').innerText = 'Select Video Quality:';
-                document.querySelector('label[for="bitrate"]').innerText = 'Select Audio Bitrate:';
-
-                // Check the default options
-                formatRadioButtons[0].checked = true;
-                qualityRadioButtons[0].checked = true;
-            } else if (isAudio) {
-                // Show audio-related options
-                document.querySelector('input[value="mp4"]').style.display = 'none';
-                document.querySelector('input[value="mp3"]').style.display = 'inline-block';
-                document.querySelector('input[value="ogg"]').style.display = 'inline-block';
-
-                document.querySelector('label[for="format"]').innerText = 'Select Audio Format:';
-                document.querySelector('label[for="quality"]').innerText = 'Select Video Quality:';
-                document.querySelector('label[for="bitrate"]').innerText = 'Select Audio Bitrate:';
-
-                // Check the default options
-                formatRadioButtons[1].checked = true;
-                bitrateRadioButtons[0].checked = true;
-            }
-
-            const format = getSelectedRadioButtonValue(formatRadioButtons);
-
-            if (format === 'mp4') {
-                const quality = getSelectedRadioButtonValue(qualityRadioButtons);
-                await ffmpegInstance.run(
-                    '-i', 'inputFile',
-                    '-c:v', 'libx264',
-                    '-preset', 'slow',
-                    '-b:v', '2M',
-                    '-c:a', 'aac',
-                    '-b:a', '192k',
-                    '-y', `output.${format}`
-                );
-            } else {
-                const bitrate = getSelectedRadioButtonValue(bitrateRadioButtons);
-                await ffmpegInstance.run(
-                    '-i', 'inputFile',
-                    '-c:a', 'libmp3lame',
-                    '-b:a', bitrate,
-                    '-y', `output.${format}`
-                );
-            }
-
-            const data = ffmpegInstance.read(`output.${format}`);
-            const blobType = format === 'mp4' ? 'video/mp4' : 'audio/mp3';
-            const convertedBlob = new Blob([data], { type: blobType });
-
-            downloadLink.href = URL.createObjectURL(convertedBlob);
-            downloadLink.style.display = 'inline-block';
-
-            sizeInfo.innerText = `File Size: ${(convertedBlob.size / (1024 * 1024)).toFixed(2)} MB`;
-
-            // Hide loading screen
-            loadingScreen.style.display = 'none';
         }
 
-        function getSelectedRadioButtonValue(radioButtons) {
-            for (const radioButton of radioButtons) {
-                if (radioButton.checked) {
-                    return radioButton.value;
-                }
+        async function convertImageFormat(imageFile, format) {
+            try {
+                const image = await createImageBitmap(imageFile);
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+
+                canvas.width = image.width;
+                canvas.height = image.height;
+
+                ctx.drawImage(image, 0, 0);
+
+                const dataUrl = canvas.toDataURL(`image/${format}`);
+                return fetch(dataUrl).then(res => res.blob());
+            } catch (error) {
+                console.error('Error converting image format:', error);
+                alert('Error converting image format. Please try again.');
+                return null;
             }
         }
     </script>
