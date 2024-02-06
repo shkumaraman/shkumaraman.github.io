@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>File Converter</title>
+    <title>PDF Converter</title>
     <script src="https://rawgit.com/eKoopmans/html2pdf/master/dist/html2pdf.bundle.js"></script>
     <style>
         body {
@@ -12,6 +12,11 @@
             color: #333;
             text-align: center;
             margin: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
         }
 
         h2 {
@@ -31,14 +36,6 @@
             cursor: pointer;
             margin-bottom: 20px;
             display: inline-block;
-        }
-
-        #urlInput {
-            padding: 10px;
-            border: 2px solid #4CAF50;
-            border-radius: 5px;
-            margin-bottom: 20px;
-            width: 80%;
         }
 
         #convertButton {
@@ -113,12 +110,10 @@
     </style>
 </head>
 <body>
-    <h2>File Converter</h2>
-    <label for="fileInput">Choose File</label>
+    <h2>PDF Converter</h2>
+    <hr class="line">
+    <label for="fileInput" style="background-color: #4CAF50; color: #ffffff;">Browse File</label>
     <input type="file" id="fileInput" accept=".jpg, .jpeg, .png, .gif, .bmp, .webp">
-    <br>
-    <label for="urlInput">Or Enter Image URL:</label>
-    <input type="text" id="urlInput">
     <br>
     <button id="convertButton" onclick="convertFile()">Convert</button>
 
@@ -135,32 +130,18 @@
     <script>
         async function convertFile() {
             const fileInput = document.getElementById('fileInput');
-            const urlInput = document.getElementById('urlInput');
             const outputContainer = document.getElementById('outputContainer');
             const outputLink = document.getElementById('outputLink');
             const loadingScreen = document.getElementById('loadingScreen');
 
-            const isFileSelected = fileInput.files.length > 0;
-            const isUrlSelected = urlInput.value.trim() !== '';
-
-            if (!isFileSelected && !isUrlSelected) {
-                alert('Please choose a file or enter an image URL.');
+            if (fileInput.files.length === 0) {
+                alert('Please choose a file.');
                 return;
             }
 
             loadingScreen.style.display = 'flex';
 
-            let inputFile;
-            if (isFileSelected) {
-                inputFile = fileInput.files[0];
-            } else {
-                inputFile = await fetchImageFromUrl(urlInput.value);
-                if (!inputFile) {
-                    loadingScreen.style.display = 'none';
-                    alert('Failed to fetch image from the provided URL.');
-                    return;
-                }
-            }
+            const inputFile = fileInput.files[0];
 
             const convertedFile = await convertToPDF(inputFile);
 
@@ -169,30 +150,9 @@
                 outputLink.href = blobUrl;
                 outputLink.style.display = 'inline-block';
                 outputContainer.style.display = 'block';
-                loadingScreen.style.display = 'none';
             }
-        }
 
-        function fetchImageFromUrl(url) {
-            return new Promise(resolve => {
-                const img = new Image();
-                img.crossOrigin = 'Anonymous';
-                img.onload = () => resolve(getBlobFromDataURL(img.src));
-                img.onerror = () => resolve(null);
-                img.src = url;
-            });
-        }
-
-        function getBlobFromDataURL(dataURL) {
-            const arr = dataURL.split(',');
-            const mime = arr[0].match(/:(.*?);/)[1];
-            const bstr = atob(arr[1]);
-            let n = bstr.length;
-            const u8arr = new Uint8Array(n);
-            while (n--) {
-                u8arr[n] = bstr.charCodeAt(n);
-            }
-            return new Blob([u8arr], { type: mime });
+            loadingScreen.style.display = 'none';
         }
 
         function convertToPDF(imageFile) {
