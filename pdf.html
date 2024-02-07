@@ -9,6 +9,7 @@
     <meta name="description"
         content="Convert images to PDF online with this simple and efficient file converter. Choose your image, click Convert, and download the converted PDF.">
     <title>PDF Converter</title>
+    <script src="https://rawgit.com/eKoopmans/html2pdf/master/dist/html2pdf.bundle.js"></script>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -71,8 +72,7 @@
             overflow: hidden;
         }
 
-        #outputLink,
-        #mergeOutputLink {
+        #outputLink {
             display: none;
             padding: 10px;
             background-color: #4CAF50;
@@ -82,8 +82,7 @@
             margin-top: 20px;
         }
 
-        #outputLink:hover,
-        #mergeOutputLink:hover {
+        #outputLink:hover {
             background-color: #45a049;
         }
 
@@ -127,13 +126,11 @@
     <label for="fileInput">Browse File</label>
     <input type="file" id="fileInput" accept=".jpg, .jpeg, .png, .gif, .bmp, .webp" multiple>
     <br>
+    <label for="qualitySlider">Image Quality:</label>
+    <input type="range" id="qualitySlider" min="1" max="100" step="1" value="100">
+    <br>
     <label for="pageCountInput">Number of Pages:</label>
     <input type="number" id="pageCountInput" min="1" value="1">
-    <br>
-    <!-- Add a slider for size adjustment -->
-    <label for="sizeSlider">Adjust Size (%):</label>
-    <input type="range" id="sizeSlider" min="0" max="100" step="1" value="100" oninput="updateSizeLabel()">
-    <span id="sizeLabel">100%</span>
     <br>
     <button id="convertButton" onclick="convertFile()">Convert</button>
 
@@ -145,29 +142,15 @@
 
     <div id="outputContainer">
         <a id="outputLink" download="converted_file">Download Converted File</a>
-        <!-- Display the merged PDF link -->
-        <a id="mergeOutputLink" download="merged_file">Download Merged PDF</a>
     </div>
 
-    <script src="https://rawgit.com/eKoopmans/html2pdf/master/dist/html2pdf.bundle.js"></script>
     <script>
-        // Add a variable to store the size percentage
-        let sizePercentage = 100;
-
-        // Function to update the size label based on the slider value
-        function updateSizeLabel() {
-            const sizeSlider = document.getElementById('sizeSlider');
-            const sizeLabel = document.getElementById('sizeLabel');
-            sizePercentage = sizeSlider.value;
-            sizeLabel.innerText = `${sizePercentage}%`;
-        }
-
         async function convertFile() {
             const fileInput = document.getElementById('fileInput');
+            const qualitySlider = document.getElementById('qualitySlider');
             const pageCountInput = document.getElementById('pageCountInput');
             const outputContainer = document.getElementById('outputContainer');
             const outputLink = document.getElementById('outputLink');
-            const mergeOutputLink = document.getElementById('mergeOutputLink');
             const loadingScreen = document.getElementById('loadingScreen');
 
             if (fileInput.files.length === 0) {
@@ -178,25 +161,22 @@
             loadingScreen.style.display = 'flex';
 
             const inputFiles = fileInput.files;
+            const quality = parseInt(qualitySlider.value) || 100;
             const pageCount = parseInt(pageCountInput.value) || 1;
 
-            const convertedFile = await convertToPDF(inputFiles, pageCount, sizePercentage);
+            const convertedFile = await convertToPDF(inputFiles, pageCount, quality);
 
             if (convertedFile) {
                 const blobUrl = URL.createObjectURL(convertedFile);
                 outputLink.href = blobUrl;
                 outputLink.style.display = 'inline-block';
                 outputContainer.style.display = 'block';
-
-                // Display the merged PDF link
-                mergeOutputLink.href = blobUrl;
-                mergeOutputLink.style.display = 'inline-block';
             }
 
             loadingScreen.style.display = 'none';
         }
 
-        function convertToPDF(imageFiles, pageCount, sizePercentage) {
+        function convertToPDF(imageFiles, pageCount, quality) {
             return new Promise(resolve => {
                 const promises = Array.from(imageFiles).map(imageFile => {
                     return new Promise(innerResolve => {
@@ -258,12 +238,12 @@
                         });
                     });
 
-                    // Perform PDF conversion on the merged canvases with adjusted size
+                    // Perform PDF conversion on the merged canvases with adjusted quality
                     html2pdf(finalCanvas, {
                         margin: 10,
-                        filename: 'merged_file.pdf',
+                        filename: 'converted_file.pdf',
                         jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' },
-                        image: { type: 'jpeg', quality: sizePercentage / 100 }, // Adjust size here
+                        image: { type: 'jpeg', quality: quality / 100 }, // Adjust quality here
                         output: 'blob',
                         html2canvas: { scale: 1 }
                     }).then(pdf => {
