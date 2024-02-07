@@ -120,105 +120,77 @@
     <div id="outputContainer"></div>
 
     <script>
-        async function convertFile() {
-            const fileInput = document.getElementById('fileInput');
-            const outputContainer = document.getElementById('outputContainer');
-            const loadingScreen = document.getElementById('loadingScreen');
+    async function convertFile() {
+        const fileInput = document.getElementById('fileInput');
+        const outputContainer = document.getElementById('outputContainer');
+        const loadingScreen = document.getElementById('loadingScreen');
 
-            if (fileInput.files.length === 0) {
-                alert('Please choose at least one file.');
-                return;
-            }
-
-            loadingScreen.style.display = 'flex';
-
-            const inputFiles = fileInput.files;
-
-            const mergedPdf = await convertToPDF(inputFiles);
-
-            if (mergedPdf) {
-                const blobUrl = URL.createObjectURL(mergedPdf);
-                const pdfEmbed = document.createElement('embed');
-                pdfEmbed.src = blobUrl;
-                pdfEmbed.type = 'application/pdf';
-                pdfEmbed.width = '100%';
-                pdfEmbed.height = '600px';
-                outputContainer.innerHTML = '';
-                outputContainer.appendChild(pdfEmbed);
-                outputContainer.style.display = 'block';
-            }
-
-            loadingScreen.style.display = 'none';
+        if (fileInput.files.length === 0) {
+            alert('Please choose at least one file.');
+            return;
         }
 
-        function convertToPDF(imageFiles) {
-            return new Promise(resolve => {
-                const canvas = document.createElement('canvas');
-                const ctx = canvas.getContext('2d');
-                const pdfWidth = 595.28; // A4 width in points
-                const pdfHeight = 841.89; // A4 height in points
-                const pdfPromises = [];
+        loadingScreen.style.display = 'flex';
 
-                imageFiles.forEach((file, index) => {
-                    const pdfPromise = new Promise(innerResolve => {
-                        const reader = new FileReader();
-                        reader.onloadend = () => {
-                            const img = new Image();
-                            img.src = reader.result;
+        const inputFiles = fileInput.files;
 
-                            img.onload = () => {
-                                canvas.width = pdfWidth;
-                                canvas.height = pdfHeight;
+        const mergedPdf = await convertToPDF(inputFiles);
 
-                                const aspectRatio = img.width / img.height;
-                                let newWidth, newHeight;
+        if (mergedPdf) {
+            const blobUrl = URL.createObjectURL(mergedPdf);
+            const pdfEmbed = document.createElement('embed');
+            pdfEmbed.src = blobUrl;
+            pdfEmbed.type = 'application/pdf';
+            pdfEmbed.width = '100%';
+            pdfEmbed.height = '600px';
+            outputContainer.innerHTML = '';
+            outputContainer.appendChild(pdfEmbed);
+            outputContainer.style.display = 'block';
+        }
 
-                                if (aspectRatio > 1) {
-                                    newWidth = pdfWidth;
-                                    newHeight = pdfWidth / aspectRatio;
-                                } else {
-                                    newWidth = pdfHeight * aspectRatio;
-                                    newHeight = pdfHeight;
-                                }
+        loadingScreen.style.display = 'none';
+    }
 
-                                ctx.drawImage(img, 0, 0, newWidth, newHeight);
+    function convertToPDF(imageFiles) {
+        return new Promise(resolve => {
+            const pdfPromises = [];
 
-                                if (index === imageFiles.length - 1) {
-                                    html2pdf(canvas, {
-                                        margin: 10,
-                                        filename: 'converted_file.pdf',
-                                        jsPDF: { unit: 'pt', format: [pdfWidth, pdfHeight], orientation: 'portrait' },
-                                        image: { type: 'jpeg', quality: 1 },
-                                        output: 'blob',
-                                        html2canvas: { scale: 1 }
-                                    }).then(pdf => {
-                                        innerResolve(pdf);
-                                    });
-                                } else {
-                                    innerResolve();
-                                }
-                            };
+            imageFiles.forEach((file) => {
+                const pdfPromise = new Promise(innerResolve => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        const img = new Image();
+                        img.src = reader.result;
+
+                        img.onload = () => {
+                            const pdf = new window.jsPDF();
+                            const width = pdf.internal.pageSize.getWidth();
+                            const height = pdf.internal.pageSize.getHeight();
+                            pdf.addImage(img, 'JPEG', 0, 0, width, height);
+                            innerResolve(pdf);
                         };
+                    };
 
-                        reader.readAsDataURL(file);
-                    });
-
-                    pdfPromises.push(pdfPromise);
+                    reader.readAsDataURL(file);
                 });
 
-                Promise.all(pdfPromises).then(pdfs => {
-                    const mergedPdf = new window.jsPDF();
-                    pdfs.forEach(pdf => {
-                        if (pdf) {
-                            mergedPdf.addPage();
-                            mergedPdf.addImage(pdf, 'JPEG', 0, 0, pdfWidth, pdfHeight);
-                        }
-                    });
-                    resolve(mergedPdf.output('blob'));
-                });
+                pdfPromises.push(pdfPromise);
             });
-        }
+
+            Promise.all(pdfPromises).then(pdfs => {
+                const mergedPdf = new window.jsPDF();
+                pdfs.forEach(pdf => {
+                    if (pdf) {
+                        mergedPdf.addPage();
+                        mergedPdf.addImage(pdf.output('datauri'), 'JPEG', 0, 0);
+                    }
+                });
+                resolve(mergedPdf.output('blob'));
+            });
+        });
+    }
     </script>
+    
 </body>
 
 </html>
