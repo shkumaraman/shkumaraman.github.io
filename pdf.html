@@ -165,42 +165,46 @@
 
         function convertToPDF(imageFiles) {
             return new Promise(resolve => {
-                const canvas = document.createElement('canvas');
-                const ctx = canvas.getContext('2d');
+                const pdfPromises = [];
 
-                const loadAndDrawImage = (index) => {
-                    const reader = new FileReader();
-                    reader.onloadend = () => {
-                        const img = new Image();
-                        img.src = reader.result;
+                imageFiles.forEach(file => {
+                    const pdfPromise = new Promise(innerResolve => {
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                            const img = new Image();
+                            img.src = reader.result;
 
-                        img.onload = () => {
-                            canvas.width = img.width;
-                            canvas.height = img.height;
+                            img.onload = () => {
+                                const canvas = document.createElement('canvas');
+                                canvas.width = img.width;
+                                canvas.height = img.height;
 
-                            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                                const ctx = canvas.getContext('2d');
+                                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-                            html2pdf(canvas, {
-                                margin: 10,
-                                filename: 'converted_file.pdf',
-                                jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' },
-                                image: { type: 'jpeg', quality: 1 },
-                                output: 'blob',
-                                html2canvas: { scale: 1 }
-                            }).then(pdf => {
-                                if (index < imageFiles.length - 1) {
-                                    loadAndDrawImage(index + 1);
-                                } else {
-                                    resolve(pdf);
-                                }
-                            });
+                                html2pdf(canvas, {
+                                    margin: 10,
+                                    filename: 'converted_file.pdf',
+                                    jsPDF: { unit: 'pt', format: [canvas.width, canvas.height], orientation: 'portrait' },
+                                    image: { type: 'jpeg', quality: 1 },
+                                    output: 'blob',
+                                    html2canvas: { scale: 1 }
+                                }).then(pdf => {
+                                    innerResolve(pdf);
+                                });
+                            };
                         };
-                    };
 
-                    reader.readAsDataURL(imageFiles[index]);
-                };
+                        reader.readAsDataURL(file);
+                    });
 
-                loadAndDrawImage(0);
+                    pdfPromises.push(pdfPromise);
+                });
+
+                Promise.all(pdfPromises).then(pdfs => {
+                    const mergedPdf = new Blob(pdfs, { type: 'application/pdf' });
+                    resolve(mergedPdf);
+                });
             });
         }
     </script>
