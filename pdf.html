@@ -44,123 +44,146 @@
         <a id="mergeOutputLink" download="merged_file">Download Merged PDF</a>
     </div>
 
-    <script>
-        async function convertFile() {
-            const fileInput = document.getElementById('fileInput');
-            const pageCountInput = document.getElementById('pageCountInput');
-            const outputContainer = document.getElementById('outputContainer');
-            const outputLink = document.getElementById('outputLink');
-            const mergeOutputLink = document.getElementById('mergeOutputLink');
-            const loadingScreen = document.getElementById('loadingScreen');
+<script>
+    async function convertFile() {
+        const fileInput = document.getElementById('fileInput');
+        const pageCountInput = document.getElementById('pageCountInput');
+        const outputContainer = document.getElementById('outputContainer');
+        const outputLink = document.getElementById('outputLink');
+        const mergeOutputLink = document.getElementById('mergeOutputLink');
+        const loadingScreen = document.getElementById('loadingScreen');
 
-            if (fileInput.files.length === 0) {
-                alert('Please choose at least one file.');
-                return;
-            }
-
-            loadingScreen.style.display = 'flex';
-
-            const inputFiles = fileInput.files;
-            const pageCount = parseInt(pageCountInput.value) || 1;
-
-            const convertedFile = await convertToPDF(inputFiles, pageCount);
-
-            if (convertedFile) {
-                const blobUrl = URL.createObjectURL(convertedFile);
-                outputLink.href = blobUrl;
-                outputLink.style.display = 'inline-block';
-                outputContainer.style.display = 'block';
-
-                // Display the merged PDF link
-                mergeOutputLink.href = blobUrl;
-                mergeOutputLink.style.display = 'inline-block';
-            }
-
-            loadingScreen.style.display = 'none';
+        if (fileInput.files.length === 0) {
+            alert('Please choose at least one file.');
+            return;
         }
 
-        function convertToPDF(imageFiles, pageCount) {
-            return new Promise(resolve => {
-                const promises = Array.from(imageFiles).map(imageFile => {
-                    return new Promise(innerResolve => {
-                        const reader = new FileReader();
-                        reader.onloadend = () => {
-                            const img = new Image();
-                            img.src = reader.result;
+        loadingScreen.style.display = 'flex';
 
-                            img.onload = () => {
-                                const canvases = Array(pageCount).fill(null).map(() => {
-                                    const canvas = document.createElement('canvas');
-                                    let maxWidth = 800; // Adjust this value as needed
-                                    let maxHeight = 1000; // Adjust this value as needed
+        const inputFiles = fileInput.files;
+        const pageCount = parseInt(pageCountInput.value) || 1;
 
-                                    if (img.width > maxWidth || img.height > maxHeight) {
-                                        const aspectRatio = img.width / img.height;
-                                        if (aspectRatio > 1) {
-                                            canvas.width = maxWidth;
-                                            canvas.height = maxWidth / aspectRatio;
-                                        } else {
-                                            canvas.width = maxHeight * aspectRatio;
-                                            canvas.height = maxHeight;
-                                        }
+        const convertedFile = await convertToPDF(inputFiles, pageCount);
+
+        if (convertedFile) {
+            const blobUrl = URL.createObjectURL(convertedFile);
+            outputLink.href = blobUrl;
+            outputLink.style.display = 'inline-block';
+            outputContainer.style.display = 'block';
+
+            // Display the merged PDF link
+            mergeOutputLink.href = blobUrl;
+            mergeOutputLink.style.display = 'inline-block';
+        }
+
+        loadingScreen.style.display = 'none';
+    }
+
+    function convertToPDF(imageFiles, pageCount) {
+        return new Promise(resolve => {
+            const promises = Array.from(imageFiles).map(imageFile => {
+                return new Promise(innerResolve => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        const img = new Image();
+                        img.src = reader.result;
+
+                        img.onload = () => {
+                            const canvases = Array(pageCount).fill(null).map(() => {
+                                const canvas = document.createElement('canvas');
+                                let maxWidth = 800; // Adjust this value as needed
+                                let maxHeight = 1000; // Adjust this value as needed
+
+                                if (img.width > maxWidth || img.height > maxHeight) {
+                                    const aspectRatio = img.width / img.height;
+                                    if (aspectRatio > 1) {
+                                        canvas.width = maxWidth;
+                                        canvas.height = maxWidth / aspectRatio;
                                     } else {
-                                        canvas.width = img.width;
-                                        canvas.height = img.height;
+                                        canvas.width = maxHeight * aspectRatio;
+                                        canvas.height = maxHeight;
                                     }
+                                } else {
+                                    canvas.width = img.width;
+                                    canvas.height = img.height;
+                                }
 
-                                    const ctx = canvas.getContext('2d');
-                                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                                const ctx = canvas.getContext('2d');
+                                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-                                    return canvas;
-                                });
+                                return canvas;
+                            });
 
-                                // Resolve the promise with the canvases
-                                innerResolve(canvases);
-                            };
+                            // Resolve the promise with the canvases
+                            innerResolve(canvases);
                         };
+                    };
 
-                        reader.readAsDataURL(imageFile);
-                    });
-                });
-
-                // Wait for all promises to resolve
-                Promise.all(promises).then(allCanvases => {
-                    // Merge canvases or handle as needed
-                    const mergedCanvases = mergeCanvases(allCanvases);
-
-                    // Perform PDF conversion on the merged canvases
-                    html2pdf(mergedCanvases, {
-                        margin: 10,
-                        filename: 'merged_file.pdf',
-                        jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' },
-                        image: { type: 'jpeg', quality: 1 },
-                        output: 'blob',
-                        html2canvas: { scale: 1 }
-                    }).then(pdf => {
-                        resolve(pdf);
-                    });
-                });
-            });
-        }
-
-        function mergeCanvases(allCanvases) {
-            const mergedCanvas = document.createElement('canvas');
-            const context = mergedCanvas.getContext('2d');
-
-            // Set canvas size based on the first canvas dimensions
-            mergedCanvas.width = allCanvases[0][0].width;
-            mergedCanvas.height = allCanvases[0].reduce((totalHeight, canvas) => totalHeight + canvas.height, 0);
-
-            allCanvases.forEach(canvases => {
-                canvases.forEach(canvas => {
-                    context.drawImage(canvas, 0, mergedCanvas.height);
-                    mergedCanvas.height += canvas.height;
+                    reader.readAsDataURL(imageFile);
                 });
             });
 
-            return mergedCanvas;
-        }
-    </script>
+            // Wait for all promises to resolve
+            Promise.all(promises).then(allCanvases => {
+                // Merge canvases or handle as needed
+                const mergedCanvases = mergeCanvases(allCanvases);
+
+                // Create a new canvas to ensure images are drawn properly in the PDF
+                const finalCanvas = document.createElement('canvas');
+                finalCanvas.width = mergedCanvases[0].width;
+                finalCanvas.height = mergedCanvases.reduce((totalHeight, canvas) => totalHeight + canvas.height, 0);
+                const context = finalCanvas.getContext('2d');
+
+                mergedCanvases.forEach(canvases => {
+                    canvases.forEach(canvas => {
+                        context.drawImage(canvas, 0, finalCanvas.height);
+                        finalCanvas.height += canvas.height;
+                    });
+                });
+
+                // Perform PDF conversion on the merged canvases
+                html2pdf(finalCanvas, {
+                    margin: 10,
+                    filename: 'merged_file.pdf',
+                    jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' },
+                    image: { type: 'jpeg', quality: 1 },
+                    output: 'blob',
+                    html2canvas: { scale: 1 }
+                }).then(pdf => {
+                    resolve(pdf);
+                });
+            });
+        });
+    }
+
+    function mergeCanvases(allCanvases) {
+        const mergedCanvases = [];
+
+        // Determine the maximum width among canvases
+        const maxWidth = Math.max(...allCanvases.map(canvases => canvases[0].width));
+
+        // Create a canvas for each page and resize canvases accordingly
+        allCanvases.forEach(canvases => {
+            canvases.forEach(canvas => {
+                const resizedCanvas = document.createElement('canvas');
+                resizedCanvas.width = maxWidth;
+                resizedCanvas.height = (maxWidth / canvas.width) * canvas.height;
+
+                const ctx = resizedCanvas.getContext('2d');
+                ctx.drawImage(canvas, 0, 0, resizedCanvas.width, resizedCanvas.height);
+
+                if (!mergedCanvases[canvases.indexOf(canvas)]) {
+                    mergedCanvases[canvases.indexOf(canvas)] = [];
+                }
+
+                mergedCanvases[canvases.indexOf(canvas)].push(resizedCanvas);
+            });
+        });
+
+        return mergedCanvases;
+    }
+</script>
+    
 </body>
 
 </html>
