@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -25,9 +26,11 @@
         h2 {
             color: #4CAF50;
         }
+
         .line {
-           border: 1px solid #4CAF50;
+            border: 1px solid #4CAF50;
         }
+
         input[type="file"] {
             display: none;
         }
@@ -68,7 +71,8 @@
             overflow: hidden;
         }
 
-        #outputLink {
+        #outputLink,
+        #mergeOutputLink {
             display: none;
             padding: 10px;
             background-color: #4CAF50;
@@ -78,7 +82,8 @@
             margin-top: 20px;
         }
 
-        #outputLink:hover {
+        #outputLink:hover,
+        #mergeOutputLink:hover {
             background-color: #45a049;
         }
 
@@ -114,12 +119,20 @@
         }
     </style>
 </head>
+
 <body>
     <h2>PDF Converter</h2>
     <hr class="line">
     <p>Click To Upload Your Image Here 👇</p>
     <label for="fileInput">Browse File</label>
     <input type="file" id="fileInput" accept=".jpg, .jpeg, .png, .gif, .bmp, .webp" multiple>
+    <br>
+    <label for="pageCountInput">Number of Pages:</label>
+    <input type="number" id="pageCountInput" min="1" value="1">
+    <br>
+    <!-- Add a slider for size adjustment -->
+    <label for="sizeSlider">Adjust Size (%):</label>
+    <input type="range" id="sizeSlider" min="0" max="100" value="100">
     <br>
     <button id="convertButton" onclick="convertFile()">Convert</button>
 
@@ -131,6 +144,7 @@
 
     <div id="outputContainer">
         <a id="outputLink" download="converted_file">Download Converted File</a>
+        <a id="mergeOutputLink" download="merged_file">Download Merged File</a>
     </div>
 
     <script>
@@ -138,6 +152,7 @@
             const fileInput = document.getElementById('fileInput');
             const outputContainer = document.getElementById('outputContainer');
             const outputLink = document.getElementById('outputLink');
+            const mergeOutputLink = document.getElementById('mergeOutputLink');
             const loadingScreen = document.getElementById('loadingScreen');
 
             if (fileInput.files.length === 0) {
@@ -148,20 +163,27 @@
             loadingScreen.style.display = 'flex';
 
             const inputFiles = fileInput.files;
+            const pageCount = parseInt(document.getElementById('pageCountInput').value);
+            const sizePercentage = parseInt(document.getElementById('sizeSlider').value);
 
-            const convertedFile = await convertToPDF(inputFiles);
+            const convertedFile = await convertToPDF(inputFiles, pageCount, sizePercentage);
 
             if (convertedFile) {
                 const blobUrl = URL.createObjectURL(convertedFile);
-                outputLink.href = blobUrl;
-                outputLink.style.display = 'inline-block';
+                if (pageCount > 1) {
+                    mergeOutputLink.href = blobUrl;
+                    mergeOutputLink.style.display = 'inline-block';
+                } else {
+                    outputLink.href = blobUrl;
+                    outputLink.style.display = 'inline-block';
+                }
                 outputContainer.style.display = 'block';
             }
 
             loadingScreen.style.display = 'none';
         }
 
-        function convertToPDF(imageFiles) {
+        function convertToPDF(imageFiles, pageCount, sizePercentage) {
             return new Promise(resolve => {
                 const promises = Array.from(imageFiles).map(imageFile => {
                     return new Promise(innerResolve => {
@@ -172,11 +194,16 @@
 
                             img.onload = () => {
                                 const canvas = document.createElement('canvas');
-                                canvas.width = img.width;
-                                canvas.height = img.height;
-
                                 const ctx = canvas.getContext('2d');
-                                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+                                // Calculate adjusted size based on the slider value
+                                const adjustedWidth = (img.width * sizePercentage) / 100;
+                                const adjustedHeight = (img.height * sizePercentage) / 100;
+
+                                canvas.width = adjustedWidth;
+                                canvas.height = adjustedHeight;
+
+                                ctx.drawImage(img, 0, 0, adjustedWidth, adjustedHeight);
 
                                 // Resolve the promise with the canvas
                                 innerResolve(canvas);
@@ -203,9 +230,14 @@
 
                     // Wait for all PDF promises to resolve
                     Promise.all(pdfPromises).then(pdfBlobs => {
-                        // Merge PDF blobs into a single PDF
-                        const mergedPdfBlob = mergePDFs(pdfBlobs);
-                        resolve(mergedPdfBlob);
+                        // Merge PDF blobs into a single PDF if pageCount is greater than 1
+                        if (pageCount > 1) {
+                            const mergedPdfBlob = mergePDFs(pdfBlobs);
+                            resolve(mergedPdfBlob);
+                        } else {
+                            // If pageCount is 1, resolve with the first PDF blob
+                            resolve(pdfBlobs[0]);
+                        }
                     });
                 });
             });
@@ -213,7 +245,7 @@
 
         function mergePDFs(pdfBlobs) {
             const mergedPdf = new window.JSPDF();
-            
+
             pdfBlobs.forEach(pdfBlob => {
                 const pdfReader = new FileReader();
                 pdfReader.readAsDataURL(pdfBlob);
@@ -227,4 +259,5 @@
         }
     </script>
 </body>
+
 </html>
