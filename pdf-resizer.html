@@ -4,102 +4,243 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <title>PDF Size Reducer</title>
-<style>
-  body {
-    font-family: 'Arial', sans-serif;
-    background-color: #f4f4f4;
-    margin: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 100vh;
-}
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f0f0;
+            color: #333;
+            text-align: center;
+            margin: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
 
-.container {
-    background-color: #fff;
-    padding: 20px;
-    border-radius: 8px;
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-    text-align: center;
-}
+        h2 {
+            color: #4CAF50;
+        }
 
-.label {
-    margin-right: 8px;
-}
+        .line {
+            border: 1px solid #4CAF50;
+        }
 
-.file-input,
-.percentage-input,
-.reduce-button {
-    margin-top: 8px;
-    padding: 8px;
-    font-size: 16px;
-}
+        input[type="file"] {
+            display: none;
+        }
 
-.reduce-button {
-    background-color: #4CAF50;
-    color: #fff;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: background-color 0.3s ease;
-}
+        label {
+            padding: 10px;
+            border: 2px solid #4CAF50;
+            border-radius: 5px;
+            background-color: #fff;
+            color: #333;
+            cursor: pointer;
+            margin-bottom: 20px;
+            display: inline-block;
+        }
 
-.reduce-button:hover {
-    background-color: #45a049;
-}
+        #reduceButton {
+            padding: 10px;
+            background-color: #4CAF50;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
 
-</style>
+        #reduceButton:hover {
+            background-color: #45a049;
+        }
 
+        #outputContainer {
+            border: 1px solid #000;
+            border-radius: 5px;
+            padding: 20px;
+            background-color: #fff;
+            margin-top: 20px;
+            display: none;
+            max-width: 100%;
+            overflow: hidden;
+        }
+
+        #outputLink {
+            display: none;
+            padding: 10px;
+            background-color: #4CAF50;
+            color: #fff;
+            text-decoration: none;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+
+        #outputLink:hover {
+            background-color: #45a049;
+        }
+
+        #loadingScreen {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+
+        #loadingContainer {
+            display: inline-block;
+        }
+
+        .loader {
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #3498db;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
 </head>
 
 <body>
-    <div class="container">
-        <h2>PDF Size Reducer</h2>
-        <label for="fileInput" class="label">Choose a PDF file:</label>
-        <input type="file" id="fileInput" accept=".pdf" class="file-input">
-        <br>
-        <label for="reductionInput" class="label">Reduction Percentage:</label>
-        <input type="number" id="reductionInput" min="1" max="99" value="10" class="percentage-input"> %
-        <br>
-        <button onclick="reducePdfSize()" class="reduce-button">Reduce Size</button>
-    </div>
-      <script type="module">
-        import { PDFDocument } from 'https://cdn.skypack.dev/pdf-lib';
+    <h2>PDF Size Reducer</h2>
+    <hr class="line">
+    <p>Click To Upload Your PDF Here 👇</p>
+    <label for="fileInput">Browse File</label>
+    <input type="file" id="fileInput" accept=".pdf">
+    <br>
+    <input type="range" id="sizeSlider" min="0" max="100" value="0">
+    <p>Size Reduction: <span id="sizePercentage">0%</span></p>
+    <button id="reduceButton" onclick="reduceSize()">Reduce Size</button>
 
-        async function reducePdfSize() {
+    <div id="loadingScreen">
+        <div id="loadingContainer">
+            <div class="loader"></div>
+        </div>
+    </div>
+
+    <div id="outputContainer">
+        <a id="outputLink" download="reduced_file">Download Reduced File</a>
+    </div>
+
+    <script>
+        async function reduceSize() {
             const fileInput = document.getElementById('fileInput');
-            const reductionInput = document.getElementById('reductionInput');
+            const outputContainer = document.getElementById('outputContainer');
+            const outputLink = document.getElementById('outputLink');
+            const loadingScreen = document.getElementById('loadingScreen');
+            const sizeSlider = document.getElementById('sizeSlider');
+            const sizePercentage = document.getElementById('sizePercentage');
 
             if (fileInput.files.length === 0) {
                 alert('Please choose a PDF file.');
                 return;
             }
 
-            const pdfFile = fileInput.files[0];
-            const reductionPercentage = parseInt(reductionInput.value);
+            loadingScreen.style.display = 'flex';
 
-            const pdfBytes = await pdfFile.arrayBuffer();
-            const pdfDoc = await PDFDocument.load(pdfBytes);
+            const inputFile = fileInput.files[0];
 
-            // Perform size reduction here, adjust as needed
-            const pages = pdfDoc.getPages();
-            pages.forEach(page => {
-                const { width, height } = page.getSize();
-                page.setSize(width * (1 - reductionPercentage / 100), height * (1 - reductionPercentage / 100));
-            });
+            const reducedFile = await reducePdfSize(inputFile, sizeSlider.value);
 
-            const reducedPdfBytes = await pdfDoc.save();
+            if (reducedFile) {
+                const blobUrl = URL.createObjectURL(reducedFile);
+                outputLink.href = blobUrl;
+                outputLink.style.display = 'inline-block';
+                outputContainer.style.display = 'block';
+            }
 
-            // Create a blob from the reduced PDF bytes
-            const blob = new Blob([reducedPdfBytes], { type: 'application/pdf' });
-
-            // Create a download link and trigger the download
-            const downloadLink = document.createElement('a');
-            downloadLink.href = URL.createObjectURL(blob);
-            downloadLink.download = 'reduced_pdf.pdf';
-            downloadLink.click();
+            loadingScreen.style.display = 'none';
         }
+
+        async function reducePdfSize(pdfFile, reductionPercentage) {
+            return new Promise(resolve => {
+                const reader = new FileReader();
+                reader.onloadend = async () => {
+                    const pdfData = new Uint8Array(reader.result);
+                    const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
+
+                    const totalPageCount = pdf.numPages;
+                    const promises = [];
+
+                    for (let pageNum = 1; pageNum <= totalPageCount; pageNum++) {
+                        const page = await pdf.getPage(pageNum);
+                        const viewport = page.getViewport({ scale: 1 });
+
+                        const scale = 1 - reductionPercentage / 100;
+                        const scaledViewport = page.getViewport({ scale });
+
+                        const canvas = document.createElement('canvas');
+                        const context = canvas.getContext('2d');
+                        canvas.width = scaledViewport.width;
+                        canvas.height = scaledViewport.height;
+
+                        const renderContext = {
+                            canvasContext: context,
+                            viewport: scaledViewport,
+                        };
+
+                        await page.render(renderContext).promise;
+
+                        const imageData = canvas.toDataURL('image/jpeg', 1.0);
+                        promises.push(convertDataUrlToBlob(imageData));
+                    }
+
+                    Promise.all(promises).then(blobs => {
+                        const mergedPdf = mergePdfs(blobs);
+                        resolve(mergedPdf.output());
+                    });
+                };
+
+                reader.readAsArrayBuffer(pdfFile);
+            });
+        }
+
+        function convertDataUrlToBlob(dataUrl) {
+            return new Promise(resolve => {
+                const byteString = atob(dataUrl.split(',')[1]);
+                const ab = new ArrayBuffer(byteString.length);
+                const ia = new Uint8Array(ab);
+                for (let i = 0; i < byteString.length; i++) {
+                    ia[i] = byteString.charCodeAt(i);
+                }
+
+                const blob = new Blob([ab], { type: 'image/jpeg' });
+                resolve(blob);
+            });
+        }
+
+        function mergePdfs(pdfs) {
+            const mergedPdf = pdfs.reduce((acc, pdf) => {
+                acc.addPage(pdf.getPage(1));
+                return acc;
+            }, new pdfjsLib.Document());
+
+            return mergedPdf;
+        }
+
+        document.getElementById('sizeSlider').addEventListener('input', function () {
+            document.getElementById('sizePercentage').textContent = `${this.value}%`;
+        });
     </script>
 </body>
+
 </html>
