@@ -69,20 +69,6 @@
             overflow: hidden;
         }
 
-        #outputLink {
-            display: none;
-            padding: 10px;
-            background-color: #4CAF50;
-            color: #fff;
-            text-decoration: none;
-            border-radius: 5px;
-            margin-top: 20px;
-        }
-
-        #outputLink:hover {
-            background-color: #45a049;
-        }
-
         #loadingScreen {
             display: none;
             position: fixed;
@@ -131,15 +117,12 @@
         </div>
     </div>
 
-    <div id="outputContainer">
-        <a id="outputLink" download="converted_file.pdf">Download Converted File</a>
-    </div>
+    <div id="outputContainer"></div>
 
     <script>
         async function convertFile() {
             const fileInput = document.getElementById('fileInput');
             const outputContainer = document.getElementById('outputContainer');
-            const outputLink = document.getElementById('outputLink');
             const loadingScreen = document.getElementById('loadingScreen');
 
             if (fileInput.files.length === 0) {
@@ -151,12 +134,17 @@
 
             const inputFiles = fileInput.files;
 
-            const convertedFile = await convertToPDF(inputFiles);
+            const mergedPdf = await convertToPDF(inputFiles);
 
-            if (convertedFile) {
-                const blobUrl = URL.createObjectURL(convertedFile);
-                outputLink.href = blobUrl;
-                outputLink.style.display = 'inline-block';
+            if (mergedPdf) {
+                const blobUrl = URL.createObjectURL(mergedPdf);
+                const pdfEmbed = document.createElement('embed');
+                pdfEmbed.src = blobUrl;
+                pdfEmbed.type = 'application/pdf';
+                pdfEmbed.width = '100%';
+                pdfEmbed.height = '600px';
+                outputContainer.innerHTML = '';
+                outputContainer.appendChild(pdfEmbed);
                 outputContainer.style.display = 'block';
             }
 
@@ -219,8 +207,14 @@
                 });
 
                 Promise.all(pdfPromises).then(pdfs => {
-                    const mergedPdf = new Blob(pdfs, { type: 'application/pdf' });
-                    resolve(mergedPdf);
+                    const mergedPdf = new window.jsPDF();
+                    pdfs.forEach(pdf => {
+                        if (pdf) {
+                            mergedPdf.addPage();
+                            mergedPdf.addImage(pdf, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+                        }
+                    });
+                    resolve(mergedPdf.output('blob'));
                 });
             });
         }
