@@ -27,7 +27,7 @@
             color: #4CAF50;
         }
         .line {
-           border: 1px solid #4CAF50;
+            border: 1px solid #4CAF50;
         }
         input[type="file"] {
             display: none;
@@ -69,6 +69,20 @@
             overflow: hidden;
         }
 
+        #outputLink {
+            display: none;
+            padding: 10px;
+            background-color: #4CAF50;
+            color: #fff;
+            text-decoration: none;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+
+        #outputLink:hover {
+            background-color: #45a049;
+        }
+
         #loadingScreen {
             display: none;
             position: fixed;
@@ -96,8 +110,13 @@
         }
 
         @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
         }
     </style>
 </head>
@@ -105,8 +124,8 @@
 <body>
     <h2>PDF Converter</h2>
     <hr class="line">
-    <p>Click To Upload Your Images Here 👇</p>
-    <label for="fileInput">Browse Files</label>
+    <p>Click To Upload Your Image Here 👇</p>
+    <label for="fileInput">Browse File</label>
     <input type="file" id="fileInput" accept=".jpg, .jpeg, .png, .gif, .bmp, .webp" multiple>
     <br>
     <button id="convertButton" onclick="convertFile()">Convert</button>
@@ -117,80 +136,111 @@
         </div>
     </div>
 
-    <div id="outputContainer"></div>
+    <div id="outputContainer">
+        <a id="outputLink" download="converted_file">Download Converted File</a>
+    </div>
 
     <script>
-    async function convertFile() {
-        const fileInput = document.getElementById('fileInput');
-        const outputContainer = document.getElementById('outputContainer');
-        const loadingScreen = document.getElementById('loadingScreen');
+        async function convertFile() {
+            const fileInput = document.getElementById('fileInput');
+            const outputContainer = document.getElementById('outputContainer');
+            const outputLink = document.getElementById('outputLink');
+            const loadingScreen = document.getElementById('loadingScreen');
 
-        if (fileInput.files.length === 0) {
-            alert('Please choose at least one file.');
-            return;
+            if (fileInput.files.length === 0) {
+                alert('Please choose at least one file.');
+                return;
+            }
+
+            loadingScreen.style.display = 'flex';
+
+            const inputFiles = Array.from(fileInput.files);
+
+            const convertedFile = await convertToPDF(inputFiles);
+
+            if (convertedFile) {
+                const blobUrl = URL.createObjectURL(convertedFile);
+                outputLink.href = blobUrl;
+                outputLink.style.display = 'inline-block';
+                outputContainer.style.display = 'block';
+            }
+
+            loadingScreen.style.display = 'none';
         }
 
-        loadingScreen.style.display = 'flex';
+        function convertToPDF(imageFiles) {
+            return new Promise(resolve => {
+                const canvasArray = [];
 
-        const inputFiles = fileInput.files;
+                function loadImage(index) {
+                    if (index < imageFiles.length) {
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                            const img = new Image();
+                            img.src = reader.result;
 
-        const mergedPdf = await convertToPDF(inputFiles);
+                            img.onload = () => {
+                                const canvas = document.createElement('canvas');
+                                let maxWidth = 800; // Adjust this value as needed
+                                let maxHeight = 1000; // Adjust this value as needed
 
-        if (mergedPdf) {
-            const blobUrl = URL.createObjectURL(mergedPdf);
-            const pdfEmbed = document.createElement('embed');
-            pdfEmbed.src = blobUrl;
-            pdfEmbed.type = 'application/pdf';
-            pdfEmbed.width = '100%';
-            pdfEmbed.height = '600px';
-            outputContainer.innerHTML = '';
-            outputContainer.appendChild(pdfEmbed);
-            outputContainer.style.display = 'block';
-        }
+                                if (img.width > maxWidth || img.height > maxHeight) {
+                                    const aspectRatio = img.width / img.height;
+                                    if (aspectRatio > 1) {
+                                        canvas.width = maxWidth;
+                                        canvas.height = maxWidth / aspectRatio;
+                                    } else {
+                                        canvas.width = maxHeight * aspectRatio;
+                                        canvas.height = maxHeight;
+                                    }
+                                } else {
+                                    canvas.width = img.width;
+                                    canvas.height = img.height;
+                                }
 
-        loadingScreen.style.display = 'none';
-    }
+                                const ctx = canvas.getContext('2d');
+                                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-    function convertToPDF(imageFiles) {
-        return new Promise(resolve => {
-            const pdfPromises = [];
-
-            imageFiles.forEach((file) => {
-                const pdfPromise = new Promise(innerResolve => {
-                    const reader = new FileReader();
-                    reader.onloadend = () => {
-                        const img = new Image();
-                        img.src = reader.result;
-
-                        img.onload = () => {
-                            const pdf = new window.jsPDF();
-                            const width = pdf.internal.pageSize.getWidth();
-                            const height = pdf.internal.pageSize.getHeight();
-                            pdf.addImage(img, 'JPEG', 0, 0, width, height);
-                            innerResolve(pdf);
+                                canvasArray.push(canvas);
+                                loadImage(index + 1);
+                            };
                         };
-                    };
 
-                    reader.readAsDataURL(file);
-                });
+                        reader.readAsDataURL(imageFiles[index]);
+                    } else {
+                        // All images loaded, now create PDF
+                        const promises = canvasArray.map(canvas => {
+                            return html2pdf(canvas, {
+                                margin: 10,
+                                filename: 'converted_file.pdf',
+                                jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' },
+                                image: { type: 'jpeg', quality: 1 },
+                                output: 'blob',
+                                html2canvas: { scale: 1 }
+                            });
+                        });
 
-                pdfPromises.push(pdfPromise);
-            });
+                        Promise.all(promises).then(pdfs => {
+                            // Merge PDFs into one
+                            const mergedPdf = pdfs.reduce((acc, pdf) => {
+                                pdf.arrayBuffer().then(data => {
+                                    const merged = new Uint8Array(acc.byteLength + data.byteLength);
+                                    merged.set(new Uint8Array(acc), 0);
+                                    merged.set(new Uint8Array(data), acc.byteLength);
+                                    acc = merged;
+                                });
+                                return acc;
+                            }, new Uint8Array());
 
-            Promise.all(pdfPromises).then(pdfs => {
-                const mergedPdf = new window.jsPDF();
-                pdfs.forEach(pdf => {
-                    if (pdf) {
-                        mergedPdf.addPage();
-                        mergedPdf.addImage(pdf.output('datauri'), 'JPEG', 0, 0);
+                            resolve(new Blob([mergedPdf], { type: 'application/pdf' }));
+                        });
                     }
-                });
-                resolve(mergedPdf.output('blob'));
+                }
+
+                loadImage(0);
             });
-        });
-    }
+        }
     </script>
-    
 </body>
 
 </html>
