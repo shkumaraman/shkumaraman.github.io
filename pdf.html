@@ -27,7 +27,7 @@
         }
 
         .line {
-           border: 1px solid #4CAF50;
+            border: 1px solid #4CAF50;
         }
 
         input[type="file"] {
@@ -119,8 +119,8 @@
 <body>
     <h2>PDF Converter</h2>
     <hr class="line">
-    <p>Click To Upload Your Image Here 👇</p>
-    <label for="fileInput">Browse File</label>
+    <p>Click To Upload Your Images Here 👇</p>
+    <label for="fileInput">Browse Files</label>
     <input type="file" id="fileInput" accept=".jpg, .jpeg, .png, .gif, .bmp, .webp" multiple>
     <br>
     <button id="convertButton" onclick="convertFiles()">Convert</button>
@@ -149,9 +149,7 @@
 
             loadingScreen.style.display = 'flex';
 
-            const inputFiles = Array.from(fileInput.files);
-
-            const convertedFile = await convertToPDF(inputFiles);
+            const convertedFile = await convertToPDF(fileInput.files);
 
             if (convertedFile) {
                 const blobUrl = URL.createObjectURL(convertedFile);
@@ -165,46 +163,39 @@
 
         function convertToPDF(imageFiles) {
             return new Promise(resolve => {
-                const promises = imageFiles.map(imageFile => {
-                    return new Promise(resolve => {
-                        const reader = new FileReader();
-                        reader.onloadend = () => {
-                            const img = new Image();
-                            img.src = reader.result;
+                const promises = [];
 
-                            img.onload = () => {
-                                const canvas = document.createElement('canvas');
-                                canvas.width = img.width;
-                                canvas.height = img.height;
+                for (const imageFile of imageFiles) {
+                    promises.push(loadImage(imageFile));
+                }
 
-                                const ctx = canvas.getContext('2d');
-                                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                Promise.all(promises).then(images => {
+                    const pdf = new jsPDF();
+                    for (const image of images) {
+                        pdf.addImage(image, 'JPEG', 10, 10, 190, 0);
+                        if (images.indexOf(image) !== images.length - 1) {
+                            pdf.addPage();
+                        }
+                    }
 
-                                resolve(canvas.toDataURL('image/jpeg'));
-                            };
-                        };
-
-                        reader.readAsDataURL(imageFile);
-                    });
+                    resolve(pdf.output('blob'));
                 });
+            });
+        }
 
-                Promise.all(promises).then(imageDataUrls => {
-                    const pdfPromises = imageDataUrls.map(imageDataUrl => {
-                        return html2pdf(imageDataUrl, {
-                            margin: 10,
-                            filename: 'converted_file.pdf',
-                            jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' },
-                            image: { type: 'jpeg', quality: 1 },
-                            output: 'blob',
-                            html2canvas: { scale: 1 }
-                        });
-                    });
+        function loadImage(imageFile) {
+            return new Promise(resolve => {
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    const img = new Image();
+                    img.src = reader.result;
 
-                    Promise.all(pdfPromises).then(pdfBlobs => {
-                        const mergedBlob = new Blob(pdfBlobs, { type: 'application/pdf' });
-                        resolve(mergedBlob);
-                    });
-                });
+                    img.onload = () => {
+                        resolve(img);
+                    };
+                };
+
+                reader.readAsDataURL(imageFile);
             });
         }
     </script>
