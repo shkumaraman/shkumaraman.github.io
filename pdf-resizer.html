@@ -6,6 +6,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <title>PDF Size Reducer</title>
+    <!-- Add Axios library -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <!-- Add FormData library -->
+    <script src="https://cdn.rawgit.com/form-data/form-data/v4.0.0/dist/form-data.min.js"></script>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -164,11 +168,13 @@
             try {
                 const compressionLevel = document.getElementById('compressionLevel').value;
                 const compressedFile = await compressPdf(inputFile, compressionLevel);
-                const blobUrl = URL.createObjectURL(compressedFile);
 
-                outputLink.href = blobUrl;
-                outputLink.style.display = 'inline-block';
-                outputContainer.style.display = 'block';
+                if (compressedFile) {
+                    const blobUrl = URL.createObjectURL(compressedFile);
+                    outputLink.href = blobUrl;
+                    outputLink.style.display = 'inline-block';
+                    outputContainer.style.display = 'block';
+                }
             } catch (error) {
                 console.error(error);
                 alert('Error compressing PDF. Please try again.');
@@ -177,36 +183,25 @@
             loadingScreen.style.display = 'none';
         }
 
-        async function compressPdf(pdfFile, compressionLevel) {
-            const data = new FormData();
-            data.append('file', pdfFile);
-            data.append('compression', compressionLevel);
+        function compressPdf(pdfFile, compressionLevel) {
+            return new Promise(async (resolve, reject) => {
+                const formData = new FormData();
+                formData.append('file', pdfFile);
+                formData.append('compression', compressionLevel);
 
-            const response = await axios.post('https://api.pdfrest.com/compressed-pdf', data, {
-                headers: {
-                    'Api-Key': '0ee0198c-6342-45d2-a085-90267e5a01c3',
-                    ...data.getHeaders()
-                },
-                maxBodyLength: Infinity
-            });
+                try {
+                    const response = await axios.post('https://api.pdfrest.com/compressed-pdf', formData, {
+                        headers: {
+                            'Api-Key': '0ee0198c-6342-45d2-a085-90267e5a01c3',
+                            'Content-Type': 'multipart/form-data'
+                        },
+                        maxBodyLength: Infinity
+                    });
 
-            const compressedBlob = await convertDataUrlToBlob(response.data);
-            return compressedBlob;
-        }
-
-        function convertDataUrlToBlob(dataUrl) {
-            return new Promise(resolve => {
-                const byteString = atob(dataUrl.split(',')[1]);
-                const ab = new ArrayBuffer(byteString.length);
-                const ia = new Uint8Array(ab);
-                for (let i = 0; i < byteString.length; i++) {
-                    ia[i] = byteString.charCodeAt(i);
+                    resolve(new Blob([response.data]));
+                } catch (error) {
+                    reject(error);
                 }
-
-                const blob = new Blob([ab], {
-                    type: 'application/pdf'
-                });
-                resolve(blob);
             });
         }
     </script>
