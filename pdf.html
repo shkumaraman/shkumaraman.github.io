@@ -26,11 +26,9 @@
         h2 {
             color: #4CAF50;
         }
-
         .line {
-            border: 1px solid #4CAF50;
+           border: 1px solid #4CAF50;
         }
-
         input[type="file"] {
             display: none;
         }
@@ -112,13 +110,8 @@
         }
 
         @keyframes spin {
-            0% {
-                transform: rotate(0deg);
-            }
-
-            100% {
-                transform: rotate(360deg);
-            }
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
     </style>
 </head>
@@ -130,7 +123,7 @@
     <label for="fileInput">Browse Files</label>
     <input type="file" id="fileInput" accept=".jpg, .jpeg, .png, .gif, .bmp, .webp" multiple>
     <br>
-    <button id="convertButton" onclick="convertFiles()">Convert</button>
+    <button id="convertButton" onclick="convertFile()">Convert</button>
 
     <div id="loadingScreen">
         <div id="loadingContainer">
@@ -143,14 +136,14 @@
     </div>
 
     <script>
-        async function convertFiles() {
+        async function convertFile() {
             const fileInput = document.getElementById('fileInput');
             const outputContainer = document.getElementById('outputContainer');
             const outputLink = document.getElementById('outputLink');
             const loadingScreen = document.getElementById('loadingScreen');
 
             if (fileInput.files.length === 0) {
-                alert('Please choose one or more files.');
+                alert('Please choose at least one file.');
                 return;
             }
 
@@ -175,52 +168,39 @@
                 const canvas = document.createElement('canvas');
                 const ctx = canvas.getContext('2d');
 
-                const promises = Array.from(imageFiles).map(file =>
-                    new Promise(fileResolve => {
-                        const reader = new FileReader();
-                        reader.onloadend = () => {
-                            const img = new Image();
-                            img.src = reader.result;
+                const loadAndDrawImage = (index) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        const img = new Image();
+                        img.src = reader.result;
 
-                            img.onload = () => {
-                                let maxWidth = 800; // Adjust this value as needed
-                                let maxHeight = 1000; // Adjust this value as needed
+                        img.onload = () => {
+                            canvas.width = img.width;
+                            canvas.height = img.height;
 
-                                if (img.width > maxWidth || img.height > maxHeight) {
-                                    const aspectRatio = img.width / img.height;
-                                    if (aspectRatio > 1) {
-                                        canvas.width = maxWidth;
-                                        canvas.height = maxWidth / aspectRatio;
-                                    } else {
-                                        canvas.width = maxHeight * aspectRatio;
-                                        canvas.height = maxHeight;
-                                    }
-                                } else {
-                                    canvas.width = img.width;
-                                    canvas.height = img.height;
-                                }
+                            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-                                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                                fileResolve();
-                            };
+                            if (index < imageFiles.length - 1) {
+                                loadAndDrawImage(index + 1);
+                            } else {
+                                html2pdf(canvas, {
+                                    margin: 10,
+                                    filename: 'converted_file.pdf',
+                                    jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' },
+                                    image: { type: 'jpeg', quality: 1 },
+                                    output: 'blob',
+                                    html2canvas: { scale: 1 }
+                                }).then(pdf => {
+                                    resolve(pdf);
+                                });
+                            }
                         };
+                    };
 
-                        reader.readAsDataURL(file);
-                    })
-                );
+                    reader.readAsDataURL(imageFiles[index]);
+                };
 
-                Promise.all(promises).then(() => {
-                    html2pdf(canvas, {
-                        margin: 10,
-                        filename: 'converted_file.pdf',
-                        jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' },
-                        image: { type: 'jpeg', quality: 1 },
-                        output: 'blob',
-                        html2canvas: { scale: 1 }
-                    }).then(pdf => {
-                        resolve(pdf);
-                    });
-                });
+                loadAndDrawImage(0);
             });
         }
     </script>
