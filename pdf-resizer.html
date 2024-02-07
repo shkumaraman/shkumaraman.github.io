@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <title>PDF Size Reducer</title>
-    <script src="https://mozilla.github.io/pdf.js/build/pdf.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.8.335/pdf.min.js"></script>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -163,7 +163,7 @@
             const reducedFile = await reducePdfSize(inputFile, sizeSlider.value);
 
             if (reducedFile) {
-                const blobUrl = URL.createObjectURL(new Blob([reducedFile], { type: 'application/pdf' }));
+                const blobUrl = URL.createObjectURL(reducedFile);
                 outputLink.href = blobUrl;
                 outputLink.style.display = 'inline-block';
                 outputContainer.style.display = 'block';
@@ -177,42 +177,48 @@
                 const reader = new FileReader();
                 reader.onloadend = async () => {
                     const pdfData = new Uint8Array(reader.result);
+                    const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
 
-                    const loadingTask = pdfjsLib.getDocument({ data: pdfData });
-                    loadingTask.promise.then(async function (pdf) {
-                        const totalPageCount = pdf.numPages;
+                    const totalPageCount = pdf.numPages;
+                    const promises = [];
+
+                    for (let pageNum = 1; pageNum <= totalPageCount; pageNum++) {
+                        const page = await pdf.getPage(pageNum);
+                        const viewport = page.getViewport({ scale: 1 });
+
+                        const scale = 1 - reductionPercentage / 100;
+                        const scaledViewport = page.getViewport({ scale });
 
                         const canvas = document.createElement('canvas');
                         const context = canvas.getContext('2d');
 
-                        const reducedPages = [];
+                        canvas.width = scaledViewport.width;
+                        canvas.height = scaledViewport.height;
 
-                        for (let pageNumber = 1; pageNumber <= totalPageCount; pageNumber++) {
-                            const page = await pdf.getPage(pageNumber);
-                            const viewport = page.getViewport({ scale: 1 });
+                        await page.render({
+                            canvasContext: context,
+                            viewport: scaledViewport
+                        }).promise;
 
-                            canvas.width = viewport.width;
-                            canvas.height = viewport.height;
+                        const dataUrl = canvas.toDataURL('image/jpeg', 1.0);
+                        const blob = await convertDataUrlToBlob(dataUrl);
 
-                            const renderContext = {
-                                canvasContext: context,
-                                viewport: viewport
-                            };
-
-                            await page.render(renderContext);
-
-                            const imageDataUrl = canvas.toDataURL('image/jpeg', reductionPercentage / 100);
-                            const imageDataBlob = await convertDataUrlToBlob(imageDataUrl);
-
-                            const imageData = new Uint8Array(await new Response(imageDataBlob).arrayBuffer());
-                            reducedPages.push(imageData);
-                        }
-
-                        const mergedPdf = mergePdfs(reducedPages);
-
-                        mergedPdf.output((buffer) => {
-                            resolve(buffer);
+                        const imgData = await convertBlobToImageData(blob);
+                        const newPage = new pdfjsLib.Page({
+                            pdfManager: pdf.pdfManager,
+                            pageNumber: pageNum,
+                            pageInfo: page.pageInfo,
+                            content: { items: imgData },
+                            commonObjs: pdf.commonObjs,
+                            fonts: pdf.fonts
                         });
+
+                        promises.push(newPage);
+                    }
+
+                    Promise.all(promises).then(pages => {
+                        const mergedPdf = mergePdfs(pages);
+                        resolve(mergedPdf.output());
                     });
                 };
 
@@ -234,17 +240,29 @@
             });
         }
 
-        function mergePdfs(pdfs) {
-            const mergedPdf = pdfs.reduce((acc, pdf) => {
-                acc.addPage(pdf.getPage(1));
-                return acc;
-            }, new pdfjsLib.Document());
+        function convertBlobToImageData(blob) {
+            return new Promise(resolve => {
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    const imgData = new Uint8Array(reader.result);
+                    resolve(imgData);
+                };
+                reader.readAsArrayBuffer(blob);
+            });
+        }
+
+        function mergePdfs(pages) {
+            const mergedPdf = new pdfjsLib.Document();
+
+            pages.forEach(page => {
+                mergedPdf.addPage(page);
+            });
 
             return mergedPdf;
         }
 
-        sizeSlider.addEventListener('input', function () {
-            sizePercentage.textContent = `${this.value}%`;
+        document.getElementById('sizeSlider').addEventListener('input', function () {
+            document.getElementById('sizePercentage').textContent = `${this.value}%`;
         });
     </script>
 </body>
