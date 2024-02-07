@@ -9,6 +9,7 @@
     <meta name="description" content="Convert images to PDF online with this simple and efficient file converter. Choose your image, click Convert, and download the converted PDF.">
     <title>PDF Converter</title>
     <script src="https://rawgit.com/eKoopmans/html2pdf/master/dist/html2pdf.bundle.js"></script>
+    <script src="https://mozilla.github.io/pdf.js/build/pdf.js"></script>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -26,9 +27,11 @@
         h2 {
             color: #4CAF50;
         }
+
         .line {
             border: 1px solid #4CAF50;
         }
+
         input[type="file"] {
             display: none;
         }
@@ -148,14 +151,13 @@
             const loadingScreen = document.getElementById('loadingScreen');
 
             if (fileInput.files.length === 0) {
-                alert('Please choose at least one file.');
+                alert('Please choose a file.');
                 return;
             }
 
             loadingScreen.style.display = 'flex';
 
             const inputFiles = Array.from(fileInput.files);
-
             const convertedFile = await convertToPDF(inputFiles);
 
             if (convertedFile) {
@@ -170,75 +172,68 @@
 
         function convertToPDF(imageFiles) {
             return new Promise(resolve => {
-                const canvasArray = [];
+                const promises = imageFiles.map(file => loadImage(file));
 
-                function loadImage(index) {
-                    if (index < imageFiles.length) {
-                        const reader = new FileReader();
-                        reader.onloadend = () => {
-                            const img = new Image();
-                            img.src = reader.result;
+                Promise.all(promises).then(images => {
+                    const pdfPromises = images.map(image => createPdfFromImage(image));
+                    Promise.all(pdfPromises).then(pdfs => {
+                        const mergedPdf = mergePdfs(pdfs);
+                        resolve(mergedPdf);
+                    });
+                });
+            });
+        }
 
-                            img.onload = () => {
-                                const canvas = document.createElement('canvas');
-                                let maxWidth = 800; // Adjust this value as needed
-                                let maxHeight = 1000; // Adjust this value as needed
+        function loadImage(file) {
+            return new Promise(resolve => {
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    const img = new Image();
+                    img.src = reader.result;
 
-                                if (img.width > maxWidth || img.height > maxHeight) {
-                                    const aspectRatio = img.width / img.height;
-                                    if (aspectRatio > 1) {
-                                        canvas.width = maxWidth;
-                                        canvas.height = maxWidth / aspectRatio;
-                                    } else {
-                                        canvas.width = maxHeight * aspectRatio;
-                                        canvas.height = maxHeight;
-                                    }
-                                } else {
-                                    canvas.width = img.width;
-                                    canvas.height = img.height;
-                                }
+                    img.onload = () => resolve(img);
+                };
 
-                                const ctx = canvas.getContext('2d');
-                                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                reader.readAsDataURL(file);
+            });
+        }
 
-                                canvasArray.push(canvas);
-                                loadImage(index + 1);
-                            };
-                        };
+        function createPdfFromImage(image) {
+            return new Promise(resolve => {
+                const canvas = document.createElement('canvas');
+                const maxWidth = 800; // Adjust as needed
+                const maxHeight = 1000; // Adjust as needed
 
-                        reader.readAsDataURL(imageFiles[index]);
-                    } else {
-                        // All images loaded, now create PDF
-                        const promises = canvasArray.map(canvas => {
-                            return html2pdf(canvas, {
-                                margin: 10,
-                                filename: 'converted_file.pdf',
-                                jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' },
-                                image: { type: 'jpeg', quality: 1 },
-                                output: 'blob',
-                                html2canvas: { scale: 1 }
-                            });
-                        });
-
-                        Promise.all(promises).then(pdfs => {
-                            // Merge PDFs into one
-                            const mergedPdf = pdfs.reduce((acc, pdf) => {
-                                pdf.arrayBuffer().then(data => {
-                                    const merged = new Uint8Array(acc.byteLength + data.byteLength);
-                                    merged.set(new Uint8Array(acc), 0);
-                                    merged.set(new Uint8Array(data), acc.byteLength);
-                                    acc = merged;
-                                });
-                                return acc;
-                            }, new Uint8Array());
-
-                            resolve(new Blob([mergedPdf], { type: 'application/pdf' }));
-                        });
-                    }
+                const aspectRatio = image.width / image.height;
+                if (aspectRatio > 1) {
+                    canvas.width = maxWidth;
+                    canvas.height = maxWidth / aspectRatio;
+                } else {
+                    canvas.width = maxHeight * aspectRatio;
+                    canvas.height = maxHeight;
                 }
 
-                loadImage(0);
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+                html2pdf(canvas, {
+                    margin: 10,
+                    filename: 'converted_file.pdf',
+                    jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' },
+                    image: { type: 'jpeg', quality: 1 },
+                    output: 'blob',
+                    html2canvas: { scale: 1 }
+                }).then(pdf => resolve(pdf));
             });
+        }
+
+        function mergePdfs(pdfs) {
+            const mergedPdf = pdfs.reduce((acc, pdf) => {
+                acc.addPage(pdf.getPage(1));
+                return acc;
+            }, new pdfjsLib.Document());
+
+            return mergedPdf;
         }
     </script>
 </body>
