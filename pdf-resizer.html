@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <title>PDF Size Reducer</title>
+    <script src="https://cdn.jsdelivr.net/npm/pdf-lib@2.10.0/dist/pdf-lib.js"></script>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -176,37 +177,33 @@
                 const reader = new FileReader();
                 reader.onloadend = async () => {
                     const pdfData = new Uint8Array(reader.result);
-                    const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
+                    const pdfDoc = await PDFLib.PDFDocument.load(pdfData);
 
-                    const totalPageCount = pdf.numPages;
+                    const totalPageCount = pdfDoc.getPageCount();
                     const promises = [];
 
-                    for (let pageNum = 1; pageNum <= totalPageCount; pageNum++) {
-                        const page = await pdf.getPage(pageNum);
-                        const viewport = page.getViewport({ scale: 1 });
+                    for (let pageNum = 0; pageNum < totalPageCount; pageNum++) {
+                        const currentPage = pdfDoc.getPage(pageNum);
+                        const { width, height } = currentPage.getSize();
+                        const scaleFactor = 1 - (reductionPercentage / 100);
 
-                        const scale = 1 - reductionPercentage / 100;
-                        const scaledViewport = page.getViewport({ scale });
+                        currentPage.setWidth(width * scaleFactor);
+                        currentPage.setHeight(height * scaleFactor);
 
-                        const canvas = document.createElement('canvas');
-                        const context = canvas.getContext('2d');
-                        canvas.width = scaledViewport.width;
-                        canvas.height = scaledViewport.height;
+                        promises.push(currentPage);
 
-                        const renderContext = {
-                            canvasContext: context,
-                            viewport: scaledViewport,
-                        };
-
-                        await page.render(renderContext).promise;
-
-                        const imageData = canvas.toDataURL('image/jpeg', 1.0);
-                        promises.push(convertDataUrlToBlob(imageData));
+                        if (pageNum < totalPageCount - 1) {
+                            pdfDoc.addPage();
+                        }
                     }
 
-                    Promise.all(promises).then(blobs => {
-                        const mergedPdf = mergePdfs(blobs);
-                        resolve(mergedPdf.output());
+                    Promise.all(promises).then(pages => {
+                        const reducedPdf = PDFLib.PDFDocument.create();
+                        pages.forEach(page => reducedPdf.addPage(page));
+
+                        const reducedPdfBytes = reducedPdf.save();
+                        const reducedBlob = new Blob([reducedPdfBytes], { type: 'application/pdf' });
+                        resolve(reducedBlob);
                     });
                 };
 
@@ -214,31 +211,8 @@
             });
         }
 
-        function convertDataUrlToBlob(dataUrl) {
-            return new Promise(resolve => {
-                const byteString = atob(dataUrl.split(',')[1]);
-                const ab = new ArrayBuffer(byteString.length);
-                const ia = new Uint8Array(ab);
-                for (let i = 0; i < byteString.length; i++) {
-                    ia[i] = byteString.charCodeAt(i);
-                }
-
-                const blob = new Blob([ab], { type: 'image/jpeg' });
-                resolve(blob);
-            });
-        }
-
-        function mergePdfs(pdfs) {
-            const mergedPdf = pdfs.reduce((acc, pdf) => {
-                acc.addPage(pdf.getPage(1));
-                return acc;
-            }, new pdfjsLib.Document());
-
-            return mergedPdf;
-        }
-
-        document.getElementById('sizeSlider').addEventListener('input', function () {
-            document.getElementById('sizePercentage').textContent = `${this.value}%`;
+        sizeSlider.addEventListener('input', function () {
+            sizePercentage.textContent = `${this.value}%`;
         });
     </script>
 </body>
