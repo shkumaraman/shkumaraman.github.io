@@ -6,7 +6,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <title>PDF Size Reducer</title>
-    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -44,7 +43,7 @@
             display: inline-block;
         }
 
-        #reduceButton {
+        #convertButton {
             padding: 10px;
             background-color: #4CAF50;
             color: #fff;
@@ -54,7 +53,7 @@
             transition: background-color 0.3s ease;
         }
 
-        #reduceButton:hover {
+        #convertButton:hover {
             background-color: #45a049;
         }
 
@@ -109,14 +108,13 @@
             animation: spin 1s linear infinite;
         }
 
-        @keyframes spin {
-            0% {
-                transform: rotate(0deg);
-            }
+        #compressionLevel {
+            width: 50%;
+            margin-top: 20px;
+        }
 
-            100% {
-                transform: rotate(360deg);
-            }
+        #compressionLabel {
+            margin-top: 10px;
         }
     </style>
 </head>
@@ -128,7 +126,10 @@
     <label for="fileInput">Browse File</label>
     <input type="file" id="fileInput" accept=".pdf">
     <br>
-    <button id="reduceButton" onclick="reduceSize()">Reduce Size</button>
+    <button id="convertButton" onclick="reduceSize()">Compress</button>
+
+    <label for="compressionLevel" id="compressionLabel">Compression Level: <span id="compressionValue">50</span>%</label>
+    <input type="range" id="compressionLevel" min="0" max="100" value="50" step="1">
 
     <div id="loadingScreen">
         <div id="loadingContainer">
@@ -137,10 +138,14 @@
     </div>
 
     <div id="outputContainer">
-        <a id="outputLink" download="reduced_file">Download Reduced File</a>
+        <a id="outputLink" download="compressed_file.pdf">Download Compressed File</a>
     </div>
 
     <script>
+        document.getElementById('compressionLevel').addEventListener('input', function () {
+            document.getElementById('compressionValue').textContent = `${this.value}%`;
+        });
+
         async function reduceSize() {
             const fileInput = document.getElementById('fileInput');
             const outputContainer = document.getElementById('outputContainer');
@@ -157,7 +162,8 @@
             const inputFile = fileInput.files[0];
 
             try {
-                const compressedFile = await compressPdf(inputFile);
+                const compressionLevel = document.getElementById('compressionLevel').value;
+                const compressedFile = await compressPdf(inputFile, compressionLevel);
                 const blobUrl = URL.createObjectURL(compressedFile);
 
                 outputLink.href = blobUrl;
@@ -171,9 +177,10 @@
             loadingScreen.style.display = 'none';
         }
 
-        async function compressPdf(pdfFile) {
+        async function compressPdf(pdfFile, compressionLevel) {
             const data = new FormData();
             data.append('file', pdfFile);
+            data.append('compression', compressionLevel);
 
             const response = await axios.post('https://api.pdfrest.com/compressed-pdf', data, {
                 headers: {
