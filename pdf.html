@@ -47,7 +47,7 @@
             display: inline-block;
         }
 
-        #convertButton {
+        #convertButton, #uploadPdfButton {
             padding: 10px;
             background-color: #4CAF50;
             color: #fff;
@@ -55,9 +55,10 @@
             border-radius: 5px;
             cursor: pointer;
             transition: background-color 0.3s ease;
+            margin-top: 10px;
         }
 
-        #convertButton:hover {
+        #convertButton:hover, #uploadPdfButton:hover {
             background-color: #45a049;
         }
 
@@ -139,7 +140,7 @@
     <h2>PDF Converter</h2>
     <hr class="line">
     <p>Click To Upload Your Image Here 👇</p>
-    <label for="fileInput">Browse File</label>
+    <label for="fileInput">Browse Image</label>
     <input type="file" id="fileInput" accept=".jpg, .jpeg, .png, .gif, .bmp, .webp" multiple>
     <div id="optionsContainer">
         <div class="optionGroup">
@@ -151,8 +152,19 @@
             <input type="range" id="qualitySlider" min="1" max="100" step="1" value="100">
         </div>
     </div>
-    <br>
-    <button id="convertButton" onclick="convertFile()">Convert</button>
+    <button id="convertButton" onclick="convertFile()">Convert Images to PDF</button>
+    
+    <p>OR</p>
+    
+    <label for="pdfInput">Upload PDF</label>
+    <input type="file" id="pdfInput" accept=".pdf">
+    <div id="pdfOptionsContainer" style="display: none;">
+        <div class="optionGroup">
+            <label for="pdfQualitySlider" class="optionLabel">PDF Quality:</label>
+            <input type="range" id="pdfQualitySlider" min="1" max="100" step="1" value="100">
+        </div>
+    </div>
+    <button id="uploadPdfButton" onclick="uploadPdf()">Upload PDF</button>
 
     <div id="loadingScreen">
         <div id="loadingContainer">
@@ -174,7 +186,7 @@
             const loadingScreen = document.getElementById('loadingScreen');
 
             if (fileInput.files.length === 0) {
-                alert('Please choose at least one file.');
+                alert('Please choose at least one image file.');
                 return;
             }
 
@@ -188,6 +200,35 @@
 
             if (convertedFile) {
                 const blobUrl = URL.createObjectURL(convertedFile);
+                outputLink.href = blobUrl;
+                outputLink.style.display = 'inline-block';
+                outputContainer.style.display = 'block';
+            }
+
+            loadingScreen.style.display = 'none';
+        }
+
+        async function uploadPdf() {
+            const pdfInput = document.getElementById('pdfInput');
+            const pdfQualitySlider = document.getElementById('pdfQualitySlider');
+            const outputContainer = document.getElementById('outputContainer');
+            const outputLink = document.getElementById('outputLink');
+            const loadingScreen = document.getElementById('loadingScreen');
+
+            if (pdfInput.files.length === 0) {
+                alert('Please choose a PDF file.');
+                return;
+            }
+
+            loadingScreen.style.display = 'flex';
+
+            const pdfFile = pdfInput.files[0];
+            const pdfQuality = parseInt(pdfQualitySlider.value) || 100;
+
+            const convertedPdf = await adjustPdfQuality(pdfFile, pdfQuality);
+
+            if (convertedPdf) {
+                const blobUrl = URL.createObjectURL(convertedPdf);
                 outputLink.href = blobUrl;
                 outputLink.style.display = 'inline-block';
                 outputContainer.style.display = 'block';
@@ -298,6 +339,41 @@
             });
 
             return mergedCanvases;
+        }
+
+        async function adjustPdfQuality(pdfFile, quality) {
+            return new Promise(resolve => {
+                const reader = new FileReader();
+                reader.onloadend = async () => {
+                    const pdfBlob = new Blob([reader.result], { type: 'application/pdf' });
+                    const pdfUrl = URL.createObjectURL(pdfBlob);
+
+                    const pdfCanvas = document.createElement('canvas');
+                    const pdfContext = pdfCanvas.getContext('2d');
+                    const pdfImage = new Image();
+                    pdfImage.src = pdfUrl;
+
+                    pdfImage.onload = () => {
+                        pdfCanvas.width = pdfImage.width;
+                        pdfCanvas.height = pdfImage.height;
+                        pdfContext.drawImage(pdfImage, 0, 0);
+
+                        // Perform PDF conversion with adjusted quality
+                        html2pdf(pdfCanvas, {
+                            margin: 10,
+                            filename: 'converted_pdf.pdf',
+                            jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' },
+                            image: { type: 'jpeg', quality: quality / 100 }, // Adjust quality here
+                            output: 'blob',
+                            html2canvas: { scale: 1 }
+                        }).then(convertedPdf => {
+                            resolve(convertedPdf);
+                        });
+                    };
+                };
+
+                reader.readAsArrayBuffer(pdfFile);
+            });
         }
     </script>
 </body>
