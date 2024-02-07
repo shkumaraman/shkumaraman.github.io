@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <title>PDF Size Reducer</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.8.335/pdf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -128,8 +128,6 @@
     <label for="fileInput">Browse File</label>
     <input type="file" id="fileInput" accept=".pdf">
     <br>
-    <input type="range" id="sizeSlider" min="0" max="100" value="0">
-    <p>Size Reduction: <span id="sizePercentage">0%</span></p>
     <button id="reduceButton" onclick="reduceSize()">Reduce Size</button>
 
     <div id="loadingScreen">
@@ -139,7 +137,7 @@
     </div>
 
     <div id="outputContainer">
-        <a id="outputLink" download="reduced_file.pdf">Download Reduced File</a>
+        <a id="outputLink" download="reduced_file">Download Reduced File</a>
     </div>
 
     <script>
@@ -148,8 +146,6 @@
             const outputContainer = document.getElementById('outputContainer');
             const outputLink = document.getElementById('outputLink');
             const loadingScreen = document.getElementById('loadingScreen');
-            const sizeSlider = document.getElementById('sizeSlider');
-            const sizePercentage = document.getElementById('sizePercentage');
 
             if (fileInput.files.length === 0) {
                 alert('Please choose a PDF file.');
@@ -160,70 +156,35 @@
 
             const inputFile = fileInput.files[0];
 
-            const reducedFile = await reducePdfSize(inputFile, sizeSlider.value);
+            try {
+                const compressedFile = await compressPdf(inputFile);
+                const blobUrl = URL.createObjectURL(compressedFile);
 
-            if (reducedFile) {
-                const blobUrl = URL.createObjectURL(reducedFile);
                 outputLink.href = blobUrl;
                 outputLink.style.display = 'inline-block';
                 outputContainer.style.display = 'block';
+            } catch (error) {
+                console.error(error);
+                alert('Error compressing PDF. Please try again.');
             }
 
             loadingScreen.style.display = 'none';
         }
 
-        async function reducePdfSize(pdfFile, reductionPercentage) {
-            return new Promise(resolve => {
-                const reader = new FileReader();
-                reader.onloadend = async () => {
-                    const pdfData = new Uint8Array(reader.result);
-                    const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
+        async function compressPdf(pdfFile) {
+            const data = new FormData();
+            data.append('file', pdfFile);
 
-                    const totalPageCount = pdf.numPages;
-                    const promises = [];
-
-                    for (let pageNum = 1; pageNum <= totalPageCount; pageNum++) {
-                        const page = await pdf.getPage(pageNum);
-                        const viewport = page.getViewport({ scale: 1 });
-
-                        const scale = 1 - reductionPercentage / 100;
-                        const scaledViewport = page.getViewport({ scale });
-
-                        const canvas = document.createElement('canvas');
-                        const context = canvas.getContext('2d');
-
-                        canvas.width = scaledViewport.width;
-                        canvas.height = scaledViewport.height;
-
-                        await page.render({
-                            canvasContext: context,
-                            viewport: scaledViewport
-                        }).promise;
-
-                        const dataUrl = canvas.toDataURL('image/jpeg', 1.0);
-                        const blob = await convertDataUrlToBlob(dataUrl);
-
-                        const imgData = await convertBlobToImageData(blob);
-                        const newPage = new pdfjsLib.Page({
-                            pdfManager: pdf.pdfManager,
-                            pageNumber: pageNum,
-                            pageInfo: page.pageInfo,
-                            content: { items: imgData },
-                            commonObjs: pdf.commonObjs,
-                            fonts: pdf.fonts
-                        });
-
-                        promises.push(newPage);
-                    }
-
-                    Promise.all(promises).then(pages => {
-                        const mergedPdf = mergePdfs(pages);
-                        resolve(mergedPdf.output());
-                    });
-                };
-
-                reader.readAsArrayBuffer(pdfFile);
+            const response = await axios.post('https://api.pdfrest.com/compressed-pdf', data, {
+                headers: {
+                    'Api-Key': '0ee0198c-6342-45d2-a085-90267e5a01c3',
+                    ...data.getHeaders()
+                },
+                maxBodyLength: Infinity
             });
+
+            const compressedBlob = await convertDataUrlToBlob(response.data);
+            return compressedBlob;
         }
 
         function convertDataUrlToBlob(dataUrl) {
@@ -235,35 +196,12 @@
                     ia[i] = byteString.charCodeAt(i);
                 }
 
-                const blob = new Blob([ab], { type: 'image/jpeg' });
+                const blob = new Blob([ab], {
+                    type: 'application/pdf'
+                });
                 resolve(blob);
             });
         }
-
-        function convertBlobToImageData(blob) {
-            return new Promise(resolve => {
-                const reader = new FileReader();
-                reader.onloadend = () => {
-                    const imgData = new Uint8Array(reader.result);
-                    resolve(imgData);
-                };
-                reader.readAsArrayBuffer(blob);
-            });
-        }
-
-        function mergePdfs(pages) {
-            const mergedPdf = new pdfjsLib.Document();
-
-            pages.forEach(page => {
-                mergedPdf.addPage(page);
-            });
-
-            return mergedPdf;
-        }
-
-        document.getElementById('sizeSlider').addEventListener('input', function () {
-            document.getElementById('sizePercentage').textContent = `${this.value}%`;
-        });
     </script>
 </body>
 
