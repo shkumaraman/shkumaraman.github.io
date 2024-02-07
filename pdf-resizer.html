@@ -163,7 +163,7 @@
             const reducedFile = await reducePdfSize(inputFile, sizeSlider.value);
 
             if (reducedFile) {
-                const blobUrl = URL.createObjectURL(reducedFile);
+                const blobUrl = URL.createObjectURL(new Blob([reducedFile], { type: 'application/pdf' }));
                 outputLink.href = blobUrl;
                 outputLink.style.display = 'inline-block';
                 outputContainer.style.display = 'block';
@@ -177,38 +177,43 @@
                 const reader = new FileReader();
                 reader.onloadend = async () => {
                     const pdfData = new Uint8Array(reader.result);
-                    const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
 
-                    const totalPageCount = pdf.numPages;
-                    const promises = [];
+                    const loadingTask = pdfjsLib.getDocument({ data: pdfData });
+                    loadingTask.promise.then(async function (pdf) {
+                        const totalPageCount = pdf.numPages;
 
-                    for (let pageNum = 1; pageNum <= totalPageCount; pageNum++) {
-                        const currentPage = await pdf.getPage(pageNum);
-                        const viewport = currentPage.getViewport({ scale: 1 });
-                        const scale = 1 - (reductionPercentage / 100);
-
-                        const scaledViewport = currentPage.getViewport({ scale });
                         const canvas = document.createElement('canvas');
                         const context = canvas.getContext('2d');
-                        canvas.width = scaledViewport.width;
-                        canvas.height = scaledViewport.height;
 
-                        const renderContext = {
-                            canvasContext: context,
-                            viewport: scaledViewport
-                        };
+                        const reducedPages = [];
 
-                        await currentPage.render(renderContext).promise;
+                        for (let pageNumber = 1; pageNumber <= totalPageCount; pageNumber++) {
+                            const page = await pdf.getPage(pageNumber);
+                            const viewport = page.getViewport({ scale: 1 });
 
-                        const imageDataUrl = canvas.toDataURL('image/jpeg', 1.0);
-                        const imageBlob = await convertDataUrlToBlob(imageDataUrl);
-                        const imageData = await new Response(imageBlob).arrayBuffer();
-                        promises.push(imageData);
-                    }
+                            canvas.width = viewport.width;
+                            canvas.height = viewport.height;
 
-                    const mergedPdf = mergeImageDataToPdf(promises, totalPageCount);
+                            const renderContext = {
+                                canvasContext: context,
+                                viewport: viewport
+                            };
 
-                    resolve(mergedPdf);
+                            await page.render(renderContext);
+
+                            const imageDataUrl = canvas.toDataURL('image/jpeg', reductionPercentage / 100);
+                            const imageDataBlob = await convertDataUrlToBlob(imageDataUrl);
+
+                            const imageData = new Uint8Array(await new Response(imageDataBlob).arrayBuffer());
+                            reducedPages.push(imageData);
+                        }
+
+                        const mergedPdf = mergePdfs(reducedPages);
+
+                        mergedPdf.output((buffer) => {
+                            resolve(buffer);
+                        });
+                    });
                 };
 
                 reader.readAsArrayBuffer(pdfFile);
@@ -229,19 +234,18 @@
             });
         }
 
-        function mergeImageDataToPdf(imageDataArray, totalPageCount) {
-            const mergedPdf = new pdfjsLib.Document();
-
-            for (let i = 0; i < totalPageCount; i++) {
-                const image = new Uint8Array(imageDataArray[i]);
-                const imgData = new pdfjsLib.ImageData(image, 1, 1);
-
-                const page = mergedPdf.addPage([imgData.width, imgData.height]);
-                page.addImage(imgData, 'JPEG', 0, 0, imgData.width, imgData.height);
-            }
+        function mergePdfs(pdfs) {
+            const mergedPdf = pdfs.reduce((acc, pdf) => {
+                acc.addPage(pdf.getPage(1));
+                return acc;
+            }, new pdfjsLib.Document());
 
             return mergedPdf;
         }
+
+        sizeSlider.addEventListener('input', function () {
+            sizePercentage.textContent = `${this.value}%`;
+        });
     </script>
 </body>
 
