@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="keywords" content="PDF converter, file conversion, image to PDF, online converter">
-    <meta name="description" content="Convert images to PDF online with this simple and efficient file converter. Choose your image, click Convert, and download the converted PDF.">
+    <meta name="description"
+        content="Convert images to PDF online with this simple and efficient file converter. Choose your image, click Convert, and download the converted PDF.">
     <title>PDF Converter</title>
     <script src="https://rawgit.com/eKoopmans/html2pdf/master/dist/html2pdf.bundle.js"></script>
     <style>
@@ -25,9 +27,11 @@
         h2 {
             color: #4CAF50;
         }
+
         .line {
-           border: 1px solid #4CAF50;
+            border: 1px solid #4CAF50;
         }
+
         input[type="file"] {
             display: none;
         }
@@ -68,7 +72,8 @@
             overflow: hidden;
         }
 
-        #outputLink {
+        #outputLink,
+        #mergeOutputLink {
             display: none;
             padding: 10px;
             background-color: #4CAF50;
@@ -78,7 +83,8 @@
             margin-top: 20px;
         }
 
-        #outputLink:hover {
+        #outputLink:hover,
+        #mergeOutputLink:hover {
             background-color: #45a049;
         }
 
@@ -109,17 +115,24 @@
         }
 
         @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
         }
     </style>
 </head>
+
 <body>
     <h2>PDF Converter</h2>
     <hr class="line">
     <p>Click To Upload Your Image Here 👇</p>
+    <!-- Update the file input to support multiple files -->
     <label for="fileInput">Browse File</label>
-    <input type="file" id="fileInput" accept=".jpg, .jpeg, .png, .gif, .bmp, .webp">
+    <input type="file" id="fileInput" accept=".jpg, .jpeg, .png, .gif, .bmp, .webp" multiple>
     <br>
     <button id="convertButton" onclick="convertFile()">Convert</button>
 
@@ -131,6 +144,8 @@
 
     <div id="outputContainer">
         <a id="outputLink" download="converted_file">Download Converted File</a>
+        <!-- Display the merged PDF link -->
+        <a id="mergeOutputLink" download="merged_file">Download Merged PDF</a>
     </div>
 
     <script>
@@ -138,74 +153,109 @@
             const fileInput = document.getElementById('fileInput');
             const outputContainer = document.getElementById('outputContainer');
             const outputLink = document.getElementById('outputLink');
+            const mergeOutputLink = document.getElementById('mergeOutputLink');
             const loadingScreen = document.getElementById('loadingScreen');
 
             if (fileInput.files.length === 0) {
-                alert('Please choose a file.');
+                alert('Please choose at least one file.');
                 return;
             }
 
             loadingScreen.style.display = 'flex';
 
-            const inputFile = fileInput.files[0];
+            const inputFiles = fileInput.files;
 
-            const convertedFile = await convertToPDF(inputFile);
+            const convertedFile = await convertToPDF(inputFiles);
 
             if (convertedFile) {
                 const blobUrl = URL.createObjectURL(convertedFile);
                 outputLink.href = blobUrl;
                 outputLink.style.display = 'inline-block';
                 outputContainer.style.display = 'block';
+
+                // Display the merged PDF link
+                mergeOutputLink.href = blobUrl;
+                mergeOutputLink.style.display = 'inline-block';
             }
 
             loadingScreen.style.display = 'none';
         }
 
-        function convertToPDF(imageFile) {
+        function convertToPDF(imageFiles) {
             return new Promise(resolve => {
-                const reader = new FileReader();
-                reader.onloadend = () => {
-                    const img = new Image();
-                    img.src = reader.result;
+                const promises = Array.from(imageFiles).map(imageFile => {
+                    return new Promise(innerResolve => {
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                            const img = new Image();
+                            img.src = reader.result;
 
-                    img.onload = () => {
-                        const canvas = document.createElement('canvas');
-                        let maxWidth = 800; // Adjust this value as needed
-                        let maxHeight = 1000; // Adjust this value as needed
+                            img.onload = () => {
+                                const canvas = document.createElement('canvas');
+                                let maxWidth = 800; // Adjust this value as needed
+                                let maxHeight = 1000; // Adjust this value as needed
 
-                        if (img.width > maxWidth || img.height > maxHeight) {
-                            const aspectRatio = img.width / img.height;
-                            if (aspectRatio > 1) {
-                                canvas.width = maxWidth;
-                                canvas.height = maxWidth / aspectRatio;
-                            } else {
-                                canvas.width = maxHeight * aspectRatio;
-                                canvas.height = maxHeight;
-                            }
-                        } else {
-                            canvas.width = img.width;
-                            canvas.height = img.height;
-                        }
+                                if (img.width > maxWidth || img.height > maxHeight) {
+                                    const aspectRatio = img.width / img.height;
+                                    if (aspectRatio > 1) {
+                                        canvas.width = maxWidth;
+                                        canvas.height = maxWidth / aspectRatio;
+                                    } else {
+                                        canvas.width = maxHeight * aspectRatio;
+                                        canvas.height = maxHeight;
+                                    }
+                                } else {
+                                    canvas.width = img.width;
+                                    canvas.height = img.height;
+                                }
 
-                        const ctx = canvas.getContext('2d');
-                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                                const ctx = canvas.getContext('2d');
+                                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-                        html2pdf(canvas, {
-                            margin: 10,
-                            filename: 'converted_file.pdf',
-                            jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' },
-                            image: { type: 'jpeg', quality: 1 },
-                            output: 'blob',
-                            html2canvas: { scale: 1 }
-                        }).then(pdf => {
-                            resolve(pdf);
-                        });
-                    };
-                };
+                                // Resolve the promise with the canvas
+                                innerResolve(canvas);
+                            };
+                        };
 
-                reader.readAsDataURL(imageFile);
+                        reader.readAsDataURL(imageFile);
+                    });
+                });
+
+                // Wait for all promises to resolve
+                Promise.all(promises).then(canvases => {
+                    // Merge canvases or handle as needed
+                    const mergedCanvas = mergeCanvases(canvases);
+
+                    // Perform PDF conversion on the merged canvas
+                    html2pdf(mergedCanvas, {
+                        margin: 10,
+                        filename: 'merged_file.pdf',
+                        jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' },
+                        image: { type: 'jpeg', quality: 1 },
+                        output: 'blob',
+                        html2canvas: { scale: 1 }
+                    }).then(pdf => {
+                        resolve(pdf);
+                    });
+                });
             });
+        }
+
+        function mergeCanvases(canvases) {
+            const mergedCanvas = document.createElement('canvas');
+            const context = mergedCanvas.getContext('2d');
+            mergedCanvas.width = canvases[0].width;
+            mergedCanvas.height = canvases.reduce((totalHeight, canvas) => totalHeight + canvas.height, 0);
+
+            let yOffset = 0;
+            canvases.forEach(canvas => {
+                context.drawImage(canvas, 0, yOffset);
+                yOffset += canvas.height;
+            });
+
+            return mergedCanvas;
         }
     </script>
 </body>
+
 </html>
