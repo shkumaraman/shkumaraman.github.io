@@ -92,18 +92,6 @@
       display: flex;
       align-items: center;
     }
-
-    #import-btn {
-      padding: 8px;
-      cursor: pointer;
-      border: none;
-      outline: none;
-      font-size: 14px;
-      background-color: #f4f4f4;
-      margin-left: auto;
-      display: flex;
-      align-items: center;
-    }
   </style>
 </head>
 <body>
@@ -111,13 +99,12 @@
     <button class="tab active-tab" onclick="changeTab('html')">HTML</button>
     <button class="tab" onclick="changeTab('css')">CSS</button>
     <button class="tab" onclick="changeTab('js')">JS</button>
-    <button class="tab" onclick="changeTab('txt')">TXT</button>
 
     <button class="btn" id="copy-btn" onclick="copyCode()"><i class="fas fa-copy"></i></button>
     <button class="btn" id="delete-btn" onclick="deleteCode()"><i class="fas fa-trash-alt"></i></button>
     <button class="btn" id="download-btn" onclick="downloadCode()"><i class="fas fa-download"></i></button>
     <button class="btn" id="fullscreen-btn" onclick="toggleFullScreen()"><i class="fas fa-expand"></i></button>
-    <button class="btn" id="import-btn" onclick="importCodeDialog()"><i class="fas fa-file-import"></i> Import</button>
+    <button class="btn" id="github-import-btn" onclick="importFromGitHub()"><i class="fab fa-github"></i></button>
   </div>
 
   <div id="output-container">
@@ -135,8 +122,7 @@
     let codeMap = {
       'html': '',
       'css': '',
-      'js': '',
-      'txt': ''
+      'js': ''
     };
 
     function changeTab(tab) {
@@ -146,13 +132,7 @@
     }
 
     function downloadCode() {
-      let codeToDownload = '';
-
-      if (activeTab === 'txt') {
-        codeToDownload = codeMap.txt;
-      } else {
-        codeToDownload = codeMap[activeTab];
-      }
+      let codeToDownload = codeMap[activeTab];
 
       const blob = new Blob([codeToDownload], { type: 'text/plain' });
       const link = document.createElement('a');
@@ -170,13 +150,9 @@
     }
 
     function deleteCode() {
-      if (activeTab === 'txt') {
-        codeMap.txt = '';
-      } else {
-        document.getElementById('editor').innerText = '';
-        updateOutput();
-        updateLineNumbers();
-      }
+      document.getElementById('editor').innerText = '';
+      updateOutput();
+      updateLineNumbers();
     }
 
     function updateOutput() {
@@ -212,11 +188,7 @@
     }
 
     function loadCode() {
-      if (activeTab === 'txt') {
-        document.getElementById('editor').innerText = codeMap.txt;
-      } else {
-        document.getElementById('editor').innerText = codeMap[activeTab];
-      }
+      document.getElementById('editor').innerText = codeMap[activeTab];
       updateOutput();
     }
 
@@ -241,21 +213,34 @@
       }
     }
 
-    function importCodeDialog() {
-      const codeURL = prompt('Enter the code file URL:');
-      if (codeURL) {
-        importCodeFromURL(codeURL);
+    function importFromGitHub() {
+      const repoURL = prompt('Enter GitHub repository URL:');
+      if (repoURL) {
+        fetchGitHubRepo(repoURL);
       }
     }
 
-    async function importCodeFromURL(codeURL) {
+    async function fetchGitHubRepo(repoURL) {
       try {
-        const response = await fetch(codeURL);
-        const code = await response.text();
-        codeMap[activeTab] = code;
+        const response = await fetch(`${repoURL}/contents/`);
+        const data = await response.json();
+
+        // Fetch HTML, CSS, JS files
+        const filePromises = ['html', 'css', 'js'].map(async lang => {
+          const file = data.find(file => file.name.toLowerCase().endsWith(`.${lang}`));
+          if (file) {
+            const fileResponse = await fetch(file.download_url);
+            const fileContent = await fileResponse.text();
+            codeMap[lang] = fileContent;
+          }
+        });
+
+        await Promise.all(filePromises);
+
+        // Load the code of the active tab
         loadCode();
       } catch (error) {
-        console.error('Error importing code:', error);
+        console.error('Error fetching GitHub repository:', error);
       }
     }
 
