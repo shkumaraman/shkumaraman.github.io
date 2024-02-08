@@ -236,24 +236,28 @@
       }
     }
 
-    function fetchGitHubRepo(repoURL) {
-      // Fetch the content of the files (HTML, CSS, JS) from the GitHub repository
-      // and update the codeMap with the fetched code.
-      // You can use GitHub API or other methods to fetch the code.
-      // Here, I'm simulating the fetch with hardcoded code.
-      const fetchedCode = {
-        'html': '<!DOCTYPE html>\n<html>\n<head>\n  <title>GitHub HTML</title>\n</head>\n<body>\n  <h1>Hello from GitHub HTML!</h1>\n</body>\n</html>',
-        'css': 'body {\n  background-color: #f4f4f4;\n  font-family: Arial, sans-serif;\n}',
-        'js': 'console.log("Hello from GitHub JS!");'
-      };
+    async function fetchGitHubRepo(repoURL) {
+      try {
+        const response = await fetch(`${repoURL}/contents/`);
+        const data = await response.json();
 
-      // Update the codeMap with the fetched code
-      Object.keys(fetchedCode).forEach(lang => {
-        codeMap[lang] = fetchedCode[lang];
-      });
+        // Fetch HTML, CSS, JS files
+        const filePromises = ['html', 'css', 'js'].map(async lang => {
+          const file = data.find(file => file.name.toLowerCase().endsWith(`.${lang}`));
+          if (file) {
+            const fileResponse = await fetch(file.download_url);
+            const fileContent = await fileResponse.text();
+            codeMap[lang] = fileContent;
+          }
+        });
 
-      // Load the code of the active tab
-      loadCode();
+        await Promise.all(filePromises);
+
+        // Load the code of the active tab
+        loadCode();
+      } catch (error) {
+        console.error('Error fetching GitHub repository:', error);
+      }
     }
 
     // Initial load
