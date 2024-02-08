@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="description" content="Convert your images effortlessly between JPEG, PNG, and WebP formats with this online image format converter. Change image formats quickly and download the converted files.">
+    <meta name="keywords" content="JPEG to PNG, PNG to JPEG, WebP converter, Image format changer, Online image converter, Convert images, Image conversion tool, JPEG, PNG, WebP">
+    <title>Image Format Changer</title>
+<style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f0f0;
+            color: #333;
+            text-align: center;
+            margin: 20px;
+        }
+
+        h2 {
+            color: #4CAF50;
+        }
+        .line {
+           border: 1px solid #4CAF50;
+        }
+        input[type="file"] {
+            display: none;
+        }
+
+        label {
+            padding: 10px;
+            border: 2px solid #4CAF50;
+            border-radius: 5px;
+            background-color: #fff;
+            color: #333;
+            cursor: pointer;
+            margin-bottom: 20px;
+            display: inline-block;
+        }
+
+        input[type="url"] {
+            padding: 10px;
+            border: 2px solid #4CAF50;
+            border-radius: 5px;
+            background-color: #fff;
+            color: #333;
+            width: 80%;
+            margin-bottom: 20px;
+        }
+
+        #formatButtons {
+            margin-bottom: 20px;
+        }
+
+        button {
+            padding: 10px;
+            background-color: #4CAF50;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+            transition: background-color 0.3s ease;
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
+
+        button.selected {
+            background-color: #fff;
+            color: #000;
+            border: 2px solid #000;
+        }
+
+        #loadingScreen {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+
+        #loadingContainer {
+            display: inline-block;
+        }
+
+        .loader {
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #3498db;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        #outputContainer {
+            border: 1px solid #000;
+            border-radius: 5px;
+            padding: 20px;
+            background-color: #fff;
+            margin-top: 20px;
+            display: none;
+            max-width: 100%;
+            overflow: hidden;
+        }
+
+        #outputImage {
+            width: 100%;
+            height: auto;
+            border-radius: 5px;
+            border: 1px solid #000;
+            margin-top: 20px;
+        }
+
+        a {
+            display: inline-block;
+            padding: 10px;
+            background-color: #4CAF50;
+            color: #fff;
+            text-decoration: none;
+            border-radius: 5px;
+            margin-top: 20px;
+            display: none;
+        }
+
+        a:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <h2>Image Format Changer</h2>
+    <hr class="line">
+    <p>Click To Upload Your Image Here 👇</p>
+    <label for="fileInput" style="background-color: #4CAF50; color: #ffffff;">Browse for Image</label>
+    <input type="file" id="fileInput" accept="image/*">
+    <br>
+    <input type="url" id="urlInput" placeholder="Enter Image URL">
+    <br>
+    <div id="formatButtons">
+        <button id="jpegButton" value="jpeg" onclick="selectFormat('jpeg')">JPEG</button>
+        <button id="pngButton" value="png" onclick="selectFormat('png')">PNG</button>
+        <button id="webpButton" value="webp" onclick="selectFormat('webp')">WebP</button>
+    </div>
+    <button id="convertButton" onclick="changeFormat()">Convert Image</button>
+    <div id="loadingScreen">
+        <div id="loadingContainer">
+            <div class="loader"></div>
+        </div>
+    </div>
+    <div id="outputContainer">
+        <img id="outputImage" alt="Converted Image">
+        <br>
+        <a id="downloadLink" download="converted_image">Download Converted Image</a>
+    </div>
+<script>
+        let selectedFormat = '';
+
+        function selectFormat(format) {
+            selectedFormat = format;
+            updateButtonStyles();
+        }
+
+        function updateButtonStyles() {
+            const formatButtons = ['jpeg', 'png', 'webp'];
+            for (const format of formatButtons) {
+                const button = document.getElementById(`${format}Button`);
+                if (format === selectedFormat) {
+                    button.classList.add('selected');
+                } else {
+                    button.classList.remove('selected');
+                }
+            }
+        }
+
+        async function changeFormat() {
+            const fileInput = document.getElementById('fileInput');
+            const urlInput = document.getElementById('urlInput');
+            const outputContainer = document.getElementById('outputContainer');
+            const outputImage = document.getElementById('outputImage');
+            const downloadLink = document.getElementById('downloadLink');
+            const loadingScreen = document.getElementById('loadingScreen');
+
+            if (fileInput.files.length === 0 && !urlInput.value.trim()) {
+                alert('Please select an image file or enter a valid URL.');
+                return;
+            }
+
+            loadingScreen.style.display = 'flex';
+
+            let processedFile;
+            if (fileInput.files.length > 0) {
+                processedFile = fileInput.files[0];
+            } else {
+                const imageUrl = urlInput.value.trim();
+                processedFile = await fetch(imageUrl)
+                    .then(response => response.blob())
+                    .then(blob => new File([blob], 'image', { type: blob.type }));
+            }
+
+            const convertedImage = await convertImageFormat(processedFile, selectedFormat);
+
+            loadingScreen.style.display = 'none';
+
+            if (convertedImage) {
+                outputImage.src = URL.createObjectURL(convertedImage);
+                outputContainer.style.display = 'block';
+                downloadLink.href = outputImage.src;
+                downloadLink.style.display = 'inline-block';
+            }
+        }
+
+        async function convertImageFormat(imageFile, format) {
+            try {
+                const image = await createImageBitmap(imageFile);
+
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+
+                canvas.width = image.width;
+                canvas.height = image.height;
+
+                ctx.drawImage(image, 0, 0);
+
+                const dataUrl = canvas.toDataURL(`image/${format}`);
+                return fetch(dataUrl).then(res => res.blob());
+            } catch (error) {
+                console.error('Error converting image format:', error);
+                alert('Error converting image format. Please try again.');
+                return null;
+            }
+        }
+    </script>
+</body>
+</html>
