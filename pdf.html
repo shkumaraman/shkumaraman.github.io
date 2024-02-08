@@ -6,7 +6,7 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="keywords" content="PDF converter, file conversion, image to PDF, online converter">
     <meta name="description" content="Convert images to PDF online with this simple and efficient file converter. Choose your image, click Convert, and download the converted PDF.">
-    <title>PDF Converter</title>
+    <title>PDF Converter V1</title>
     <script src="https://rawgit.com/eKoopmans/html2pdf/master/dist/html2pdf.bundle.js"></script>
     <style>
         body {
@@ -25,11 +25,9 @@
         h2 {
             color: #4CAF50;
         }
-
         .line {
-            border: 1px solid #4CAF50;
+           border: 1px solid #4CAF50;
         }
-
         input[type="file"] {
             display: none;
         }
@@ -78,7 +76,6 @@
             text-decoration: none;
             border-radius: 5px;
             margin-top: 20px;
-            cursor: pointer;
         }
 
         #outputLink:hover {
@@ -120,11 +117,11 @@
 <body>
     <h2>PDF Converter</h2>
     <hr class="line">
-    <p>Click To Upload Your Images Here 👇</p>
-    <label for="fileInput">Browse Files</label>
-    <input type="file" id="fileInput" accept=".jpg, .jpeg, .png, .gif, .bmp, .webp" multiple>
+    <p>Click To Upload Your Image Here 👇</p>
+    <label for="fileInput">Browse File</label>
+    <input type="file" id="fileInput" accept=".jpg, .jpeg, .png, .gif, .bmp, .webp">
     <br>
-    <button id="convertButton" onclick="convertFiles()">Convert</button>
+    <button id="convertButton" onclick="convertFile()">Convert</button>
 
     <div id="loadingScreen">
         <div id="loadingContainer">
@@ -133,24 +130,26 @@
     </div>
 
     <div id="outputContainer">
-        <a id="outputLink" onclick="downloadConvertedFile()">Download Converted File</a>
+        <a id="outputLink" download="converted_file">Download Converted File</a>
     </div>
 
     <script>
-        async function convertFiles() {
+        async function convertFile() {
             const fileInput = document.getElementById('fileInput');
             const outputContainer = document.getElementById('outputContainer');
             const outputLink = document.getElementById('outputLink');
             const loadingScreen = document.getElementById('loadingScreen');
 
             if (fileInput.files.length === 0) {
-                alert('Please choose at least one file.');
+                alert('Please choose a file.');
                 return;
             }
 
             loadingScreen.style.display = 'flex';
 
-            const convertedFile = await convertToPDF(fileInput.files);
+            const inputFile = fileInput.files[0];
+
+            const convertedFile = await convertToPDF(inputFile);
 
             if (convertedFile) {
                 const blobUrl = URL.createObjectURL(convertedFile);
@@ -162,37 +161,7 @@
             loadingScreen.style.display = 'none';
         }
 
-        function convertToPDF(imageFiles) {
-            return new Promise(resolve => {
-                const promises = [];
-
-                for (const imageFile of imageFiles) {
-                    promises.push(loadImage(imageFile));
-                }
-
-                Promise.all(promises).then(images => {
-                    const pdfOptions = {
-                        margin: 10,
-                        filename: 'converted_file.pdf',
-                        image: { type: 'jpeg', quality: 1 },
-                        html2canvas: { scale: 2 },
-                        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-                    };
-
-                    const outputContainer = document.getElementById('outputContainer');
-                    const outputLink = document.getElementById('outputLink');
-
-                    html2pdf().from(images).set(pdfOptions).outputPdf().then(pdf => {
-                        outputLink.blob = pdf;
-                        outputLink.style.cursor = 'pointer';
-                    });
-
-                    outputContainer.style.display = 'block';
-                });
-            });
-        }
-
-        function loadImage(imageFile) {
+        function convertToPDF(imageFile) {
             return new Promise(resolve => {
                 const reader = new FileReader();
                 reader.onloadend = () => {
@@ -200,25 +169,42 @@
                     img.src = reader.result;
 
                     img.onload = () => {
-                        resolve(img);
+                        const canvas = document.createElement('canvas');
+                        let maxWidth = 800; // Adjust this value as needed
+                        let maxHeight = 1000; // Adjust this value as needed
+
+                        if (img.width > maxWidth || img.height > maxHeight) {
+                            const aspectRatio = img.width / img.height;
+                            if (aspectRatio > 1) {
+                                canvas.width = maxWidth;
+                                canvas.height = maxWidth / aspectRatio;
+                            } else {
+                                canvas.width = maxHeight * aspectRatio;
+                                canvas.height = maxHeight;
+                            }
+                        } else {
+                            canvas.width = img.width;
+                            canvas.height = img.height;
+                        }
+
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+                        html2pdf(canvas, {
+                            margin: 10,
+                            filename: 'converted_file.pdf',
+                            jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' },
+                            image: { type: 'jpeg', quality: 1 },
+                            output: 'blob',
+                            html2canvas: { scale: 1 }
+                        }).then(pdf => {
+                            resolve(pdf);
+                        });
                     };
                 };
 
                 reader.readAsDataURL(imageFile);
             });
-        }
-
-        function downloadConvertedFile() {
-            const outputLink = document.getElementById('outputLink');
-            if (outputLink.href && outputLink.blob) {
-                const url = URL.createObjectURL(outputLink.blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = outputLink.getAttribute('download');
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-            }
         }
     </script>
 </body>
