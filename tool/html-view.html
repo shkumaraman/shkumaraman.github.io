@@ -49,10 +49,6 @@
       width: 40px;
     }
 
-    .line-number {
-      margin-bottom: 1em;
-    }
-
     #editor {
       flex: 1;
       padding: 10px;
@@ -66,14 +62,16 @@
 
     #output-container {
       flex: 3;
-      box-sizing: border-box;
-      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
       background-color: #f4f4f4;
       color: #333;
+      overflow-y: auto;
       height: 75%;
     }
 
-    #output {
+    #output-iframe {
+      flex: 1;
       border: none;
       width: 100%;
       height: 100%;
@@ -92,57 +90,7 @@
       background-color: #f4f4f4;
       margin-left: 5px;
       display: flex;
-    }
-
-    #github-icon {
-      color: #333;
-      margin-left: auto;
-      font-size: 20px;
-    }
-
-    .search-bar {
-      display: none;
-      margin-left: auto;
-      padding: 10px;
-      flex-direction: column;
-    }
-
-    #search-input {
-      padding: 5px;
-      font-size: 14px;
-      margin-bottom: 10px;
-    }
-
-    @media screen and (orientation: landscape) {
-      .search-bar {
-        flex-direction: row;
-        align-items: center;
-      }
-
-      #search-input {
-        margin-bottom: 0;
-        margin-right: 10px;
-      }
-    }
-
-    /* Code Suggestion Styles */
-    .suggestion-list {
-      position: absolute;
-      z-index: 1;
-      background-color: #fff;
-      border: 1px solid #ccc;
-      max-height: 150px;
-      overflow-y: auto;
-      display: none;
-    }
-
-    .suggestion-item {
-      padding: 5px;
-      cursor: pointer;
-    }
-
-    .suggestion-item:hover {
-      background-color: #ddd;
+      align-items: center;
     }
   </style>
 </head>
@@ -156,22 +104,17 @@
     <button class="btn" id="copy-btn" onclick="copyCode()"><i class="fas fa-copy"></i></button>
     <button class="btn" id="delete-btn" onclick="deleteCode()"><i class="fas fa-trash-alt"></i></button>
     <button class="btn" id="download-btn" onclick="downloadCode()"><i class="fas fa-download"></i></button>
-    <button class="btn" id="github-icon" onclick="showGitHubDialog()"><i class="fab fa-github"></i></button>
-
-    <div class="search-bar" id="search-bar">
-      <input type="text" id="search-input" placeholder="Enter GitHub file URL">
-      <button class="btn" onclick="fetchCode()">Fetch Code</button>
-    </div>
+    <button class="btn" id="fullscreen-btn" onclick="toggleFullScreen()"><i class="fas fa-expand"></i></button>
+    <button class="btn" id="github-import-btn" onclick="importFromGitHub()"><i class="fab fa-github"></i></button>
   </div>
 
   <div id="output-container">
-    <iframe id="output" frameborder="0"></iframe>
+    <iframe id="output-iframe"></iframe>
   </div>
 
   <div id="editor-container">
     <div id="line-numbers" onscroll="syncScroll()"></div>
-    <div id="editor" contenteditable="true" oninput="updateOutput()" onscroll="syncScroll()" onkeydown="suggestCode(event)"></div>
-    <div class="suggestion-list" id="suggestion-list"></div>
+    <div id="editor" contenteditable="true" oninput="updateOutput()" onscroll="syncScroll()"></div>
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/js/all.min.js"></script>
@@ -196,13 +139,13 @@
       if (activeTab === 'txt') {
         codeToDownload = codeMap.txt;
       } else {
-        codeToDownload = document.documentElement.outerHTML;
+        codeToDownload = codeMap[activeTab];
       }
 
       const blob = new Blob([codeToDownload], { type: 'text/plain' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
-      link.download = 'code.txt';
+      link.download = `code.${activeTab}`;
       link.click();
     }
 
@@ -226,17 +169,13 @@
 
     function updateOutput() {
       const code = document.getElementById('editor').innerText;
-      const output = document.getElementById('output');
+      const outputIframe = document.getElementById('output-iframe');
       try {
-        output.contentDocument.open();
-        output.contentDocument.write(code);
-        output.contentDocument.close();
-        output.classList.remove('error');
+        outputIframe.srcdoc = code;
+        outputIframe.classList.remove('error');
       } catch (error) {
-        output.contentDocument.open();
-        output.contentDocument.write(error.message);
-        output.contentDocument.close();
-        output.classList.add('error');
+        outputIframe.srcdoc = `<span style="color: red;">${error.message}</span>`;
+        outputIframe.classList.add('error');
       }
 
       updateLineNumbers();
@@ -248,7 +187,7 @@
       const lineNumbers = document.getElementById('line-numbers');
 
       const lines = editor.innerText.split('\n');
-      const lineNumbersHTML = lines.map((_, index) => `<div class="line-number">${index + 1}</div>`).join('');
+      const lineNumbersHTML = lines.map((_, index) => `<div>${index + 1}</div>`).join('');
 
       lineNumbers.innerHTML = lineNumbersHTML;
     }
@@ -279,75 +218,46 @@
       }
     }
 
-    function showGitHubDialog() {
-      const url = prompt('Enter GitHub file URL:');
-      if (url) {
-        fetch(url)
-          .then(response => response.text())
-          .then(data => {
-            document.getElementById('editor').innerText = data;
-            updateOutput();
-          })
-          .catch(error => console.error('Error fetching code', error));
+    function toggleFullScreen() {
+      const elem = document.documentElement;
+      if (!document.fullscreenElement) {
+        elem.requestFullscreen().catch(err => {
+          console.log(`Error attempting to enable full-screen mode: ${err.message}`);
+        });
+      } else {
+        document.exitFullscreen();
       }
     }
 
-    // Code Suggestion Logic
-    const keywords = ['function', 'if', 'else', 'for', 'while', 'console.log', 'var', 'let', 'const'];
-
-    function suggestCode(event) {
-      const suggestionList = document.getElementById('suggestion-list');
-      const editor = document.getElementById('editor');
-
-      if (event.key === 'Tab') {
-        event.preventDefault();
-        const currentWord = getCurrentWord(editor);
-        const matchingKeywords = keywords.filter(keyword => keyword.startsWith(currentWord));
-
-        if (matchingKeywords.length > 0) {
-          const suggestionsHTML = matchingKeywords.map(keyword => `<div class="suggestion-item">${keyword}</div>`).join('');
-          suggestionList.innerHTML = suggestionsHTML;
-          suggestionList.style.display = 'block';
-        }
-      } else if (event.key === 'Enter') {
-        applySuggestion(editor);
-        suggestionList.style.display = 'none';
+    function importFromGitHub() {
+      const repoURL = prompt('Enter GitHub repository URL:');
+      if (repoURL) {
+        fetchGitHubRepo(repoURL);
       }
     }
 
-    function getCurrentWord(editor) {
-      const textBeforeCaret = editor.innerText.substring(0, getCaretPosition(editor));
-      const lastIndexOfSpace = textBeforeCaret.lastIndexOf(' ');
+    function fetchGitHubRepo(repoURL) {
+      // Fetch the content of the files (HTML, CSS, JS) from the GitHub repository
+      // and update the codeMap with the fetched code.
+      // You can use GitHub API or other methods to fetch the code.
+      // Here, I'm simulating the fetch with hardcoded code.
+      const fetchedCode = {
+        'html': '<!DOCTYPE html>\n<html>\n<head>\n  <title>GitHub HTML</title>\n</head>\n<body>\n  <h1>Hello from GitHub HTML!</h1>\n</body>\n</html>',
+        'css': 'body {\n  background-color: #f4f4f4;\n  font-family: Arial, sans-serif;\n}',
+        'js': 'console.log("Hello from GitHub JS!");'
+      };
 
-      return textBeforeCaret.substring(lastIndexOfSpace + 1).trim();
+      // Update the codeMap with the fetched code
+      Object.keys(fetchedCode).forEach(lang => {
+        codeMap[lang] = fetchedCode[lang];
+      });
+
+      // Load the code of the active tab
+      loadCode();
     }
 
-    function getCaretPosition(element) {
-      const selection = window.getSelection();
-      return selection.getRangeAt(0).endOffset;
-    }
-
-    function applySuggestion(editor) {
-      const currentWord = getCurrentWord(editor);
-      const selectedSuggestion = document.querySelector('.suggestion-item:hover');
-
-      if (selectedSuggestion) {
-        const suggestedText = selectedSuggestion.innerText;
-        const textBeforeCaret = editor.innerText.substring(0, getCaretPosition(editor));
-        const lastIndexOfSpace = textBeforeCaret.lastIndexOf(' ');
-
-        const newText = editor.innerText.substring(0, lastIndexOfSpace + 1) + suggestedText + ' ';
-        editor.innerText = newText;
-        updateOutput();
-        suggestionList.style.display = 'none';
-      }
-    }
-
-    document.addEventListener('click', function (event) {
-      if (!event.target.matches('.suggestion-item')) {
-        suggestionList.style.display = 'none';
-      }
-    });
+    // Initial load
+    loadCode();
   </script>
 </body>
 </html>
