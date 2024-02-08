@@ -3,67 +3,84 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Background Remover</title>
-    <style>
-        #output, #preview {
-            max-width: 220px;
-            margin-top: 20px;
-        }
-
-        #downloadBtn {
-            display: none;
-        }
-    </style>
+    <title>PDF Size Reducer</title>
+    <script src="https://rawgit.com/eKoopmans/html2pdf/master/dist/html2pdf.bundle.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.4.0/jspdf.umd.min.js"></script>
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.js"></script>
 </head>
 <body>
-    <input type="file" accept="image/*" id="imageInput" />
-    <button onclick="removeBackground()">Remove Background</button>
-    
-    <div id="preview"></div>
-    <div id="output"></div>
 
-    <a id="downloadBtn" download="removed_background.png" href="#">Download Image</a>
+<div>
+    <input type="file" id="pdfInput" accept=".pdf">
+</div>
 
-    <script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
-    <script>
-        const apiKey = 'gVgyrkky7vFuqZU6GKkZaraF'; // Replace with your remove.bg API key
+<div id="pdfContainer">
+    <!-- Your PDF content will be displayed here -->
+</div>
 
-        function removeBackground() {
-            const input = document.getElementById('imageInput');
-            const file = input.files[0];
+<div>
+    <input type="range" id="qualitySlider" min="0" max="100" value="100">
+</div>
 
-            if (file) {
-                const formData = new FormData();
-                formData.append('image_file', file);
+<button onclick="reducePdf()">Reduce PDF Size</button>
 
-                $.ajax({
-                    url: 'https://api.remove.bg/v1.0/removebg',
-                    type: 'POST',
-                    headers: {
-                        'X-Api-Key': apiKey,
-                    },
-                    data: formData,
-                    processData: false,
-                    contentType: false,
-                    success: function (result) {
-                        const preview = document.getElementById('preview');
-                        preview.innerHTML = `<img src="${URL.createObjectURL(file)}" alt="Original Image">`;
+<script>
+    function handleFile() {
+        const fileInput = document.getElementById('pdfInput');
+        const pdfContainer = document.getElementById('pdfContainer');
+        const qualitySlider = document.getElementById('qualitySlider');
 
-                        const output = document.getElementById('output');
-                        output.innerHTML = `<img src="${result.data.result_url}" alt="Removed Background">`;
+        const file = fileInput.files[0];
+        const reader = new FileReader();
 
-                        const downloadBtn = document.getElementById('downloadBtn');
-                        downloadBtn.style.display = 'block';
-                        downloadBtn.href = result.data.result_url;
-                    },
-                    error: function (error) {
-                        console.error('Error:', error);
-                    },
-                });
-            } else {
-                console.error('No file selected.');
-            }
-        }
-    </script>
+        reader.onload = function (e) {
+            const content = e.target.result;
+            renderPdf(content, pdfContainer, qualitySlider.value / 100);
+        };
+
+        reader.readAsDataURL(file);
+    }
+
+    async function renderPdf(data, container, quality) {
+        const pdfContainer = container;
+        const qualityValue = quality;
+
+        const pdfDoc = new jsPDF();
+        const pdfWidth = pdfDoc.internal.pageSize.getWidth();
+        const pdfHeight = pdfDoc.internal.pageSize.getHeight();
+
+        const img = new Image();
+        img.src = data;
+
+        img.onload = function () {
+            const canvas = document.createElement('canvas');
+            canvas.width = pdfWidth;
+            canvas.height = pdfHeight;
+
+            const context = canvas.getContext('2d');
+            context.drawImage(img, 0, 0, pdfWidth, pdfHeight);
+
+            const imageData = canvas.toDataURL('image/jpeg', qualityValue);
+            pdfContainer.innerHTML = `<img src="${imageData}" alt="PDF Preview" width="100%" height="auto"/>`;
+        };
+    }
+
+    function reducePdf() {
+        const pdfContainer = document.getElementById("pdfContainer");
+
+        html2pdf(pdfContainer, {
+            margin: 10,
+            filename: 'reduced_pdf',
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: { scale: 2 },
+            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        }).then(function (pdf) {
+            pdf.save();
+        });
+    }
+
+    document.getElementById('pdfInput').addEventListener('change', handleFile);
+</script>
+
 </body>
 </html>
