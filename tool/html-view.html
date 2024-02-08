@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Code Output Viewer</title>
+  <title>Code Editor</title>
   <style>
     body {
       font-family: 'Arial', sans-serif;
@@ -13,12 +13,30 @@
       height: 100vh;
     }
 
+    .tabs {
+      display: flex;
+      background-color: #f4f4f4;
+      margin-bottom: 10px;
+    }
+
+    .tab {
+      padding: 10px;
+      cursor: pointer;
+      border: none;
+      outline: none;
+      background-color: inherit;
+      font-size: 16px;
+    }
+
+    .active-tab {
+      background-color: #ccc;
+    }
+
     #editor-container {
       flex: 1;
       display: flex;
       flex-direction: row;
-      height: 25px;
-      bottom: 0;
+      height: 25%;
     }
 
     #line-numbers {
@@ -28,7 +46,6 @@
       color: #666;
       overflow-y: auto;
       width: 40px;
-      overflow: hidden; /* Hide scrollbar */
     }
 
     #editor {
@@ -39,6 +56,7 @@
       color: #333;
       overflow-y: auto;
       white-space: pre-wrap;
+      height: 100%;
     }
 
     #output {
@@ -49,36 +67,79 @@
       background-color: #f4f4f4;
       color: #333;
       height: 75%;
+      white-space: pre-wrap;
     }
 
     #output.error {
       color: red;
     }
 
-    #writer {
-      flex: 1;
+    .btn {
       padding: 10px;
-      box-sizing: border-box;
-      border: 1px solid #ccc;
-      color: #333;
-      overflow-y: auto;
+      cursor: pointer;
+      border: none;
+      outline: none;
+      font-size: 16px;
+      background-color: #f4f4f4;
+      margin-left: 10px;
       display: flex;
-      justify-content: flex-end;
-      align-items: flex-end;
     }
   </style>
 </head>
 <body>
-  <div id="output"></div>
+  <div class="tabs">
+    <button class="tab active-tab" onclick="changeTab('html')">HTML</button>
+    <button class="tab" onclick="changeTab('css')">CSS</button>
+    <button class="tab" onclick="changeTab('js')">JS</button>
+
+    <button class="btn" id="copy-btn" onclick="copyCode()">C</button>
+    <button class="btn" id="delete-btn" onclick="deleteCode()">D</button>
+    <button class="btn" id="download-btn" onclick="downloadCode()">Download</button>
+  </div>
+
+  <div id="output" contenteditable="true"></div>
+
   <div id="editor-container">
-    <div id="line-numbers" onscroll="syncScroll()">
-      <!-- Line numbers will be added dynamically -->
-    </div>
+    <div id="line-numbers" onscroll="syncScroll()"></div>
     <div id="editor" contenteditable="true" oninput="updateOutput()" onscroll="syncScroll()"></div>
   </div>
-  <div id="writer"></div>
 
   <script>
+    let activeTab = 'html';
+    let codeMap = {
+      'html': '',
+      'css': '',
+      'js': ''
+    };
+
+    function changeTab(tab) {
+      activeTab = tab;
+      loadCode();
+      updateActiveTabStyle();
+    }
+
+    function downloadCode() {
+      const codeToDownload = document.documentElement.outerHTML;
+      const blob = new Blob([codeToDownload], { type: 'text/plain' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'code.txt';
+      link.click();
+    }
+
+    function copyCode() {
+      const codeToCopy = document.documentElement.outerHTML;
+      navigator.clipboard.writeText(codeToCopy)
+        .then(() => alert('Code copied to clipboard'))
+        .catch(error => console.error('Unable to copy code', error));
+    }
+
+    function deleteCode() {
+      document.getElementById('editor').innerText = '';
+      updateOutput();
+      updateLineNumbers();
+    }
+
     function updateOutput() {
       const code = document.getElementById('editor').innerText;
       const output = document.getElementById('output');
@@ -91,6 +152,7 @@
       }
 
       updateLineNumbers();
+      codeMap[activeTab] = code;
     }
 
     function updateLineNumbers() {
@@ -110,8 +172,23 @@
       lineNumbers.scrollTop = editor.scrollTop;
     }
 
-    // Shuruaati update
-    updateOutput();
+    function loadCode() {
+      document.getElementById('editor').innerText = codeMap[activeTab];
+      updateOutput();
+    }
+
+    function updateActiveTabStyle() {
+      const tabs = document.querySelectorAll('.tab');
+      tabs.forEach(tab => tab.classList.remove('active-tab'));
+      
+      const activeTabElement = document.querySelector(`.tab[data-lang="${activeTab}"]`);
+      if (activeTabElement) {
+        activeTabElement.classList.add('active-tab');
+      }
+    }
+
+    // Initial load
+    loadCode();
   </script>
 </body>
 </html>
