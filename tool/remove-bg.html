@@ -4,8 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PDF Size Reducer</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.70/pdfmake.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.70/vfs_fonts.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/pdf-lib@2.15.0/dist/pdf-lib.js"></script>
     <script src="https://html2canvas.hertzen.com/dist/html2canvas.js"></script>
 </head>
 <body>
@@ -19,7 +18,7 @@
 </div>
 
 <div>
-    <input type="range" id="qualitySlider" min="0" max="1" step="0.01" value="1">
+    <input type="range" id="qualitySlider" min="0" max="100" value="100">
 </div>
 
 <button onclick="reducePdf()">Reduce PDF Size</button>
@@ -35,35 +34,51 @@
 
         reader.onload = function (e) {
             const content = e.target.result;
-            renderPdf(content, pdfContainer, qualitySlider.value);
+            renderPdf(content, pdfContainer, qualitySlider.value / 100);
         };
 
-        reader.readAsDataURL(file);
+        reader.readAsArrayBuffer(file);
     }
 
     async function renderPdf(data, container, quality) {
         const pdfContainer = container;
         const qualityValue = quality;
 
-        const canvas = await html2canvas(pdfContainer, { scale: 2 });
+        const pdfDoc = await PDFLib.PDFDocument.load(data);
+        const firstPage = pdfDoc.getPages()[0];
 
-        const imgData = canvas.toDataURL('image/jpeg', qualityValue);
-        pdfContainer.innerHTML = `<img src="${imgData}" alt="PDF Preview" width="100%" height="auto"/>`;
+        const { width, height } = firstPage.getSize();
+        const imgData = await firstPage.render({ quality: qualityValue }).asBase64();
+
+        pdfContainer.innerHTML = `<img src="data:image/png;base64,${imgData}" alt="PDF Preview" width="${width}" height="${height}" />`;
     }
 
-    function reducePdf() {
+    async function reducePdf() {
         const pdfContainer = document.getElementById("pdfContainer");
 
-        const pdfDefinition = {
-            content: [
-                {
-                    image: pdfContainer.firstChild.src,
-                    width: 500, // Adjust the width as needed
-                },
-            ],
-        };
+        const canvas = await html2canvas(pdfContainer);
+        const imgData = canvas.toDataURL('image/jpeg');
 
-        pdfmake.createPdf(pdfDefinition).download('reduced_pdf.pdf');
+        const pdfDoc = await PDFLib.PDFDocument.create();
+        const pdfPage = await pdfDoc.addPage();
+
+        const img = await pdfDoc.embedPng(imgData);
+        const { width, height } = img.scale(1);
+
+        pdfPage.drawImage(img, {
+            x: 0,
+            y: 0,
+            width: width,
+            height: height,
+        });
+
+        const pdfBytes = await pdfDoc.save();
+        const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = 'reduced_pdf.pdf';
+        link.click();
     }
 
     document.getElementById('pdfInput').addEventListener('change', handleFile);
