@@ -49,6 +49,10 @@
       width: 40px;
     }
 
+    .line-number {
+      margin-bottom: 1em;
+    }
+
     #editor {
       flex: 1;
       padding: 10px;
@@ -60,15 +64,19 @@
       height: 100%;
     }
 
-    #output {
+    #output-container {
       flex: 3;
-      padding: 20px;
       box-sizing: border-box;
       overflow-y: auto;
       background-color: #f4f4f4;
       color: #333;
       height: 75%;
-      white-space: pre-wrap;
+    }
+
+    #output {
+      border: none;
+      width: 100%;
+      height: 100%;
     }
 
     #output.error {
@@ -116,6 +124,26 @@
         margin-right: 10px;
       }
     }
+
+    /* Code Suggestion Styles */
+    .suggestion-list {
+      position: absolute;
+      z-index: 1;
+      background-color: #fff;
+      border: 1px solid #ccc;
+      max-height: 150px;
+      overflow-y: auto;
+      display: none;
+    }
+
+    .suggestion-item {
+      padding: 5px;
+      cursor: pointer;
+    }
+
+    .suggestion-item:hover {
+      background-color: #ddd;
+    }
   </style>
 </head>
 <body>
@@ -136,11 +164,14 @@
     </div>
   </div>
 
-  <div id="output" contenteditable="true"></div>
+  <div id="output-container">
+    <iframe id="output" frameborder="0"></iframe>
+  </div>
 
   <div id="editor-container">
     <div id="line-numbers" onscroll="syncScroll()"></div>
-    <div id="editor" contenteditable="true" oninput="updateOutput()" onscroll="syncScroll()"></div>
+    <div id="editor" contenteditable="true" oninput="updateOutput()" onscroll="syncScroll()" onkeydown="suggestCode(event)"></div>
+    <div class="suggestion-list" id="suggestion-list"></div>
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/js/all.min.js"></script>
@@ -176,13 +207,7 @@
     }
 
     function copyCode() {
-      let codeToCopy = '';
-
-      if (activeTab === 'txt') {
-        codeToCopy = codeMap.txt;
-      } else {
-        codeToCopy = document.documentElement.outerHTML;
-      }
+      let codeToCopy = codeMap[activeTab];
 
       navigator.clipboard.writeText(codeToCopy)
         .then(() => alert('Code copied to clipboard'))
@@ -203,10 +228,14 @@
       const code = document.getElementById('editor').innerText;
       const output = document.getElementById('output');
       try {
-        output.innerHTML = code;
+        output.contentDocument.open();
+        output.contentDocument.write(code);
+        output.contentDocument.close();
         output.classList.remove('error');
       } catch (error) {
-        output.innerHTML = error.message;
+        output.contentDocument.open();
+        output.contentDocument.write(error.message);
+        output.contentDocument.close();
         output.classList.add('error');
       }
 
@@ -219,7 +248,7 @@
       const lineNumbers = document.getElementById('line-numbers');
 
       const lines = editor.innerText.split('\n');
-      const lineNumbersHTML = lines.map((_, index) => `<div>${index + 1}</div>`).join('');
+      const lineNumbersHTML = lines.map((_, index) => `<div class="line-number">${index + 1}</div>`).join('');
 
       lineNumbers.innerHTML = lineNumbersHTML;
     }
@@ -263,8 +292,62 @@
       }
     }
 
-    // Initial load
-    loadCode();
+    // Code Suggestion Logic
+    const keywords = ['function', 'if', 'else', 'for', 'while', 'console.log', 'var', 'let', 'const'];
+
+    function suggestCode(event) {
+      const suggestionList = document.getElementById('suggestion-list');
+      const editor = document.getElementById('editor');
+
+      if (event.key === 'Tab') {
+        event.preventDefault();
+        const currentWord = getCurrentWord(editor);
+        const matchingKeywords = keywords.filter(keyword => keyword.startsWith(currentWord));
+
+        if (matchingKeywords.length > 0) {
+          const suggestionsHTML = matchingKeywords.map(keyword => `<div class="suggestion-item">${keyword}</div>`).join('');
+          suggestionList.innerHTML = suggestionsHTML;
+          suggestionList.style.display = 'block';
+        }
+      } else if (event.key === 'Enter') {
+        applySuggestion(editor);
+        suggestionList.style.display = 'none';
+      }
+    }
+
+    function getCurrentWord(editor) {
+      const textBeforeCaret = editor.innerText.substring(0, getCaretPosition(editor));
+      const lastIndexOfSpace = textBeforeCaret.lastIndexOf(' ');
+
+      return textBeforeCaret.substring(lastIndexOfSpace + 1).trim();
+    }
+
+    function getCaretPosition(element) {
+      const selection = window.getSelection();
+      return selection.getRangeAt(0).endOffset;
+    }
+
+    function applySuggestion(editor) {
+      const currentWord = getCurrentWord(editor);
+      const selectedSuggestion = document.querySelector('.suggestion-item:hover');
+
+      if (selectedSuggestion) {
+        const suggestedText = selectedSuggestion.innerText;
+        const textBeforeCaret = editor.innerText.substring(0, getCaretPosition(editor));
+        const lastIndexOfSpace = textBeforeCaret.lastIndexOf(' ');
+
+        const newText = editor.innerText.substring(0, lastIndexOfSpace + 1) + suggestedText + ' ';
+        editor.innerText = newText;
+        updateOutput();
+        suggestionList.style.display = 'none';
+      }
+    }
+
+    document.addEventListener('click', function (event) {
+      if (!event.target.matches('.suggestion-item')) {
+        suggestionList.style.display = 'none';
+      }
+    });
   </script>
 </body>
 </html>
