@@ -18,10 +18,10 @@
 </div>
 
 <div>
-    <input type="range" id="qualitySlider" min="0" max="100" value="100">
+    <input type="range" id="qualitySlider" min="0" max="1" step="0.01" value="1">
 </div>
 
-<button onclick="reducePdf()">Reduce PDF Size</button>
+<button onclick="reduceAndDownloadPdf()">Reduce PDF Size and Download</button>
 
 <script>
     function handleFile() {
@@ -30,11 +30,20 @@
         const qualitySlider = document.getElementById('qualitySlider');
 
         const file = fileInput.files[0];
+        if (!file) {
+            showErrorDialog('Please select a PDF file.');
+            return;
+        }
+
         const reader = new FileReader();
 
         reader.onload = function (e) {
             const content = e.target.result;
-            renderPdf(content, pdfContainer, qualitySlider.value / 100);
+            renderPdf(content, pdfContainer, qualitySlider.value);
+        };
+
+        reader.onerror = function () {
+            showErrorDialog('Error reading the PDF file.');
         };
 
         reader.readAsArrayBuffer(file);
@@ -47,20 +56,36 @@
         const pdfDoc = await PDFLib.PDFDocument.load(data);
         const firstPage = pdfDoc.getPages()[0];
 
+        if (!firstPage) {
+            showErrorDialog('Error loading the PDF content.');
+            return;
+        }
+
         const { width, height } = firstPage.getSize();
         const imgData = await firstPage.render({ quality: qualityValue }).asBase64();
 
         pdfContainer.innerHTML = `<img src="data:image/png;base64,${imgData}" alt="PDF Preview" width="${width}" height="${height}" />`;
     }
 
-    async function reducePdf() {
+    async function reduceAndDownloadPdf() {
         const pdfContainer = document.getElementById("pdfContainer");
+        const qualitySlider = document.getElementById('qualitySlider');
 
-        const canvas = await html2canvas(pdfContainer);
-        const imgData = canvas.toDataURL('image/jpeg');
+        if (!pdfContainer.firstChild) {
+            showErrorDialog('No PDF content to reduce.');
+            return;
+        }
+
+        const canvas = await html2canvas(pdfContainer, { scale: 2 });
+        const imgData = canvas.toDataURL('image/jpeg', qualitySlider.value);
 
         const pdfDoc = await PDFLib.PDFDocument.create();
         const pdfPage = await pdfDoc.addPage();
+
+        if (!pdfPage) {
+            showErrorDialog('Error creating the PDF page.');
+            return;
+        }
 
         const img = await pdfDoc.embedPng(imgData);
         const { width, height } = img.scale(1);
@@ -79,6 +104,10 @@
         link.href = URL.createObjectURL(blob);
         link.download = 'reduced_pdf.pdf';
         link.click();
+    }
+
+    function showErrorDialog(message) {
+        alert('Error: ' + message);
     }
 
     document.getElementById('pdfInput').addEventListener('change', handleFile);
