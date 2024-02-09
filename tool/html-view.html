@@ -20,6 +20,7 @@
     .tabs {
       display: flex;
       background-color: #f4f4f4;
+      margin-bottom: 10px;
     }
 
     .tab {
@@ -40,7 +41,6 @@
       display: flex;
       flex-direction: row;
       height: 25%;
-      position: relative;
     }
 
     #line-numbers {
@@ -71,12 +71,20 @@
       transition: color 0.3s;
     }
 
-    #undo-redo-container {
-      position: absolute;
-      top: 0;
-      right: 0;
+    #output-container {
+      flex: 3;
       display: flex;
-      align-items: center;
+      flex-direction: column;
+      background-color: #fff;
+      overflow-y: auto;
+      margin-left: 40px;
+    }
+
+    #output-iframe {
+      flex: 1;
+      border: none;
+      width: 100%;
+      height: 100%;
     }
 
     .btn {
@@ -86,24 +94,19 @@
       outline: none;
       font-size: 14px;
       background-color: #fff;
-      margin-left: 5px;
+      margin-left: 1px;
       display: flex;
       align-items: center;
     }
 
-    #output-container {
-      flex: 3;
+    .undo-redo-btns {
       display: flex;
-      flex-direction: column;
-      background-color: #fff;
-      overflow-y: auto;
+      align-items: center;
+      margin-bottom: 10px;
     }
 
-    #output-iframe {
-      flex: 1;
-      border: none;
-      width: 100%;
-      height: 100%;
+    .undo-redo-btn {
+      margin-left: 1px;
     }
   </style>
 </head>
@@ -122,6 +125,11 @@
     <button class="btn" id="dark-mode-btn" onclick="toggleDarkMode()"><i class="fas fa-moon"></i></button>
   </div>
 
+  <div class="undo-redo-btns">
+    <button class="btn undo-redo-btn" onclick="editorUndo()"><i class="fas fa-undo"></i> Undo</button>
+    <button class="btn undo-redo-btn" onclick="editorRedo()"><i class="fas fa-redo"></i> Redo</button>
+  </div>
+
   <div id="output-container">
     <iframe id="output-iframe"></iframe>
   </div>
@@ -129,10 +137,6 @@
   <div id="editor-container">
     <div id="line-numbers" onscroll="syncScroll()"></div>
     <textarea id="editor" oninput="updateOutput()" onscroll="syncScroll()"></textarea>
-    <div id="undo-redo-container">
-      <button class="btn" onclick="editorUndo()"><i class="fas fa-undo"></i></button>
-      <button class="btn" onclick="editorRedo()"><i class="fas fa-redo"></i></button>
-    </div>
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/js/all.min.js"></script>
@@ -145,7 +149,8 @@
       'txt': ''
     };
     let darkMode = false;
-    let editorUndoStack = [];
+
+    let editorUndoStack = ['']; // Initialize with an empty string for initial state
     let editorRedoStack = [];
 
     window.onload = function() {
@@ -197,8 +202,7 @@
       updateLineNumbers();
       codeMap[activeTab] = code;
       saveLocalStorage();
-      editorUndoStack.push(code); // Push current code to undo stack
-      editorRedoStack = []; // Clear redo stack whenever new changes are made
+      updateUndoRedoButtons();
     }
 
     function updateLineNumbers() {
@@ -308,21 +312,38 @@
 
     function editorUndo() {
       if (editorUndoStack.length > 1) {
-        const currentCode = editorUndoStack.pop(); // Get the current code
-        editorRedoStack.push(currentCode); // Push current code to redo stack
-        const previousCode = editorUndoStack[editorUndoStack.length - 1]; // Get the previous code
-        document.getElementById('editor').value = previousCode; // Set the editor value to previous code
+        const currentCode = document.getElementById('editor').value;
+        editorRedoStack.push(currentCode);
+
+        const previousCode = editorUndoStack.pop();
+        document.getElementById('editor').value = previousCode;
+
         updateOutput();
+        updateLineNumbers();
+        updateUndoRedoButtons();
       }
     }
 
     function editorRedo() {
       if (editorRedoStack.length > 0) {
-        const redoCode = editorRedoStack.pop(); // Get the redo code
-        editorUndoStack.push(redoCode); // Push redo code to undo stack
-        document.getElementById('editor').value = redoCode; // Set the editor value to redo code
+        const currentCode = document.getElementById('editor').value;
+        editorUndoStack.push(currentCode);
+
+        const redoCode = editorRedoStack.pop();
+        document.getElementById('editor').value = redoCode;
+
         updateOutput();
+        updateLineNumbers();
+        updateUndoRedoButtons();
       }
+    }
+
+    function updateUndoRedoButtons() {
+      const undoButton = document.getElementById('undo-btn');
+      const redoButton = document.getElementById('redo-btn');
+
+      undoButton.disabled = editorUndoStack.length <= 1;
+      redoButton.disabled = editorRedoStack.length === 0;
     }
   </script>
 </body>
