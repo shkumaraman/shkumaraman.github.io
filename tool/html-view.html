@@ -20,7 +20,6 @@
     .tabs {
       display: flex;
       background-color: #f4f4f4;
-      margin-bottom: 10px;
     }
 
     .tab {
@@ -41,6 +40,7 @@
       display: flex;
       flex-direction: row;
       height: 25%;
+      position: relative;
     }
 
     #line-numbers {
@@ -77,7 +77,6 @@
       flex-direction: column;
       background-color: #fff;
       overflow-y: auto;
-      margin-left: 40px;
     }
 
     #output-iframe {
@@ -99,14 +98,33 @@
       align-items: center;
     }
 
-    .undo-redo-btns {
-      display: flex;
-      align-items: center;
-      margin-bottom: 10px;
+    #snippet-btn {
+      margin-left: auto;
     }
 
-    .undo-redo-btn {
-      margin-left: 1px;
+    .snippet-menu {
+      position: absolute;
+      top: 30px;
+      right: 0;
+      background-color: #fff;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      display: none;
+    }
+
+    .snippet-menu button {
+      padding: 8px;
+      cursor: pointer;
+      border: none;
+      outline: none;
+      width: 100%;
+      text-align: left;
+      background-color: #fff;
+    }
+
+    .snippet-menu button:hover {
+      background-color: #f4f4f4;
     }
   </style>
 </head>
@@ -123,11 +141,15 @@
     <button class="btn" id="download-btn" onclick="downloadCode()"><i class="fas fa-download"></i></button>
     <button class="btn" id="fullscreen-btn" onclick="toggleFullScreen()"><i class="fas fa-expand"></i></button>
     <button class="btn" id="dark-mode-btn" onclick="toggleDarkMode()"><i class="fas fa-moon"></i></button>
-  </div>
 
-  <div class="undo-redo-btns">
-    <button class="btn undo-redo-btn" onclick="editorUndo()"><i class="fas fa-undo"></i> Undo</button>
-    <button class="btn undo-redo-btn" onclick="editorRedo()"><i class="fas fa-redo"></i> Redo</button>
+    <button class="btn" id="snippet-btn" onclick="toggleSnippetMenu()"><i class="fas fa-code"></i></button>
+    <div class="snippet-menu">
+      <button onclick="insertSnippet('<html></html>')">HTML Tags</button>
+      <button onclick="insertSnippet('<head></head>')">Head</button>
+      <button onclick="insertSnippet('<body></body>')">Body</button>
+      <button onclick="insertSnippet('<div></div>')">Div</button>
+      <button onclick="insertSnippet('<p></p>')">Paragraph</button>
+    </div>
   </div>
 
   <div id="output-container">
@@ -150,11 +172,12 @@
     };
     let darkMode = false;
 
-    let editorUndoStack = ['']; // Initialize with an empty string for initial state
+    let editorUndoStack = [''];
     let editorRedoStack = [];
 
     window.onload = function() {
       loadLocalStorage();
+      updateUndoRedoButtons();
     };
 
     function changeTab(tab) {
@@ -202,6 +225,7 @@
       updateLineNumbers();
       codeMap[activeTab] = code;
       saveLocalStorage();
+      addToUndoStack(code);
       updateUndoRedoButtons();
     }
 
@@ -296,54 +320,52 @@
       }
     }
 
-    function importCode() {
-      const importLink = prompt("Enter the import raw code link:");
-      if (importLink) {
-        fetch(importLink)
-          .then(response => response.text())
-          .then(data => {
-            codeMap[activeTab] = data;
-            loadCode();
-            updateOutput();
-          })
-          .catch(error => console.error('Error importing code', error));
-      }
+    function insertSnippet(snippet) {
+      const editor = document.getElementById('editor');
+      const cursorPosition = editor.selectionStart;
+      const textBeforeCursor = editor.value.substring(0, cursorPosition);
+      const textAfterCursor = editor.value.substring(cursorPosition);
+      editor.value = textBeforeCursor + snippet + textAfterCursor;
+      updateOutput();
     }
 
-    function editorUndo() {
+    function toggleSnippetMenu() {
+      const snippetMenu = document.querySelector('.snippet-menu');
+      snippetMenu.style.display = snippetMenu.style.display === 'block' ? 'none' : 'block';
+    }
+
+    function addToUndoStack(code) {
+      editorUndoStack.push(code);
+      editorRedoStack = [];
+    }
+
+    function undo() {
       if (editorUndoStack.length > 1) {
-        const currentCode = document.getElementById('editor').value;
+        const currentCode = editorUndoStack.pop();
         editorRedoStack.push(currentCode);
-
-        const previousCode = editorUndoStack.pop();
+        const previousCode = editorUndoStack[editorUndoStack.length - 1];
         document.getElementById('editor').value = previousCode;
-
         updateOutput();
-        updateLineNumbers();
         updateUndoRedoButtons();
       }
     }
 
-    function editorRedo() {
+    function redo() {
       if (editorRedoStack.length > 0) {
-        const currentCode = document.getElementById('editor').value;
-        editorUndoStack.push(currentCode);
-
         const redoCode = editorRedoStack.pop();
+        editorUndoStack.push(redoCode);
         document.getElementById('editor').value = redoCode;
-
         updateOutput();
-        updateLineNumbers();
         updateUndoRedoButtons();
       }
     }
 
     function updateUndoRedoButtons() {
-      const undoButton = document.getElementById('undo-btn');
-      const redoButton = document.getElementById('redo-btn');
+      const undoBtn = document.getElementById('undo-btn');
+      const redoBtn = document.getElementById('redo-btn');
 
-      undoButton.disabled = editorUndoStack.length <= 1;
-      redoButton.disabled = editorRedoStack.length === 0;
+      undoBtn.disabled = editorUndoStack.length <= 1;
+      redoBtn.disabled = editorRedoStack.length === 0;
     }
   </script>
 </body>
