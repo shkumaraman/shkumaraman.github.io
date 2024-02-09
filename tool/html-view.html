@@ -6,30 +6,239 @@
   <title>Code Editor</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
   <style>
-    /* ... (previous styles) ... */
+    body {
+      font-family: 'Arial', sans-serif;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    .tabs {
+      display: flex;
+      background-color: #f4f4f4;
+      margin-bottom: 10px;
+    }
+
+    .tab {
+      padding: 8px;
+      cursor: pointer;
+      border: none;
+      outline: none;
+      background-color: inherit;
+      font-size: 14px;
+    }
+
+    .active-tab {
+      background-color: #ccc;
+    }
+
+    #editor-container {
+      flex: 1;
+      display: flex;
+      flex-direction: row;
+      height: 25%;
+    }
 
     #line-numbers {
-      /* ... (previous styles) ... */
+      padding: 10px;
+      box-sizing: border-box;
+      border-right: 1px solid #ccc;
+      color: #666;
+      overflow-y: auto;
+      width: 40px;
       font-size: 12px; /* Adjusted font size for line numbers */
     }
 
+    #editor {
+      flex: 1;
+      padding: 10px;
+      box-sizing: border-box;
+      border: 1px solid #ccc;
+      color: #333;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      height: 100%;
+      margin: 0; /* Remove margin above the textarea */
+    }
+
     #output-container {
-      /* ... (previous styles) ... */
+      flex: 3;
+      display: flex;
+      flex-direction: column;
+      background-color: #f4f4f4;
+      color: #333;
+      overflow-y: auto;
       height: 100%; /* Full height for the output iframe container */
     }
 
-    .iframe-tab {
-      /* ... (previous styles) ... */
+    #output-iframe-html,
+    #output-iframe-css,
+    #output-iframe-js {
+      flex: 1;
+      border: none;
+      width: 100%;
       height: 100%; /* Full height for the output iframe */
+    }
+
+    .btn {
+      padding: 8px;
+      cursor: pointer;
+      border: none;
+      outline: none;
+      font-size: 14px;
+      background-color: #f4f4f4;
+      margin-left: 5px;
+      display: flex;
+      align-items: center;
+    }
+
+    .iframe-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .iframe-tab {
+      flex: 1;
+      border: none;
     }
   </style>
 </head>
 <body>
-  <!-- ... (previous HTML structure) ... -->
+  <div class="tabs">
+    <button class="tab active-tab" onclick="changeTab('html')">HTML</button>
+    <button class="tab" onclick="changeTab('css')">CSS</button>
+    <button class="tab" onclick="changeTab('js')">JS</button>
+    <button class="tab" onclick="changeTab('txt')">TXT</button>
+
+    <button class="btn" id="copy-btn" onclick="copyCode()"><i class="fas fa-copy"></i></button>
+    <button class="btn" id="delete-btn" onclick="deleteCode()"><i class="fas fa-trash-alt"></i></button>
+    <button class="btn" id="download-btn" onclick="downloadCode()"><i class="fas fa-download"></i></button>
+    <button class="btn" id="fullscreen-btn" onclick="toggleFullScreen()"><i class="fas fa-expand"></i></button>
+  </div>
+
+  <div id="output-container" class="iframe-container">
+    <iframe id="output-iframe-html" class="iframe-tab"></iframe>
+    <iframe id="output-iframe-css" class="iframe-tab"></iframe>
+    <iframe id="output-iframe-js" class="iframe-tab"></iframe>
+  </div>
+
+  <div id="editor-container">
+    <div id="line-numbers" onscroll="syncScroll()"></div>
+    <textarea id="editor" oninput="updateOutput()" onscroll="syncScroll()"></textarea>
+  </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/js/all.min.js"></script>
   <script>
-    /* ... (previous JavaScript code) ... */
+    let activeTab = 'html';
+    let codeMap = {
+      'html': '',
+      'css': '',
+      'js': '',
+      'txt': ''
+    };
+
+    function changeTab(tab) {
+      activeTab = tab;
+      loadCode();
+      updateActiveTabStyle();
+    }
+
+    function downloadCode() {
+      let codeToDownload = codeMap['html'] + '\n' + codeMap['css'] + '\n' + codeMap['js'] + '\n' + codeMap['txt'];
+
+      const blob = new Blob([codeToDownload], { type: 'text/plain' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'code.txt';
+      link.click();
+    }
+
+    function copyCode() {
+      let codeToCopy = codeMap['html'] + '\n' + codeMap['css'] + '\n' + codeMap['js'] + '\n' + codeMap['txt'];
+
+      navigator.clipboard.writeText(codeToCopy)
+        .then(() => alert('Code copied to clipboard'))
+        .catch(error => console.error('Unable to copy code', error));
+    }
+
+    function deleteCode() {
+      document.getElementById('editor').value = '';
+      updateOutput();
+      updateLineNumbers();
+    }
+
+    function updateOutput() {
+      const code = document.getElementById('editor').value;
+      const outputIframeHtml = document.getElementById('output-iframe-html');
+      const outputIframeCss = document.getElementById('output-iframe-css');
+      const outputIframeJs = document.getElementById('output-iframe-js');
+
+      try {
+        outputIframeHtml.srcdoc = `<html><head><style>${codeMap['css']}</style></head><body>${codeMap['html']}${codeMap['js']}</body></html>`;
+        outputIframeCss.srcdoc = `<html><head><style>${codeMap['css']}</style></head><body>${codeMap['js']}</body></html>`;
+        outputIframeJs.srcdoc = `<html><head></head><body>${codeMap['js']}</body></html>`;
+
+        outputIframeHtml.classList.remove('error');
+        outputIframeCss.classList.remove('error');
+        outputIframeJs.classList.remove('error');
+      } catch (error) {
+        outputIframeHtml.srcdoc = `<span style="color: red;">${error.message}</span>`;
+        outputIframeCss.srcdoc = `<span style="color: red;">${error.message}</span>`;
+        outputIframeJs.srcdoc = `<span style="color: red;">${error.message}</span>`;
+
+        outputIframeHtml.classList.add('error');
+        outputIframeCss.classList.add('error');
+        outputIframeJs.classList.add('error');
+      }
+
+      updateLineNumbers();
+      codeMap[activeTab] = code;
+    }
+
+    function updateLineNumbers() {
+      const editor = document.getElementById('editor');
+      const lineNumbers = document.getElementById('line-numbers');
+
+      const lines = editor.value.split('\n');
+      const lineNumbersHTML = lines.map((_, index) => `<div>${index + 1}</div>`).join('');
+
+      lineNumbers.innerHTML = lineNumbersHTML;
+    }
+
+    function syncScroll() {
+      const lineNumbers = document.getElementById('line-numbers');
+      const editor = document.getElementById('editor');
+
+      lineNumbers.scrollTop = editor.scrollTop;
+    }
+
+    function loadCode() {
+      document.getElementById('editor').value = codeMap[activeTab];
+      updateOutput();
+    }
+
+    function updateActiveTabStyle() {
+      const tabs = document.querySelectorAll('.tab');
+      tabs.forEach(tab => tab.classList.remove('active-tab'));
+
+      const activeTabElement = document.querySelector(`.tab[data-lang="${activeTab}"]`);
+      if (activeTabElement) {
+        activeTabElement.classList.add('active-tab');
+      }
+    }
+
+    function toggleFullScreen() {
+      const elem = document.documentElement;
+      if (!document.fullscreenElement) {
+        elem.requestFullscreen().catch(err => {
+          console.log(`Error attempting to enable full-screen mode: ${err.message}`);
+        });
+      } else {
+        document.exitFullscreen();
+      }
+    }
   </script>
 </body>
 </html>
