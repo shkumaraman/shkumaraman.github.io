@@ -35,14 +35,14 @@
       background-color: #ccc;
     }
 
-    .editor-container {
+    #editor-container {
       flex: 1;
       display: flex;
       flex-direction: row;
       height: 25%;
     }
 
-    .line-numbers {
+    #line-numbers {
       padding: 10px;
       box-sizing: border-box;
       border-right: 1px solid #ccc;
@@ -54,7 +54,7 @@
       overflow: hidden;
     }
 
-    .editor {
+    #editor {
       flex: 1;
       padding: 10px;
       box-sizing: border-box;
@@ -96,6 +96,24 @@
       display: flex;
       align-items: center;
     }
+
+    .undo-redo-container {
+      display: flex;
+      align-items: center;
+      margin-right: 5px;
+    }
+
+    .undo-redo-btn {
+      padding: 8px;
+      cursor: pointer;
+      border: none;
+      outline: none;
+      font-size: 14px;
+      background-color: #fff;
+      margin-left: 5px;
+      display: flex;
+      align-items: center;
+    }
   </style>
 </head>
 <body>
@@ -111,30 +129,20 @@
     <button class="btn" id="download-btn" onclick="downloadCode()"><i class="fas fa-download"></i></button>
     <button class="btn" id="fullscreen-btn" onclick="toggleFullScreen()"><i class="fas fa-expand"></i></button>
     <button class="btn" id="dark-mode-btn" onclick="toggleDarkMode()"><i class="fas fa-moon"></i></button>
+    
+    <div class="undo-redo-container">
+      <button class="undo-redo-btn" onclick="editorUndo()"><i class="fas fa-undo"></i></button>
+      <button class="undo-redo-btn" onclick="editorRedo()"><i class="fas fa-redo"></i></button>
+    </div>
   </div>
 
   <div id="output-container">
     <iframe id="output-iframe"></iframe>
   </div>
 
-  <div class="editor-container">
-    <div class="line-numbers" onscroll="syncScroll('html')"></div>
-    <textarea class="editor" id="html-editor" oninput="updateOutput()"></textarea>
-  </div>
-
-  <div class="editor-container">
-    <div class="line-numbers" onscroll="syncScroll('css')"></div>
-    <textarea class="editor" id="css-editor" oninput="updateOutput()"></textarea>
-  </div>
-
-  <div class="editor-container">
-    <div class="line-numbers" onscroll="syncScroll('js')"></div>
-    <textarea class="editor" id="js-editor" oninput="updateOutput()"></textarea>
-  </div>
-
-  <div class="editor-container">
-    <div class="line-numbers" onscroll="syncScroll('txt')"></div>
-    <textarea class="editor" id="txt-editor" oninput="updateOutput()"></textarea>
+  <div id="editor-container">
+    <div id="line-numbers" onscroll="syncScroll()"></div>
+    <textarea id="editor" oninput="updateOutput()" onscroll="syncScroll()"></textarea>
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/js/all.min.js"></script>
@@ -147,6 +155,9 @@
       'txt': ''
     };
     let darkMode = false;
+
+    let editorUndoStack = [];
+    let editorRedoStack = [];
 
     window.onload = function() {
       loadLocalStorage();
@@ -177,13 +188,13 @@
     }
 
     function deleteCode() {
-      document.getElementById(activeTab + '-editor').value = '';
+      document.getElementById('editor').value = '';
       updateOutput();
       updateLineNumbers();
     }
 
     function updateOutput() {
-      const code = document.getElementById(activeTab + '-editor').value;
+      const code = document.getElementById('editor').value;
       const outputIframe = document.getElementById('output-iframe');
 
       try {
@@ -200,8 +211,8 @@
     }
 
     function updateLineNumbers() {
-      const editor = document.getElementById(activeTab + '-editor');
-      const lineNumbers = document.querySelector(`.line-numbers`);
+      const editor = document.getElementById('editor');
+      const lineNumbers = document.getElementById('line-numbers');
 
       let lines = editor.value.split('\n');
       let numbers = '';
@@ -213,15 +224,15 @@
       lineNumbers.innerHTML = numbers;
     }
 
-    function syncScroll(tab) {
-      const lineNumbers = document.querySelector(`.line-numbers`);
-      const editor = document.getElementById(tab + '-editor');
+    function syncScroll() {
+      const lineNumbers = document.getElementById('line-numbers');
+      const editor = document.getElementById('editor');
 
       lineNumbers.scrollTop = editor.scrollTop;
     }
 
     function loadCode() {
-      document.getElementById(activeTab + '-editor').value = codeMap[activeTab];
+      document.getElementById('editor').value = codeMap[activeTab];
       updateOutput();
     }
 
@@ -253,20 +264,20 @@
 
     function applyDarkModeStyles() {
       const body = document.body;
-      const editors = document.querySelectorAll('.editor');
+      const editor = document.getElementById('editor');
       const outputContainer = document.getElementById('output-container');
-      const lineNumbers = document.querySelector(`.line-numbers`);
+      const lineNumbers = document.getElementById('line-numbers');
 
       if (darkMode) {
         body.style.backgroundColor = '#000';
         body.style.color = '#fff';
-        editors.forEach(editor => editor.style.backgroundColor = '#000');
+        editor.style.backgroundColor = '#000';
         lineNumbers.style.color = '#fff';
         document.getElementById('dark-mode-btn').innerHTML = '<i class="fas fa-sun"></i>';
       } else {
         body.style.backgroundColor = '#fff';
         body.style.color = '#333';
-        editors.forEach(editor => editor.style.backgroundColor = '#fff');
+        editor.style.backgroundColor = '#fff';
         lineNumbers.style.color = '#666';
         document.getElementById('dark-mode-btn').innerHTML = '<i class="fas fa-moon"></i>';
       }
@@ -274,8 +285,8 @@
     }
 
     function updateEditorTextColor() {
-      const editors = document.querySelectorAll('.editor');
-      editors.forEach(editor => editor.style.color = darkMode ? '#fff' : '#000');
+      const editor = document.getElementById('editor');
+      editor.style.color = darkMode ? '#fff' : '#000';
     }
 
     function saveLocalStorage() {
@@ -291,7 +302,7 @@
     }
 
     function importCode() {
-      const importLink = prompt("Enter the import link:");
+      const importLink = prompt("Enter the import raw code link:");
       if (importLink) {
         fetch(importLink)
           .then(response => response.text())
@@ -301,6 +312,28 @@
             updateOutput();
           })
           .catch(error => console.error('Error importing code', error));
+      }
+    }
+
+    function editorUndo() {
+      if (editorUndoStack.length > 0) {
+        const currentCode = document.getElementById('editor').value;
+        editorRedoStack.push(currentCode);
+
+        const undoCode = editorUndoStack.pop();
+        document.getElementById('editor').value = undoCode;
+        updateOutput();
+      }
+    }
+
+    function editorRedo() {
+      if (editorRedoStack.length > 0) {
+        const currentCode = document.getElementById('editor').value;
+        editorUndoStack.push(currentCode);
+
+        const redoCode = editorRedoStack.pop();
+        document.getElementById('editor').value = redoCode;
+        updateOutput();
       }
     }
   </script>
