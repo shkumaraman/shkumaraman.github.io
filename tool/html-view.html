@@ -76,7 +76,7 @@
       flex-direction: column;
       background-color: #fff;
       overflow-y: auto;
-      margin-left: 40px;
+      margin-left: 40px; /* Margin for snippet buttons */
     }
 
     #output-iframe {
@@ -98,24 +98,27 @@
       align-items: center;
     }
 
+    #undo-btn,
+    #redo-btn {
+      margin-left: 1px;
+    }
+
     .snippet-menu {
-      position: fixed;
-      top: 10%;
-      left: 5%;
-      background-color: #fff;
-      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-      z-index: 1;
-      display: none;
-      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      position: absolute;
+      margin-left: 0; /* Align with left edge of output container */
+      margin-top: 25%; /* Adjust based on your preference */
     }
 
     .snippet-btn {
+      width: 40px;
       cursor: pointer;
-      margin-bottom: 5px;
-      background-color: #f4f4f4;
-      padding: 5px;
-      border: 1px solid #ccc;
-      border-radius: 3px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      background-color: #fff;
     }
   </style>
 </head>
@@ -131,10 +134,8 @@
     <button class="btn" id="import-btn" onclick="importCode()"><i class="fas fa-file-import"></i></button>
     <button class="btn" id="download-btn" onclick="downloadCode()"><i class="fas fa-download"></i></button>
     <button class="btn" id="fullscreen-btn" onclick="toggleFullScreen()"><i class="fas fa-expand"></i></button>
-    <button class="btn" id="dark-mode-btn" onclick="toggleDarkMode()"><i class="fas fa-moon"></i></button>
-    <button class="btn" id="undo-btn" onclick="undo()" disabled><i class="fas fa-undo"></i></button>
-    <button class="btn" id="redo-btn" onclick="redo()" disabled><i class="fas fa-redo"></i></button>
-    <button class="btn" id="snippet-btn" onclick="toggleSnippetMenu()"><i class="fas fa-code"></i></button>
+    <button class="btn" id="undo-btn" onclick="undo()"><i class="fas fa-undo"></i></button>
+    <button class="btn" id="redo-btn" onclick="redo()"><i class="fas fa-redo"></i></button>
   </div>
 
   <div id="output-container">
@@ -144,17 +145,6 @@
   <div id="editor-container">
     <div id="line-numbers" onscroll="syncScroll()"></div>
     <textarea id="editor" oninput="updateOutput()" onscroll="syncScroll()"></textarea>
-  </div>
-
-  <div class="snippet-menu" id="snippet-menu">
-    <div class="snippet-btn" onclick="insertSnippet('<')">{'<'}</div>
-    <div class="snippet-btn" onclick="insertSnippet('>')}>{'>'}</div>
-    <div class="snippet-btn" onclick="insertSnippet('/')}>{'/'}</div>
-    <div class="snippet-btn" onclick="insertSnippet('{')}>{'{'}</div>
-    <div class="snippet-btn" onclick="insertSnippet('}')}>{'}'}</div>
-    <div class="snippet-btn" onclick="insertSnippet(':')}>{':'}</div>
-    <div class="snippet-btn" onclick="insertSnippet(';')">{';'}</div>
-    <div class="snippet-btn" onclick="insertSnippet('Snippet')">{`Snippet`}</div>
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/js/all.min.js"></script>
@@ -167,10 +157,6 @@
       'txt': ''
     };
     let darkMode = false;
-    let snippetMenuVisible = false;
-    let undoStack = [];
-    let redoStack = [];
-    let isUndoRedoInProgress = false;
 
     window.onload = function() {
       loadLocalStorage();
@@ -221,11 +207,6 @@
       updateLineNumbers();
       codeMap[activeTab] = code;
       saveLocalStorage();
-      if (!isUndoRedoInProgress) {
-        addToUndoStack();
-        clearRedoStack();
-      }
-      toggleUndoRedoButtons();
     }
 
     function updateLineNumbers() {
@@ -291,13 +272,11 @@
         body.style.color = '#fff';
         editor.style.backgroundColor = '#000';
         lineNumbers.style.color = '#fff';
-        document.getElementById('dark-mode-btn').innerHTML = '<i class="fas fa-sun"></i>';
       } else {
         body.style.backgroundColor = '#fff';
         body.style.color = '#333';
         editor.style.backgroundColor = '#fff';
         lineNumbers.style.color = '#666';
-        document.getElementById('dark-mode-btn').innerHTML = '<i class="fas fa-moon"></i>';
       }
       updateEditorTextColor();
     }
@@ -333,68 +312,52 @@
       }
     }
 
-    function toggleSnippetMenu() {
-      snippetMenuVisible = !snippetMenuVisible;
-      const snippetMenu = document.getElementById('snippet-menu');
-      snippetMenu.style.display = snippetMenuVisible ? 'block' : 'none';
+    // Undo and Redo functionality
+    let editorHistory = [];
+    let editorHistoryPointer = -1;
+
+    function pushToHistory() {
+      const editorValue = document.getElementById('editor').value;
+      editorHistory = editorHistory.slice(0, editorHistoryPointer + 1);
+      editorHistory.push(editorValue);
+      editorHistoryPointer = editorHistory.length - 1;
     }
 
+    function undo() {
+      if (editorHistoryPointer > 0) {
+        editorHistoryPointer--;
+        document.getElementById('editor').value = editorHistory[editorHistoryPointer];
+        updateOutput();
+      }
+    }
+
+    function redo() {
+      if (editorHistoryPointer < editorHistory.length - 1) {
+        editorHistoryPointer++;
+        document.getElementById('editor').value = editorHistory[editorHistoryPointer];
+        updateOutput();
+      }
+    }
+
+    // Snippet functionality
     function insertSnippet(snippet) {
       const editor = document.getElementById('editor');
       const cursorPosition = editor.selectionStart;
       const textBeforeCursor = editor.value.substring(0, cursorPosition);
       const textAfterCursor = editor.value.substring(cursorPosition);
-
-      editor.value = textBeforeCursor + snippet + textAfterCursor;
+      editor.value = `${textBeforeCursor}${snippet}${textAfterCursor}`;
       updateOutput();
-      toggleSnippetMenu();
     }
 
-    function undo() {
-      if (undoStack.length > 0) {
-        isUndoRedoInProgress = true;
-        const currentCode = document.getElementById('editor').value;
-        redoStack.push(currentCode);
-
-        const previousCode = undoStack.pop();
-        document.getElementById('editor').value = previousCode;
-        updateOutput();
-
-        isUndoRedoInProgress = false;
-        toggleUndoRedoButtons();
-      }
-    }
-
-    function redo() {
-      if (redoStack.length > 0) {
-        isUndoRedoInProgress = true;
-        const currentCode = document.getElementById('editor').value;
-        undoStack.push(currentCode);
-
-        const nextCode = redoStack.pop();
-        document.getElementById('editor').value = nextCode;
-        updateOutput();
-
-        isUndoRedoInProgress = false;
-        toggleUndoRedoButtons();
-      }
-    }
-
-    function addToUndoStack() {
-      const currentCode = document.getElementById('editor').value;
-      undoStack.push(currentCode);
-    }
-
-    function clearRedoStack() {
-      redoStack = [];
-    }
-
-    function toggleUndoRedoButtons() {
-      const undoBtn = document.getElementById('undo-btn');
-      const redoBtn = document.getElementById('redo-btn');
-      undoBtn.disabled = undoStack.length === 0;
-      redoBtn.disabled = redoStack.length === 0;
-    }
+    document.addEventListener('DOMContentLoaded', function () {
+      const snippetButtons = document.querySelectorAll('.snippet-btn');
+      snippetButtons.forEach(button => {
+        button.addEventListener('click', function () {
+          const snippet = this.dataset.snippet;
+          insertSnippet(snippet);
+        });
+      });
+    });
   </script>
 </body>
 </html>
