@@ -35,14 +35,14 @@
       background-color: #ccc;
     }
 
-    #editor-container {
+    .editor-container {
       flex: 1;
       display: flex;
       flex-direction: row;
       height: 25%;
     }
 
-    #line-numbers {
+    .line-numbers {
       padding: 10px;
       box-sizing: border-box;
       border-right: 1px solid #ccc;
@@ -54,7 +54,7 @@
       overflow: hidden;
     }
 
-    #editor {
+    .editor {
       flex: 1;
       padding: 10px;
       box-sizing: border-box;
@@ -70,7 +70,7 @@
       transition: color 0.3s;
     }
 
-    #output-container {
+    .output-container {
       flex: 3;
       display: flex;
       flex-direction: column;
@@ -78,7 +78,7 @@
       overflow-y: auto;
     }
 
-    #output-iframe {
+    .output-iframe {
       flex: 1;
       border: none;
       width: 100%;
@@ -103,22 +103,38 @@
     <button class="tab active-tab" onclick="changeTab('html')">HTML</button>
     <button class="tab" onclick="changeTab('css')">CSS</button>
     <button class="tab" onclick="changeTab('js')">JS</button>
+    <button class="tab" onclick="changeTab('txt')">TXT</button>
 
     <button class="btn" id="copy-btn" onclick="copyCode()"><i class="fas fa-copy"></i></button>
     <button class="btn" id="delete-btn" onclick="deleteCode()"><i class="fas fa-trash-alt"></i></button>
-    <button class="btn" id="download-btn" onclick="downloadCode()"><i class="fas fa-download"></i></button>
     <button class="btn" id="import-btn" onclick="importCode()"><i class="fas fa-file-import"></i></button>
+    <button class="btn" id="download-btn" onclick="downloadCode()"><i class="fas fa-download"></i></button>
     <button class="btn" id="fullscreen-btn" onclick="toggleFullScreen()"><i class="fas fa-expand"></i></button>
     <button class="btn" id="dark-mode-btn" onclick="toggleDarkMode()"><i class="fas fa-moon"></i></button>
   </div>
 
-  <div id="output-container">
-    <iframe id="output-iframe"></iframe>
+  <div class="output-container">
+    <iframe class="output-iframe"></iframe>
   </div>
 
-  <div id="editor-container">
-    <div id="line-numbers" onscroll="syncScroll()"></div>
-    <textarea id="editor" oninput="updateOutput()" onscroll="syncScroll()"></textarea>
+  <div class="editor-container">
+    <div class="line-numbers" onscroll="syncScroll()"></div>
+    <textarea class="editor" id="html-editor" oninput="updateOutput('html')" onscroll="syncScroll()"></textarea>
+  </div>
+
+  <div class="editor-container">
+    <div class="line-numbers" onscroll="syncScroll()"></div>
+    <textarea class="editor" id="css-editor" oninput="updateOutput('css')" onscroll="syncScroll()"></textarea>
+  </div>
+
+  <div class="editor-container">
+    <div class="line-numbers" onscroll="syncScroll()"></div>
+    <textarea class="editor" id="js-editor" oninput="updateOutput('js')" onscroll="syncScroll()"></textarea>
+  </div>
+
+  <div class="editor-container">
+    <div class="line-numbers" onscroll="syncScroll()"></div>
+    <textarea class="editor" id="txt-editor" oninput="updateOutput('txt')" onscroll="syncScroll()"></textarea>
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/js/all.min.js"></script>
@@ -127,7 +143,8 @@
     let codeMap = {
       'html': '',
       'css': '',
-      'js': ''
+      'js': '',
+      'txt': ''
     };
     let darkMode = false;
 
@@ -142,7 +159,7 @@
     }
 
     function downloadCode() {
-      let codeToDownload = codeMap['html'] + '\n' + codeMap['css'] + '\n' + codeMap['js'];
+      let codeToDownload = codeMap['html'] + '\n' + codeMap['css'] + '\n' + codeMap['js'] + '\n' + codeMap['txt'];
 
       const blob = new Blob([codeToDownload], { type: 'text/plain' });
       const link = document.createElement('a');
@@ -152,7 +169,7 @@
     }
 
     function copyCode() {
-      let codeToCopy = codeMap['html'] + '\n' + codeMap['css'] + '\n' + codeMap['js'];
+      let codeToCopy = codeMap['html'] + '\n' + codeMap['css'] + '\n' + codeMap['js'] + '\n' + codeMap['txt'];
 
       navigator.clipboard.writeText(codeToCopy)
         .then(() => alert('Code copied to clipboard'))
@@ -160,14 +177,17 @@
     }
 
     function deleteCode() {
-      document.getElementById('editor').value = '';
-      updateOutput();
+      document.getElementById('html-editor').value = '';
+      document.getElementById('css-editor').value = '';
+      document.getElementById('js-editor').value = '';
+      document.getElementById('txt-editor').value = '';
+      updateOutput(activeTab);
       updateLineNumbers();
     }
 
-    function updateOutput() {
-      const code = document.getElementById('editor').value;
-      const outputIframe = document.getElementById('output-iframe');
+    function updateOutput(tab) {
+      const code = document.getElementById(tab + '-editor').value;
+      const outputIframe = document.querySelector('.output-iframe');
 
       try {
         outputIframe.srcdoc = `<html><head><style>${codeMap['css']}</style></head><body>${codeMap['html']}${codeMap['js']}</body></html>`;
@@ -178,13 +198,13 @@
       }
 
       updateLineNumbers();
-      codeMap[activeTab] = code;
+      codeMap[tab] = code;
       saveLocalStorage();
     }
 
     function updateLineNumbers() {
-      const editor = document.getElementById('editor');
-      const lineNumbers = document.getElementById('line-numbers');
+      const editor = document.getElementById(activeTab + '-editor');
+      const lineNumbers = document.querySelector('.line-numbers');
 
       let lines = editor.value.split('\n');
       let numbers = '';
@@ -197,15 +217,18 @@
     }
 
     function syncScroll() {
-      const lineNumbers = document.getElementById('line-numbers');
-      const editor = document.getElementById('editor');
+      const lineNumbers = document.querySelector('.line-numbers');
+      const editor = document.getElementById(activeTab + '-editor');
 
       lineNumbers.scrollTop = editor.scrollTop;
     }
 
     function loadCode() {
-      document.getElementById('editor').value = codeMap[activeTab];
-      updateOutput();
+      document.getElementById('html-editor').value = codeMap['html'];
+      document.getElementById('css-editor').value = codeMap['css'];
+      document.getElementById('js-editor').value = codeMap['js'];
+      document.getElementById('txt-editor').value = codeMap['txt'];
+      updateOutput(activeTab);
     }
 
     function updateActiveTabStyle() {
@@ -236,20 +259,20 @@
 
     function applyDarkModeStyles() {
       const body = document.body;
-      const editor = document.getElementById('editor');
-      const outputContainer = document.getElementById('output-container');
-      const lineNumbers = document.getElementById('line-numbers');
+      const editors = document.querySelectorAll('.editor');
+      const outputContainer = document.querySelector('.output-container');
+      const lineNumbers = document.querySelector('.line-numbers');
 
       if (darkMode) {
         body.style.backgroundColor = '#000';
         body.style.color = '#fff';
-        editor.style.backgroundColor = '#000';
+        editors.forEach(editor => editor.style.backgroundColor = '#000');
         lineNumbers.style.color = '#fff';
         document.getElementById('dark-mode-btn').innerHTML = '<i class="fas fa-sun"></i>';
       } else {
         body.style.backgroundColor = '#fff';
         body.style.color = '#333';
-        editor.style.backgroundColor = '#fff';
+        editors.forEach(editor => editor.style.backgroundColor = '#fff');
         lineNumbers.style.color = '#666';
         document.getElementById('dark-mode-btn').innerHTML = '<i class="fas fa-moon"></i>';
       }
@@ -257,8 +280,8 @@
     }
 
     function updateEditorTextColor() {
-      const editor = document.getElementById('editor');
-      editor.style.color = darkMode ? '#fff' : '#000';
+      const editors = document.querySelectorAll('.editor');
+      editors.forEach(editor => editor.style.color = darkMode ? '#fff' : '#000');
     }
 
     function saveLocalStorage() {
@@ -274,14 +297,14 @@
     }
 
     function importCode() {
-      const importLink = prompt("Enter the import Raw link:");
+      const importLink = prompt("Enter the import link:");
       if (importLink) {
         fetch(importLink)
           .then(response => response.text())
           .then(data => {
             codeMap[activeTab] = data;
             loadCode();
-            updateOutput();
+            updateOutput(activeTab);
           })
           .catch(error => console.error('Error importing code', error));
       }
