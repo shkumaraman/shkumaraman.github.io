@@ -76,7 +76,7 @@
       flex-direction: column;
       background-color: #fff;
       overflow-y: auto;
-      margin-left: 40px; /* Margin for snippet buttons */
+      margin-left: 40px; /* Added margin */
     }
 
     #output-iframe {
@@ -98,27 +98,28 @@
       align-items: center;
     }
 
-    #undo-btn,
-    #redo-btn {
-      margin-left: 1px;
-    }
-
-    .snippet-menu {
+    /* Added styling for snippet buttons */
+    #snippet-container {
       display: flex;
       flex-direction: column;
       position: absolute;
-      margin-left: 0; /* Align with left edge of output container */
-      margin-top: 25%; /* Adjust based on your preference */
+      left: 0;
+      top: 25%;
+      z-index: 1;
+      background-color: #fff;
+      padding: 5px;
+      border-radius: 5px;
+      box-shadow: 0 0 5px rgba(0, 0, 0, 0.1);
     }
 
     .snippet-btn {
-      width: 40px;
+      padding: 8px;
       cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 18px;
+      border: none;
+      outline: none;
+      font-size: 14px;
       background-color: #fff;
+      margin-bottom: 5px;
     }
   </style>
 </head>
@@ -133,9 +134,20 @@
     <button class="btn" id="delete-btn" onclick="deleteCode()"><i class="fas fa-trash-alt"></i></button>
     <button class="btn" id="import-btn" onclick="importCode()"><i class="fas fa-file-import"></i></button>
     <button class="btn" id="download-btn" onclick="downloadCode()"><i class="fas fa-download"></i></button>
-    <button class="btn" id="fullscreen-btn" onclick="toggleFullScreen()"><i class="fas fa-expand"></i></button>
     <button class="btn" id="undo-btn" onclick="undo()"><i class="fas fa-undo"></i></button>
     <button class="btn" id="redo-btn" onclick="redo()"><i class="fas fa-redo"></i></button>
+  </div>
+
+  <!-- Snippet buttons container -->
+  <div id="snippet-container" style="display: none;">
+    <button class="snippet-btn" onclick="insertSnippet('<')">&lt;</button>
+    <button class="snippet-btn" onclick="insertSnippet('>')">&gt;</button>
+    <button class="snippet-btn" onclick="insertSnippet('/')">&#47;</button>
+    <button class="snippet-btn" onclick="insertSnippet('{')">&#123;</button>
+    <button class="snippet-btn" onclick="insertSnippet('}')">&#125;</button>
+    <button class="snippet-btn" onclick="insertSnippet(':')">&#58;</button>
+    <button class="snippet-btn" onclick="insertSnippet(';')">&#59;</button>
+    <button class="snippet-btn" onclick="insertSnippet('Snippet')">Snippet</button>
   </div>
 
   <div id="output-container">
@@ -157,6 +169,8 @@
       'txt': ''
     };
     let darkMode = false;
+    let editorHistory = [];
+    let historyIndex = -1;
 
     window.onload = function() {
       loadLocalStorage();
@@ -207,6 +221,7 @@
       updateLineNumbers();
       codeMap[activeTab] = code;
       saveLocalStorage();
+      updateUndoRedoButtons();
     }
 
     function updateLineNumbers() {
@@ -272,11 +287,13 @@
         body.style.color = '#fff';
         editor.style.backgroundColor = '#000';
         lineNumbers.style.color = '#fff';
+        document.getElementById('dark-mode-btn').innerHTML = '<i class="fas fa-sun"></i>';
       } else {
         body.style.backgroundColor = '#fff';
         body.style.color = '#333';
         editor.style.backgroundColor = '#fff';
         lineNumbers.style.color = '#666';
+        document.getElementById('dark-mode-btn').innerHTML = '<i class="fas fa-moon"></i>';
       }
       updateEditorTextColor();
     }
@@ -313,51 +330,49 @@
     }
 
     // Undo and Redo functionality
-    let editorHistory = [];
-    let editorHistoryPointer = -1;
-
-    function pushToHistory() {
-      const editorValue = document.getElementById('editor').value;
-      editorHistory = editorHistory.slice(0, editorHistoryPointer + 1);
-      editorHistory.push(editorValue);
-      editorHistoryPointer = editorHistory.length - 1;
-    }
-
     function undo() {
-      if (editorHistoryPointer > 0) {
-        editorHistoryPointer--;
-        document.getElementById('editor').value = editorHistory[editorHistoryPointer];
+      if (historyIndex > 0) {
+        historyIndex--;
+        document.getElementById('editor').value = editorHistory[historyIndex];
         updateOutput();
       }
     }
 
     function redo() {
-      if (editorHistoryPointer < editorHistory.length - 1) {
-        editorHistoryPointer++;
-        document.getElementById('editor').value = editorHistory[editorHistoryPointer];
+      if (historyIndex < editorHistory.length - 1) {
+        historyIndex++;
+        document.getElementById('editor').value = editorHistory[historyIndex];
         updateOutput();
       }
     }
 
-    // Snippet functionality
-    function insertSnippet(snippet) {
-      const editor = document.getElementById('editor');
-      const cursorPosition = editor.selectionStart;
-      const textBeforeCursor = editor.value.substring(0, cursorPosition);
-      const textAfterCursor = editor.value.substring(cursorPosition);
-      editor.value = `${textBeforeCursor}${snippet}${textAfterCursor}`;
-      updateOutput();
+    function updateUndoRedoButtons() {
+      const undoBtn = document.getElementById('undo-btn');
+      const redoBtn = document.getElementById('redo-btn');
+
+      undoBtn.disabled = historyIndex <= 0;
+      redoBtn.disabled = historyIndex >= editorHistory.length - 1;
     }
 
-    document.addEventListener('DOMContentLoaded', function () {
-      const snippetButtons = document.querySelectorAll('.snippet-btn');
-      snippetButtons.forEach(button => {
-        button.addEventListener('click', function () {
-          const snippet = this.dataset.snippet;
-          insertSnippet(snippet);
-        });
-      });
-    });
+    // Snippet functionality
+    function toggleSnippetMenu() {
+      const snippetContainer = document.getElementById('snippet-container');
+      snippetContainer.style.display = snippetContainer.style.display === 'none' ? 'flex' : 'none';
+    }
+
+    function insertSnippet(snippet) {
+      const editor = document.getElementById('editor');
+      const cursorPos = editor.selectionStart;
+      const editorContent = editor.value;
+      const newContent =
+        editorContent.substring(0, cursorPos) +
+        snippet +
+        editorContent.substring(cursorPos);
+
+      document.getElementById('editor').value = newContent;
+      toggleSnippetMenu();
+      updateOutput();
+    }
   </script>
 </body>
 </html>
