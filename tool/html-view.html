@@ -116,7 +116,7 @@
   <div id="output-container">
     <iframe id="output-iframe"></iframe>
   </div>
-  <div style="position: fixed; left: 0; top: 32px; width: 40px; display: flex; flex-direction: column; overflow-y: auto;">
+  <div id="left-menu" style="position: fixed; left: 0; top: 32px; width: 40px; display: flex; flex-direction: column; overflow-y: auto;">
     <button class="btn" onclick="insertSnippet('<>')">&lt;&gt;</button>
     <button class="btn" onclick="insertSnippet('/')">/</button>
     <button class="btn" onclick="insertSnippet('{')">{</button>
@@ -134,7 +134,7 @@
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/js/all.min.js"></script>
- <script>
+<script>
   let activeTab = 'html';
   let codeMap = {
     'html': '',
@@ -144,9 +144,19 @@
   };
   let darkMode = false;
 
-  // Array to keep track of undo and redo operations
-  let undoStack = [];
-  let redoStack = [];
+  // Array to keep track of undo and redo operations for each tab
+  let undoStack = {
+    'html': [],
+    'css': [],
+    'js': [],
+    'txt': []
+  };
+  let redoStack = {
+    'html': [],
+    'css': [],
+    'js': [],
+    'txt': []
+  };
 
   window.onload = function () {
     loadLocalStorage();
@@ -198,9 +208,9 @@
     codeMap[activeTab] = code;
 
     // Save the current state for undo
-    undoStack.push(code);
+    undoStack[activeTab].push(code);
     // Clear redo stack when a new change is made
-    redoStack = [];
+    redoStack[activeTab] = [];
 
     saveLocalStorage();
   }
@@ -268,12 +278,16 @@
       body.style.color = '#fff';
       editor.style.backgroundColor = '#000';
       lineNumbers.style.color = '#fff';
+      left-menu.style.color = '#fff';
+      left-menu.style.backgroundcolor = '#000';
       document.getElementById('dark-mode-btn').innerHTML = '<i class="fas fa-sun"></i>';
     } else {
       body.style.backgroundColor = '#fff';
       body.style.color = '#333';
       editor.style.backgroundColor = '#fff';
       lineNumbers.style.color = '#666';
+      left-menu.style.color = '#000';
+      left-menu.style.backgroundcolor = '#fff';
       document.getElementById('dark-mode-btn').innerHTML = '<i class="fas fa-moon"></i>';
     }
     updateEditorTextColor();
@@ -286,12 +300,19 @@
 
   function saveLocalStorage() {
     localStorage.setItem('codeMap', JSON.stringify(codeMap));
+    localStorage.setItem('undoStack', JSON.stringify(undoStack));
+    localStorage.setItem('redoStack', JSON.stringify(redoStack));
   }
 
   function loadLocalStorage() {
     const savedCodeMap = localStorage.getItem('codeMap');
-    if (savedCodeMap) {
+    const savedUndoStack = localStorage.getItem('undoStack');
+    const savedRedoStack = localStorage.getItem('redoStack');
+
+    if (savedCodeMap && savedUndoStack && savedRedoStack) {
       codeMap = JSON.parse(savedCodeMap);
+      undoStack = JSON.parse(savedUndoStack);
+      redoStack = JSON.parse(savedRedoStack);
       loadCode();
     }
   }
@@ -329,10 +350,10 @@
   // New function for undo operation
   function undo() {
     const editor = document.getElementById('editor');
-    if (undoStack.length > 0) {
+    if (undoStack[activeTab].length > 1) {
       const currentState = editor.value;
-      redoStack.push(currentState);
-      const prevState = undoStack.pop();
+      redoStack[activeTab].push(currentState);
+      const prevState = undoStack[activeTab].pop();
       editor.value = prevState;
       updateOutput();
     }
@@ -341,15 +362,16 @@
   // New function for redo operation
   function redo() {
     const editor = document.getElementById('editor');
-    if (redoStack.length > 0) {
+    if (redoStack[activeTab].length > 0) {
       const currentState = editor.value;
-      undoStack.push(currentState);
-      const nextState = redoStack.pop();
+      undoStack[activeTab].push(currentState);
+      const nextState = redoStack[activeTab].pop();
       editor.value = nextState;
       updateOutput();
     }
   }
 </script>
+
 
 </body>
 </html>
