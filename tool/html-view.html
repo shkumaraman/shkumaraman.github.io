@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Code Editor</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+  <style>
+    body {
+      font-family: 'Arial', sans-serif;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      background-color: #f4f4f4;
+      color: #333;
+      transition: background-color 0.3s, color 0.3s;
+    }
+
+    .tabs {
+      display: flex;
+      background-color: #f4f4f4;
+    }
+
+    .tab {
+      padding: 8px;
+      cursor: pointer;
+      border: none;
+      outline: none;
+      background-color: inherit;
+      font-size: 14px;
+    }
+
+    .active-tab {
+      background-color: #ccc;
+    }
+
+    #editor-container {
+      flex: 1;
+      display: flex;
+      flex-direction: row;
+      height: 25%;
+    }
+
+    #line-numbers {
+      padding: 10px;
+      box-sizing: border-box;
+      border-right: 1px solid #ccc;
+      color: #666;
+      overflow-y: auto;
+      width: 40px;
+      font-size: 16px;
+      user-select: none;
+      overflow: hidden;
+    }
+
+    #editor {
+      flex: 1;
+      padding: 10px;
+      box-sizing: border-box;
+      border: 1px solid #ccc;
+      color: #000;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      height: 100%;
+      margin: 0;
+      outline: none;
+      resize: none;
+      font-size: 16px;
+      transition: color 0.3s;
+    }
+
+    #output-container {
+      flex: 3;
+      display: flex;
+      flex-direction: column;
+      background-color: #fff;
+      overflow-y: auto;
+      margin-left: 40px;
+    }
+
+    #output-iframe {
+      flex: 1;
+      border: none;
+      width: 100%;
+      height: 100%;
+    }
+
+    .btn {
+      padding: 8px;
+      cursor: pointer;
+      border: none;
+      outline: none;
+      font-size: 14px;
+      background-color: #fff;
+      display: flex;
+      align-items: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="tabs">
+    <button class="tab active-tab" onclick="changeTab('html')">HTML</button>
+    <button class="tab" onclick="changeTab('css')">CSS</button>
+    <button class="tab" onclick="changeTab('js')">JS</button>
+    <button class="tab" onclick="changeTab('txt')">TXT</button>
+
+    <button class="btn" id="copy-btn" onclick="copyCode()"><i class="fas fa-copy"></i></button>
+    <button class="btn" id="delete-btn" onclick="deleteCode()"><i class="fas fa-trash-alt"></i></button>
+    <button class="btn" id="import-btn" onclick="importCode()"><i class="fas fa-file-import"></i></button>
+    <button class="btn" id="download-btn" onclick="downloadCode()"><i class="fas fa-download"></i></button>
+    <button class="btn" id="fullscreen-btn" onclick="toggleFullScreen()"><i class="fas fa-expand"></i></button>
+    <button class="btn" id="dark-mode-btn" onclick="toggleDarkMode()"><i class="fas fa-moon"></i></button>
+  </div>
+
+  <div id="output-container">
+    <iframe id="output-iframe"></iframe>
+  </div>
+  <div id="left-menu" style="position: fixed; left: 0; top: 32px; width: 40px; display: flex; flex-direction: column; overflow-y: auto;">
+    <button class="btn" onclick="insertSnippet('<>')">&lt;&gt;</button>
+    <button class="btn" onclick="insertSnippet('/')">/</button>
+    <button class="btn" onclick="insertSnippet('{')">{</button>
+    <button class="btn" onclick="insertSnippet('\}')">}</button>
+    <button class="btn" onclick="insertSnippet(':')">:</button>
+    <button class="btn" onclick='insertSnippet(";")'>;</button>
+    <button class="btn" onclick='insertSnippet("\"")'>"</button>
+    <button class="btn" onclick="insertSnippet('-')">-</button>
+        <!-- Add more snippet buttons as needed -->
+    <button class="btn" onclick="insertSnippet('console.log(\'Hello!\');')">CL</button>
+    <button class="btn" onclick="insertSnippet('function() { /* Your code here */ }')">Fn</button>
+    
+    <button class="btn" onclick="undo()"><i class="fas fa-undo"></i></button>
+    <button class="btn" onclick="redo()"><i class="fas fa-redo"></i></button>
+  </div>
+  <div id="editor-container">
+    <div id="line-numbers" onscroll="syncScroll()"></div>
+    <textarea id="editor" oninput="updateOutput()" onscroll="syncScroll()"></textarea>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/js/all.min.js"></script>
+<script>
+  let activeTab = 'html';
+  let codeMap = {
+    'html': '',
+    'css': '',
+    'js': '',
+    'txt': ''
+  };
+  let darkMode = false;
+
+  // Array to keep track of undo and redo operations for each tab
+  let undoStack = {
+    'html': [],
+    'css': [],
+    'js': [],
+    'txt': []
+  };
+  let redoStack = {
+    'html': [],
+    'css': [],
+    'js': [],
+    'txt': []
+  };
+
+  window.onload = function () {
+    loadLocalStorage();
+  };
+
+  function changeTab(tab) {
+    activeTab = tab;
+    loadCode();
+    updateActiveTabStyle();
+  }
+
+  function downloadCode() {
+    let codeToDownload = codeMap['html'] + '\n' + codeMap['css'] + '\n' + codeMap['js'] + '\n' + codeMap['txt'];
+
+    const blob = new Blob([codeToDownload], { type: 'text/plain' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'code.txt';
+    link.click();
+  }
+
+  function copyCode() {
+    let codeToCopy = codeMap['html'] + '\n' + codeMap['css'] + '\n' + codeMap['js'] + '\n' + codeMap['txt'];
+
+    navigator.clipboard.writeText(codeToCopy)
+      .then(() => alert('Code copied to clipboard'))
+      .catch(error => console.error('Unable to copy code', error));
+  }
+
+  function deleteCode() {
+    document.getElementById('editor').value = '';
+    updateOutput();
+    updateLineNumbers();
+  }
+
+  function updateOutput() {
+    const code = document.getElementById('editor').value;
+    const outputIframe = document.getElementById('output-iframe');
+
+    try {
+      outputIframe.srcdoc = `<html><head><style>${codeMap['css']}</style><script>${codeMap['js']}</script></head><body>${codeMap['html']}</body></html>`;
+      outputIframe.classList.remove('error');
+    } catch (error) {
+      outputIframe.srcdoc = `<span style="color: red;">${error.message}</span>`;
+      outputIframe.classList.add('error');
+    }
+
+    updateLineNumbers();
+    codeMap[activeTab] = code;
+
+    // Save the current state for undo
+    undoStack[activeTab].push(code);
+    // Clear redo stack when a new change is made
+    redoStack[activeTab] = [];
+
+    saveLocalStorage();
+  }
+
+  function updateLineNumbers() {
+    const editor = document.getElementById('editor');
+    const lineNumbers = document.getElementById('line-numbers');
+
+    let lines = editor.value.split('\n');
+    let numbers = '';
+
+    for (let i = 1; i <= lines.length; i++) {
+      numbers += i + '<br>';
+    }
+
+    lineNumbers.innerHTML = numbers;
+  }
+
+  function syncScroll() {
+    const lineNumbers = document.getElementById('line-numbers');
+    const editor = document.getElementById('editor');
+
+    lineNumbers.scrollTop = editor.scrollTop;
+  }
+
+  function loadCode() {
+    document.getElementById('editor').value = codeMap[activeTab];
+    updateOutput();
+  }
+
+  function updateActiveTabStyle() {
+    const tabs = document.querySelectorAll('.tab');
+    tabs.forEach(tab => tab.classList.remove('active-tab'));
+
+    const activeTabElement = document.querySelector(`.tab[data-lang="${activeTab}"]`);
+    if (activeTabElement) {
+      activeTabElement.classList.add('active-tab');
+    }
+  }
+
+  function toggleFullScreen() {
+    const elem = document.documentElement;
+    if (!document.fullscreenElement) {
+      elem.requestFullscreen().catch(err => {
+        console.log(`Error attempting to enable full-screen mode: ${err.message}`);
+      });
+    } else {
+      document.exitFullscreen();
+    }
+  }
+
+  function toggleDarkMode() {
+    darkMode = !darkMode;
+    applyDarkModeStyles();
+  }
+
+  function applyDarkModeStyles() {
+    const body = document.body;
+    const editor = document.getElementById('editor');
+    const outputContainer = document.getElementById('output-container');
+    const lineNumbers = document.getElementById('line-numbers');
+
+    if (darkMode) {
+      body.style.backgroundColor = '#000';
+      body.style.color = '#fff';
+      editor.style.backgroundColor = '#000';
+      lineNumbers.style.color = '#fff';
+      document.getElementById('dark-mode-btn').innerHTML = '<i class="fas fa-sun"></i>';
+    } else {
+      body.style.backgroundColor = '#fff';
+      body.style.color = '#333';
+      editor.style.backgroundColor = '#fff';
+      lineNumbers.style.color = '#666';
+      document.getElementById('dark-mode-btn').innerHTML = '<i class="fas fa-moon"></i>';
+    }
+    updateEditorTextColor();
+  }
+
+  function updateEditorTextColor() {
+    const editor = document.getElementById('editor');
+    editor.style.color = darkMode ? '#fff' : '#000';
+  }
+
+  function saveLocalStorage() {
+    localStorage.setItem('codeMap', JSON.stringify(codeMap));
+    localStorage.setItem('undoStack', JSON.stringify(undoStack));
+    localStorage.setItem('redoStack', JSON.stringify(redoStack));
+  }
+
+  function loadLocalStorage() {
+    const savedCodeMap = localStorage.getItem('codeMap');
+    const savedUndoStack = localStorage.getItem('undoStack');
+    const savedRedoStack = localStorage.getItem('redoStack');
+
+    if (savedCodeMap && savedUndoStack && savedRedoStack) {
+      codeMap = JSON.parse(savedCodeMap);
+      undoStack = JSON.parse(savedUndoStack);
+      redoStack = JSON.parse(savedRedoStack);
+      loadCode();
+    }
+  }
+
+  function importCode() {
+    const importLink = prompt("Enter the import link:");
+    if (importLink) {
+      fetch(importLink)
+        .then(response => response.text())
+        .then(data => {
+          codeMap[activeTab] = data;
+          loadCode();
+          updateOutput();
+        })
+        .catch(error => console.error('Error importing code', error));
+    }
+  }
+
+  // New function for inserting snippets at the cursor position
+  function insertSnippet(snippet) {
+    const editor = document.getElementById('editor');
+    const start = editor.selectionStart;
+    const end = editor.selectionEnd;
+
+    // Insert the snippet at the cursor position
+    editor.value = editor.value.substring(0, start) + snippet + editor.value.substring(end);
+
+    // Move the cursor to the end of the inserted snippet
+    editor.selectionStart = editor.selectionEnd = start + snippet.length;
+
+    // Trigger the input event to update the output
+    editor.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  // New function for undo operation
+  function undo() {
+    const editor = document.getElementById('editor');
+    if (undoStack[activeTab].length > 1) {
+      const currentState = editor.value;
+      redoStack[activeTab].push(currentState);
+      const prevState = undoStack[activeTab].pop();
+      editor.value = prevState;
+      updateOutput();
+    }
+  }
+
+  // New function for redo operation
+  function redo() {
+    const editor = document.getElementById('editor');
+    if (redoStack[activeTab].length > 0) {
+      const currentState = editor.value;
+      undoStack[activeTab].push(currentState);
+      const nextState = redoStack[activeTab].pop();
+      editor.value = nextState;
+      updateOutput();
+    }
+  }
+  function insertSnippet(snippet) {
+  const editor = document.getElementById('editor');
+  const start = editor.selectionStart;
+  const end = editor.selectionEnd;
+
+  // Insert the snippet at the cursor position
+  editor.value = editor.value.substring(0, start) + snippet + editor.value.substring(end);
+  
+  // Move the cursor to the end of the inserted snippet
+  editor.selectionStart = editor.selectionEnd = start + snippet.length;
+
+  // Trigger the input event to update the output
+  editor.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+</script>
+</body>
+</html>
