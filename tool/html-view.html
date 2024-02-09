@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Code Editor</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.3.1/styles/default.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.3.1/highlight.min.js"></script>
   <style>
     body {
       font-family: 'Arial', sans-serif;
@@ -92,6 +94,17 @@
       display: flex;
       align-items: center;
     }
+
+    .iframe-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .iframe-tab {
+      flex: 1;
+      border: none;
+    }
   </style>
 </head>
 <body>
@@ -99,6 +112,7 @@
     <button class="tab active-tab" onclick="changeTab('html')">HTML</button>
     <button class="tab" onclick="changeTab('css')">CSS</button>
     <button class="tab" onclick="changeTab('js')">JS</button>
+    <button class="tab" onclick="changeTab('txt')">TXT</button>
 
     <button class="btn" id="copy-btn" onclick="copyCode()"><i class="fas fa-copy"></i></button>
     <button class="btn" id="delete-btn" onclick="deleteCode()"><i class="fas fa-trash-alt"></i></button>
@@ -106,13 +120,15 @@
     <button class="btn" id="fullscreen-btn" onclick="toggleFullScreen()"><i class="fas fa-expand"></i></button>
   </div>
 
-  <div id="output-container">
-    <iframe id="output-iframe"></iframe>
+  <div id="output-container" class="iframe-container">
+    <iframe id="output-iframe-html" class="iframe-tab"></iframe>
+    <iframe id="output-iframe-css" class="iframe-tab"></iframe>
+    <iframe id="output-iframe-js" class="iframe-tab"></iframe>
   </div>
 
   <div id="editor-container">
     <div id="line-numbers" onscroll="syncScroll()"></div>
-    <div id="editor" contenteditable="true" oninput="updateOutput()" onscroll="syncScroll()"></div>
+    <pre id="editor" contenteditable="true" oninput="updateOutput()" onscroll="syncScroll()"></pre>
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/js/all.min.js"></script>
@@ -121,7 +137,8 @@
     let codeMap = {
       'html': '',
       'css': '',
-      'js': ''
+      'js': '',
+      'txt': ''
     };
 
     function changeTab(tab) {
@@ -131,7 +148,7 @@
     }
 
     function downloadCode() {
-      let codeToDownload = codeMap['html'] + '\n' + codeMap['css'] + '\n' + codeMap['js'];
+      let codeToDownload = codeMap['html'] + '\n' + codeMap['css'] + '\n' + codeMap['js'] + '\n' + codeMap['txt'];
 
       const blob = new Blob([codeToDownload], { type: 'text/plain' });
       const link = document.createElement('a');
@@ -141,7 +158,7 @@
     }
 
     function copyCode() {
-      let codeToCopy = codeMap['html'] + '\n' + codeMap['css'] + '\n' + codeMap['js'];
+      let codeToCopy = codeMap['html'] + '\n' + codeMap['css'] + '\n' + codeMap['js'] + '\n' + codeMap['txt'];
 
       navigator.clipboard.writeText(codeToCopy)
         .then(() => alert('Code copied to clipboard'))
@@ -156,17 +173,36 @@
 
     function updateOutput() {
       const code = document.getElementById('editor').innerText;
-      const outputIframe = document.getElementById('output-iframe');
+      const outputIframeHtml = document.getElementById('output-iframe-html');
+      const outputIframeCss = document.getElementById('output-iframe-css');
+      const outputIframeJs = document.getElementById('output-iframe-js');
+
       try {
-        outputIframe.srcdoc = codeMap['html'] + '\n' + `<style>${codeMap['css']}</style>` + '\n' + `<script>${codeMap['js']}</script>`;
-        outputIframe.classList.remove('error');
+        outputIframeHtml.srcdoc = `<html><head><style>${codeMap['css']}</style></head><body>${codeMap['html']}${codeMap['js']}</body></html>`;
+        outputIframeCss.srcdoc = `<html><head><style>${codeMap['css']}</style></head><body>${codeMap['js']}</body></html>`;
+        outputIframeJs.srcdoc = `<html><head></head><body>${codeMap['js']}</body></html>`;
+
+        outputIframeHtml.classList.remove('error');
+        outputIframeCss.classList.remove('error');
+        outputIframeJs.classList.remove('error');
       } catch (error) {
-        outputIframe.srcdoc = `<span style="color: red;">${error.message}</span>`;
-        outputIframe.classList.add('error');
+        outputIframeHtml.srcdoc = `<span style="color: red;">${error.message}</span>`;
+        outputIframeCss.srcdoc = `<span style="color: red;">${error.message}</span>`;
+        outputIframeJs.srcdoc = `<span style="color: red;">${error.message}</span>`;
+
+        outputIframeHtml.classList.add('error');
+        outputIframeCss.classList.add('error');
+        outputIframeJs.classList.add('error');
       }
 
       updateLineNumbers();
       codeMap[activeTab] = code;
+      highlightCode();
+    }
+
+    function highlightCode() {
+      const codeElement = document.getElementById('editor');
+      hljs.highlightBlock(codeElement);
     }
 
     function updateLineNumbers() {
