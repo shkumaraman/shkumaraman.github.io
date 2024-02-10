@@ -6,7 +6,7 @@ function updateOutput() {
 
   try {
     const htmlContent = `${htmlCode}<style>${cssCode}</style><script>${jsCode}</script>`;
-    outputIframe.srcdoc = `<html><head></head><body>${htmlContent}</body></html>`;
+    outputIframe.srcdoc = `<html><head>${cssCode}</head><body>${htmlContent}<script>${jsCode}</script></body></html>`;
     outputIframe.classList.remove('error');
   } catch (error) {
     outputIframe.srcdoc = `<span style="color: red;">${error.message}</span>`;
@@ -14,5 +14,6 @@ function updateOutput() {
   }
 
   updateLineNumbers();
+  codeMap[activeTab] = document.getElementById('editor').value;
   saveLocalStorage();
 }
