@@ -5,7 +5,14 @@ function updateOutput() {
   const outputIframe = document.getElementById('output-iframe');
 
   try {
-    const htmlContent = `<html><head><style>${cssCode}</style></head><body>${htmlCode}<script>${jsCode}</script></body></html>`;
+    const htmlContent = `
+      <html>
+        <head>
+          <style>${cssCode}</style>
+          <script>${jsCode}</script>
+        </head>
+        <body>${htmlCode}</body>
+      </html>`;
     outputIframe.srcdoc = htmlContent;
     outputIframe.classList.remove('error');
   } catch (error) {
