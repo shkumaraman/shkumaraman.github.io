@@ -1,17 +1,11 @@
-function updateOutput() {
-  const htmlTextarea = codeMap['html'];
-  const cssTextarea = codeMap['css'];
-  const jsTextarea = codeMap['js'];
+$(document).ready(function () {
 
-  const outputIframe = document.getElementById('output-iframe');
-  const outputDocument = outputIframe.contentWindow.document;
+  // Publish output from HTML, CSS, and JS textareas in the iframe below
+  onload = (document).onkeyup = function () {
+    (document.getElementById("output-iframe").contentWindow.document).write(
+      html.value + "<style>" + css.value + "</style><script>" + js.value + "</script>"
+    );
+    (document.getElementById("output-iframe").contentWindow.document).close();
+  };
 
-  outputDocument.open();
-  outputDocument.write(
-    htmlTextarea + "<style>" + cssTextarea + "</style><script>" + jsTextarea + "</script>"
-  );
-  outputDocument.close();
-
-  updateLineNumbers();
-  saveLocalStorage();
-}
+});
