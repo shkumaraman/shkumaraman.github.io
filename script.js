@@ -89,10 +89,14 @@ function updateOutput() {
     </html>
   `;
 
-  const doc = outputIframe.contentDocument;
-  doc.open();
-  doc.write(combinedCode);
-  doc.close();
+  try {
+    const doc = outputIframe.contentDocument;
+    doc.open();
+    doc.write(combinedCode);
+    doc.close();
+  } catch (error) {
+    console.error('Error updating output:', error);
+  }
 }
 
     function updateLineNumbers() {
