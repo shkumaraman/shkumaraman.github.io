@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Code Editor</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+  <style>
+    body {
+      font-family: 'Arial', sans-serif;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      background-color: #fff;
+      color: #000;
+      transition: background-color 0.3s, color 0.3s;
+    }
+    .tabs {
+      display: flex;
+      background-color: #f4f4f4;
+    }
+    .tab {
+      padding: 8px;
+      cursor: pointer;
+      border: none;
+      outline: none;
+      background-color: #fff;
+      font-size: 14px;
+    }
+    #editor-container {
+      flex: 1;
+      display: flex;
+      flex-direction: row;
+      height: 25%;
+    }
+    #line-numbers {
+      padding: 10px;
+      box-sizing: border-box;
+      border-right: 1px solid #ccc;
+      color: #000;
+      overflow-y: auto;
+      width: 40px;
+      font-size: 16px;
+      user-select: none;
+      overflow: hidden;
+    }
+    #editor {
+      flex: 1;
+      padding: 10px;
+      box-sizing: border-box;
+      border: 1px solid #ccc;
+      color: #000;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      height: 100%;
+      margin: 0;
+      outline: none;
+      resize: none;
+      font-size: 16px;
+      transition: background-color 0.3s, color 0.3s;
+    }
+    #output-container {
+      flex: 3;
+      display: flex;
+      flex-direction: column;
+      background-color: #fff;
+      overflow-y: auto;
+      margin-left: 40px;
+      height: 75%;
+    }
+    #output-iframe {
+      flex: 1;
+      border: none;
+      width: 100%;
+      height: 100%;
+    }
+    .btn {
+      padding: 8px;
+      cursor: pointer;
+      border: none;
+      outline: none;
+      font-size: 14px;
+      background-color: #fff;
+      display: flex;
+      align-items: center;
+    }
+   .active-tab {
+    background-color: #000;
+    color: #fff;
+  }
+    .btn1 {
+      cursor: pointer;
+      border: none;
+      outline: none;
+      width: 40px;
+      height: 25px;
+      border-left: none;
+      border-right: none;
+      border-top: none;
+      border-bottom: 1px solid #ccc;
+      font-size: 16px;
+      font-waight: bold;
+      background-color: #fff;
+      align-items: center;
+      transition: background-color 0.3s, color 0.3s;
+   }
+    
+  #left-menu {
+    flex: 1;
+    align-items: center;
+    left: 0;
+    top: 33px;
+    overflow-y: auto;
+    flex-direction: column;
+    position: absolute;
+    display: flex;
+  }
+#search-box {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  position: relative;
+  bottom: 0;
+  right: 0;
+  padding: 1px;
+  margin-left: 40px;
+  box-sizing: border-box;
+  background-color: #fff; /* Adjust the background color as needed */
+ transition: background-color 0.3s, color 0.3s;
+}
+    .btn3 {
+      width: 40px;
+      height: 100%;
+      font-waight: bold;
+      align-items: center;
+      cursor: pointer;
+      border: none;
+      outline: none;
+      background-color: #fff;
+      font-size: 16px;
+      transition: background-color 0.3s, color 0.3s;
+      }
+        
+    #search-input {
+      padding: 5px;
+      border: 1px solid #ccc;
+      border-radius: 3px;
+      font-size: 14px;
+      outline: none;
+      margin: 0;
+      transition: background-color 0.3s, color 0.3s;
+    }
+    #search-btn {
+      cursor: pointer;
+      border: none;
+      outline: none;
+      background-color: #fff;
+      font-size: 16px;
+    }
+    #arrow-up-btn,
+    #arrow-down-btn {
+      cursor: pointer;
+      border: none;
+      outline: none;
+      background-color: #fff;
+      font-size: 16px;
+      }
+  </style>
+</head>
+<body>
+  <div class="tabs">
+    <button class="tab active-tab" onclick="changeTab('html')">HTML</button>
+    <button class="tab" onclick="changeTab('css')">CSS</button>
+    <button class="tab" onclick="changeTab('js')">JS</button>
+    <button class="tab" onclick="changeTab('txt')">TXT</button>
+    <button class="btn" id="copy-btn" onclick="copyCode()"><i class="fas fa-copy"></i></button>
+    <button class="btn" id="delete-btn" onclick="deleteCode()"><i class="fas fa-trash-alt"></i></button>
+    <button class="btn" id="import-btn" onclick="importCode()"><i class="fas fa-file-import"></i></button>
+    <button class="btn" id="download-btn" onclick="downloadCode()"><i class="fas fa-download"></i></button>
+    <button class="btn" id="fullscreen-btn" onclick="toggleFullScreen()"><i class="fas fa-expand"></i></button>
+    <button class="btn" id="dark-mode-btn" onclick="toggleDarkMode()"><i class="fas fa-moon"></i></button>
+  </div>
+  <div id="output-container">
+    <iframe id="output-iframe"></iframe>
+  </div>
+  <div id="search-box">
+    <input type="text" id="search-input" placeholder="Search...">
+    <button class="btn3" id="search-btn" onclick="findTextDown()"><i class="fas fa-search"></i></button>
+    <button class="btn3" onclick="undo()"><i class="fas fa-undo"></i></button>
+  </div>
+  <div id="left-menu">
+    <button class="btn1" onclick="insertSnippet('<>')">&lt;&gt;</button>
+    <button class="btn1" onclick="insertSnippet('/')">/</button>
+    <button class="btn1" onclick="insertSnippet('{')">{</button>
+    <button class="btn1" onclick="insertSnippet('\}')">}</button>
+    <button class="btn1" onclick="insertSnippet(':')">:</button>
+    <button class="btn1" onclick='insertSnippet(";")'>;</button>
+    <button class="btn1" onclick='insertSnippet("\"")'>"</button>
+    <button class="btn1" onclick="insertSnippet('-')">-</button>
+        <!-- Add more snippet buttons as needed -->
+    <button class="btn1" onclick="insertSnippet('console.log(\'Hello!\');')">CL</button>
+    <button class="btn1" onclick="insertSnippet('function() { /* Your code here */ }')">Fn</button>
+    <button class="btn1" onclick="insertSnippet('<!-- Write your comments here -->')">HC</button>
+  </div>
+  <div id="editor-container">
+    <div id="line-numbers" onscroll="syncScroll()"></div>
+    <textarea id="editor" oninput="updateOutput()" onscroll="syncScroll()" placeholder="Write Your code here..."></textarea>
+  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/js/all.min.js"></script>
+<script>
+    let activeTab = 'html';
+    let codeMap = {
+      'html': '',
+      'css': '',
+      'js': '',
+      'txt': ''
+    };
+  let darkMode = localStorage.getItem('darkMode') === 'true' || false;
+    window.onload = function () {
+      loadLocalStorage();
+      loadActiveTab();
+      loadCode();
+      updateButtonColor();
+      applyDarkModeStyles();
+    };
+function changeTab(tab) {
+  if (activeTab !== tab) {
+    activeTab = tab;
+    loadCode();
+    updateActiveTabStyle();
+    updateButtonColor();
+    
+    localStorage.setItem('activeTab', activeTab); // Store the active tab in local storage
+  }
+}
+function loadActiveTab() {
+  const storedActiveTab = localStorage.getItem('activeTab');
+  if (storedActiveTab && storedActiveTab !== activeTab) {
+    activeTab = storedActiveTab;
+    changeTab(activeTab);
+  }
+}
+  
+    function updateButtonColor() {
+      const tabs = document.querySelectorAll('.tab');
+      tabs.forEach(tab => {
+        const lang = tab.getAttribute('onclick').match(/\('(.*?)'\)/)[1];
+        if (lang === activeTab) {
+          tab.classList.add('active-tab');
+        } else {
+          tab.classList.remove('active-tab');
+        }
+      });
+    }
+  
+    function downloadCode() {
+      let codeToDownload = codeMap['html'] + '\n' + codeMap['css'] + '\n' + codeMap['js'] + '\n' + codeMap['txt'];
+      const blob = new Blob([codeToDownload], { type: 'text/plain' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'code.txt';
+      link.click();
+    }
+    function copyCode() {
+      let codeToCopy = codeMap['html'] + '\n' + codeMap['css'] + '\n' + codeMap['js'] + '\n' + codeMap['txt'];
+      navigator.clipboard.writeText(codeToCopy)
+        .then(() => alert('Code copied to clipboard'))
+        .catch(error => console.error('Unable to copy code', error));
+    }
+    function deleteCode() {
+      document.getElementById('editor').value = '';
+      updateOutput();
+      updateLineNumbers();
+    }
+    function updateOutput() {
+  const code = document.getElementById('editor').value;
+  const outputIframe = document.getElementById('output-iframe');
+  try {
+    const htmlContent = `${codeMap['html']}<style>${codeMap['css']}</style>&lt;script&gt;${codeMap['js']}&lt;/script&gt;`;
+    outputIframe.srcdoc = `<html><head></head><body>${htmlContent}</body></html>`;
+    outputIframe.classList.remove('error');
+  } catch (error) {
+    outputIframe.srcdoc = `<span style="color: red;">${error.message}</span>`;
+    outputIframe.classList.add('error');
+  }
+  updateLineNumbers();
+  codeMap[activeTab] = code;
+  saveLocalStorage();
+}
+    function updateLineNumbers() {
+      const editor = document.getElementById('editor');
+      const lineNumbers = document.getElementById('line-numbers');
+      let lines = editor.value.split('\n');
+      let numbers = '';
+      for (let i = 1; i <= lines.length; i++) {
+        numbers += i + '<br>';
+      }
+      lineNumbers.innerHTML = numbers;
+    }
+    function syncScroll() {
+      const lineNumbers = document.getElementById('line-numbers');
+      const editor = document.getElementById('editor');
+      lineNumbers.scrollTop = editor.scrollTop;
+    }
+    function loadCode() {
+      document.getElementById('editor').value = codeMap[activeTab];
+      updateOutput();
+    }
+    function updateActiveTabStyle() {
+      const tabs = document.querySelectorAll('.tab');
+      tabs.forEach(tab => tab.classList.remove('active-tab'));
+      const activeTabElement = document.querySelector(`.tab[data-lang="${activeTab}"]`);
+      if (activeTabElement) {
+        activeTabElement.classList.add('active-tab');
+      }
+    }
+    function toggleFullScreen() {
+      const elem = document.documentElement;
+      if (!document.fullscreenElement) {
+        elem.requestFullscreen().catch(err => {
+          console.log(`Error attempting to enable full-screen mode: ${err.message}`);
+        });
+      } else {
+        document.exitFullscreen();
+      }
+    }
+function toggleDarkMode() {
+  darkMode = !darkMode;
+  applyDarkModeStyles();
+  localStorage.setItem('darkMode', darkMode);
+  }
+  
+function applyDarkModeStyles() {
+  const body = document.body;
+  const editor = document.getElementById('editor');
+  const outputContainer = document.getElementById('output-container');
+  const lineNumbers = document.getElementById('line-numbers');
+  const snippetButtons = document.querySelectorAll('#left-menu .btn1');
+  const searchBox = document.getElementById('search-box');
+  const searchButtons = document.querySelectorAll('#search-box button');
+  
+  if (darkMode) {
+    body.style.backgroundColor = '#333';
+    body.style.color = '#fff';
+    editor.style.backgroundColor = '#333';
+    lineNumbers.style.color = '#fff';
+    searchBox.style.backgroundColor = '#333';
+    
+    // Update snippet buttons in dark mode
+    snippetButtons.forEach(button => {
+      button.style.backgroundColor = '#333';
+      button.style.color = '#fff';
+    });
+    searchButtons.forEach(button => {
+          button.style.backgroundColor = '#333';
+          button.style.color = '#fff';
+        });
+    document.getElementById('dark-mode-btn').innerHTML = '<i class="fas fa-sun"></i>';
+  } else {
+    body.style.backgroundColor = '#fff';
+    body.style.color = '#000';
+    editor.style.backgroundColor = '#fff';
+    lineNumbers.style.color = '#000';
+    searchBox.style.backgroundColor = '#fff';
+    
+    // Update snippet buttons in light mode
+    snippetButtons.forEach(button => {
+      button.style.backgroundColor = '#fff';
+      button.style.color = '#000';
+    });
+    searchButtons.forEach(button => {
+          button.style.backgroundColor = '#fff';
+          button.style.color = '#000';
+        });
+    document.getElementById('dark-mode-btn').innerHTML = '<i class="fas fa-moon"></i>';
+  }
+  updateEditorTextColor();
+  }
+    function updateEditorTextColor() {
+      const editor = document.getElementById('editor');
+      editor.style.color = darkMode ? '#fff' : '#000';
+    }
+    function saveLocalStorage() {
+      localStorage.setItem('codeMap', JSON.stringify(codeMap));
+    }
+    function loadLocalStorage() {
+      const savedCodeMap = localStorage.getItem('codeMap');
+      if (savedCodeMap) {
+        codeMap = JSON.parse(savedCodeMap);
+        loadCode();
+      }
+    }
+    function importCode() {
+      const importLink = prompt("Enter the import raw link:");
+      if (importLink) {
+        fetch(importLink)
+          .then(response => response.text())
+          .then(data => {
+            codeMap[activeTab] = data;
+            loadCode();
+            updateOutput();
+          })
+          .catch(error => console.error('Error importing code', error));
+      }
+    }
+    // New function for inserting snippets at the cursor position
+    function insertSnippet(snippet) {
+      const editor = document.getElementById('editor');
+      const start = editor.selectionStart;
+      const end = editor.selectionEnd;
+      // Insert the snippet at the cursor position
+      editor.value = editor.value.substring(0, start) + snippet + editor.value.substring(end);
+      
+      // Move the cursor to the end of the inserted snippet
+      editor.selectionStart = editor.selectionEnd = start + snippet.length;
+      // Trigger the input event to update the output
+      editor.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  function undo() {
+  const editor = document.getElementById('editor');
+  document.execCommand('undo');
+  updateOutput();
+  updateLineNumbers();
+  }
+  let currentSearchIndex = 0;
+function findTextDown() {
+  const editor = document.getElementById('editor');
+  const searchInput = document.getElementById('search-input');
+  const searchText = searchInput.value.trim();
+  if (searchText === '') {
+    return;
+  }
+
+  const editorContent = editor.value;
+  const searchRegex = new RegExp(searchText, 'gi');
+
+  // Find all occurrences of the search text
+  const matches = [...editorContent.matchAll(searchRegex)];
+  
+  if (matches.length > 0) {
+    const match = matches[currentSearchIndex % matches.length];
+    const startPos = match.index;
+    const endPos = startPos + searchText.length;
+    editor.setSelectionRange(startPos, endPos);
+    editor.focus();
+    // Move to the next occurrence
+    currentSearchIndex++;
+  } else {
+    // If no occurrences are found, reset the index
+    currentSearchIndex = 0;
+  }
+  }
+  
+  </script>
+</body>
+</html>
