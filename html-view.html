@@ -470,7 +470,7 @@ function applyDarkModeStyles() {
   updateLineNumbers();
   }
 
-  let searchIndex = 0;
+let searchIndices = [];
 
 function findTextDown() {
   const editor = document.getElementById('editor');
@@ -483,25 +483,40 @@ function findTextDown() {
 
   const lines = editor.value.split('\n');
 
-  let found = false;
-  for (let i = searchIndex; i < lines.length; i++) {
-    const lineText = lines[i];
-
-    if (lineText.includes(searchText)) {
-      const startPos = editor.value.indexOf(lineText);
-      const endPos = startPos + lineText.length;
-      editor.setSelectionRange(startPos, endPos);
-      editor.focus();
-      searchIndex = i + 1; // Update search index for the next occurrence
-      found = true;
-      break;
+  if (searchIndices.length === 0) {
+    // Populate search indices if it's the first search
+    for (let i = 0; i < lines.length; i++) {
+      const lineText = lines[i];
+      if (lineText.includes(searchText)) {
+        searchIndices.push({ line: i, index: lineText.indexOf(searchText) });
+      }
     }
   }
 
-  if (!found) {
-    // Reset search index to the beginning if not found in subsequent lines
-    searchIndex = 0;
+  if (searchIndices.length > 0) {
+    const currentIndex = searchIndices.shift();
+    const lineText = lines[currentIndex.line];
+    const startPos = editor.value.indexOf(lineText, currentIndex.index);
+    const endPos = startPos + searchText.length;
+
+    editor.setSelectionRange(startPos, endPos);
+    editor.focus();
+    searchIndices.push(...findNextOccurrences(lines, currentIndex.line, searchText));
   }
+}
+
+function findNextOccurrences(lines, currentLine, searchText) {
+  const occurrences = [];
+
+  for (let i = currentLine + 1; i < lines.length; i++) {
+    const lineText = lines[i];
+
+    if (lineText.includes(searchText)) {
+      occurrences.push({ line: i, index: lineText.indexOf(searchText) });
+    }
+  }
+
+  return occurrences;
   }
   
   </script>
