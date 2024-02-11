@@ -1,23 +1,15 @@
-function updateOutput() {
+ function updateOutput() {
+  const code = document.getElementById('editor').value;
   const outputIframe = document.getElementById('output-iframe');
-  const htmlCode = codeMap['html'];
-  const cssCode = codeMap['css'];
-  const jsCode = codeMap['js'];
-
-  const combinedCode = `
-    <html lang="en">
-    <head>
-      <style>${cssCode}</style>
-    </head>
-    <body>
-      ${htmlCode}
-      <script>${jsCode}</script>
-    </body>
-    </html>
-  `;
-
-  const doc = outputIframe.contentDocument;
-  doc.open();
-  doc.write(combinedCode);
-  doc.close();
+  try {
+    const htmlContent = `${codeMap['html']}<style>${codeMap['css']}</style><script>${codeMap['js']}&lt;/script&gt;`;
+    outputIframe.srcdoc = `<html><head></head><body>${htmlContent}</body></html>`;
+    outputIframe.classList.remove('error');
+  } catch (error) {
+    outputIframe.srcdoc = `<span style="color: red;">${error.message}</span>`;
+    outputIframe.classList.add('error');
+  }
+  updateLineNumbers();
+  codeMap[activeTab] = code;
+  saveLocalStorage();
 }
