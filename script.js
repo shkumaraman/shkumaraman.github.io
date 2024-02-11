@@ -1,4 +1,4 @@
-let activeTab = 'html';
+    let activeTab = 'html';
     let codeMap = {
       'html': '',
       'css': '',
@@ -46,30 +46,53 @@ function loadActiveTab() {
         }
       });
     }
+  
+    function downloadCode() {
+      let codeToDownload = codeMap['html'] + '\n' + codeMap['css'] + '\n' + codeMap['js'] + '\n' + codeMap['txt'];
 
-  function downloadCode() {
-  let codeToDownload = codeMap[activeTab];
+      const blob = new Blob([codeToDownload], { type: 'text/plain' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'code.txt';
+      link.click();
+    }
 
-  const blob = new Blob([codeToDownload], { type: 'text/plain' });
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = `code_${activeTab}.txt`;
-  link.click();
-}
+    function copyCode() {
+      let codeToCopy = codeMap['html'] + '\n' + codeMap['css'] + '\n' + codeMap['js'] + '\n' + codeMap['txt'];
 
-function copyCode() {
-  let codeToCopy = codeMap[activeTab];
+      navigator.clipboard.writeText(codeToCopy)
+        .then(() => alert('Code copied to clipboard'))
+        .catch(error => console.error('Unable to copy code', error));
+    }
 
-  navigator.clipboard.writeText(codeToCopy)
-    .then(() => alert('Code copied to clipboard'))
-    .catch(error => console.error('Unable to copy code', error));
-}
+    function deleteCode() {
+      document.getElementById('editor').value = '';
+      updateOutput();
+      updateLineNumbers();
+    }
 
-function deleteCode() {
-  codeMap[activeTab] = '';
-  document.getElementById('editor').value = '';
-  updateOutput();
-  updateLineNumbers(); 
+function updateOutput() {
+  const outputIframe = document.getElementById('output-iframe');
+  const htmlCode = codeMap['html'];
+  const cssCode = codeMap['css'];
+  const jsCode = codeMap['js'];
+
+  const combinedCode = `
+    <html lang="en">
+    <head>
+      <style>${cssCode}</style>
+    </head>
+    <body>
+      ${htmlCode}
+      <script>${jsCode}</script>
+    </body>
+    </html>
+  `;
+
+  const doc = outputIframe.contentDocument;
+  doc.open();
+  doc.write(combinedCode);
+  doc.close();
 }
 
     function updateLineNumbers() {
@@ -131,18 +154,25 @@ function applyDarkModeStyles() {
   const outputContainer = document.getElementById('output-container');
   const lineNumbers = document.getElementById('line-numbers');
   const snippetButtons = document.querySelectorAll('#left-menu .btn1');
-
+  const searchBox = document.getElementById('search-box');
+  const searchButtons = document.querySelectorAll('#search-box button');
+  
   if (darkMode) {
-    body.style.backgroundColor = '#000';
+    body.style.backgroundColor = '#333';
     body.style.color = '#fff';
-    editor.style.backgroundColor = '#000';
+    editor.style.backgroundColor = '#333';
     lineNumbers.style.color = '#fff';
-
+    searchBox.style.backgroundColor = '#333';
+    
     // Update snippet buttons in dark mode
     snippetButtons.forEach(button => {
-      button.style.backgroundColor = '#000';
+      button.style.backgroundColor = '#333';
       button.style.color = '#fff';
     });
+    searchButtons.forEach(button => {
+          button.style.backgroundColor = '#333';
+          button.style.color = '#fff';
+        });
 
     document.getElementById('dark-mode-btn').innerHTML = '<i class="fas fa-sun"></i>';
   } else {
@@ -150,12 +180,17 @@ function applyDarkModeStyles() {
     body.style.color = '#000';
     editor.style.backgroundColor = '#fff';
     lineNumbers.style.color = '#000';
-
+    searchBox.style.backgroundColor = '#fff';
+    
     // Update snippet buttons in light mode
     snippetButtons.forEach(button => {
       button.style.backgroundColor = '#fff';
       button.style.color = '#000';
     });
+    searchButtons.forEach(button => {
+          button.style.backgroundColor = '#fff';
+          button.style.color = '#000';
+        });
 
     document.getElementById('dark-mode-btn').innerHTML = '<i class="fas fa-moon"></i>';
   }
@@ -209,43 +244,43 @@ function applyDarkModeStyles() {
       // Trigger the input event to update the output
       editor.dispatchEvent(new Event('input', { bubbles: true }));
     }
-  
   function undo() {
   const editor = document.getElementById('editor');
-  const undoActionSuccess = document.execCommand('undo');
-
-  if (undoActionSuccess) {
-    codeMap[activeTab] = editor.value;
-    updateOutput();
-    updateLineNumbers();
-  }
-  }
-
-function updateOutput() {
-  const htmlCode = codeMap['html'];
-  const cssCode = codeMap['css'];
-  const jsCode = codeMap['js'];
-  const outputIframe = document.getElementById('output-iframe');
-
-  try {
-    const htmlContent = `
-      <html>
-        <head>
-          <style>${cssCode}</style>
-        </head>
-        <body>
-          ${htmlCode}
-          <script>${jsCode}</script>
-        </body>
-      </html>`;
-    outputIframe.srcdoc = htmlContent;
-    outputIframe.classList.remove('error');
-  } catch (error) {
-    outputIframe.srcdoc = `<span style="color: red;">${error.message}</span>`;
-    outputIframe.classList.add('error');
-  }
-
+  document.execCommand('undo');
+  updateOutput();
   updateLineNumbers();
-  codeMap[activeTab] = document.getElementById('editor').value;
-  saveLocalStorage();
-}
+  }
+
+  let currentSearchIndex = 0;
+
+function findTextDown() {
+  const editor = document.getElementById('editor');
+  const searchInput = document.getElementById('search-input');
+  const searchText = searchInput.value.trim();
+
+  if (searchText === '') {
+    return;
+  }
+
+  const editorContent = editor.value;
+  const searchRegex = new RegExp(searchText, 'gi');
+
+  // Find all occurrences of the search text
+  const matches = [...editorContent.matchAll(searchRegex)];
+
+  if (matches.length > 0) {
+    const match = matches[currentSearchIndex % matches.length];
+    const startPos = match.index;
+    const endPos = startPos + searchText.length;
+
+    editor.setSelectionRange(startPos, endPos);
+    editor.focus();
+
+    // Move to the next occurrence
+    currentSearchIndex++;
+  } else {
+    // If no occurrences are found, reset the index
+    currentSearchIndex = 0;
+  }
+  }
+  
