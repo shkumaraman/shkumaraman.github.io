@@ -232,9 +232,11 @@ function updateOutput() {
       <html>
         <head>
           <style>${cssCode}</style>
-          <script>${jsCode}</script>
         </head>
-        <body>${htmlCode}</body>
+        <body>
+          ${htmlCode}
+          <script>${jsCode}</script>
+        </body>
       </html>`;
     outputIframe.srcdoc = htmlContent;
     outputIframe.classList.remove('error');
