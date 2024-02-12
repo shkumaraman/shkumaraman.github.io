@@ -4,31 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>YouTube Music Player</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-        }
-        #player {
-            width: 100%;
-            height: 400px;
-        }
-        #playlist {
-            list-style-type: none;
-            padding: 0;
-        }
-        #playlist li {
-            cursor: pointer;
-            padding: 10px;
-            border-bottom: 1px solid #ddd;
-        }
-        #playlist li:hover {
-            background-color: #f5f5f5;
-        }
-        #controls {
-            margin-top: 10px;
-        }
-    </style>
+    <link rel="stylesheet" href="https://cdn.plyr.io/3.6.7/plyr.css" />
 </head>
 <body>
 
@@ -41,123 +17,47 @@
 
 <ul id="playlist"></ul>
 
-<div id="controls">
-    <button onclick="playPauseToggle()"><i class="fas fa-play"></i></button>
-    <button onclick="playNext()"><i class="fas fa-forward"></i></button>
-    <button onclick="playPrevious()"><i class="fas fa-backward"></i></button>
-    <button onclick="toggleShuffle()"><i class="fas fa-random"></i></button>
-    <button onclick="toggleRepeat()"><i class="fas fa-redo"></i></button>
-</div>
-
-<script src="https://www.youtube.com/iframe_api"></script>
+<script src="https://cdn.plyr.io/3.6.7/plyr.polyfilled.js"></script>
 <script>
-    // Replace 'YOUR_API_KEY' with your actual YouTube API key
-    const apiKey = 'AIzaSyBBlS_pWXJkL8fnKXlu1C-cu-bN0E65poA';
-    const playlistId = 'RDEMV0WWT2KhLPjIJsofjIujvw';
-    let currentVideoIndex = 0;
-    let isPlaying = false;
-    let isShuffle = false;
-    let isRepeat = false;
+    const playlist = document.getElementById('playlist');
+    const player = new Plyr('#player', { controls: ['play', 'progress', 'current-time', 'mute', 'volume', 'settings', 'fullscreen'] });
+    
+    function searchSongs() {
+        const query = document.getElementById('searchInput').value;
 
-    function onYouTubeIframeAPIReady() {
-        // Create YouTube player
-        window.player = new YT.Player('player', {
-            height: '390',
-            width: '640',
-            events: {
-                'onReady': onPlayerReady,
-                'onStateChange': onPlayerStateChange
-            }
-        });
-    }
-
-    function onPlayerReady(event) {
-        // Load playlist
-        loadPlaylist();
-    }
-
-    function onPlayerStateChange(event) {
-        if (event.data === YT.PlayerState.ENDED) {
-            if (isRepeat) {
-                playVideo(currentVideoIndex);
-            } else if (isShuffle) {
-                playRandomVideo();
-            } else {
-                playNext();
-            }
-        }
-    }
-
-    function loadPlaylist() {
-        // Fetch playlist items using YouTube API
-        fetch(`https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=10&playlistId=${playlistId}&key=${apiKey}`)
+        // Fetch videos using YouTube API
+        fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&q=${query}&maxResults=10&key=AIzaSyBBlS_pWXJkL8fnKXlu1C-cu-bN0E65poA`)
             .then(response => response.json())
             .then(data => {
-                const playlist = document.getElementById('playlist');
+                playlist.innerHTML = ''; // Clear previous results
 
                 data.items.forEach(item => {
                     const title = item.snippet.title;
-                    const videoId = item.snippet.resourceId.videoId;
+                    const videoId = item.id.videoId;
 
                     const listItem = document.createElement('li');
                     listItem.textContent = title;
 
                     listItem.addEventListener('click', () => {
-                        playVideo(playlist.indexOf(listItem));
+                        playVideo(videoId);
                     });
 
                     playlist.appendChild(listItem);
                 });
             })
-            .catch(error => console.error('Error loading playlist:', error));
+            .catch(error => console.error('Error searching songs:', error));
     }
 
-    function playVideo(index) {
-        currentVideoIndex = index;
-        const videoId = getVideoId(index);
-        player.loadVideoById(videoId);
-        player.playVideo();
-        isPlaying = true;
-    }
-
-    function playNext() {
-        if (isShuffle) {
-            playRandomVideo();
-        } else {
-            const nextIndex = (currentVideoIndex + 1) % player.getPlaylist().length;
-            playVideo(nextIndex);
-        }
-    }
-
-    function playPrevious() {
-        const prevIndex = (currentVideoIndex - 1 + player.getPlaylist().length) % player.getPlaylist().length;
-        playVideo(prevIndex);
-    }
-
-    function playPauseToggle() {
-        if (isPlaying) {
-            player.pauseVideo();
-        } else {
-            player.playVideo();
-        }
-        isPlaying = !isPlaying;
-    }
-
-    function toggleShuffle() {
-        isShuffle = !isShuffle;
-    }
-
-    function toggleRepeat() {
-        isRepeat = !isRepeat;
-    }
-
-    function playRandomVideo() {
-        const randomIndex = Math.floor(Math.random() * player.getPlaylist().length);
-        playVideo(randomIndex);
-    }
-
-    function getVideoId(index) {
-        return player.getPlaylist()[index];
+    function playVideo(videoId) {
+        player.source = {
+            type: 'video',
+            sources: [
+                {
+                    src: videoId,
+                    provider: 'youtube',
+                },
+            ],
+        };
     }
 </script>
 
