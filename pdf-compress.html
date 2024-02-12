@@ -63,7 +63,7 @@
   <a id="downloadButton" download="compressed.pdf">Download Compressed PDF</a>
 
   <script src="https://unpkg.com/pdf-lib"></script>
-  <script src="https://cdn.jsdelivr.net/npm/pdf-optimizer@latest/dist/pdf-optimizer.umd.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pako"></script>
   <script>
     document.getElementById('fileInput').addEventListener('change', handleFileSelect);
     document.getElementById('qualityRange').addEventListener('input', updateQualityLabel);
@@ -80,13 +80,14 @@
 
       if (file) {
         const qualityValue = parseInt(document.getElementById('qualityRange').value);
-        const optimizer = new PdfOptimizer.PdfOptimizer();
 
-        optimizer.setQuality(qualityValue / 100);
+        const pdfDoc = await PDFLib.PDFDocument.load(await file.arrayBuffer());
+        const pdfBytes = await pdfDoc.save();
 
-        const compressedBuffer = await optimizer.optimize(file);
+        // Compress the PDF using pako
+        const compressedBytes = pako.gzip(pdfBytes, { level: qualityValue });
 
-        const compressedBlob = new Blob([compressedBuffer], { type: 'application/pdf' });
+        const compressedBlob = new Blob([compressedBytes], { type: 'application/pdf' });
         const compressedUrl = URL.createObjectURL(compressedBlob);
 
         document.getElementById('status').innerText = 'Compression completed!';
