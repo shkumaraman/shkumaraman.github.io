@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PDF Quality Adjuster</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin: 50px;
+    }
+    #fileInput {
+      display: none;
+    }
+    label {
+      background-color: #3498db;
+      color: #fff;
+      padding: 10px 15px;
+      cursor: pointer;
+    }
+    #status {
+      margin-top: 20px;
+    }
+    #downloadButton {
+      display: none;
+      margin-top: 10px;
+      background-color: #27ae60;
+      color: #fff;
+      padding: 10px 15px;
+      text-decoration: none;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>PDF Quality Adjuster</h1>
+
+  <input type="file" id="fileInput" accept=".pdf">
+  <label for="fileInput" id="fileInputLabel">Choose a PDF file</label>
+
+  <p>Quality: <span id="qualityLabel">100</span></p>
+  <input type="range" id="qualityRange" min="10" max="100" value="100" step="10" list="tickmarks">
+
+  <datalist id="tickmarks">
+    <option value="10">
+    <option value="20">
+    <option value="30">
+    <option value="40">
+    <option value="50">
+    <option value="60">
+    <option value="70">
+    <option value="80">
+    <option value="90">
+    <option value="100">
+  </datalist>
+
+  <button id="compressButton" onclick="compressPDF()">Compress</button>
+
+  <p id="status"></p>
+
+  <a id="downloadButton" download="compressed.pdf">Download Compressed PDF</a>
+
+  <script src="https://unpkg.com/pdf-lib"></script>
+  <script>
+    document.getElementById('fileInput').addEventListener('change', handleFileSelect);
+    document.getElementById('qualityRange').addEventListener('input', updateQualityLabel);
+
+    function updateQualityLabel() {
+      const qualityLabel = document.getElementById('qualityLabel');
+      const qualityRange = document.getElementById('qualityRange');
+      qualityLabel.innerText = qualityRange.value;
+    }
+
+    async function compressPDF() {
+      const fileInput = document.getElementById('fileInput');
+      const file = fileInput.files[0];
+
+      if (file) {
+        const pdfDoc = await PDFLib.PDFDocument.load(await file.arrayBuffer());
+        const qualityValue = parseInt(document.getElementById('qualityRange').value);
+
+        pdfDoc.getPages().forEach((page) => {
+          const images = page.getImages();
+          images.forEach((image) => {
+            image.scale(qualityValue / 100);
+          });
+        });
+
+        const compressedBuffer = await pdfDoc.save({ objectsPerTick: 50 });
+
+        const compressedBlob = new Blob([compressedBuffer], { type: 'application/pdf' });
+        const compressedUrl = URL.createObjectURL(compressedBlob);
+
+        document.getElementById('status').innerText = 'Compression completed!';
+        document.getElementById('downloadButton').setAttribute('href', compressedUrl);
+        document.getElementById('downloadButton').style.display = 'block';
+      }
+    }
+  </script>
+</body>
+</html>
