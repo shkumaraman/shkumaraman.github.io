@@ -6,83 +6,199 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Background Remover</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.0.0/dist/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f0f0;
+            color: #333;
+            text-align: center;
+            margin: 20px;
+        }
+
+        h2 {
+            color: #4CAF50;
+        }
+
+        .line {
+            border: 1px solid #4CAF50;
+        }
+
+        .container {
+            margin-top: 4rem;
+        }
+
+        .card {
+            margin-top: 4rem;
+            padding: 2rem;
+        }
+
+        #outputContainer {
+            border: 1px solid #000;
+            border-radius: 5px;
+            padding: 20px;
+            background-color: #fff;
+            margin-top: 20px;
+            display: none;
+            max-width: 100%;
+            overflow: hidden;
+        }
+
+        #outputImage {
+            width: 100%;
+            height: auto;
+            border-radius: 5px;
+            border: 1px solid #000;
+            margin-top: 20px;
+        }
+
+        #loadingScreen {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+
+        #loadingContainer {
+            display: inline-block;
+        }
+
+        .loader {
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #3498db;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
 </head>
 <body>
-    
 
-    <div class="container mt-4">
-        <div class="row mt-4">
-        <div class="col-md-12 card mt-4">
-        <form>
-        <div class="form-group">
-        <label for="fileInput">Select a File: </label> 
-        <input id="fileInput" class="form-control" 
-        type="file">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-12 card">
+                <form>
+                    <div class="form-group">
+                        <label for="fileInput">Select a File: </label>
+                        <input id="fileInput" class="form-control" type="file">
+                    </div>
+                    <input class="btn btn-primary m-1" type="button" onclick="submitHandler('fileInput')" value="Upload">
+
+                    <div class="form-group">
+                        <label for="urlInput">Image URL: </label>
+                        <input id="urlInput" class="form-control" type="url" placeholder="Enter Image URL">
+                    </div>
+                    <input class="btn btn-primary m-1" type="button" onclick="submitHandler('urlInput')" value="Upload from URL">
+                </form>
+
+                <button class="btn btn-warning" onclick="downloadFile()">Download</button>
+
+                <div id="loadingScreen">
+                    <div id="loadingContainer">
+                        <div class="loader"></div>
+                    </div>
+                </div>
+
+                <div id="outputContainer">
+                    <img id="outputImage" alt="Background Removed Image">
+                </div>
+            </div>
         </div>
-        <input class="btn btn-primary m-1" 
-        type="button"  onclick="submitHandler()"
-        value="Upload">
-        </form>
+    </div>
 
-        <button class="btn btn-warning"
-         onclick="downloadFile()">
-         Download
-        </button>
-     
-         </div>
-        </div>
-        </div>
+    <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/popper.js@1.12.9/dist/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.0.0/dist/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
 
+    <script>
+        let imageURL;
 
-<script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/popper.js@1.12.9/dist/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.0.0/dist/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
+        function showLoading() {
+            document.getElementById('loadingScreen').style.display = 'flex';
+        }
 
-<script>
-    let imageURL;
+        function hideLoading() {
+            document.getElementById('loadingScreen').style.display = 'none';
+        }
 
-    function submitHandler(){
-        console.log("click");
-const fileInput = document.getElementById('fileInput');
-        console.log(fileInput.files);
-        const image = fileInput.files[0];
+        function submitHandler(inputId) {
+            const fileInput = document.getElementById(inputId);
+            if (fileInput.files.length > 0 || (inputId === 'urlInput' && document.getElementById('urlInput').value.trim() !== '')) {
+                showLoading();
+                const image = inputId === 'fileInput' ? fileInput.files[0] : null;
+                const imageUrl = inputId === 'urlInput' ? document.getElementById('urlInput').value.trim() : null;
 
-        // Multipart file
-        const formData = new FormData();
-        formData.append('image_file', image);
-        formData.append('size', 'auto');
+                if (image) {
+                    processImage(image);
+                } else if (imageUrl) {
+                    fetch(imageUrl)
+                        .then(response => response.blob())
+                        .then(blob => {
+                            const file = new File([blob], 'image', { type: blob.type });
+                            processImage(file);
+                        })
+                        .catch(error => {
+                            console.error('Error fetching image:', error);
+                            hideLoading();
+                        });
+                }
+            } else {
+                alert('Please select an image file or enter a valid URL.');
+            }
+        }
 
-        const apiKey = 'ebjETrsd4RppJ7Ljttusminc';
+        function processImage(image) {
+            const formData = new FormData();
+            formData.append('image_file', image);
+            formData.append('size', 'auto');
+            const apiKey = 'ebjETrsd4RppJ7Ljttusminc';
 
-        fetch('https://api.remove.bg/v1.0/removebg',{
-            method:'POST',
-            headers: {
-            'X-Api-Key': apiKey
-         },
-         body: formData
-        })
-        .then(function(reponse){
-                return reponse.blob()
-        })
-        .then(function(blob){
-                console.log(blob);
-                const url = URL.createObjectURL(blob);
-                imageURL = url;
-                const img = document.createElement('img');
-                img.src = url;
-                document.body.appendChild(img);
-        })
-        .catch();
-    }
+            fetch('https://api.remove.bg/v1.0/removebg', {
+                method: 'POST',
+                headers: {
+                    'X-Api-Key': apiKey
+                },
+                body: formData
+            })
+                .then(response => response.blob())
+                .then(blob => {
+                    const url = URL.createObjectURL(blob);
+                    imageURL = url;
+                    const outputImage = document.getElementById('outputImage');
+                    outputImage.src = url;
+                    hideLoading();
+                    document.getElementById('outputContainer').style.display = 'block';
+                })
+                .catch(error => {
+                    console.error('Error processing image:', error);
+                    hideLoading();
+                });
+        }
 
-   function downloadFile(){
-    var anchorElement = document.createElement('a'); //<a></a>
-        anchorElement.href = imageURL;
-        anchorElement.download = 'naciasv.png';
-        document.body.appendChild(anchorElement);
-
-        anchorElement.click();
-
-        document.body.removeChild(anchorElement);
-   }
-</script>
+        function downloadFile() {
+            if (imageURL) {
+                var anchorElement = document.createElement('a');
+                anchorElement.href = imageURL;
+                anchorElement.download = 'background_removed_image.png';
+                document.body.appendChild(anchorElement);
+                anchorElement.click();
+                document.body.removeChild(anchorElement);
+            } else {
+                alert('No image to download. Please upload an image first.');
+            }
+        }
+    </script>
+</body>
+    </html>
+        
