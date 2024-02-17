@@ -93,13 +93,13 @@
                         <label for="fileInput">Select a File: </label>
                         <input id="fileInput" class="form-control" type="file">
                     </div>
-                    <input class="btn btn-primary m-1" type="button" onclick="submitHandler('fileInput')" value="Upload">
+                    <input class="btn btn-primary m-1" type="button" onclick="submitHandler()" value="Upload">
 
                     <div class="form-group">
                         <label for="urlInput">Image URL: </label>
                         <input id="urlInput" class="form-control" type="url" placeholder="Enter Image URL">
                     </div>
-                    <input class="btn btn-primary m-1" type="button" onclick="submitHandler('urlInput')" value="Upload from URL">
+                    <input class="btn btn-primary m-1" type="button" onclick="submitURL()" value="Upload from URL">
                 </form>
 
                 <button class="btn btn-warning" onclick="downloadFile()">Download</button>
@@ -132,61 +132,66 @@
             document.getElementById('loadingScreen').style.display = 'none';
         }
 
-        function submitHandler(inputId) {
-            const fileInput = document.getElementById(inputId);
-            if (fileInput.files.length > 0 || (inputId === 'urlInput' && document.getElementById('urlInput').value.trim() !== '')) {
+        function submitHandler(){
+            const fileInput = document.getElementById('fileInput');
+            const image = fileInput.files[0];
+            if (image) {
                 showLoading();
-                const image = inputId === 'fileInput' ? fileInput.files[0] : null;
-                const imageUrl = inputId === 'urlInput' ? document.getElementById('urlInput').value.trim() : null;
-
-                if (image) {
-                    processImage(image);
-                } else if (imageUrl) {
-                    fetch(imageUrl)
-                        .then(response => response.blob())
-                        .then(blob => {
-                            const file = new File([blob], 'image', { type: blob.type });
-                            processImage(file);
-                        })
-                        .catch(error => {
-                            console.error('Error fetching image:', error);
-                            hideLoading();
-                        });
-                }
+                processImage(image);
             } else {
-                alert('Please select an image file or enter a valid URL.');
+                alert('Please select a file.');
             }
         }
 
-        function processImage(image) {
+        function submitURL(){
+            const urlInput = document.getElementById('urlInput');
+            const imageUrl = urlInput.value.trim();
+            if (imageUrl !== '') {
+                showLoading();
+                fetch(imageUrl)
+                    .then(response => response.blob())
+                    .then(blob => {
+                        const file = new File([blob], 'image', { type: blob.type });
+                        processImage(file);
+                    })
+                    .catch(error => {
+                        console.error('Error fetching image:', error);
+                        hideLoading();
+                    });
+            } else {
+                alert('Please enter a valid image URL.');
+            }
+        }
+
+        function processImage(image){
             const formData = new FormData();
             formData.append('image_file', image);
             formData.append('size', 'auto');
             const apiKey = 'ebjETrsd4RppJ7Ljttusminc';
 
-            fetch('https://api.remove.bg/v1.0/removebg', {
-                method: 'POST',
+            fetch('https://api.remove.bg/v1.0/removebg',{
+                method:'POST',
                 headers: {
                     'X-Api-Key': apiKey
                 },
                 body: formData
             })
-                .then(response => response.blob())
-                .then(blob => {
-                    const url = URL.createObjectURL(blob);
-                    imageURL = url;
-                    const outputImage = document.getElementById('outputImage');
-                    outputImage.src = url;
-                    hideLoading();
-                    document.getElementById('outputContainer').style.display = 'block';
-                })
-                .catch(error => {
-                    console.error('Error processing image:', error);
-                    hideLoading();
-                });
+            .then(response => response.blob())
+            .then(blob => {
+                const url = URL.createObjectURL(blob);
+                imageURL = url;
+                const outputImage = document.getElementById('outputImage');
+                outputImage.src = url;
+                hideLoading();
+                document.getElementById('outputContainer').style.display = 'block';
+            })
+            .catch(error => {
+                console.error('Error processing image:', error);
+                hideLoading();
+            });
         }
 
-        function downloadFile() {
+        function downloadFile(){
             if (imageURL) {
                 var anchorElement = document.createElement('a');
                 anchorElement.href = imageURL;
@@ -201,4 +206,4 @@
     </script>
 </body>
     </html>
-        
+    
