@@ -476,21 +476,57 @@ function findTextDown() {
     currentSearchIndex = 0;
   }
   }
-  function importHtmlDemoCode() {
-    // Replace this with your HTML demo code
-    const htmlDemoCode = '?';
+  function insertSnippet(snippet) {
+  const editor = document.getElementById('editor');
+  const start = editor.selectionStart;
+  const end = editor.selectionEnd;
+  const currentCode = editor.value;
 
-    // Set the HTML tab as the active tab
-    changeTab('html');
+  // Insert the snippet at the cursor position
+  editor.value = currentCode.substring(0, start) + snippet + currentCode.substring(end);
 
-    // Update the editor content with the demo code
-    const editor = document.getElementById('editor');
-    editor.value = htmlDemoCode;
+  // Move the cursor to the end of the inserted snippet
+  editor.selectionStart = editor.selectionEnd = start + snippet.length;
 
-    // Trigger necessary events to update output and line numbers
+  // Trigger the input event to update the output
+  editor.dispatchEvent(new Event('input', { bubbles: true }));
+
+  // Save the current code state for undo
+  saveUndoState(currentCode, editor.value);
+}
+
+function saveUndoState(prevCode, newCode) {
+  const undoState = {
+    prevCode: prevCode,
+    newCode: newCode,
+  };
+
+  if (!codeMap[activeTab].undoStack) {
+    codeMap[activeTab].undoStack = [];
+  }
+
+  // Limit the undo stack size if needed
+  if (codeMap[activeTab].undoStack.length >= 10) {
+    codeMap[activeTab].undoStack.shift(); // Remove the oldest undo state
+  }
+
+  // Save the undo state
+  codeMap[activeTab].undoStack.push(undoState);
+}
+
+function undo() {
+  const editor = document.getElementById('editor');
+  const undoStack = codeMap[activeTab].undoStack;
+
+  if (undoStack && undoStack.length > 0) {
+    const lastUndoState = undoStack.pop();
+    editor.value = lastUndoState.prevCode;
+
+    // Trigger the input event to update the output
     editor.dispatchEvent(new Event('input', { bubbles: true }));
-    editor.dispatchEvent(new Event('scroll', { bubbles: true }));
-    }
+  }
+}
+
   </script>
 </body>
 </html>
