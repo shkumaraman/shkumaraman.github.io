@@ -298,7 +298,9 @@ function getFileExtension(activeTab) {
   }
 }
     function updateOutput() {
-  const code = document.getElementById('editor').value;
+  const editor = document.getElementById('editor');
+  const code = editor.value;
+  
   const outputIframe = document.getElementById('output-iframe');
   try {
     const htmlContent = `${codeMap['html']}<style>${codeMap['css']}<\/style><script>${codeMap['js']}<\/script>`;
@@ -308,18 +310,29 @@ function getFileExtension(activeTab) {
     outputIframe.srcdoc = `<span style="color: red;">${error.message}</span>`;
     outputIframe.classList.add('error');
   }
+  
   updateLineNumbers();
   codeMap[activeTab] = code;
   saveLocalStorage();
+
+  // Add current state to the undo stack
+  const undoStack = JSON.parse(localStorage.getItem('undoStack')) || [];
+  undoStack.push(code);
+  localStorage.setItem('undoStack', JSON.stringify(undoStack));
 }
-    function updateLineNumbers() {
-      const editor = document.getElementById('editor');
-      const lineNumbers = document.getElementById('line-numbers');
-      let lines = editor.value.split('\n');
-      let numbers = '';
-      for (let i = 1; i <= lines.length; i++) {
-        numbers += i + '<br>';
-      }
+
+function updateLineNumbers() {
+  const editor = document.getElementById('editor');
+  const lineNumbers = document.getElementById('line-numbers');
+  let lines = editor.value.split('\n');
+  let numbers = '';
+  
+  for (let i = 1; i <= lines.length; i++) {
+    numbers += i + '<br>';
+  }
+  lineNumbers.innerHTML = numbers;
+    }
+    
       lineNumbers.innerHTML = numbers;
     }
     function syncScroll() {
@@ -488,36 +501,17 @@ function findTextDown() {
   // Save the current code state for undo
   saveUndoState(currentCode, editor.value);
 }
-
-function saveUndoState(prevCode, newCode) {
-  const undoState = {
-    prevCode: prevCode,
-    newCode: newCode,
-  };
-
-  if (!codeMap[activeTab].undoStack) {
-    codeMap[activeTab].undoStack = [];
-  }
-
-  // Limit the undo stack size if needed
-  if (codeMap[activeTab].undoStack.length >= 10) {
-    codeMap[activeTab].undoStack.shift(); // Remove the oldest undo state
-  }
-
-  // Save the undo state
-  codeMap[activeTab].undoStack.push(undoState);
-}
-
 function undo() {
   const editor = document.getElementById('editor');
-  const undoStack = codeMap[activeTab].undoStack;
-
-  if (undoStack && undoStack.length > 0) {
-    const lastUndoState = undoStack.pop();
-    editor.value = lastUndoState.prevCode;
-
-    // Trigger the input event to update the output
-    editor.dispatchEvent(new Event('input', { bubbles: true }));
+  const undoStack = JSON.parse(localStorage.getItem('undoStack')) || [];
+  
+  if (undoStack.length > 1) {
+    undoStack.pop(); // Remove the current state
+    const prevState = undoStack[undoStack.length - 1];
+    editor.value = prevState;
+    localStorage.setItem('undoStack', JSON.stringify(undoStack));
+    updateOutput();
+    updateLineNumbers();
   }
 }
 
