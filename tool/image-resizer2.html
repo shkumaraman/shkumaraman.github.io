@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Resize and download images easily with this online image resizer tool. Change dimensions, adjust quality, and customize your images for free.">
+    <meta name="keywords" content="image resizer, online image tool, resize images, image dimensions, download images, image quality, image resizer website, free image resizer">
+    <title>Image Resizer</title>
+    <style>
+        /* Add your CSS styles here */
+    </style>
+</head>
+<body>
+    <h2>Image Size Resizer</h2>
+    <!-- Your HTML content here -->
+    <p>Click To Upload Your Image Here 👇</p>
+    <label for="fileInput" style="background-color: #4CAF50; color: #ffffff;">Choose Image</label>
+    <input type="file" id="fileInput" accept="image/*">
+    <br>
+    <label for="urlInput">Image URL:</label>
+    <input type="url" id="urlInput" placeholder="Enter Image URL">
+    <br>
+    <div id="sizeOptions">
+        <label for="unitSelect">Select Unit:</label>
+        <select id="unitSelect" onchange="updateValues()">
+            <option value="inches">Inches</option>
+            <option value="centimeters">Centimeters</option>
+        </select>
+        <br>
+        <label for="widthInput">Width:</label>
+        <input type="number" id="widthInput" min="1" placeholder="Width" onchange="updateValues()">
+        <br>
+        <label for="heightInput">Height:</label>
+        <input type="number" id="heightInput" min="1" placeholder="Height" onchange="updateValues()">
+        <br>
+        <input type="checkbox" id="defaultSize" onchange="setDefaultSize()"> Use Default Size
+    </div>
+    <label for="qualitySlider">Image Quality: <span id="qualityValue">100%</span></label>
+    <input type="range" id="qualitySlider" min="1" max="100" value="100" oninput="updateQuality()">
+    <br>
+    <button id="resizeButton" onclick="resizeImage()">Resize Image</button>
+
+    <div id="loadingScreen">
+        <div id="loadingContainer">
+            <div class="loader"></div>
+        </div>
+    </div>
+
+    <div id="outputContainer">
+        <img id="outputImage" alt="Resized Image">
+        <br>
+        <a id="downloadLink" download="resized_image">Download Resized Image</a>
+    </div>
+
+    <script src="https://cdn.tiny.cloud/1/0968qPPtxGmMLFbq9qKN6MHgplvJgjwz/tinypng.min.js"></script>
+    <script>
+        let selectedUnit = 'inches';
+
+        async function resizeImage() {
+            const fileInput = document.getElementById('fileInput');
+            const urlInput = document.getElementById('urlInput');
+            const widthInput = document.getElementById('widthInput');
+            const heightInput = document.getElementById('heightInput');
+            const qualitySlider = document.getElementById('qualitySlider');
+            const defaultSizeCheckbox = document.getElementById('defaultSize');
+            const outputContainer = document.getElementById('outputContainer');
+            const outputImage = document.getElementById('outputImage');
+            const downloadLink = document.getElementById('downloadLink');
+            const loadingScreen = document.getElementById('loadingScreen');
+
+            if (fileInput.files.length === 0 && !urlInput.value.trim()) {
+                alert('Please choose an image or enter a valid URL.');
+                return;
+            }
+
+            loadingScreen.style.display = 'flex';
+
+            let imageFile;
+            if (fileInput.files.length > 0) {
+                imageFile = fileInput.files[0];
+            } else {
+                const imageUrl = urlInput.value.trim();
+                imageFile = await loadImageFromUrl(imageUrl);
+            }
+
+            // Compress image using TinyPNG API
+            tinify.fromBuffer(imageFile).toBuffer(async (err, resultData) => {
+                if (err) {
+                    console.error('Error compressing image:', err);
+                    return;
+                }
+
+                // Convert compressed image data to Blob
+                const compressedImageBlob = new Blob([resultData], { type: 'image/jpeg' });
+
+                // Resize the compressed image
+                const resizedImage = await resize(compressedImageBlob, widthInput.value, heightInput.value, qualitySlider.value / 100);
+
+                outputImage.src = URL.createObjectURL(resizedImage);
+                outputContainer.style.display = 'block';
+                downloadLink.href = outputImage.src;
+                downloadLink.style.display = 'inline-block';
+
+                loadingScreen.style.display = 'none';
+            });
+        }
+
+        function loadImageFromUrl(url) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                img.onload = () => resolve(img);
+                img.onerror = reject;
+                img.src = url;
+            });
+        }
+
+        async function resize(image, width, height, quality) {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+
+            const originalWidth = image.width / (selectedUnit === 'inches' ? 2.54 : 1);
+            const originalHeight = image.height / (selectedUnit === 'inches' ? 2.54 : 1);
+
+            if (!width && !height) {
+                width = originalWidth;
+                height = originalHeight;
+            } else if (!width) {
+                width = Math.floor((height / originalHeight) * originalWidth);
+            } else if (!height) {
+                height = Math.floor((width / originalWidth) * originalHeight);
+            }
+
+            canvas.width = width * (selectedUnit === 'inches' ? 2.54 : 1);
+            canvas.height = height * (selectedUnit === 'inches' ? 2.54 : 1);
+
+            ctx.drawImage(image, 0, 0, width * (selectedUnit === 'inches' ? 2.54 : 1), height * (selectedUnit === 'inches' ? 2.54 : 1));
+
+            return new Promise(resolve => {
+                canvas.toBlob(blob => resolve(blob), 'image/jpeg', quality);
+            });
+        }
+
+        function updateValues() {
+            const unitSelect = document.getElementById('unitSelect');
+            selectedUnit = unitSelect.value;
+
+            const widthInput = document.getElementById('widthInput');
+            const heightInput = document.getElementById('heightInput');
+            const defaultSizeCheckbox = document.getElementById('defaultSize');
+
+            if (defaultSizeCheckbox.checked) {
+                widthInput.value = '';
+                heightInput.value = '';
+                widthInput.disabled = true;
+                heightInput.disabled = true;
+            } else {
+                widthInput.disabled = false;
+                heightInput.disabled = false;
+            }
+
+            widthInput.placeholder = `Width (${selectedUnit})`;
+            heightInput.placeholder = `Height (${selectedUnit})`;
+
+            updateQuality();
+        }
+
+        function updateQuality() {
+            const qualitySlider = document.getElementById('qualitySlider');
+            const qualityValue = document.getElementById('qualityValue');
+            qualityValue.textContent = `${qualitySlider.value}%`;
+        }
+
+        function setDefaultSize() {
+            const widthInput = document.getElementById('widthInput');
+            const heightInput = document.getElementById('heightInput');
+            const defaultSizeCheckbox = document.getElementById('defaultSize');
+
+            if (defaultSizeCheckbox.checked) {
+                widthInput.value = '';
+                heightInput.value = '';
+                widthInput.disabled = true;
+                heightInput.disabled = true;
+            } else {
+                widthInput.disabled = false;
+                heightInput.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>
