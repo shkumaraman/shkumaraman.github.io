@@ -261,13 +261,12 @@
         'Ctrl-Space': 'autocomplete'
       }
     });
-  let darkMode = localStorage.getItem('darkMode') === 'true' || false;
+    
     window.onload = function () {
       loadLocalStorage();
       loadActiveTab();
       loadCode();
       updateButtonColor();
-      applyDarkModeStyles();
     };
 
     function changeTab(tab) {
@@ -381,71 +380,6 @@ function loadActiveTab() {
         }
       }
     }
-function toggleDarkMode() {
-  darkMode = !darkMode;
-  applyDarkModeStyles();
-  localStorage.setItem('darkMode', darkMode);
-  }
-  
-function applyDarkModeStyles() {
-  const body = document.body;
-  const editor = document.getElementById('editor');
-  const outputContainer = document.getElementById('output-container');
-  const lineNumbers = document.getElementById('line-numbers');
-  const snippetButtons = document.querySelectorAll('#left-menu .btn1');
-  const searchBox = document.getElementById('search-box');
-  const searchButtons = document.querySelectorAll('#search-box button');
-  
-  if (darkMode) {
-    body.style.backgroundColor = '#333';
-    body.style.color = '#fff';
-    lineNumbers.style.color = '#fff';
-    searchBox.style.backgroundColor = '#333';
-    
-    // Update snippet buttons in dark mode
-    snippetButtons.forEach(button => {
-      button.style.backgroundColor = '#333';
-      button.style.color = '#fff';
-    });
-    searchButtons.forEach(button => {
-          button.style.backgroundColor = '#333';
-          button.style.color = '#fff';
-        });
-    document.getElementById('dark-mode-btn').innerHTML = '<i class="fas fa-sun"></i>';
-  } else {
-    body.style.backgroundColor = '#fff';
-    body.style.color = '#000';
-    editor.style.backgroundColor = '#fff';
-    lineNumbers.style.color = '#000';
-    searchBox.style.backgroundColor = '#fff';
-    
-    // Update snippet buttons in light mode
-    snippetButtons.forEach(button => {
-      button.style.backgroundColor = '#fff';
-      button.style.color = '#000';
-    });
-    searchButtons.forEach(button => {
-          button.style.backgroundColor = '#fff';
-          button.style.color = '#000';
-        });
-    document.getElementById('dark-mode-btn').innerHTML = '<i class="fas fa-moon"></i>';
-  }
-  updateEditorTextColor();
-  }
-    function updateEditorTextColor() {
-      const editor = document.getElementById('editor');
-      editor.style.color = darkMode ? '#fff' : '#000';
-    }
-    function saveLocalStorage() {
-      localStorage.setItem('codeMap', JSON.stringify(codeMap));
-    }
-    function loadLocalStorage() {
-      const savedCodeMap = localStorage.getItem('codeMap');
-      if (savedCodeMap) {
-        codeMap = JSON.parse(savedCodeMap);
-        loadCode();
-      }
-    }
  
 function findTextDown() {
   const searchText = document.getElementById('search-input').value.trim();
@@ -463,13 +397,26 @@ function findTextDown() {
   }
 }
 function undo() {
-  editor.execCommand("goWordLeft"); // Move cursor to beginning of previous word
-  editor.undo(); // Undo the deletion
-  updateOutput();
-  updateLineNumbers();
+  const doc = editor.getDoc();
+  const history = doc.getHistory();
+
+  if (history.done.length > 0) {
+    const lastChange = history.done.pop(); // Get the last change from the history
+    doc.setHistory(history); // Update the history without the last change
+
+    // Undo one word at a time
+    if (lastChange && lastChange.removed.length > 0) {
+      const lastWord = lastChange.removed.pop(); // Get the last removed word
+      const cursor = doc.getCursor();
+      const startPos = { line: cursor.line, ch: cursor.ch - lastWord.length };
+      const endPos = { line: cursor.line, ch: cursor.ch };
+      doc.replaceRange('', startPos, endPos); // Remove the last word
+    }
+
+    updateOutput();
+    updateLineNumbers();
+  }
 }
-
-
 
     function deleteCode() {
       editor.setValue('');
