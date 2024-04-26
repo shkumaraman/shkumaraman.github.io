@@ -8,7 +8,8 @@
   <meta name="keywords" content="HTML viewer, CSS viewer, JS viewer, text editor, online code editor, code visualization, code experimentation, code tool">
   <title>Code Editor</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/codemirror.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.63.1/codemirror.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.63.1/theme/material.min.css">
   <style>
     body {
       font-family: 'Arial', sans-serif;
@@ -41,10 +42,34 @@
       flex-direction: row;
       height: 25%;
     }
-.CodeMirror {
-  height: 100%;
-  width: 100%;
-}
+    #line-numbers {
+      padding: 10px;
+      box-sizing: border-box;
+      border-right: 1px solid #ccc;
+      color: #000;
+      overflow-y: auto;
+      width: auto;
+      font-size: 16px;
+      user-select: none;
+      overflow: hidden;
+      white-space: pre;
+    }
+    #editor {
+      flex: 1;
+      padding: 10px;
+      box-sizing: border-box;
+      border: 1px solid #ccc;
+      color: #000;
+      overflow-y: auto;
+      white-space: pre;
+      overflow-wrap: normal;
+      height: 100%;
+      margin: 0;
+      outline: none;
+      resize: none;
+      font-size: 16px;
+      transition: background-color 0.3s, color 0.3s;
+    }
     #output-container {
       flex: 3;
       display: flex;
@@ -239,10 +264,11 @@
     <button class="btn1" onclick="insertSnippet('<!-- Write your comments here -->')">HC</button>
   </div>
   <div id="editor-container">
-    <textarea id="editor"></textarea>
+    <div id="line-numbers" onscroll="syncScroll()"></div>
+    <textarea id="editor" placeholder="Write Your code here..."></textarea>
   </div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/js/all.min.js" type="text/javascript"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.63.1/codemirror.min.js"></script>
   <script>
     let activeTab = 'html';
     let codeMap = {
@@ -251,42 +277,44 @@
       'js': '',
       'txt': ''
     };
-  let darkMode = localStorage.getItem('darkMode') === 'true' || false;
-  let editor = CodeMirror.fromTextArea(document.getElementById('editor'), {
-    lineNumbers: true,
-    mode: 'htmlmixed',
-    theme: 'material',
-    extraKeys: {
-        'Ctrl-Space': 'autocomplete'
-    }
-});
 
-  window.onload = function () {
-  loadLocalStorage();
-  loadActiveTab();
-  loadCode();
-  updateButtonColor();
-  applyDarkModeStyles();
-};
-    
-function changeTab(tab) {
-  if (activeTab !== tab) {
-    activeTab = tab;
-    loadCode();
-    updateActiveTabStyle();
-    updateButtonColor();
-    
-    localStorage.setItem('activeTab', activeTab); // Store the active tab in local storage
-  }
-}
-function loadActiveTab() {
-  const storedActiveTab = localStorage.getItem('activeTab');
-  if (storedActiveTab && storedActiveTab !== activeTab) {
-    activeTab = storedActiveTab;
-    changeTab(activeTab);
-  }
-}
-  
+    let darkMode = localStorage.getItem('darkMode') === 'true' || false;
+    let editor = CodeMirror.fromTextArea(document.getElementById('editor'), {
+      lineNumbers: true,
+      mode: 'htmlmixed',
+      theme: 'material',
+      extraKeys: {
+        'Ctrl-Space': 'autocomplete'
+      }
+    });
+
+    window.onload = function () {
+      loadLocalStorage();
+      loadActiveTab();
+      loadCode();
+      updateButtonColor();
+      applyDarkModeStyles();
+    };
+
+    function changeTab(tab) {
+      if (activeTab !== tab) {
+        activeTab = tab;
+        loadCode();
+        updateActiveTabStyle();
+        updateButtonColor();
+
+        localStorage.setItem('activeTab', activeTab); // Store the active tab in local storage
+      }
+    }
+
+    function loadActiveTab() {
+      const storedActiveTab = localStorage.getItem('activeTab');
+      if (storedActiveTab && storedActiveTab !== activeTab) {
+        activeTab = storedActiveTab;
+        changeTab(activeTab);
+      }
+    }
+
     function updateButtonColor() {
       const tabs = document.querySelectorAll('.tab');
       tabs.forEach(tab => {
@@ -300,234 +328,171 @@ function loadActiveTab() {
     }
 
     function downloadCode() {
-  const codeToDownload = codeMap[activeTab];
-  const fileExtension = getFileExtension(activeTab);
-  
-  const blob = new Blob([codeToDownload], { type: 'text/plain' });
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = `code.${fileExtension}`;
-  link.click();
-}
+      const codeToDownload = codeMap[activeTab];
+      const fileExtension = getFileExtension(activeTab);
 
-function copyCode() {
-  const codeToCopy = codeMap[activeTab];
-  navigator.clipboard.writeText(codeToCopy)
-    .then(() => alert('Code copied to clipboard'))
-    .catch(error => console.error('Unable to copy code', error));
-}
-
-function deleteCode() {
-  codeMap[activeTab] = '';
-  loadCode();
-  updateOutput();
-}
-
-// Helper function to get file extension based on the active tab
-function getFileExtension(activeTab) {
-  switch (activeTab) {
-    case 'html':
-      return 'html';
-    case 'css':
-      return 'css';
-    case 'js':
-      return 'js';
-    case 'txt':
-      return 'txt';
-    default:
-      return 'txt';
-  }
-}
-    function updateOutput() {
-  const code = document.getElementById('editor').value;
-  const outputIframe = document.getElementById('output-iframe');
-  try {
-    const htmlContent = `${codeMap['html']}<style>${codeMap['css']}<\/style><script>${codeMap['js']}<\/script>`;
-    outputIframe.srcdoc = `<html><head><\/head><body>${htmlContent}<\/body><\/html>`;
-    outputIframe.classList.remove('error');
-  } catch (error) {
-    outputIframe.srcdoc = `<span style="color: red;">${error.message}</span>`;
-    outputIframe.classList.add('error');
-  }
-  codeMap[activeTab] = code;
-  saveLocalStorage();
-}
-    function loadCode() {
-      document.getElementById('editor').value = codeMap[activeTab];
-      updateLineNumbers();
-      updateOutput();
+      const blob = new Blob([codeToDownload], { type: 'text/plain' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `code.${fileExtension}`;
+      link.click();
     }
-    function updateActiveTabStyle() {
-      const tabs = document.querySelectorAll('.tab');
-      tabs.forEach(tab => tab.classList.remove('active-tab'));
-      const activeTabElement = document.querySelector(`.tab[data-lang="${activeTab}"]`);
-      if (activeTabElement) {
-        activeTabElement.classList.add('active-tab');
+
+    function copyCode() {
+      const codeToCopy = codeMap[activeTab];
+      navigator.clipboard.writeText(codeToCopy);
+    }
+
+    function pasteCode() {
+      navigator.clipboard.readText().then(clipText => {
+        codeMap[activeTab] += clipText;
+        editor.setValue(codeMap[activeTab]);
+        saveToLocalStorage();
+      });
+    }
+
+    function importCode() {
+      const rawCode = prompt('Enter or paste your raw code here:');
+      if (rawCode !== null) {
+        codeMap[activeTab] = rawCode;
+        editor.setValue(rawCode);
+        saveToLocalStorage();
       }
     }
+
     function toggleFullScreen() {
-      const elem = document.documentElement;
-      if (!document.fullscreenElement) {
-        elem.requestFullscreen().catch(err => {
-          console.log(`Error attempting to enable full-screen mode: ${err.message}`);
-        });
+      const isInFullScreen = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
+      const docElm = document.documentElement;
+
+      if (!isInFullScreen) {
+        if (docElm.requestFullscreen) {
+          docElm.requestFullscreen();
+        } else if (docElm.webkitRequestFullScreen) {
+          docElm.webkitRequestFullScreen();
+        } else if (docElm.mozRequestFullScreen) {
+          docElm.mozRequestFullScreen();
+        } else if (docElm.msRequestFullscreen) {
+          docElm.msRequestFullscreen();
+        }
       } else {
-        document.exitFullscreen();
+        if (document.exitFullscreen) {
+          document.exitFullscreen();
+        } else if (document.webkitExitFullscreen) {
+          document.webkitExitFullscreen();
+        } else if (document.mozCancelFullScreen) {
+          document.mozCancelFullScreen();
+        } else if (document.msExitFullscreen) {
+          document.msExitFullscreen();
+        }
       }
     }
-function toggleDarkMode() {
-  darkMode = !darkMode;
-  applyDarkModeStyles();
-  localStorage.setItem('darkMode', darkMode);
-  }
-  
-function applyDarkModeStyles() {
-  const body = document.body;
-  const editor = document.getElementById('editor');
-  const outputContainer = document.getElementById('output-container');
-  const lineNumbers = document.getElementById('line-numbers');
-  const snippetButtons = document.querySelectorAll('#left-menu .btn1');
-  const searchBox = document.getElementById('search-box');
-  const searchButtons = document.querySelectorAll('#search-box button');
-  
-  if (darkMode) {
-    body.style.backgroundColor = '#333';
-    body.style.color = '#fff';
-    editor.style.backgroundColor = '#333';
-    lineNumbers.style.color = '#fff';
-    searchBox.style.backgroundColor = '#333';
-    
-    // Update snippet buttons in dark mode
-    snippetButtons.forEach(button => {
-      button.style.backgroundColor = '#333';
-      button.style.color = '#fff';
-    });
-    searchButtons.forEach(button => {
-          button.style.backgroundColor = '#333';
-          button.style.color = '#fff';
-        });
-    document.getElementById('dark-mode-btn').innerHTML = '<i class="fas fa-sun"></i>';
-  } else {
-    body.style.backgroundColor = '#fff';
-    body.style.color = '#000';
-    editor.style.backgroundColor = '#fff';
-    lineNumbers.style.color = '#000';
-    searchBox.style.backgroundColor = '#fff';
-    
-    // Update snippet buttons in light mode
-    snippetButtons.forEach(button => {
-      button.style.backgroundColor = '#fff';
-      button.style.color = '#000';
-    });
-    searchButtons.forEach(button => {
-          button.style.backgroundColor = '#fff';
-          button.style.color = '#000';
-        });
-    document.getElementById('dark-mode-btn').innerHTML = '<i class="fas fa-moon"></i>';
-  }
-  updateEditorTextColor();
-  }
-    function updateEditorTextColor() {
-      const editor = document.getElementById('editor');
-      editor.style.color = darkMode ? '#fff' : '#000';
+
+    function toggleDarkMode() {
+      darkMode = !darkMode;
+      localStorage.setItem('darkMode', darkMode);
+
+      applyDarkModeStyles();
     }
-    function saveLocalStorage() {
+
+    function applyDarkModeStyles() {
+      if (darkMode) {
+        document.body.style.backgroundColor = '#121212';
+        document.body.style.color = '#fff';
+        document.querySelectorAll('.tab').forEach(tab => tab.style.backgroundColor = '#121212');
+        document.querySelectorAll('.tooltip').forEach(tooltip => tooltip.style.backgroundColor = '#121212');
+        document.querySelectorAll('.tooltip').forEach(tooltip => tooltip.style.color = '#fff');
+        document.getElementById('search-box').style.backgroundColor = '#121212';
+      } else {
+        document.body.style.backgroundColor = '#fff';
+        document.body.style.color = '#000';
+        document.querySelectorAll('.tab').forEach(tab => tab.style.backgroundColor = '#fff');
+        document.querySelectorAll('.tooltip').forEach(tooltip => tooltip.style.backgroundColor = '#fff');
+        document.querySelectorAll('.tooltip').forEach(tooltip => tooltip.style.color = '#000');
+        document.getElementById('search-box').style.backgroundColor = '#fff';
+      }
+    }
+
+    function toggleMenu() {
+      const menu = document.getElementById('menu');
+      if (menu.style.display === 'none') {
+        menu.style.display = 'block';
+      } else {
+        menu.style.display = 'none';
+      }
+    }
+
+    function openLink() {
+      window.open('https://www.google.com/', '_blank');
+    }
+    
+    function insertSnippet(snippet) {
+      const cursor = editor.getCursor();
+      editor.replaceRange(snippet, cursor);
+    }
+
+    function findTextDown() {
+      const searchText = document.getElementById('search-input').value;
+      editor.execCommand('find');
+      editor.findNext();
+    }
+
+    function undo() {
+      editor.undo();
+    }
+
+    function deleteCode() {
+      editor.setValue('');
+      codeMap[activeTab] = '';
+      saveToLocalStorage();
+    }
+
+    function saveToLocalStorage() {
       localStorage.setItem('codeMap', JSON.stringify(codeMap));
     }
+
     function loadLocalStorage() {
-      const savedCodeMap = localStorage.getItem('codeMap');
-      if (savedCodeMap) {
-        codeMap = JSON.parse(savedCodeMap);
-        loadCode();
+      const storedCodeMap = JSON.parse(localStorage.getItem('codeMap'));
+      if (storedCodeMap) {
+        codeMap = storedCodeMap;
       }
     }
 
-   function pasteCode() {
-  navigator.clipboard.readText()
-    .then(text => {
-      codeMap[activeTab] = text;
-      loadCode();
-      updateOutput();
-    })
-    .catch(error => console.error('Unable to paste code', error));
-   }
-    
-    function importCode() {
-      const importLink = prompt("Enter the import raw link:");
-      if (importLink) {
-        fetch(importLink)
-          .then(response => response.text())
-          .then(data => {
-            codeMap[activeTab] = data;
-            loadCode();
-            updateOutput();
-          })
-          .catch(error => console.error('Error importing code', error));
+    function loadCode() {
+      editor.setValue(codeMap[activeTab]);
+    }
+
+    function syncScroll() {
+      const lineNumbers = document.getElementById('line-numbers');
+      lineNumbers.scrollTop = editor.getScrollInfo().top;
+    }
+
+    function updateActiveTabStyle() {
+      const tabs = document.querySelectorAll('.tab');
+      tabs.forEach(tab => {
+        const lang = tab.getAttribute('onclick').match(/\('(.*?)'\)/)[1];
+        if (lang === activeTab) {
+          tab.classList.add('active-tab');
+        } else {
+          tab.classList.remove('active-tab');
+        }
+      });
+    }
+
+    function getFileExtension(type) {
+      switch (type) {
+        case 'html':
+          return 'html';
+        case 'css':
+          return 'css';
+        case 'js':
+          return 'js';
+        case 'txt':
+          return 'txt';
+        default:
+          return 'txt';
       }
     }
-    // New function for inserting snippets at the cursor position
-    function insertSnippet(snippet) {
-      const editor = document.getElementById('editor');
-      const start = editor.selectionStart;
-      const end = editor.selectionEnd;
-      // Insert the snippet at the cursor position
-      editor.value = editor.value.substring(0, start) + snippet + editor.value.substring(end);
-      
-      // Move the cursor to the end of the inserted snippet
-      editor.selectionStart = editor.selectionEnd = start + snippet.length;
-      // Trigger the input event to update the output
-      editor.dispatchEvent(new Event('input', { bubbles: true }));
-    }
-  function undo() {
-  const editor = document.getElementById('editor');
-  document.execCommand('undo');
-  updateOutput();
-  updateLineNumbers();
-  }
-  let currentSearchIndex = 0;
-function findTextDown() {
-  const editor = document.getElementById('editor');
-  const searchInput = document.getElementById('search-input');
-  const searchText = searchInput.value.trim();
-  if (searchText === '') {
-    return;
-  }
 
-  const editorContent = editor.value;
-  const searchRegex = new RegExp(searchText, 'gi');
-
-  // Find all occurrences of the search text
-  const matches = [...editorContent.matchAll(searchRegex)];
-  
-  if (matches.length > 0) {
-    const match = matches[currentSearchIndex % matches.length];
-    const startPos = match.index;
-    const endPos = startPos + searchText.length;
-    editor.setSelectionRange(startPos, endPos);
-    editor.focus();
-    // Move to the next occurrence
-    currentSearchIndex++;
-  } else {
-    // If no occurrences are found, reset the index
-    currentSearchIndex = 0;
-  }
-  }
-
-function copyToClipboard(text) {
-  const textarea = document.createElement('textarea');
-  textarea.value = text;
-  document.body.appendChild(textarea);
-  textarea.select();
-  
-  try {
-    return document.execCommand('copy');
-  } catch (error) {
-    console.error('Copy to clipboard failed:', error);
-    return false;
-  } finally {
-    document.body.removeChild(textarea);
-  }
-    }
     function runCode() {
       const htmlCode = codeMap['html'];
       const cssCode = codeMap['css'];
@@ -550,42 +515,6 @@ function copyToClipboard(text) {
       codeMap[activeTab] = editor.getValue();
       saveToLocalStorage();
     });
-
-      // Open the combined code in a new window
-      const newWindow = window.open();
-      newWindow.document.open();
-      newWindow.document.write(combinedCode);
-      newWindow.document.close();
-    }
-function toggleMenu() {
-  const menu = document.getElementById('menu');
-  const menuBtn = document.getElementById('menu-btn');
-  
-  if (menu.style.display === 'block') {
-    menu.style.display = 'none';
-  } else {
-    menu.style.display = 'block';
-    menu.style.left = menuBtn.offsetLeft + 'px'; // Position the menu horizontally below the button
-    menu.style.top = menuBtn.offsetTop + menuBtn.offsetHeight + 'px'; // Position the menu vertically below the button
-  }
-}
-// Function to open the link
-    function openLink() {
-      // Replace 'https://example.com' with the URL you want to open
-      window.location.href = 'https://shkumaraman.github.io';
-    }
-// Add event listeners for touch events to show and hide tooltips
-document.querySelectorAll('.tooltip').forEach(function (tooltipButton) {
-  tooltipButton.addEventListener('touchstart', function () {
-    // Show the tooltip
-    this.querySelector('.tooltiptext').style.visibility = 'visible';
-  });
-
-  tooltipButton.addEventListener('touchend', function () {
-    // Hide the tooltip
-    this.querySelector('.tooltiptext').style.visibility = 'hidden';
-  });
-});
   </script>
 </body>
 </html>
