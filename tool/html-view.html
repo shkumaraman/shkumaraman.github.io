@@ -463,11 +463,42 @@ function findTextDown() {
     cursor.from().ch = 0;
   }
 }
+let lastChange = null;
+
+editor.on('change', (instance, changeObj) => {
+  // Check if the change was a single character input or a delete action
+  if (changeObj.origin === '+input' || changeObj.origin === 'delete') {
+    // If the previous change was within 500 milliseconds and from the same origin,
+    // combine the changes into a single undo step
+    if (lastChange && Date.now() - lastChange.time < 500 && lastChange.origin === changeObj.origin) {
+      lastChange.text = changeObj.text + lastChange.text;
+      lastChange.to = changeObj.to;
+    } else {
+      lastChange = {
+        text: changeObj.text.join('\n'),
+        from: changeObj.from,
+        to: changeObj.to,
+        origin: changeObj.origin,
+        time: Date.now()
+      };
+    }
+  } else {
+    // For other types of changes, such as cut/copy/paste, treat them as separate undo steps
+    lastChange = null;
+  }
+});
+
 function undo() {
-  editor.undo();
+  if (lastChange) {
+    editor.replaceRange('', lastChange.from, lastChange.to, '+input');
+    lastChange = null;
+  } else {
+    editor.undo();
+  }
   updateOutput();
   updateLineNumbers();
 }
+
 
     function deleteCode() {
       editor.setValue('');
@@ -568,11 +599,6 @@ document.querySelectorAll('.tooltip').forEach(function (tooltipButton) {
     this.querySelector('.tooltiptext').style.visibility = 'hidden';
   });
 });
-
-    editor.on('change', () => {
-      codeMap[activeTab] = editor.getValue();
-      saveToLocalStorage();
-    });
   </script>
 </body>
 </html>
