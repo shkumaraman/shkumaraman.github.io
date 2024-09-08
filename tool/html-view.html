@@ -223,6 +223,30 @@
       visibility: visible;
       opacity: 1;
     }
+    #console-container {
+  display: flex;
+  flex-direction: column;
+  height: 200px;
+  border-top: 1px solid #ccc;
+  background-color: #333;
+  color: #fff;
+}
+#console-output {
+  flex: 1;
+  white-space: pre-wrap;
+  overflow-y: auto;
+}
+#clear-console-btn {
+  background-color: #444;
+  color: #fff;
+  border: none;
+  padding: 5px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+#clear-console-btn:hover {
+  background-color: #555;
+}
   </style>
 </head>
 <body>
@@ -278,6 +302,10 @@
   <div id="editor-container">
     <div id="line-numbers" onscroll="syncScroll()"></div>
     <textarea id="editor" oninput="updateOutput()" onscroll="syncScroll()" placeholder="Write Your code here..."></textarea>
+  </div>
+  <div id="console-container">
+  <div id="console-output" contenteditable="true" style="width: 100%; height: 200px; border: 1px solid #ccc; overflow-y: auto; padding: 10px; background-color: #333; color: #fff;"></div>
+  <button id="clear-console-btn">Clear Console</button>
   </div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/js/all.min.js" type="text/javascript"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -630,30 +658,34 @@ function copyToClipboard(text) {
   }
     }
     function runCode() {
-      // Get the HTML, CSS, and JavaScript code
-      const htmlCode = codeMap['html'];
-      const cssCode = codeMap['css'];
-      const jsCode = codeMap['js'];
+  const code = document.getElementById('editor').value;
+  const outputIframe = document.getElementById('output-iframe');
 
-      // Combine the code into a single HTML document
-      const combinedCode = `
-        <html>
-          <head>
-            <style>${cssCode}<\/style>
-          <\/head>
-          <body>
-            ${htmlCode}
-            <script>${jsCode}<\/script>
-          <\/body>
-        <\/html>
-      `;
-
-      // Open the combined code in a new window
-      const newWindow = window.open();
-      newWindow.document.open();
-      newWindow.document.write(combinedCode);
-      newWindow.document.close();
+  try {
+    // Clear previous output
+    clearConsole();
+    
+    // Create a new context to execute code
+    const script = new Blob([code], { type: 'text/javascript' });
+    const url = URL.createObjectURL(script);
+    
+    const iframe = document.createElement('iframe');
+    iframe.src = url;
+    document.body.appendChild(iframe);
+    
+    iframe.onload = () => {
+      const iframeWindow = iframe.contentWindow;
+      iframeWindow.console.log = logToConsole;
+      iframeWindow.console.error = (msg) => logToConsole(`Error: ${msg}`);
+      
+      iframe.remove();
+      URL.revokeObjectURL(url);
+    };
+  } catch (error) {
+    logToConsole(`Execution Error: ${error.message}`);
+  }
     }
+    
 function toggleMenu() {
   const menu = document.getElementById('menu');
   const menuBtn = document.getElementById('menu-btn');
@@ -683,7 +715,40 @@ document.querySelectorAll('.tooltip').forEach(function (tooltipButton) {
     this.querySelector('.tooltiptext').style.visibility = 'hidden';
   });
 });
+function logToConsole(message) {
+  const consoleOutput = document.getElementById('console-output');
+  consoleOutput.innerText += `${message}\n`;
+  consoleOutput.scrollTop = consoleOutput.scrollHeight; // Auto-scroll to the bottom
+}
 
+function clearConsole() {
+  document.getElementById('console-output').innerText = '';
+}
+
+// Clear console button event
+document.getElementById('clear-console-btn').addEventListener('click', clearConsole);
+
+function runCode() {
+  const code = document.getElementById('editor').value;
+  const outputIframe = document.getElementById('output-iframe');
+
+  try {
+    // Clear previous output
+    clearConsole();
+    
+    // Use eval for demonstration purposes; be cautious with eval in production code
+    const consoleLog = (msg) => logToConsole(msg);
+    const consoleError = (msg) => logToConsole(`Error: ${msg}`);
+    
+    outputIframe.contentWindow.console.log = consoleLog;
+    outputIframe.contentWindow.console.error = consoleError;
+    
+    const htmlContent = `${codeMap['html']}<style>${codeMap['css']}<\/style><script>${codeMap['js']}<\/script>`;
+    outputIframe.srcdoc = `<html><head></head><body>${htmlContent}</body></html>`;
+  } catch (error) {
+    logToConsole(`Execution Error: ${error.message}`);
+  }
+}
   </script>
 </body>
 </html>
