@@ -499,6 +499,10 @@
     <script src="https://unpkg.com/@dotlottie/player-component@latest/dist/dotlottie-player.mjs" type="module"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script>
+        const gstRate = 0.18; // 18% GST
+        const promoCode = "DISCOUNT10"; // Example promo code
+        const promoDiscount = 0.10; // 10% discount
+        
         const ccOptions = document.querySelectorAll('.cc-options input');
         ccOptions.forEach(option => {
             option.addEventListener('change', function() {
@@ -507,38 +511,58 @@
         });
 
         const planItems = document.querySelectorAll('.plan-item');
+        let selectedPlan = null;
         let selectedPlanPrice = 0;
 
         planItems.forEach(item => {
             item.addEventListener('click', function() {
                 planItems.forEach(i => i.classList.remove('selected'));
                 this.classList.add('selected');
-                selectedPlanPrice = this.querySelector('.plan-price').innerText.replace('₹', '');
+                selectedPlan = this.querySelector('.plan-title').innerText;
+                selectedPlanPrice = parseInt(this.querySelector('.plan-price').innerText.replace('₹', ''), 10);
+                
+                // Show summary and promo code section
+                document.getElementById('summary').classList.remove('hidden');
+                document.getElementById('promo-code-container').classList.remove('hidden');
+                
+                updateSummary();
             });
         });
 
+        document.getElementById('apply-promo').addEventListener('click', function() {
+            const promoInput = document.getElementById('promo-code').value;
+            const discount = promoInput === promoCode ? selectedPlanPrice * promoDiscount : 0;
+            updateSummary(discount);
+        });
+
+        function updateSummary(discount = 0) {
+            const gst = selectedPlanPrice * gstRate;
+            const totalPrice = selectedPlanPrice + gst - discount;
+
+            document.getElementById('selected-plan').innerText = selectedPlan;
+            document.getElementById('gst').innerText = `₹${gst.toFixed(2)}`;
+            document.getElementById('discount').innerText = `₹${discount.toFixed(2)}`;
+            document.getElementById('total-price').innerText = `₹${totalPrice.toFixed(2)}`;
+        }
+
         document.getElementById('payBtn').addEventListener('click', function() {
             if (selectedPlanPrice > 0) {
-                const upiLink = `upi://pay?pa=sharmajika@upi&am=${selectedPlanPrice}&pn=Carder&mc=0000&mode=02&purpose=00`;
+                const upiLink = `upi://pay?pa=sharmajika@upi&am=${document.getElementById('total-price').innerText.replace('₹', '')}&pn=Carder&mc=0000&mode=02&purpose=00`;
 
-                // Show loading first
                 document.getElementById('loading').classList.remove('hidden');
                 
                 setTimeout(function() {
                     document.getElementById('loading').classList.add('hidden');
                     document.getElementById('popup').classList.remove('hidden');
-                    document.querySelector('.overlay').style.display = 'block'; // Show overlay
-                    document.body.style.overflow = 'hidden'; // Disable background scrolling
-                    // Clear any previous QR code before generating a new one
+                    document.querySelector('.overlay').style.display = 'block';
+                    document.body.style.overflow = 'hidden';
                     document.getElementById("qrcode").innerHTML = "";
-                    // Generate the QR code from the UPI link
                     new QRCode(document.getElementById("qrcode"), upiLink);
 
-                    // Hide QR code after 60 seconds
                     setTimeout(function() {
                         document.getElementById('popup').classList.add('hidden');
-                        document.querySelector('.overlay').style.display = 'none'; // Hide overlay
-                        document.body.style.overflow = ''; // Enable background scrolling
+                        document.querySelector('.overlay').style.display = 'none';
+                        document.body.style.overflow = '';
                     }, 60000);
                 }, 2000);
             } else {
@@ -554,25 +578,24 @@
             });
         });
 
-  const text = "You Will Get Credit Card Details Here";
-  const textarea = document.getElementById('typewriter');
-  let index = 0;
+        const text = "You Will Get Credit Card Details Here";
+        const textarea = document.getElementById('typewriter');
+        let index = 0;
 
-  function typeWriter() {
-    if (index < text.length) {
-      textarea.value += text.charAt(index);
-      index++;
-    } else {
-      index = 0;
-      textarea.value = ''; // Clears the textarea to loop the text again
-    }
-    setTimeout(typeWriter, 100); // Adjust typing speed (100 ms delay)
-  }
+        function typeWriter() {
+            if (index < text.length) {
+                textarea.value += text.charAt(index);
+                index++;
+            } else {
+                index = 0;
+                textarea.value = '';
+            }
+            setTimeout(typeWriter, 100);
+        }
 
-  typeWriter(); // Start the typewriter effect
-        
-        // Set current year in the footer
+        typeWriter();
+
         document.getElementById('year').textContent = new Date().getFullYear();
-     </script>
+    </script>
 </body>
 </html>
