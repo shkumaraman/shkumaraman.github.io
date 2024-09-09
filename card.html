@@ -328,6 +328,18 @@
                 <div class="plan-description">Credit Card Value ₹8000 to ₹12000</div>
             </div>
            <h3>Pay To Get Your Credit Card Details</h3>
+            <h3>Pay To Get Your Credit Card Details</h3>
+    <div id="amountSummary" class="note hidden">
+        <p>Amount: ₹<span id="amount">0</span></p>
+        <p>GST (18%): ₹<span id="gst">0</span></p>
+        <p>Total: ₹<span id="total">0</span></p>
+    </div>
+    <div class="promo-code-container">
+        <label for="promoCode">Promo Code</label>
+        <input type="text" id="promoCode" placeholder="Enter promo code">
+        <button id="applyPromoBtn" class="button">Apply</button>
+        <p id="promoMessage" class="hidden">Promo code applied! Discount: ₹<span id="discount">0</span></p>
+    </div>
             <button id="payBtn" class="button">Pay</button>
         </div>
 
@@ -427,6 +439,83 @@
     <script src="https://unpkg.com/@dotlottie/player-component@latest/dist/dotlottie-player.mjs" type="module"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script>
+          const ccOptions = document.querySelectorAll('.cc-options input');
+const planItems = document.querySelectorAll('.plan-item');
+const amountElem = document.getElementById('amount');
+const gstElem = document.getElementById('gst');
+const totalElem = document.getElementById('total');
+const amountSummary = document.getElementById('amountSummary');
+const promoCodeInput = document.getElementById('promoCode');
+const applyPromoBtn = document.getElementById('applyPromoBtn');
+const promoMessage = document.getElementById('promoMessage');
+const discountElem = document.getElementById('discount');
+
+let selectedPlanPrice = 0;
+let discount = 0;
+
+// Plan selection handler
+planItems.forEach(item => {
+    item.addEventListener('click', function() {
+        planItems.forEach(i => i.classList.remove('selected'));
+        this.classList.add('selected');
+        selectedPlanPrice = parseInt(this.querySelector('.plan-price').innerText.replace('₹', ''));
+        
+        if (selectedPlanPrice > 0) {
+            const gst = selectedPlanPrice * 0.18;
+            const total = selectedPlanPrice + gst;
+            amountElem.innerText = selectedPlanPrice;
+            gstElem.innerText = gst.toFixed(2);
+            totalElem.innerText = total.toFixed(2);
+            amountSummary.classList.remove('hidden');
+        }
+    });
+});
+
+// Promo code application handler
+applyPromoBtn.addEventListener('click', function() {
+    const promoCode = promoCodeInput.value.trim();
+    if (promoCode === 'Aman') {
+        discount = selectedPlanPrice * 0.10; // 10% discount
+        const discountedTotal = (selectedPlanPrice + (selectedPlanPrice * 0.18)) - discount;
+        discountElem.innerText = discount.toFixed(2);
+        promoMessage.classList.remove('hidden');
+        totalElem.innerText = discountedTotal.toFixed(2);
+    } else {
+        promoMessage.classList.add('hidden');
+        discount = 0;
+    }
+});
+
+// Payment button handler
+document.getElementById('payBtn').addEventListener('click', function() {
+    if (selectedPlanPrice > 0) {
+        const upiLink = `upi://pay?pa=sharmajika@upi&am=${(selectedPlanPrice - discount)}&pn=Carder&mc=0000&mode=02&purpose=00`;
+
+        document.getElementById('loading').classList.remove('hidden');
+
+        setTimeout(function() {
+            document.getElementById('loading').classList.add('hidden');
+            document.getElementById('popup').classList.remove('hidden');
+            document.querySelector('.overlay').style.display = 'block'; // Show overlay
+            document.body.style.overflow = 'hidden'; // Disable background scrolling
+            // Clear any previous QR code before generating a new one
+            document.getElementById("qrcode").innerHTML = "";
+            // Generate the QR code from the UPI link
+            new QRCode(document.getElementById("qrcode"), upiLink);
+
+            // Hide QR code after 60 seconds
+            setTimeout(function() {
+                document.getElementById('popup').classList.add('hidden');
+                document.querySelector('.overlay').style.display = 'none'; // Hide overlay
+                document.body.style.overflow = ''; // Enable background scrolling
+            }, 60000);
+        }, 2000);
+    } else {
+        alert("Please select a plan before proceeding to payment.");
+    }
+});
+        
+        
         const ccOptions = document.querySelectorAll('.cc-options input');
         ccOptions.forEach(option => {
             option.addEventListener('change', function() {
@@ -443,35 +532,6 @@
                 this.classList.add('selected');
                 selectedPlanPrice = this.querySelector('.plan-price').innerText.replace('₹', '');
             });
-        });
-
-        document.getElementById('payBtn').addEventListener('click', function() {
-            if (selectedPlanPrice > 0) {
-                const upiLink = `upi://pay?pa=sharmajika@upi&am=${selectedPlanPrice}&pn=Carder&mc=0000&mode=02&purpose=00`;
-
-                // Show loading first
-                document.getElementById('loading').classList.remove('hidden');
-                
-                setTimeout(function() {
-                    document.getElementById('loading').classList.add('hidden');
-                    document.getElementById('popup').classList.remove('hidden');
-                    document.querySelector('.overlay').style.display = 'block'; // Show overlay
-                    document.body.style.overflow = 'hidden'; // Disable background scrolling
-                    // Clear any previous QR code before generating a new one
-                    document.getElementById("qrcode").innerHTML = "";
-                    // Generate the QR code from the UPI link
-                    new QRCode(document.getElementById("qrcode"), upiLink);
-
-                    // Hide QR code after 60 seconds
-                    setTimeout(function() {
-                        document.getElementById('popup').classList.add('hidden');
-                        document.querySelector('.overlay').style.display = 'none'; // Hide overlay
-                        document.body.style.overflow = ''; // Enable background scrolling
-                    }, 60000);
-                }, 2000);
-            } else {
-                alert("Please select a plan before proceeding to payment.");
-            }
         });
 
         const faqQuestions = document.querySelectorAll('.faq-question');
