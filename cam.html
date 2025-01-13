@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Camera UI</title>
+  <!-- Font Awesome CDN -->
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" rel="stylesheet">
+  <style>
+    /* General Styles */
+body {
+  margin: 0;
+  padding: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: #000;
+  height: 100vh;
+  font-family: Arial, sans-serif;
+}
+
+.camera-container {
+  position: relative;
+  width: 100%;
+  max-width: 400px;
+  height: 100%;
+  overflow: hidden;
+  background-color: #222;
+}
+
+/* Video Feed */
+#camera-feed {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Controls */
+.controls {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  justify-content: center;
+  padding: 0 10px;
+}
+
+.control-btn {
+  background: rgba(255, 255, 255, 0.8);
+  border: none;
+  padding: 12px;
+  border-radius: 50%;
+  font-size: 20px;
+  cursor: pointer;
+  transition: background 0.3s ease;
+}
+
+.control-btn:active {
+  background: rgba(255, 255, 255, 0.6);
+}
+
+/* Timer */
+.timer {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  font-size: 20px;
+  color: white;
+  background-color: rgba(0, 0, 0, 0.7);
+  padding: 5px 10px;
+  border-radius: 5px;
+}
+
+/* Bottom Controls */
+.bottom-controls {
+  position: absolute;
+  bottom: 20px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.control-btns {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  margin-bottom: 15px;
+}
+
+#zoom-slider {
+  width: 80%;
+  cursor: pointer;
+}
+
+/* Shutter and Record Buttons */
+.shutter-btn, .record-btn {
+  width: 70px;
+  height: 70px;
+  background: red;
+  border: 4px solid white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30px;
+  color: white;
+  cursor: pointer;
+  transition: background 0.3s ease;
+}
+
+.shutter-btn:active, .record-btn:active {
+  background: darkred;
+}
+
+/* Record Button - Active state */
+.record-btn.active {
+  background: green;
+}
+  </style>
+</head>
+<body>
+  <div class="camera-container">
+    <!-- Video Feed -->
+    <video id="camera-feed" autoplay playsinline></video>
+
+    <!-- Controls -->
+    <div class="controls">
+      <button id="switch-camera" class="control-btn"><i class="fas fa-sync-alt"></i></button>
+      <button id="mic-toggle" class="control-btn" style="display:none;"><i class="fas fa-microphone-slash"></i></button>
+    </div>
+
+    <!-- Timer Display -->
+    <div id="timer" class="timer" style="display:none;">00:00</div>
+
+    <!-- Shutter, Zoom and Video Controls -->
+    <div class="bottom-controls">
+      <div class="control-btns">
+        <button id="shutter-button" class="shutter-btn"><i class="fas fa-camera"></i></button>
+        <button id="record-button" class="record-btn"><i class="fas fa-video"></i></button>
+      </div>
+      <input type="range" id="zoom-slider" min="1" max="3" step="0.1" value="1">
+    </div>
+  </div>
+  <script>
+const video = document.getElementById('camera-feed');
+const shutterButton = document.getElementById('shutter-button');
+const switchCamera = document.getElementById('switch-camera');
+const zoomSlider = document.getElementById('zoom-slider');
+const recordButton = document.getElementById('record-button');
+const timerDisplay = document.getElementById('timer');
+const micToggle = document.getElementById('mic-toggle');
+
+let stream = null;
+let useFrontCamera = true;
+let track = null;
+let mediaRecorder = null;
+let recordedChunks = [];
+let isRecording = false;
+let recordingTime = 0;
+let recordingInterval = null;
+let isMicMuted = false;
+
+// Start Camera
+async function startCamera() {
+  const constraints = {
+    video: {
+      facingMode: useFrontCamera ? 'user' : 'environment',
+      width: { ideal: 1280 },
+      height: { ideal: 720 },
+    },
+    audio: !isMicMuted,
+  };
+
+  try {
+    stream = await navigator.mediaDevices.getUserMedia(constraints);
+    video.srcObject = stream;
+    track = stream.getVideoTracks()[0];
+  } catch (error) {
+    console.error('Error accessing camera:', error);
+  }
+}
+
+// Capture Photo
+shutterButton.addEventListener('click', () => {
+  const canvas = document.createElement('canvas');
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  const imageData = canvas.toDataURL('image/png');
+
+  // Download Image
+  const a = document.createElement('a');
+  a.href = imageData;
+  a.download = 'photo.png';
+  a.click();
+});
+
+// Switch Camera
+switchCamera.addEventListener('click', () => {
+  useFrontCamera = !useFrontCamera;
+  if (stream) {
+    stream.getTracks().forEach((track) => track.stop());
+  }
+  startCamera();
+});
+
+// Zoom Control
+zoomSlider.addEventListener('input', (event) => {
+  const zoom = event.target.value;
+  if (track) {
+    track.applyConstraints({
+      advanced: [{ zoom: zoom }],
+    });
+  }
+});
+
+// Toggle Mic
+micToggle.addEventListener('click', () => {
+  isMicMuted = !isMicMuted;
+  if (stream) {
+    const audioTrack = stream.getAudioTracks()[0];
+    if (audioTrack) {
+      audioTrack.enabled = !isMicMuted;
+      micToggle.innerHTML = isMicMuted ? '<i class="fas fa-microphone-slash"></i>' : '<i class="fas fa-microphone"></i>';
+    }
+  }
+});
+
+// Video Recording
+recordButton.addEventListener('click', () => {
+  if (isRecording) {
+    stopRecording();
+  } else {
+    startRecording();
+  }
+});
+
+// Start Recording
+function startRecording() {
+  recordedChunks = [];
+  mediaRecorder = new MediaRecorder(stream);
+  
+  mediaRecorder.ondataavailable = (event) => {
+    recordedChunks.push(event.data);
+  };
+
+  mediaRecorder.onstop = () => {
+    const blob = new Blob(recordedChunks, { type: 'video/webm' });
+    const url = URL.createObjectURL(blob);
+
+    // Download Video
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'video.webm';
+    a.click();
+  };
+
+  mediaRecorder.start();
+  isRecording = true;
+  recordButton.classList.add('active');
+  startTimer();
+  toggleMicControl(true);
+  toggleTimerDisplay(true);
+}
+
+// Stop Recording
+function stopRecording() {
+  mediaRecorder.stop();
+  isRecording = false;
+  recordButton.classList.remove('active');
+  stopTimer();
+  toggleMicControl(false);
+  toggleTimerDisplay(false);
+}
+
+// Timer Logic
+function startTimer() {
+  recordingTime = 0;
+  recordingInterval = setInterval(() => {
+    recordingTime++;
+    const minutes = Math.floor(recordingTime / 60);
+    const seconds = recordingTime % 60;
+    timerDisplay.textContent = `${formatTime(minutes)}:${formatTime(seconds)}`;
+  }, 1000);
+}
+
+function stopTimer() {
+  clearInterval(recordingInterval);
+  timerDisplay.textContent = '00:00';
+}
+
+function formatTime(time) {
+  return time < 10 ? `0${time}` : time;
+}
+
+// Show/Hide Timer and Mic Control
+function toggleTimerDisplay(show) {
+  timerDisplay.style.display = show ? 'block' : 'none';
+}
+
+function toggleMicControl(show) {
+  micToggle.style.display = show ? 'inline-block' : 'none';
+}
+
+// Initialize Camera
+startCamera();
+  </script>
+</body>
+</html>
