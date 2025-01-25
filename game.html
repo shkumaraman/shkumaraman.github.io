@@ -27,39 +27,6 @@
         let bottle = document.getElementById("bottle");
         let currentAngle = 0;
 
-        // Variables to store player names
-        let playerAName = '';
-        let playerBName = '';
-
-        // Show modal to get player names on page load
-        window.onload = () => {
-            document.getElementById("modal").style.display = "block"; // Show the modal
-
-            // Listen for form submission
-            document.getElementById("nameForm").addEventListener("submit", (e) => {
-                e.preventDefault();
-                playerAName = document.getElementById("playerAInput").value;
-                playerBName = document.getElementById("playerBInput").value;
-
-                if (playerAName && playerBName) {
-                    // Store player names in Firebase
-                    set(ref(db, 'game/players'), {
-                        A: playerAName,
-                        B: playerBName
-                    });
-
-                    // Update the displayed names in the UI
-                    document.getElementById("playerA").textContent = playerAName;
-                    document.getElementById("playerB").textContent = playerBName;
-
-                    // Hide modal after names are set
-                    document.getElementById("modal").style.display = "none";
-                } else {
-                    alert("Please enter both player names.");
-                }
-            });
-        };
-
         // 🌀 Spin Bottle & Save Data in Firebase
         function spinBottle() {
             let randomTurn = (Math.random() < 0.5 ? 1 : -1) * (720 + Math.floor(Math.random() * 360));
@@ -67,7 +34,7 @@
 
             bottle.style.transform = `translate(-50%, -50%) rotate(${currentAngle}deg)`;
 
-            // 🔥 When spin ends, update Firebase
+            // 🔥 जब स्पिन पूरी हो, तब Firebase को अपडेट करें
             bottle.addEventListener("transitionend", () => {
                 set(ref(db, "game/bottle"), { angle: currentAngle });
 
@@ -79,7 +46,7 @@
                     asker: asker,
                     answerer: answerer
                 });
-            }, { once: true }); // Ensure event triggers only once
+            }, { once: true }); // यह सुनिश्चित करेगा कि इवेंट सिर्फ एक बार ट्रिगर हो।
         }
 
         // 🔄 Sync Bottle Rotation in Real-Time
@@ -150,15 +117,49 @@
             });
         }
 
+        // 💬 Save Player Names
+        function savePlayerNames() {
+            const playerAName = document.getElementById("playerAName").value.trim();
+            const playerBName = document.getElementById("playerBName").value.trim();
+
+            if (playerAName && playerBName) {
+                set(ref(db, "game/players"), {
+                    A: playerAName,
+                    B: playerBName
+                });
+
+                document.getElementById("nameInputBox").style.display = "none"; // Hide name input box after submission
+                fetchPlayerNames();
+            } else {
+                alert("Please enter valid names for both players!");
+            }
+        }
+
+        // 🔄 Fetch Player Names from Firebase
+        function fetchPlayerNames() {
+            onValue(ref(db, "game/players"), snapshot => {
+                if (snapshot.exists()) {
+                    let data = snapshot.val();
+                    document.getElementById("playerANameDisplay").textContent = "Player A: " + data.A;
+                    document.getElementById("playerBNameDisplay").textContent = "Player B: " + data.B;
+                }
+            });
+        }
+
         // ✅ Start Syncing Data
         fetchRotation();
         fetchChat();
         window.spinBottle = spinBottle;
         window.sendQuestion = sendQuestion;
         window.sendChat = sendChat;
-
+        window.savePlayerNames = savePlayerNames;
     </script>
+
     <style>
+        * {
+            box-sizing: border-box;
+        }
+
         body {
             text-align: center;
             font-family: Arial, sans-serif;
@@ -171,44 +172,29 @@
             color: #333;
         }
 
-        /* Modal styles */
-        .modal {
-            display: none;
-            position: fixed;
-            z-index: 1;
-            left: 0;
-            top: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.5);
-            padding-top: 60px;
-        }
-
-        .modal-content {
-            background-color: #fff;
-            margin: 5% auto;
-            padding: 20px;
-            border-radius: 10px;
-            width: 80%;
-            max-width: 400px;
-        }
-
-        .modal input {
-            width: 100%;
+        .question-box {
+            background: white;
             padding: 10px;
-            margin: 10px 0;
+            border-radius: 5px;
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.1);
+            width: 90%;
+            max-width: 400px;
+            margin: 10px auto;
+            text-align: center;
+        }
+
+        /* 🛠 Flexbox for Input & Button */
+        .question-box div {
+            display: flex;
+            gap: 10px; /* Space between input & button */
+            justify-content: center;
+        }
+
+        .question-box input {
+            flex: 1;  /* Input takes available space */
+            padding: 10px;
             border-radius: 5px;
             border: 1px solid #ddd;
-        }
-
-        .modal button {
-            width: 100%;
-            padding: 10px;
-            background: #28a745;
-            color: white;
-            border: none;
-            cursor: pointer;
-            border-radius: 5px;
         }
 
         .game-area {
@@ -238,17 +224,6 @@
             transition: transform 2s ease-out;
         }
 
-        .question-box {
-            background: white;
-            padding: 10px;
-            border-radius: 5px;
-            box-shadow: 0 0 5px rgba(0, 0, 0, 0.1);
-            width: 90%;
-            max-width: 400px;
-            margin: 10px auto;
-            text-align: center;
-        }
-
         .chat-box {
             margin-top: 20px;
             background: white;
@@ -259,6 +234,23 @@
             max-width: 400px;
             margin: auto;
             text-align: center;
+        }
+
+        .chat-box input {
+            flex: 1;  /* Input takes available space */
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+        }
+
+        .question-box button,
+        .chat-box button {
+            padding: 10px 15px;
+            background: #28a745;
+            color: white;
+            border: none;
+            cursor: pointer;
+            border-radius: 5px;
         }
 
         #chatMessages {
@@ -276,28 +268,41 @@
             margin: 5px 0;
             text-align: left;
         }
+
+        .name-input-box {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .name-input-box input {
+            margin: 5px;
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+        }
+
+        .name-input-box button {
+            margin-top: 10px;
+        }
     </style>
 </head>
 <body>
 
-    <h2>🎲 Spin the Bottle</h2>
+    <h2>🎲 Spin Bottle</h2>
 
-    <!-- Modal for entering player names -->
-    <div id="modal" class="modal">
-        <div class="modal-content">
-            <h3>Enter Player Names</h3>
-            <form id="nameForm">
-                <input type="text" id="playerAInput" placeholder="Enter name for Player A" required>
-                <input type="text" id="playerBInput" placeholder="Enter name for Player B" required>
-                <button type="submit">Start Game</button>
-            </form>
-        </div>
+    <div class="name-input-box" id="nameInputBox">
+        <h3>Enter Player Names</h3>
+        <input type="text" id="playerAName" placeholder="Enter Player A's name">
+        <input type="text" id="playerBName" placeholder="Enter Player B's name">
+        <button onclick="savePlayerNames()">Start Game</button>
     </div>
 
     <div class="game-area">
-        <div class="player player-a" id="playerA">👤 Player A</div>
+        <div class="player player-a" id="playerANameDisplay">👤 Player A</div>
         <div class="bottle" id="bottle" onclick="spinBottle()">👆</div>
-        <div class="player player-b" id="playerB">👤 Player B</div>
+        <div class="player player-b" id="playerBNameDisplay">👤 Player B</div>
     </div>
 
     <div class="question-box" id="questionBox">
