@@ -7,7 +7,7 @@
     <script type="module">
         // 🔥 Firebase Import (V10+)
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getDatabase, ref, set, onValue, push } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+        import { getDatabase, ref, set, onValue, push, get } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
         // ✅ Firebase Config
         const firebaseConfig = {
@@ -26,28 +26,30 @@
 
         let bottle = document.getElementById("bottle");
         let currentAngle = 0;
+        let playerRole = ""; 
+        let playerName = localStorage.getItem("playerName");
 
         // 🌀 Spin Bottle & Save Data in Firebase
         function spinBottle() {
-    let randomTurn = (Math.random() < 0.5 ? 1 : -1) * (720 + Math.floor(Math.random() * 360));
-    currentAngle += randomTurn;
+            let randomTurn = (Math.random() < 0.5 ? 1 : -1) * (720 + Math.floor(Math.random() * 360));
+            currentAngle += randomTurn;
 
-    bottle.style.transform = `translate(-50%, -50%) rotate(${currentAngle}deg)`;
+            bottle.style.transform = `translate(-50%, -50%) rotate(${currentAngle}deg)`;
 
-    // 🔥 जब स्पिन पूरी हो, तब Firebase को अपडेट करें
-    bottle.addEventListener("transitionend", () => {
-        set(ref(db, "game/bottle"), { angle: currentAngle });
+            // 🔥 जब स्पिन पूरी हो, तब Firebase को अपडेट करें
+            bottle.addEventListener("transitionend", () => {
+                set(ref(db, "game/bottle"), { angle: currentAngle });
 
-        let isA = randomTurn > 0;
-        let asker = isA ? "B" : "A";
-        let answerer = isA ? "A" : "B";
+                let isA = randomTurn > 0;
+                let asker = isA ? "B" : "A";
+                let answerer = isA ? "A" : "B";
 
-        set(ref(db, "game/question"), {
-            asker: asker,
-            answerer: answerer
-        });
-    }, { once: true }); // यह सुनिश्चित करेगा कि इवेंट सिर्फ एक बार ट्रिगर हो।
-}
+                set(ref(db, "game/question"), {
+                    asker: asker,
+                    answerer: answerer
+                });
+            }, { once: true }); // यह सुनिश्चित करेगा कि इवेंट सिर्फ एक बार ट्रिगर हो।
+        }
 
         // 🔄 Sync Bottle Rotation in Real-Time
         function fetchRotation() {
@@ -98,24 +100,67 @@
 
         // 🔄 Sync Chat Messages in Real-Time
         function fetchChat() {
-    onValue(ref(db, "game/chat"), snapshot => {
-        let chatMessagesDiv = document.getElementById("chatMessages");
-        chatMessagesDiv.innerHTML = "";  // Clear existing messages first
-        
-        if (snapshot.exists()) {
-            snapshot.forEach(childSnapshot => {
-                let data = childSnapshot.val();
-                let messageDiv = document.createElement("div");
-                messageDiv.classList.add("chat-bubble");
-                messageDiv.textContent = data.sender + ": " + data.message;
-                chatMessagesDiv.appendChild(messageDiv);
+            onValue(ref(db, "game/chat"), snapshot => {
+                let chatMessagesDiv = document.getElementById("chatMessages");
+                chatMessagesDiv.innerHTML = "";  // Clear existing messages first
+                
+                if (snapshot.exists()) {
+                    snapshot.forEach(childSnapshot => {
+                        let data = childSnapshot.val();
+                        let messageDiv = document.createElement("div");
+                        messageDiv.classList.add("chat-bubble");
+                        messageDiv.textContent = data.sender + ": " + data.message;
+                        chatMessagesDiv.appendChild(messageDiv);
+                    });
+                    
+                    // Scroll to the bottom of the chat container to show the latest message
+                    chatMessagesDiv.scrollTop = chatMessagesDiv.scrollHeight;
+                }
             });
-            
-            // Scroll to the bottom of the chat container to show the latest message
-            chatMessagesDiv.scrollTop = chatMessagesDiv.scrollHeight;
         }
-    });
-}
+
+        // ✅ Sync Players' Names and Roles
+        async function syncPlayers() {
+            const playerRef = ref(db, "game/players");
+            const snapshot = await get(playerRef);
+            const players = snapshot.val();
+
+            if (!players) {
+                playerRole = "A";
+                set(playerRef, { A: playerName });  
+            } else if (!players.B) {
+                playerRole = "B";
+                set(playerRef, { A: players.A, B: playerName });
+            } else {
+                alert("Game is full!"); 
+                return;
+            }
+
+            document.getElementById("playerStatus").textContent = `You are Player ${playerRole} (${playerName})`;
+
+            document.querySelector(".player-a").textContent = `👤 Player A (${players.A || "Waiting..."})`;
+            document.querySelector(".player-b").textContent = `👤 Player B (${players.B || "Waiting..."})`;
+        }
+
+        // ✅ Join Game: Player enters their name and chooses role
+        function joinGame() {
+            let nameInput = document.getElementById("playerName").value.trim();
+
+            if (!nameInput) {
+                alert("Please enter your name!");
+                return;
+            }
+
+            localStorage.setItem("playerName", nameInput);
+            playerName = nameInput;
+
+            syncPlayers();
+        }
+
+        // ✅ Auto join if player has already entered their name
+        if (playerName) {
+            joinGame();
+        }
 
         // ✅ Start Syncing Data
         fetchRotation();
@@ -123,7 +168,6 @@
         window.spinBottle = spinBottle;
         window.sendQuestion = sendQuestion;
         window.sendChat = sendChat;
-
     </script>
     <style>
         body {
@@ -138,30 +182,34 @@
             color: #333;
         }
 
- .question-box {
-    background: white;
-    padding: 10px;
-    border-radius: 5px;
-    box-shadow: 0 0 5px rgba(0, 0, 0, 0.1);
-    width: 90%;
-    max-width: 400px;
-    margin: 10px auto;
-    text-align: center;
-}
+        .name-box {
+            margin-bottom: 20px;
+        }
 
-/* 🛠 Flexbox for Input & Button */
-.question-box div {
-    display: flex;
-    gap: 10px; /* Space between input & button */
-    justify-content: center;
-}
+        .question-box {
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.1);
+            width: 90%;
+            max-width: 400px;
+            margin: 10px auto;
+            text-align: center;
+        }
 
-.question-box input {
-    flex: 1;  /* Input takes available space */
-    padding: 10px;
-    border-radius: 5px;
-    border: 1px solid #ddd;
-}
+        /* 🛠 Flexbox for Input & Button */
+        .question-box div {
+            display: flex;
+            gap: 10px; /* Space between input & button */
+            justify-content: center;
+        }
+
+        .question-box input {
+            flex: 1;  /* Input takes available space */
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+        }
         .game-area {
             position: relative;
             width: 300px;
@@ -189,34 +237,34 @@
             transition: transform 2s ease-out;
         }
 
- .chat-box {
-    margin-top: 20px;
-    background: white;
-    padding: 10px;
-    border-radius: 5px;
-    box-shadow: 0 0 5px rgba(0, 0, 0, 0.1);
-    width: 90%;
-    max-width: 400px;
-    margin: auto;
-    text-align: center;
-}
+        .chat-box {
+            margin-top: 20px;
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.1);
+            width: 90%;
+            max-width: 400px;
+            margin: auto;
+            text-align: center;
+        }
 
-.chat-box input {
-    flex: 1;  /* Input takes available space */
-    padding: 10px;
-    border-radius: 5px;
-    border: 1px solid #ddd;
-}
+        .chat-box input {
+            flex: 1;  /* Input takes available space */
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+        }
 
-.question-box button,
-.chat-box button {
-    padding: 10px 15px;
-    background: #28a745;
-    color: white;
-    border: none;
-    cursor: pointer;
-    border-radius: 5px;
-}
+        .question-box button,
+        .chat-box button {
+            padding: 10px 15px;
+            background: #28a745;
+            color: white;
+            border: none;
+            cursor: pointer;
+            border-radius: 5px;
+        }
 
         #chatMessages {
             max-height: 200px;
@@ -233,9 +281,24 @@
             margin: 5px 0;
             text-align: left;
         }
+
+        .name-box input {
+            padding: 10px;
+            margin: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
     </style>
 </head>
 <body>
+
+    <!-- Player Name Input -->
+    <div class="name-box">
+        <h3>Enter Your Name</h3>
+        <input type="text" id="playerName" placeholder="Your Name">
+        <button onclick="joinGame()">Join Game</button>
+        <p id="playerStatus"></p>
+    </div>
 
     <h2>🎲 Spin Bottle</h2>
 
@@ -245,13 +308,13 @@
         <div class="player player-b">👤 Player B</div>
     </div>
 
-  <div class="question-box" id="questionBox">
-    <p><strong><span id="asker"></span></strong> will ask a question to <strong><span id="answerer"></span></strong>:</p>
-    <div>
-        <input type="text" id="questionInput" placeholder="Type your question...">
-        <button onclick="sendQuestion()">Ask</button>
+    <div class="question-box" id="questionBox">
+        <p><strong><span id="asker"></span></strong> will ask a question to <strong><span id="answerer"></span></strong>:</p>
+        <div>
+            <input type="text" id="questionInput" placeholder="Type your question...">
+            <button onclick="sendQuestion()">Ask</button>
+        </div>
     </div>
-</div>
   
     <div class="chat-box">
         <h3>💬 Chat</h3>
