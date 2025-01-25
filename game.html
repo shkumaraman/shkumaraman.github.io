@@ -5,38 +5,63 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Spin the Bottle - Multiplayer</title>
     <script type="module">
-        // 🔥 Firebase Import (V10+)
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getDatabase, ref, set, onValue, push, get } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
-        // ✅ Firebase Config
         const firebaseConfig = {
             apiKey: "AIzaSyDlWqb2PBVp7mmKs-Gm8fI3j0juQHUm9sU",
             authDomain: "game-a04fb.firebaseapp.com",
-            databaseURL: "https://game-a04fb-default-rtdb.asia-southeast1.firebasedatabase.app/", 
+            databaseURL: "https://game-a04fb-default-rtdb.asia-southeast1.firebasedatabase.app/",
             projectId: "game-a04fb",
             storageBucket: "game-a04fb.appspot.com",
             messagingSenderId: "554233744026",
             appId: "1:554233744026:web:12cd770f207aa46118"
         };
 
-        // 🔥 Firebase Initialize
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 
         let bottle = document.getElementById("bottle");
         let currentAngle = 0;
-        let playerRole = ""; 
-        let playerName = localStorage.getItem("playerName");
+
+        let playerName = localStorage.getItem('playerName'); // Get player name from local storage
+        let playerId = null;
+
+        // If player name is not set, show the name prompt
+        if (!playerName) {
+            let name = prompt("Enter your name:");
+            if (name) {
+                localStorage.setItem('playerName', name);
+                playerName = name;
+                setPlayerInDatabase();
+            }
+        }
+
+        // Update player info in Firebase
+        function setPlayerInDatabase() {
+            // Check if Player A or B exists and set player accordingly
+            get(ref(db, 'game/players')).then(snapshot => {
+                const players = snapshot.val() || {};
+                if (!players['A']) {
+                    playerId = 'A';
+                    set(ref(db, 'game/players/A'), playerName);
+                } else if (!players['B']) {
+                    playerId = 'B';
+                    set(ref(db, 'game/players/B'), playerName);
+                }
+
+                // Update player name in the UI
+                document.querySelector('.player-a').textContent = `👤 ${players['A'] || 'Player A'}`;
+                document.querySelector('.player-b').textContent = `👤 ${players['B'] || 'Player B'}`;
+            });
+        }
 
         // 🌀 Spin Bottle & Save Data in Firebase
         function spinBottle() {
             let randomTurn = (Math.random() < 0.5 ? 1 : -1) * (720 + Math.floor(Math.random() * 360));
             currentAngle += randomTurn;
-
             bottle.style.transform = `translate(-50%, -50%) rotate(${currentAngle}deg)`;
 
-            // 🔥 जब स्पिन पूरी हो, तब Firebase को अपडेट करें
             bottle.addEventListener("transitionend", () => {
                 set(ref(db, "game/bottle"), { angle: currentAngle });
 
@@ -48,7 +73,7 @@
                     asker: asker,
                     answerer: answerer
                 });
-            }, { once: true }); // यह सुनिश्चित करेगा कि इवेंट सिर्फ एक बार ट्रिगर हो।
+            }, { once: true });
         }
 
         // 🔄 Sync Bottle Rotation in Real-Time
@@ -119,57 +144,13 @@
             });
         }
 
-        // ✅ Sync Players' Names and Roles
-        async function syncPlayers() {
-            const playerRef = ref(db, "game/players");
-            const snapshot = await get(playerRef);
-            const players = snapshot.val();
-
-            if (!players) {
-                playerRole = "A";
-                set(playerRef, { A: playerName });  
-            } else if (!players.B) {
-                playerRole = "B";
-                set(playerRef, { A: players.A, B: playerName });
-            } else {
-                alert("Game is full!"); 
-                return;
-            }
-
-            document.getElementById("playerStatus").textContent = `You are Player ${playerRole} (${playerName})`;
-
-            document.querySelector(".player-a").textContent = `👤 Player A (${players.A || "Waiting..."})`;
-            document.querySelector(".player-b").textContent = `👤 Player B (${players.B || "Waiting..."})`;
-        }
-
-        // ✅ Join Game: Player enters their name and chooses role
-        function joinGame() {
-            let nameInput = document.getElementById("playerName").value.trim();
-
-            if (!nameInput) {
-                alert("Please enter your name!");
-                return;
-            }
-
-            localStorage.setItem("playerName", nameInput);
-            playerName = nameInput;
-
-            // Hide the name input popup after name is entered
-            document.getElementById("namePopup").style.display = "none";
-            syncPlayers();
-        }
-
-        // ✅ Auto join if player has already entered their name
-        if (playerName) {
-            joinGame();
-        }
-
         // ✅ Start Syncing Data
         fetchRotation();
         fetchChat();
         window.spinBottle = spinBottle;
         window.sendQuestion = sendQuestion;
         window.sendChat = sendChat;
+
     </script>
     <style>
         body {
@@ -182,50 +163,6 @@
         h2 {
             margin-bottom: 10px;
             color: #333;
-        }
-
-        .name-popup {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.5);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 100;
-        }
-
-        .name-box {
-            background-color: white;
-            padding: 20px;
-            border-radius: 5px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
-        }
-
-        .question-box {
-            background: white;
-            padding: 10px;
-            border-radius: 5px;
-            box-shadow: 0 0 5px rgba(0, 0, 0, 0.1);
-            width: 90%;
-            max-width: 400px;
-            margin: 10px auto;
-            text-align: center;
-        }
-
-        .question-box div {
-            display: flex;
-            gap: 10px; /* Space between input & button */
-            justify-content: center;
-        }
-
-        .question-box input {
-            flex: 1;
-            padding: 10px;
-            border-radius: 5px;
-            border: 1px solid #ddd;
         }
 
         .game-area {
@@ -268,7 +205,7 @@
         }
 
         .chat-box input {
-            flex: 1;
+            flex: 1;  /* Input takes available space */
             padding: 10px;
             border-radius: 5px;
             border: 1px solid #ddd;
@@ -302,15 +239,6 @@
     </style>
 </head>
 <body>
-    <!-- Name Popup -->
-    <div id="namePopup" class="name-popup">
-        <div class="name-box">
-            <h3>Enter Your Name</h3>
-            <input type="text" id="playerName" placeholder="Your Name">
-            <button onclick="joinGame()">Join Game</button>
-            <p id="playerStatus"></p>
-        </div>
-    </div>
 
     <h2>🎲 Spin Bottle</h2>
 
