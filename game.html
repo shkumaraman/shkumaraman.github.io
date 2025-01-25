@@ -29,42 +29,60 @@
 
         // 🌀 Spin Bottle & Save Data in Firebase
         function spinBottle() {
-            let randomTurn = (Math.random() < 0.5 ? 1 : -1) * (720 + Math.floor(Math.random() * 360));
-            currentAngle += randomTurn;
+    let randomTurn = (Math.random() < 0.5 ? 1 : -1) * (720 + Math.floor(Math.random() * 360));
+    currentAngle += randomTurn;
 
-            bottle.style.transform = `translate(-50%, -50%) rotate(${currentAngle}deg)`;
+    bottle.style.transform = `translate(-50%, -50%) rotate(${currentAngle}deg)`;
 
-            // ✅ Save in Firebase
-            set(ref(db, "game/bottle"), { angle: currentAngle });
+    // ✅ Save in Firebase
+    set(ref(db, "game/bottle"), { angle: currentAngle });
 
-            let isA = randomTurn > 0;
-            let asker = isA ? "B" : "A";
-            let answerer = isA ? "A" : "B";
+    // 🛠 Normalize angle between 0-359°
+    let normalizedAngle = (currentAngle % 360 + 360) % 360;
 
-            set(ref(db, "game/question"), {
-                asker: asker,
-                answerer: answerer
-            });
-        }
+    let asker = null, answerer = null;
+
+    if (normalizedAngle >= 350 || normalizedAngle <= 10) {
+        asker = "B";
+        answerer = "A";
+    } else if (normalizedAngle >= 80 && normalizedAngle <= 100) {
+        asker = "A";
+        answerer = "B";
+    }
+
+    if (asker && answerer) {
+        set(ref(db, "game/question"), {
+            asker: asker,
+            answerer: answerer
+        });
+    } else {
+        // ❌ Hide question box if no one is asking
+        set(ref(db, "game/question"), null);
+        document.getElementById("questionBox").style.display = "none";
+    }
+}
 
         // 🔄 Sync Bottle Rotation in Real-Time
         function fetchRotation() {
-            onValue(ref(db, "game/bottle"), snapshot => {
-                if (snapshot.exists()) {
-                    let data = snapshot.val();
-                    bottle.style.transform = `translate(-50%, -50%) rotate(${data.angle}deg)`;
-                }
-            });
-
-            onValue(ref(db, "game/question"), snapshot => {
-                if (snapshot.exists()) {
-                    let data = snapshot.val();
-                    document.getElementById("asker").textContent = "Player " + data.asker;
-                    document.getElementById("answerer").textContent = "Player " + data.answerer;
-                    document.getElementById("questionBox").style.display = "block";
-                }
-            });
+    onValue(ref(db, "game/bottle"), snapshot => {
+        if (snapshot.exists()) {
+            let data = snapshot.val();
+            bottle.style.transform = `translate(-50%, -50%) rotate(${data.angle}deg)`;
         }
+    });
+
+    onValue(ref(db, "game/question"), snapshot => {
+        let questionBox = document.getElementById("questionBox");
+        if (snapshot.exists()) {
+            let data = snapshot.val();
+            document.getElementById("asker").textContent = "Player " + data.asker;
+            document.getElementById("answerer").textContent = "Player " + data.answerer;
+            questionBox.style.display = "block";
+        } else {
+            questionBox.style.display = "none";
+        }
+    });
+}
 
         // 💬 Send Question
         function sendQuestion() {
