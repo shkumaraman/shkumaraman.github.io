@@ -373,6 +373,93 @@ let txtContent = localStorage.getItem('txtContent') || '';  // Load from localSt
         window.addEventListener("load", function () {
             loadDarkModePreference();
         });
+
+// Function to save all tab content to localStorage
+        function saveAllTabContent() {
+            localStorage.setItem('htmlContent', htmlContent);
+            localStorage.setItem('cssContent', cssContent);
+            localStorage.setItem('jsContent', jsContent);
+            localStorage.setItem('txtContent', txtContent);
+        }
+
+        // Function to change tabs
+        function changeTab(language) {
+            // Save current tab content before switching
+            saveCurrentTabContent();
+
+            // Remove the 'active-tab' class from all tabs
+            let tabs = document.querySelectorAll('.tab');
+            tabs.forEach(tab => {
+                tab.classList.remove('active-tab');
+            });
+
+            // Add the 'active-tab' class to the clicked tab
+            let activeTab = document.querySelector(`.tab:nth-child(${getTabIndex(language)})`);
+            activeTab.classList.add('active-tab');
+
+            // Switch content based on the tab clicked
+            if (language === 'html') {
+                editor.setModel(monaco.editor.createModel(htmlContent, 'html'));
+                editor.updateOptions({ language: 'html' });
+            } else if (language === 'css') {
+                editor.setModel(monaco.editor.createModel(cssContent, 'css'));
+                editor.updateOptions({ language: 'css' });
+            } else if (language === 'js') {
+                editor.setModel(monaco.editor.createModel(jsContent, 'javascript'));
+                editor.updateOptions({ language: 'javascript' });
+            } else if (language === 'txt') {
+                editor.setModel(monaco.editor.createModel(txtContent, 'text'));
+                editor.updateOptions({ language: 'text' });
+            }
+
+            // Save active tab in localStorage
+            localStorage.setItem('activeTab', language);
+        }
+
+        // Function to save content for the current tab
+        function saveCurrentTabContent() {
+            const activeTab = document.querySelector('.tab.active-tab').textContent.trim();
+
+            if (activeTab === 'HTML') {
+                htmlContent = editor.getValue();
+            } else if (activeTab === 'CSS') {
+                cssContent = editor.getValue();
+            } else if (activeTab === 'JS') {
+                jsContent = editor.getValue();
+            } else if (activeTab === 'TXT') {
+                txtContent = editor.getValue();
+            }
+
+            // Save all tab content to localStorage
+            saveAllTabContent();
+        }
+
+        // Function to get the index of the tab based on the language
+        function getTabIndex(language) {
+            switch (language) {
+                case 'html':
+                    return 1;
+                case 'css':
+                    return 2;
+                case 'js':
+                    return 3;
+                case 'txt':
+                    return 4;
+                default:
+                    return 1;
+            }
+        }
+
+        // Function to load the active tab and content from localStorage
+        function loadActiveTab() {
+            const activeTab = localStorage.getItem('activeTab') || 'html'; // Default to 'html' if no active tab
+            changeTab(activeTab); // Switch to the active tab
+        }
+
+        // Function to auto-update the output
+        function autoUpdateOutput() {
+            runCode();
+        }
         
 // Monaco editor initialization
 require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@latest/min/vs' } });
@@ -387,6 +474,16 @@ require(['vs/editor/editor.main'], function () {
     editor.setModel(monaco.editor.createModel(htmlContent, 'html'));
 });
 
+// Load the active tab and content on page load
+loadActiveTab();
+
+            // Auto-update output whenever the editor content changes
+            editor.onDidChangeModelContent(function () {
+                saveCurrentTabContent();
+                autoUpdateOutput();
+            });
+        });
+        
 // Function to change tabs
 function changeTab(language) {
     // Save content when switching to another tab
