@@ -327,7 +327,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs/loader.js"></script>
     <script>
-
 // Monaco Editor initialization
 let editor;
 let htmlContent = localStorage.getItem('htmlContent') || ''; // Load from localStorage if exists
@@ -335,17 +334,19 @@ let cssContent = localStorage.getItem('cssContent') || '';  // Load from localSt
 let jsContent = localStorage.getItem('jsContent') || '';   // Load from localStorage if exists
 let txtContent = localStorage.getItem('txtContent') || '';  // Load from localStorage if exists
 
+let activeTab = localStorage.getItem('activeTab') || 'html'; // Load active tab from localStorage
+
 // Monaco editor initialization
 require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@latest/min/vs' } });
 
 require(['vs/editor/editor.main'], function () {
     editor = monaco.editor.create(document.getElementById('editor-container'), {
-        language: 'html', // Default language is HTML
+        language: activeTab, // Use active tab language
         theme: 'vs-light', // Default theme
     });
 
     // Initialize editor with the loaded content from localStorage
-    editor.setModel(monaco.editor.createModel(htmlContent, 'html'));
+    setEditorContent(activeTab);
 });
 
 // Function to change tabs
@@ -360,26 +361,46 @@ function changeTab(language) {
     });
 
     // Add the 'active-tab' class to the clicked tab
-    let activeTab = document.querySelector(`.tab:nth-child(${getTabIndex(language)})`);
-    activeTab.classList.add('active-tab');
+    let activeTabElement = document.querySelector(`.tab:nth-child(${getTabIndex(language)})`);
+    activeTabElement.classList.add('active-tab');
 
     // Switch content based on the tab clicked
-    if (language === 'html') {
-        editor.setModel(monaco.editor.createModel(htmlContent, 'html'));
-        editor.updateOptions({ language: 'html' });
-    } else if (language === 'css') {
-        editor.setModel(monaco.editor.createModel(cssContent, 'css'));
-        editor.updateOptions({ language: 'css' });
-    } else if (language === 'js') {
-        editor.setModel(monaco.editor.createModel(jsContent, 'javascript'));
-        editor.updateOptions({ language: 'javascript' });
-    } else if (language === 'txt') {
-        editor.setModel(monaco.editor.createModel(txtContent, 'text'));
-        editor.updateOptions({ language: 'text' });
-    }
-    
+    setEditorContent(language);
+
     // Save active tab in localStorage
     localStorage.setItem('activeTab', language);
+}
+
+// Function to set editor content based on active tab
+function setEditorContent(language) {
+    let content;
+    switch (language) {
+        case 'html':
+            content = htmlContent;
+            editor.setModel(monaco.editor.createModel(content, 'html'));
+            editor.updateOptions({ language: 'html' });
+            break;
+        case 'css':
+            content = cssContent;
+            editor.setModel(monaco.editor.createModel(content, 'css'));
+            editor.updateOptions({ language: 'css' });
+            break;
+        case 'js':
+            content = jsContent;
+            editor.setModel(monaco.editor.createModel(content, 'javascript'));
+            editor.updateOptions({ language: 'javascript' });
+            break;
+        case 'txt':
+            content = txtContent;
+            editor.setModel(monaco.editor.createModel(content, 'text'));
+            editor.updateOptions({ language: 'text' });
+            break;
+        default:
+            content = '';
+            editor.setModel(monaco.editor.createModel(content, 'text'));
+            editor.updateOptions({ language: 'text' });
+            break;
+    }
 }
 
 // Function to save content for the current tab
@@ -420,26 +441,19 @@ function getTabIndex(language) {
 // Save content when the editor content changes
 editor.onDidChangeModelContent(function () {
     saveCurrentTabContent();
+    autoUpdateOutput(); // Automatically update output when content changes
 });
 
-// Function to load the active tab from localStorage
-function loadActiveTab() {
-    const activeTab = localStorage.getItem('activeTab') || 'html'; // Default to 'html' if no active tab
-    changeTab(activeTab); // Switch to the active tab
-}
-
-// Call loadActiveTab when the page loads to restore the last active tab
-window.onload = loadActiveTab;
-
-// Function to run code
+// Function to run code on button click
 function runCode() {
-    // Create a complete HTML structure and inject HTML, CSS, JS code accordingly
+    const activeTab = localStorage.getItem('activeTab') || 'html'; // Get the active tab from localStorage
+
     let iframe = document.getElementById('output-frame');
     let iframeDoc = iframe.contentWindow.document;
-
+    
     iframeDoc.open();
-
-    // Complete HTML structure with HTML, CSS, and JS combined
+    
+    // Create a complete HTML structure and inject content based on active tab
     iframeDoc.write(`
     <!DOCTYPE html>
     <html lang="en">
@@ -462,6 +476,23 @@ function runCode() {
 
     iframeDoc.close();
 }
+
+// Automatically update output when content changes
+function autoUpdateOutput() {
+    const activeTab = localStorage.getItem('activeTab') || 'html'; // Get the active tab from localStorage
+    if (activeTab === 'html' || activeTab === 'css' || activeTab === 'js') {
+        runCode();
+    }
+}
+
+// Function to load the active tab from localStorage
+function loadActiveTab() {
+    const activeTab = localStorage.getItem('activeTab') || 'html'; // Default to 'html' if no active tab
+    changeTab(activeTab); // Switch to the active tab
+}
+
+// Call loadActiveTab when the page loads to restore the last active tab
+window.onload = loadActiveTab;
         
         // Function to insert text snippets
         function insertSnippet(snippet) {
