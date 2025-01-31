@@ -332,7 +332,12 @@
     <script>
 let editor;
 
-// Monaco Editor initialize karna
+// Variables to store content for each language
+let htmlContent = '';
+let cssContent = '';
+let jsContent = '';
+        
+// Monaco editor initialization
 require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@latest/min/vs' } });
 
 require(['vs/editor/editor.main'], function () {
@@ -340,9 +345,12 @@ require(['vs/editor/editor.main'], function () {
         language: 'html', // Default language to HTML
         theme: 'vs-light', // Default theme
     });
+
+    // Initially set content for HTML tab
+    htmlContent = editor.getValue();
 });
 
-    // Function to change tabs
+// Function to change tabs
 function changeTab(language) {
     // First, remove the 'active-tab' class from all tabs
     let tabs = document.querySelectorAll('.tab');
@@ -353,6 +361,15 @@ function changeTab(language) {
     // Then, add the 'active-tab' class to the clicked tab
     let activeTab = document.querySelector(`.tab:nth-child(${getTabIndex(language)})`);
     activeTab.classList.add('active-tab');
+
+    // Update the Monaco editor language and content based on selected tab
+    if (language === 'html') {
+        editor.setModel(monaco.editor.createModel(htmlContent, 'html'));
+    } else if (language === 'css') {
+        editor.setModel(monaco.editor.createModel(cssContent, 'css'));
+    } else if (language === 'js') {
+        editor.setModel(monaco.editor.createModel(jsContent, 'javascript'));
+    }
 }
 
 // Function to get the index of the tab based on the language
@@ -371,26 +388,21 @@ function getTabIndex(language) {
     }
 }
 
+// Update content when editor changes
+editor.onDidChangeModelContent(function () {
+    const activeTab = document.querySelector('.tab.active-tab').textContent;
+    
+    if (activeTab === 'HTML') {
+        htmlContent = editor.getValue();
+    } else if (activeTab === 'CSS') {
+        cssContent = editor.getValue();
+    } else if (activeTab === 'JS') {
+        jsContent = editor.getValue();
+    }
+});
+
 // Function to run code
 function runCode() {
-    let htmlCode = "";
-    let cssCode = "";
-    let jsCode = "";
-
-    // Get the HTML, CSS, and JS code regardless of which tab is active
-    htmlCode = document.querySelector('.tab:nth-child(1)').classList.contains('active-tab') ? editor.getValue() : "";
-    cssCode = document.querySelector('.tab:nth-child(2)').classList.contains('active-tab') ? editor.getValue() : "";
-    jsCode = document.querySelector('.tab:nth-child(3)').classList.contains('active-tab') ? editor.getValue() : "";
-
-    // Get the content of all the tabs
-    const activeTab = document.querySelector('.tab.active-tab').textContent; // Get the active tab text
-    if (activeTab === "HTML") {
-        htmlCode = editor.getValue(); // Get the HTML code
-    } else if (activeTab === "CSS") {
-        cssCode = editor.getValue(); // Get the CSS code
-    } else if (activeTab === "JS") {
-        jsCode = editor.getValue(); // Get the JS code
-    }
     // Create a complete HTML structure and inject HTML, CSS, JS code accordingly
     let iframe = document.getElementById('output-frame');
     let iframeDoc = iframe.contentWindow.document;
@@ -406,13 +418,13 @@ function runCode() {
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Output</title>
         <style>
-            ${cssCode} <!-- Inject CSS -->
+            ${cssContent} <!-- Inject CSS -->
         </style>
     </head>
     <body>
-        ${htmlCode} <!-- Inject HTML -->
+        ${htmlContent} <!-- Inject HTML -->
         <script>
-            ${jsCode} <!-- Inject JS -->
+            ${jsContent} <!-- Inject JS -->
         <\/script>
     </body>
     </html>
@@ -420,7 +432,7 @@ function runCode() {
 
     iframeDoc.close();
 }
-
+        
         // Function to insert text snippets
         function insertSnippet(snippet) {
             editor.trigger('keyboard', 'type', { text: snippet });
