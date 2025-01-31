@@ -684,31 +684,77 @@ document.querySelectorAll('.tooltip').forEach(function(button) {
     });
 });
 
-        
-// Function to download file based on active tab content
-        function downloadFile() {
-            const content = editor.getValue();  // Get content of editor
-            const language = monaco.editor.getModel(editor.getModel()).getModeId();  // Get active language
+// Function to download the active tab content as a file
+function downloadFile() {
+    const activeTab = document.querySelector('.tab.active-tab').textContent.trim().toLowerCase();
+    let fileContent = '';
+    let fileName = '';
 
-            let fileExtension = '';
-            if (language === 'html') {
-                fileExtension = 'html';
-            } else if (language === 'css') {
-                fileExtension = 'css';
-            } else if (language === 'javascript') {
-                fileExtension = 'js';
-            } else if (language === 'txt') {
-                fileExtension = 'txt';
-            }
-
-            const blob = new Blob([content], { type: 'text/plain' });
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(blob);
-            link.download = `file.${fileExtension}`;  // Set the file name based on the language
-
-            // Trigger the download
-            link.click();
+    if (activeTab === 'html') {
+        fileContent = htmlContent;  // Content for HTML
+        fileName = 'index.html';
+    } else if (activeTab === 'css') {
+        fileContent = cssContent;  // Content for CSS
+        fileName = 'style.css';
+    } else if (activeTab === 'js') {
+        fileContent = jsContent;  // Content for JS
+        fileName = 'script.js';
+    } else if (activeTab === 'txt') {
+        const textContent = editor.getValue();  // Content for TXT
+        // Check if the text content is valid JSON
+        try {
+            JSON.parse(textContent);
+            fileContent = textContent;  // If valid JSON, treat it as JSON
+            fileName = 'text.json';
+        } catch (e) {
+            fileContent = textContent;  // If not valid JSON, treat it as plain text
+            fileName = 'text.txt';
         }
+    }
+
+    // Create a Blob from the content and download it
+    const blob = new Blob([fileContent], { type: 'text/plain' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = fileName;
+    link.click();
+}
+
+// Function to download all tabs as a ZIP file
+function downloadAllTabs() {
+    const zip = new JSZip();
+
+    // Add HTML file to zip
+    zip.file("index.html", htmlContent);
+
+    // Add CSS file to zip
+    zip.file("style.css", cssContent);
+
+    // Add JS file to zip
+    zip.file("script.js", jsContent);
+
+    // Add TXT/JSON file to zip based on the current content of the text editor
+    const activeTab = document.querySelector('.tab.active-tab').textContent.trim().toLowerCase();
+    let textContent = '';
+    if (activeTab === 'txt') {
+        textContent = editor.getValue();
+        // Check if the text content is valid JSON
+        try {
+            JSON.parse(textContent);
+            zip.file("text.json", textContent); // If valid JSON, save as .json
+        } catch (e) {
+            zip.file("text.txt", textContent); // If not valid JSON, save as .txt
+        }
+    }
+
+    // Generate the zip file and trigger download
+    zip.generateAsync({ type: "blob" }).then(function (content) {
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(content);
+        link.download = 'files.zip';
+        link.click();
+    });
+}
     </script>
 </body>
 </html>
