@@ -252,7 +252,13 @@
         display: none;
     }
 }
-
+        
+/* Monaco Editor ke liye custom highlight */
+.highlight-match {
+    background-color: yellow !important;
+    color: black !important;
+    font-weight: bold;
+}
     </style>
 </head>
 <body>
@@ -424,25 +430,30 @@ function getTabIndex(language) {
 
  function findTextDown() {
     let searchText = document.getElementById("search-input").value.trim();
-    let editorContainer = document.getElementById("editor-container"); 
+    if (!searchText) return;
 
-    if (!searchText) return; // Agar search box empty hai to kuch mat karo.
+    let editor = monaco.editor.getEditors()[0]; // Monaco ka instance le rahe hain
+    let model = editor.getModel(); // Editor ka model fetch karna
+    let matches = model.findMatches(searchText, false, false, true, null, true);
 
-    // Pehle se existing highlights remove karna
-    let text = editorContainer.innerHTML.replace(/<mark>(.*?)<\/mark>/g, "$1");
-    editorContainer.innerHTML = text;
-
-    // Search aur Highlight karna
-    let regex = new RegExp(searchText, "gi"); // Global & Case-Insensitive search
-    let newText = text.replace(regex, (match) => `<mark>${match}</mark>`);
-
-    if (newText !== text) {
-        editorContainer.innerHTML = newText;
-    } else {
-        alert("Text not found!"); // Agar text nahi mila
+    if (matches.length === 0) {
+        alert("Text not found!");
+        return;
     }
-}
 
+    // First match ko scroll & highlight karega
+    let range = matches[0].range;
+    editor.setSelection(range);
+    editor.revealRangeInCenter(range);
+
+    // 🔥 Optional: Agar aap sabhi matches ko highlight karna chahte hain:
+    let decorations = matches.map(match => ({
+        range: match.range,
+        options: { inlineClassName: "highlight-match" } // Custom CSS Class for highlights
+    }));
+    editor.createDecorationsCollection(decorations);
+ }
+        
         function undo() {
             editor.trigger('keyboard', 'undo', {});
         }
