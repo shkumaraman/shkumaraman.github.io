@@ -329,10 +329,11 @@
     <script>
 // Monaco Editor initialization
 let editor;
-let htmlContent = ''; // Stores HTML content
-let cssContent = '';  // Stores CSS content
-let jsContent = '';   // Stores JS content
-let txtContent = '';  // Stores TXT content
+let htmlContent = localStorage.getItem('htmlContent') || ''; // Retrieve from localStorage or default to empty
+let cssContent = localStorage.getItem('cssContent') || '';  // Retrieve from localStorage or default to empty
+let jsContent = localStorage.getItem('jsContent') || '';    // Retrieve from localStorage or default to empty
+let txtContent = localStorage.getItem('txtContent') || '';  // Retrieve from localStorage or default to empty
+let activeTab = localStorage.getItem('activeTab') || 'html'; // Retrieve active tab or default to 'html'
 
 // Monaco editor initialization
 require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@latest/min/vs' } });
@@ -343,8 +344,8 @@ require(['vs/editor/editor.main'], function () {
         theme: 'vs-light', // Default theme
     });
 
-    // Initialize with an empty model (you can remove this or use default content)
-    editor.setModel(monaco.editor.createModel(htmlContent, 'html'));
+    // Initialize with the stored content for the active tab
+    setEditorContent(activeTab);
 });
 
 // Function to change tabs
@@ -352,76 +353,84 @@ function changeTab(language) {
     // Save content when switching to another tab
     saveCurrentTabContent();
 
-    // Remove the 'active-tab' class from all tabs
-    let tabs = document.querySelectorAll('.tab');
-    tabs.forEach(tab => {
-        tab.classList.remove('active-tab');
-    });
-
-    // Add the 'active-tab' class to the clicked tab
-    let activeTab = document.querySelector(`.tab:nth-child(${getTabIndex(language)})`);
-    activeTab.classList.add('active-tab');
+    // Update the active tab in localStorage
+    localStorage.setItem('activeTab', language);
 
     // Switch content based on the tab clicked
-    if (language === 'html') {
-        editor.setModel(monaco.editor.createModel(htmlContent, 'html'));
-        editor.updateOptions({ language: 'html' });
-    } else if (language === 'css') {
-        editor.setModel(monaco.editor.createModel(cssContent, 'css'));
-        editor.updateOptions({ language: 'css' });
-    } else if (language === 'js') {
-        editor.setModel(monaco.editor.createModel(jsContent, 'javascript'));
-        editor.updateOptions({ language: 'javascript' });
-    } else if (language === 'txt') {
-        editor.setModel(monaco.editor.createModel(txtContent, 'text'));
-        editor.updateOptions({ language: 'text' });
+    setEditorContent(language);
+
+    // Mark the clicked tab as active
+    updateTabActiveState(language);
+}
+
+// Function to set content in the editor based on the tab
+function setEditorContent(language) {
+    switch (language) {
+        case 'html':
+            editor.setModel(monaco.editor.createModel(htmlContent, 'html'));
+            editor.updateOptions({ language: 'html' });
+            break;
+        case 'css':
+            editor.setModel(monaco.editor.createModel(cssContent, 'css'));
+            editor.updateOptions({ language: 'css' });
+            break;
+        case 'js':
+            editor.setModel(monaco.editor.createModel(jsContent, 'javascript'));
+            editor.updateOptions({ language: 'javascript' });
+            break;
+        case 'txt':
+            editor.setModel(monaco.editor.createModel(txtContent, 'text'));
+            editor.updateOptions({ language: 'text' });
+            break;
+        default:
+            editor.setModel(monaco.editor.createModel(htmlContent, 'html'));
+            editor.updateOptions({ language: 'html' });
+            break;
     }
 }
 
 // Function to save content for the current tab
 function saveCurrentTabContent() {
-    const activeTab = document.querySelector('.tab.active-tab').textContent.trim();
+    const activeTab = localStorage.getItem('activeTab');
 
-    if (activeTab === 'HTML') {
+    if (activeTab === 'html') {
         htmlContent = editor.getValue();
-    } else if (activeTab === 'CSS') {
+        localStorage.setItem('htmlContent', htmlContent);
+    } else if (activeTab === 'css') {
         cssContent = editor.getValue();
-    } else if (activeTab === 'JS') {
+        localStorage.setItem('cssContent', cssContent);
+    } else if (activeTab === 'js') {
         jsContent = editor.getValue();
-    } else if (activeTab === 'TXT') {
+        localStorage.setItem('jsContent', jsContent);
+    } else if (activeTab === 'txt') {
         txtContent = editor.getValue();
-    }
-}
-        // Function to get the index of the tab based on the language
-function getTabIndex(language) {
-    switch (language) {
-        case 'html':
-            return 1;
-        case 'css':
-            return 2;
-        case 'js':
-            return 3;
-        case 'txt':
-            return 4;
-        default:
-            return 1;
+        localStorage.setItem('txtContent', txtContent);
     }
 }
 
-// Save content when the editor content changes
+// Function to update active tab styling
+function updateTabActiveState(language) {
+    let tabs = document.querySelectorAll('.tab');
+    tabs.forEach(tab => {
+        tab.classList.remove('active-tab');
+    });
+    document.querySelector(`.tab[data-language="${language}"]`).classList.add('active-tab');
+}
+
+// Save content when the editor content changes (to sync with localStorage)
 editor.onDidChangeModelContent(function () {
     saveCurrentTabContent();
+    updateOutput();  // Automatically update output when content changes
 });
-        
-// Function to run code
-function runCode() {
-    // Create a complete HTML structure and inject HTML, CSS, JS code accordingly
+
+// Automatically update output whenever content changes
+function updateOutput() {
     let iframe = document.getElementById('output-frame');
     let iframeDoc = iframe.contentWindow.document;
 
     iframeDoc.open();
 
-    // Complete HTML structure with HTML, CSS, and JS combined
+    // Write HTML, CSS, and JS into the iframe
     iframeDoc.write(`
     <!DOCTYPE html>
     <html lang="en">
@@ -443,6 +452,11 @@ function runCode() {
     `);
 
     iframeDoc.close();
+}
+
+// Function to run code when clicking 'Run' button
+function runCode() {
+    updateOutput(); // Trigger the same update as on content change
 }
         
         // Function to insert text snippets
