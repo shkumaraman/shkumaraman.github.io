@@ -331,7 +331,9 @@
     </div>
 
     <div id="editor-container"></div>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.4.4/lz-string.min.js"></script>
+    <!-- Add Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-firestore.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs/loader.js"></script>
     <script>
@@ -819,69 +821,84 @@ function downloadAllTabs() {
     });
 }
 
-    async function shareCode() {
-    // **Editor se current content lo**
-    let html = localStorage.getItem('htmlContent') || '';
-    let css = localStorage.getItem('cssContent') || '';
-    let js = localStorage.getItem('jsContent') || '';
-    let txt = localStorage.getItem('txtContent') || '';
+// Firebase Initialization
+const firebaseConfig = {
+  apiKey: "AIzaSyB6xIvMKaNCay35RfU_qb0VfpOTZGMDVY4",
+  authDomain: "code-editor-71f35.firebaseapp.com",
+  projectId: "code-editor-71f35",
+  storageBucket: "code-editor-71f35.firebasestorage.app",
+  messagingSenderId: "311275528904",
+  appId: "1:311275528904:web:f035b3dc78bd4a6f51fbfd"
+};
 
-    // **Compress code using LZString**
-    let compressedData = LZString.compressToEncodedURIComponent(JSON.stringify({ html, css, js, txt }));
+const app = firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore(app);
 
-    // **Generate shareable link**
-    let shareURL = `${window.location.origin}${window.location.pathname}?code=${compressedData}`;
+// Function to save code to Firestore and get a unique ID
+async function saveCode() {
+    const html = localStorage.getItem('htmlContent') || '';
+    const css = localStorage.getItem('cssContent') || '';
+    const js = localStorage.getItem('jsContent') || '';
+    const txt = localStorage.getItem('txtContent') || '';
 
-    // **Shorten URL using TinyURL API (Optional)**
-    let shortURL = await shortenURL(shareURL);
-
-    // **Web Share API ya Clipboard se Share Karega**
-    if (navigator.share) {
-        navigator.share({
-            title: "Check out this code!",
-            url: shortURL
-        }).catch(err => console.error("Sharing failed:", err));
-    } else {
-        navigator.clipboard.writeText(shortURL).then(() => {
-            alert("Link copied! Share it with anyone.");
-        }).catch(err => console.error("Copy failed:", err));
-    }
-}
-
-// **URL Shortener Function (Using TinyURL API)**
-async function shortenURL(longURL) {
     try {
-        let response = await fetch(`https://api.tinyurl.com/create?api_token=n5efjjrd7YELB97QD6NgO5OzVQRZ3Lta61ohA4hV7tWs4hdDd0NmN1tj8BNp`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ url: longURL })
+        // Save the code to Firestore
+        const docRef = await db.collection('codes').add({
+            html,
+            css,
+            js,
+            txt
         });
-        let data = await response.json();
-        return data.data.tiny_url || longURL; // Return short URL or original if failed
+
+        const codeId = docRef.id;  // Get the unique ID of the saved document
+        const shareURL = `${window.location.origin}/view.html?id=${codeId}`;  // Shareable URL
+        alert(`Code saved! Share this link: ${shareURL}`);
+
+        // Optionally, you can share the link using the Web Share API or copy it
+        if (navigator.share) {
+            navigator.share({
+                title: "Check out this code!",
+                url: shareURL
+            }).catch(err => console.error("Sharing failed:", err));
+        } else {
+            navigator.clipboard.writeText(shareURL).then(() => {
+                alert("Link copied! Share it with anyone.");
+            }).catch(err => console.error("Copy failed:", err));
+        }
     } catch (error) {
-        console.error("URL Shortening Failed:", error);
-        return longURL; // Fallback to long URL
+        console.error("Error saving code:", error);
+    }
+}
+        
+// Function to load code from Firestore using ID
+async function loadCodeFromFirestore() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const codeId = urlParams.get('id');
+
+    if (codeId) {
+        try {
+            const docRef = db.collection('codes').doc(codeId);
+            const doc = await docRef.get();
+            if (doc.exists) {
+                const codeData = doc.data();
+                localStorage.setItem('htmlContent', codeData.html);
+                localStorage.setItem('cssContent', codeData.css);
+                localStorage.setItem('jsContent', codeData.js);
+                localStorage.setItem('txtContent', codeData.txt);
+
+                // Load content into the Monaco editor
+                editor.setModel(monaco.editor.createModel(codeData.html, 'html')); // Default to HTML
+            } else {
+                console.error("No such document!");
+            }
+        } catch (error) {
+            console.error("Error loading code:", error);
+        }
     }
 }
 
-// **Agar koi Shared Link Open Kare, toh Code Load Kare**
-window.addEventListener("load", function () {
-    let urlParams = new URLSearchParams(window.location.search);
-    let codeParam = urlParams.get("code");
-
-    if (codeParam) {
-        let decompressedData = JSON.parse(LZString.decompressFromEncodedURIComponent(codeParam));
-
-        // **Set values in localStorage**
-        localStorage.setItem('htmlContent', decompressedData.html);
-        localStorage.setItem('cssContent', decompressedData.css);
-        localStorage.setItem('jsContent', decompressedData.js);
-        localStorage.setItem('txtContent', decompressedData.txt);
-
-        // **Load into Editor**
-        editor.setModel(monaco.editor.createModel(decompressedData.html, 'html')); // Default: Load HTML
-    }
-});
+// Load code when the page is loaded
+window.addEventListener("load", loadCodeFromFirestore);
         
     </script>
 </body>
