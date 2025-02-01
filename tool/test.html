@@ -819,86 +819,93 @@ function downloadAllTabs() {
         link.click();
     });
 }
-    
+
+// Monaco Editor Setup
+require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@latest/min/vs' } });
+let editor;
+
+require(['vs/editor/editor.main'], function () {
+    // Monaco editor initialization
+    editor = monaco.editor.create(document.getElementById('editor-container'), {
+        language: 'html', // Default language is HTML
+        theme: localStorage.getItem("darkMode") === "enabled" ? "vs-dark" : "vs-light", // Set theme based on localStorage
+    });
+
+    // Function to share code to GitHub Gist
     async function shareCode() {
-    // Get the current content from localStorage (or editor if required)
-    let html = localStorage.getItem('htmlContent') || '';
-    let css = localStorage.getItem('cssContent') || '';
-    let js = localStorage.getItem('jsContent') || '';
-    let txt = localStorage.getItem('txtContent') || '';
+        let html = localStorage.getItem('htmlContent') || '';
+        let css = localStorage.getItem('cssContent') || '';
+        let js = localStorage.getItem('jsContent') || '';
+        let txt = localStorage.getItem('txtContent') || '';
 
-    // Create a JSON object to store the code
-    let codeData = { html, css, js, txt };
+        let data = { files: {} };
+        data.files['index.html'] = { content: html };
+        data.files['styles.css'] = { content: css };
+        data.files['script.js'] = { content: js };
+        data.files['notes.txt'] = { content: txt };
 
-    // Define the Npoint.io endpoint (replace this with your endpoint)
-    const endpoint = "https://api.npoint.io/6272b21af605573e36ea";
+        // Create Gist using GitHub API
+        let response = await createGist(data);
+        if (response && response.html_url) {
+            alert('Code shared successfully! Share this link: ' + response.html_url);
+        } else {
+            alert('Failed to create Gist');
+        }
+    }
 
-    try {
-        // Send a POST request to store the data in Npoint.io
-        let response = await fetch(endpoint, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(codeData),
+    // Function to create Gist using GitHub API
+    async function createGist(data) {
+        const token = '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'; // Replace with your GitHub token
+
+        const response = await fetch('https://api.github.com/gists', {
+            method: 'POST',
+            headers: {
+                'Authorization': `token ${token}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                description: 'Code shared via Monaco Editor',
+                public: true, // You can set to false for private Gist
+                files: data.files,
+            }),
         });
 
         if (response.ok) {
-            let data = await response.json();
-            console.log("Code saved successfully:", data);
-
-            // Create a shareable URL (same endpoint for sharing)
-            let shareURL = endpoint;
-
-            // Use Web Share API (if supported)
-            if (navigator.share) {
-                navigator.share({
-                    title: "Check out this code!",
-                    url: shareURL
-                }).catch(err => console.error("Sharing failed:", err));
-            } else {
-                // If Web Share API is not supported, copy the link to clipboard
-                navigator.clipboard.writeText(shareURL).then(() => {
-                    alert("Link copied! Share it with anyone.");
-                }).catch(err => console.error("Copy failed:", err));
-            }
+            const gistData = await response.json();
+            return gistData;
         } else {
-            console.error("Failed to save code to Npoint.io");
+            console.error('Error creating Gist', response);
+            return null;
         }
-    } catch (error) {
-        console.error("Error:", error);
     }
-        }
 
-    async function loadCodeFromNpoint() {
-    // The Npoint.io endpoint where code is stored
-    let endpoint = "https://api.npoint.io/6272b21af605573e36ea"; 
+    // Load code from shared Gist link
+    const urlParams = new URLSearchParams(window.location.search);
+    const gistUrl = urlParams.get('gistUrl');
+    if (gistUrl) {
+        fetchGist(gistUrl);
+    }
 
-    try {
-        // Fetch the data from Npoint.io
-        let response = await fetch(endpoint);
-
+    // Fetch Gist and load it into Monaco Editor
+    async function fetchGist(url) {
+        const response = await fetch(url);
         if (response.ok) {
-            // Parse the JSON response
-            let codeData = await response.json();
+            const gistData = await response.json();
+            const htmlContent = gistData.files['index.html']?.content || '';
+            const cssContent = gistData.files['styles.css']?.content || '';
+            const jsContent = gistData.files['script.js']?.content || '';
+            const txtContent = gistData.files['notes.txt']?.content || '';
 
-            // Set values in localStorage (optional)
-            localStorage.setItem('htmlContent', codeData.html);
-            localStorage.setItem('cssContent', codeData.css);
-            localStorage.setItem('jsContent', codeData.js);
-            localStorage.setItem('txtContent', codeData.txt);
-
-            // Load the code into Monaco editor
-            editor.setModel(monaco.editor.createModel(codeData.html, 'html'));  // Default: Load HTML
+            // Set content in editor
+            editor.setModel(monaco.editor.createModel(htmlContent, 'html'));
+            localStorage.setItem('htmlContent', htmlContent);
+            localStorage.setItem('cssContent', cssContent);
+            localStorage.setItem('jsContent', jsContent);
+            localStorage.setItem('txtContent', txtContent);
         } else {
-            console.error("Failed to load code from Npoint.io");
+            console.error('Error fetching Gist', response);
         }
-    } catch (error) {
-        console.error("Error:", error);
     }
-}
-
-// **Load code when page loads (from URL or storage)**
-window.addEventListener("load", function () {
-    loadCodeFromNpoint();
 });
         
     </script>
