@@ -284,6 +284,10 @@
         <button class="btn tooltip" id="dark-mode-btn" onclick="toggleDarkMode()"><i class="fas fa-moon"></i><span> Light & Dark</span><span class="tooltiptext">Light & Dark</span></button>
         <button class="tooltip btn" id="download-btn" onclick="downloadFile()"><i class="fas fa-download"></i><span class="tooltiptext">Download</span> Download</button>
         <button class="tooltip btn" id="download-all-btn" onclick="downloadAllTabs()"><i class="fa-regular fa-file-zipper"></i><span class="tooltiptext">Export zip</span> Export zip</button>
+        <button class="btn tooltip" id="share-btn" onclick="shareCode()">
+    <i class="fas fa-share"></i>
+    <span class="tooltiptext">Share</span> Share
+        </button>
         <button class="btn tooltip" id="info-btn" onclick="openLink()"><i class="fa-regular fa-circle-question"></i><span class="tooltiptext">About</span> About</button>
     </div>
     </div>
@@ -331,6 +335,27 @@
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs/loader.js"></script>
+    <!-- Firebase App (required for Firebase products) -->
+<script src="https://www.gstatic.com/firebasejs/10.5.2/firebase-app.js"></script>
+
+<!-- Firebase Realtime Database -->
+<script src="https://www.gstatic.com/firebasejs/10.5.2/firebase-database.js"></script>
+
+<!-- Firebase Configuration -->
+<script>
+  const firebaseConfig = {
+  apiKey: "AIzaSyAPfp_LtXut_U3kOgQhGKStGOM6FLl6C-Q",
+  authDomain: "code-af6c3.firebaseapp.com",
+  projectId: "code-af6c3",
+  storageBucket: "code-af6c3.firebasestorage.app",
+  messagingSenderId: "182918729252",
+  appId: "1:182918729252:web:5ff14038b1609132cf12b1"
+};
+
+  // Initialize Firebase
+  const app = firebase.initializeApp(firebaseConfig);
+  const database = firebase.database();
+</script>
     <script>
 
 // Monaco Editor initialization
@@ -815,6 +840,68 @@ function downloadAllTabs() {
         link.click();
     });
 }
+
+async function shareCode() {
+    // Firebase Realtime Database mein code save karein
+    const codeData = {
+        html: htmlContent,
+        css: cssContent,
+        js: jsContent,
+        timestamp: firebase.database.ServerValue.TIMESTAMP // Optional: Timestamp add karein
+    };
+
+    // Database mein ek naya entry create karein
+    const newCodeRef = database.ref('codes').push();
+    await newCodeRef.set(codeData);
+
+    // Unique ID aur shareable link generate karein
+    const codeId = newCodeRef.key;
+    const shareUrl = `${window.location.origin}${window.location.pathname}?id=${codeId}`;
+
+    // Link ko clipboard mein copy karein
+    navigator.clipboard.writeText(shareUrl).then(() => {
+        alert("Shareable link copied to clipboard!\nPaste it anywhere to share.");
+    }).catch((error) => {
+        console.error("Error copying link: ", error);
+        alert("Failed to copy the link.");
+    });
+}
+
+// Function to load shared content from Firebase
+function loadSharedContent() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const codeId = urlParams.get('id'); // URL se unique ID fetch karein
+
+    if (codeId) {
+        // Firebase se code snippet fetch karein
+        database.ref(`codes/${codeId}`).once('value').then((snapshot) => {
+            const codeData = snapshot.val();
+
+            if (codeData) {
+                // HTML, CSS, aur JS content ko editor mein load karein
+                htmlContent = codeData.html;
+                cssContent = codeData.css;
+                jsContent = codeData.js;
+
+                editor.setModel(monaco.editor.createModel(htmlContent, 'html'));
+                changeTab('html'); // HTML tab par switch karein
+
+                // Output update karein
+                runCode();
+            } else {
+                alert("Invalid or expired shareable link.");
+            }
+        }).catch((error) => {
+            console.error("Error fetching code: ", error);
+            alert("Failed to load the shared code.");
+        });
+    }
+}
+
+// Page load hone par shared content load karein
+window.addEventListener('load', () => {
+    loadSharedContent();
+});
     </script>
 </body>
 </html>
