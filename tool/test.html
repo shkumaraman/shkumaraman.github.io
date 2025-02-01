@@ -284,6 +284,10 @@
         <button class="btn tooltip" id="dark-mode-btn" onclick="toggleDarkMode()"><i class="fas fa-moon"></i><span> Light & Dark</span><span class="tooltiptext">Light & Dark</span></button>
         <button class="tooltip btn" id="download-btn" onclick="downloadFile()"><i class="fas fa-download"></i><span class="tooltiptext">Download</span> Download</button>
         <button class="tooltip btn" id="download-all-btn" onclick="downloadAllTabs()"><i class="fa-regular fa-file-zipper"></i><span class="tooltiptext">Export zip</span> Export zip</button>
+        <button class="btn tooltip" id="share-btn" onclick="shareCode()">
+            <i class="fas fa-share-alt"></i>
+            <span class="tooltiptext">Share</span>
+    </button>
         <button class="btn tooltip" id="info-btn" onclick="openLink()"><i class="fa-regular fa-circle-question"></i><span class="tooltiptext">About</span> About</button>
     </div>
     </div>
@@ -815,6 +819,88 @@ function downloadAllTabs() {
         link.click();
     });
 }
+    
+    async function shareCode() {
+    // Get the current content from localStorage (or editor if required)
+    let html = localStorage.getItem('htmlContent') || '';
+    let css = localStorage.getItem('cssContent') || '';
+    let js = localStorage.getItem('jsContent') || '';
+    let txt = localStorage.getItem('txtContent') || '';
+
+    // Create a JSON object to store the code
+    let codeData = { html, css, js, txt };
+
+    // Define the Npoint.io endpoint (replace this with your endpoint)
+    const endpoint = "https://api.npoint.io/6272b21af605573e36ea";
+
+    try {
+        // Send a POST request to store the data in Npoint.io
+        let response = await fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(codeData),
+        });
+
+        if (response.ok) {
+            let data = await response.json();
+            console.log("Code saved successfully:", data);
+
+            // Create a shareable URL (same endpoint for sharing)
+            let shareURL = endpoint;
+
+            // Use Web Share API (if supported)
+            if (navigator.share) {
+                navigator.share({
+                    title: "Check out this code!",
+                    url: shareURL
+                }).catch(err => console.error("Sharing failed:", err));
+            } else {
+                // If Web Share API is not supported, copy the link to clipboard
+                navigator.clipboard.writeText(shareURL).then(() => {
+                    alert("Link copied! Share it with anyone.");
+                }).catch(err => console.error("Copy failed:", err));
+            }
+        } else {
+            console.error("Failed to save code to Npoint.io");
+        }
+    } catch (error) {
+        console.error("Error:", error);
+    }
+        }
+
+    async function loadCodeFromNpoint() {
+    // The Npoint.io endpoint where code is stored
+    let endpoint = "https://api.npoint.io/6272b21af605573e36ea"; 
+
+    try {
+        // Fetch the data from Npoint.io
+        let response = await fetch(endpoint);
+
+        if (response.ok) {
+            // Parse the JSON response
+            let codeData = await response.json();
+
+            // Set values in localStorage (optional)
+            localStorage.setItem('htmlContent', codeData.html);
+            localStorage.setItem('cssContent', codeData.css);
+            localStorage.setItem('jsContent', codeData.js);
+            localStorage.setItem('txtContent', codeData.txt);
+
+            // Load the code into Monaco editor
+            editor.setModel(monaco.editor.createModel(codeData.html, 'html'));  // Default: Load HTML
+        } else {
+            console.error("Failed to load code from Npoint.io");
+        }
+    } catch (error) {
+        console.error("Error:", error);
+    }
+}
+
+// **Load code when page loads (from URL or storage)**
+window.addEventListener("load", function () {
+    loadCodeFromNpoint();
+});
+        
     </script>
 </body>
 </html>
