@@ -284,6 +284,7 @@
         <button class="btn tooltip" id="dark-mode-btn" onclick="toggleDarkMode()"><i class="fas fa-moon"></i><span> Light & Dark</span><span class="tooltiptext">Light & Dark</span></button>
         <button class="tooltip btn" id="download-btn" onclick="downloadFile()"><i class="fas fa-download"></i><span class="tooltiptext">Download</span> Download</button>
         <button class="tooltip btn" id="download-all-btn" onclick="downloadAllTabs()"><i class="fa-regular fa-file-zipper"></i><span class="tooltiptext">Export zip</span> Export zip</button>
+        <button class="btn tooltip" id="share-btn" onclick="shareCode()"><i class="fas fa-share-alt"></i><span class="tooltiptext">Share</span></button>
         <button class="btn tooltip" id="info-btn" onclick="openLink()"><i class="fa-regular fa-circle-question"></i><span class="tooltiptext">About</span> About</button>
     </div>
     </div>
@@ -328,7 +329,8 @@
     </div>
 
     <div id="editor-container"></div>
-    
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs/loader.js"></script>
     <script>
@@ -815,6 +817,66 @@ function downloadAllTabs() {
         link.click();
     });
 }
+
+   const firebaseConfig = {
+  apiKey: "AIzaSyAYH33wr3JHDX3MhUEX3XQi7Cr8bAZOdKA",
+  authDomain: "code-editor-2e473.firebaseapp.com",
+  databaseURL: "https://code-editor-2e473-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "code-editor-2e473",
+  storageBucket: "code-editor-2e473.firebasestorage.app",
+  messagingSenderId: "547111291241",
+  appId: "1:547111291241:web:ff804fb01230e035dd15f8"
+};
+    firebase.initializeApp(firebaseConfig);
+    const database = firebase.database();
+        
+    async function shareCode() {
+    let html = localStorage.getItem('htmlContent') || '';
+    let css = localStorage.getItem('cssContent') || '';
+    let js = localStorage.getItem('jsContent') || '';
+
+    // **Firebase me Data Save Karna**
+    let newRef = database.ref("sharedCodes").push(); // Unique ID Generate
+    await newRef.set({ html, css, js });
+
+    let shareID = newRef.key; // Unique Firebase Key
+    let shareURL = `${window.location.origin}${window.location.pathname}?id=${shareID}`;
+
+    // **Web Share API ya Clipboard Copy**
+    if (navigator.share) {
+        navigator.share({
+            title: "Check out this code!",
+            url: shareURL
+        }).catch(err => console.error("Sharing failed:", err));
+    } else {
+        navigator.clipboard.writeText(shareURL).then(() => {
+            alert("Link copied! Share it with anyone.");
+        }).catch(err => console.error("Copy failed:", err));
+    }
+        }
+
+    window.addEventListener("load", async function () {
+    let urlParams = new URLSearchParams(window.location.search);
+    let shareID = urlParams.get("id");
+
+    if (shareID) {
+        let snapshot = await database.ref("sharedCodes/" + shareID).once("value");
+
+        if (snapshot.exists()) {
+            let data = snapshot.val();
+
+            // **Editor me Load Karna**
+            localStorage.setItem('htmlContent', data.html);
+            localStorage.setItem('cssContent', data.css);
+            localStorage.setItem('jsContent', data.js);
+
+            editor.setModel(monaco.editor.createModel(data.html, 'html'));
+        } else {
+            alert("Code not found!");
+        }
+    }
+});
+        
     </script>
 </body>
 </html>
