@@ -284,6 +284,9 @@
         <button class="btn tooltip" id="dark-mode-btn" onclick="toggleDarkMode()"><i class="fas fa-moon"></i><span> Light & Dark</span><span class="tooltiptext">Light & Dark</span></button>
         <button class="tooltip btn" id="download-btn" onclick="downloadFile()"><i class="fas fa-download"></i><span class="tooltiptext">Download</span> Download</button>
         <button class="tooltip btn" id="download-all-btn" onclick="downloadAllTabs()"><i class="fa-regular fa-file-zipper"></i><span class="tooltiptext">Export zip</span> Export zip</button>
+        <button class="btn3 tooltip" id="share-btn" onclick="shareCode()">
+    <i class="fas fa-share-alt"></i><span class="tooltiptext">Share</span>
+        </button>
         <button class="btn tooltip" id="info-btn" onclick="openLink()"><i class="fa-regular fa-circle-question"></i><span class="tooltiptext">About</span> About</button>
     </div>
     </div>
@@ -328,7 +331,7 @@
     </div>
 
     <div id="editor-container"></div>
-    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.4.4/lz-string.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs/loader.js"></script>
     <script>
@@ -815,6 +818,71 @@ function downloadAllTabs() {
         link.click();
     });
 }
+
+    async function shareCode() {
+    // **Editor se current content lo**
+    let html = localStorage.getItem('htmlContent') || '';
+    let css = localStorage.getItem('cssContent') || '';
+    let js = localStorage.getItem('jsContent') || '';
+    let txt = localStorage.getItem('txtContent') || '';
+
+    // **Compress code using LZString**
+    let compressedData = LZString.compressToEncodedURIComponent(JSON.stringify({ html, css, js, txt }));
+
+    // **Generate shareable link**
+    let shareURL = `${window.location.origin}${window.location.pathname}?code=${compressedData}`;
+
+    // **Shorten URL using TinyURL API (Optional)**
+    let shortURL = await shortenURL(shareURL);
+
+    // **Web Share API ya Clipboard se Share Karega**
+    if (navigator.share) {
+        navigator.share({
+            title: "Check out this code!",
+            url: shortURL
+        }).catch(err => console.error("Sharing failed:", err));
+    } else {
+        navigator.clipboard.writeText(shortURL).then(() => {
+            alert("Link copied! Share it with anyone.");
+        }).catch(err => console.error("Copy failed:", err));
+    }
+}
+
+// **URL Shortener Function (Using TinyURL API)**
+async function shortenURL(longURL) {
+    try {
+        let response = await fetch(`https://api.tinyurl.com/create?api_token=n5efjjrd7YELB97QD6NgO5OzVQRZ3Lta61ohA4hV7tWs4hdDd0NmN1tj8BNp`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url: longURL })
+        });
+        let data = await response.json();
+        return data.data.tiny_url || longURL; // Return short URL or original if failed
+    } catch (error) {
+        console.error("URL Shortening Failed:", error);
+        return longURL; // Fallback to long URL
+    }
+}
+
+// **Agar koi Shared Link Open Kare, toh Code Load Kare**
+window.addEventListener("load", function () {
+    let urlParams = new URLSearchParams(window.location.search);
+    let codeParam = urlParams.get("code");
+
+    if (codeParam) {
+        let decompressedData = JSON.parse(LZString.decompressFromEncodedURIComponent(codeParam));
+
+        // **Set values in localStorage**
+        localStorage.setItem('htmlContent', decompressedData.html);
+        localStorage.setItem('cssContent', decompressedData.css);
+        localStorage.setItem('jsContent', decompressedData.js);
+        localStorage.setItem('txtContent', decompressedData.txt);
+
+        // **Load into Editor**
+        editor.setModel(monaco.editor.createModel(decompressedData.html, 'html')); // Default: Load HTML
+    }
+});
+        
     </script>
 </body>
 </html>
