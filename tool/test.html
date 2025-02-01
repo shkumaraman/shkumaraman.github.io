@@ -284,6 +284,11 @@
         <button class="btn tooltip" id="dark-mode-btn" onclick="toggleDarkMode()"><i class="fas fa-moon"></i><span> Light & Dark</span><span class="tooltiptext">Light & Dark</span></button>
         <button class="tooltip btn" id="download-btn" onclick="downloadFile()"><i class="fas fa-download"></i><span class="tooltiptext">Download</span> Download</button>
         <button class="tooltip btn" id="download-all-btn" onclick="downloadAllTabs()"><i class="fa-regular fa-file-zipper"></i><span class="tooltiptext">Export zip</span> Export zip</button>
+        <button class="btn tooltip" id="share-btn" onclick="shareCode()">
+    <i class="fas fa-share"></i>
+    <span>Share</span>
+    <span class="tooltiptext">Share Code</span>
+        </button>
         <button class="btn tooltip" id="info-btn" onclick="openLink()"><i class="fa-regular fa-circle-question"></i><span class="tooltiptext">About</span> About</button>
     </div>
     </div>
@@ -812,6 +817,103 @@ function downloadAllTabs() {
         link.click();
     });
 }
+
+// Firebase configuration
+const firebaseConfig = {
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_AUTH_DOMAIN",
+    databaseURL: "YOUR_DATABASE_URL",
+    projectId: "YOUR_PROJECT_ID",
+    storageBucket: "YOUR_STORAGE_BUCKET",
+    messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+    appId: "YOUR_APP_ID"
+};
+
+// Initialize Firebase
+firebase.initializeApp(firebaseConfig);
+
+// Get a reference to the database service
+const database = firebase.database();
+
+// Function to retrieve shared code
+function retrieveSharedCode() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const shareId = urlParams.get('share');
+
+    if (shareId) {
+        database.ref('sharedCodes/' + shareId).once('value').then((snapshot) => {
+            const data = snapshot.val();
+            if (data) {
+                // Load the shared code into the editor
+                htmlContent = data.html || '';
+                cssContent = data.css || '';
+                jsContent = data.js || '';
+                txtContent = data.txt || '';
+
+                // Save the content to localStorage
+                localStorage.setItem('htmlContent', htmlContent);
+                localStorage.setItem('cssContent', cssContent);
+                localStorage.setItem('jsContent', jsContent);
+                localStorage.setItem('txtContent', txtContent);
+
+                // Load the content into the editor
+                loadSavedContent();
+                alert("Shared code loaded successfully!");
+            } else {
+                alert("Invalid share link.");
+            }
+        }).catch((error) => {
+            console.error("Error retrieving shared code: ", error);
+            alert("Failed to retrieve shared code.");
+        });
+    }
+}
+
+// Call retrieveSharedCode on page load
+window.addEventListener('load', () => {
+    retrieveSharedCode();
+});
+
+// Function to share code
+function shareCode() {
+    const activeTab = document.querySelector('.tab.active-tab').textContent.trim().toLowerCase();
+    let codeContent = '';
+
+    // Get the content based on the active tab
+    if (activeTab === 'html') {
+        codeContent = htmlContent;
+    } else if (activeTab === 'css') {
+        codeContent = cssContent;
+    } else if (activeTab === 'js') {
+        codeContent = jsContent;
+    } else if (activeTab === 'txt') {
+        codeContent = txtContent;
+    }
+
+    // Generate a unique ID for the shared code
+    const uniqueId = generateUniqueId();
+
+    // Save the code to Firebase Realtime Database
+    database.ref('sharedCodes/' + uniqueId).set({
+        html: htmlContent,
+        css: cssContent,
+        js: jsContent,
+        txt: txtContent
+    }).then(() => {
+        // Generate the shareable link
+        const shareableLink = `${window.location.origin}${window.location.pathname}?share=${uniqueId}`;
+        alert(`Shareable link: ${shareableLink}`);
+    }).catch((error) => {
+        console.error("Error sharing code: ", error);
+        alert("Failed to share code.");
+    });
+}
+
+// Function to generate a unique ID
+function generateUniqueId() {
+    return 'code-' + Math.random().toString(36).substr(2, 9);
+}
+
     </script>
 </body>
 </html>
