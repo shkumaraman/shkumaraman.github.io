@@ -817,12 +817,26 @@ function downloadAllTabs() {
     });
 }
 
+// पहले से कोई ID है या नहीं, यह चेक करें
+function getUserId() {
+  let userId = localStorage.getItem('userId');
+  if (!userId) {
+    // नया रैंडम ID जनरेट करें
+    userId = 'user_' + Math.random().toString(36).substr(2, 9);
+    localStorage.setItem('userId', userId);
+  }
+  return userId;
+}
+
+const userId = getUserId(); // अब यह ID हमेशा वही रहेगी जब तक ब्राउज़र क्लियर न हो
+
 const JSONBIN_API_KEY = '$2a$10$TL3pjB9vsa4hRFTlamcbIu2jenrUF6o1A3NzDez9XdAPSIpe4cLxW';
-const BIN_ID = '679edbade41b4d34e482972b'; // पहले से बनाए गए Bin की ID
+const BIN_ID = '679edbade41b4d34e482972b';
 const JSONBIN_BASE_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
 
 async function shareWithJsonBin() {
   const newCode = {
+    user: userId, // हर कोड में यूजर ID जोड़ें
     html: htmlContent,
     css: cssContent,
     js: jsContent,
@@ -858,14 +872,15 @@ async function shareWithJsonBin() {
 
     if (!updateResponse.ok) throw new Error('Failed to update JSONBin');
 
-    alert(`Code shared successfully!`);
+    alert(`Code shared successfully! Your ID: ${userId}`);
   } catch (error) {
     console.error('Sharing failed:', error);
     alert('Error sharing code!');
   }
 }
 
-async function loadFromJsonBin() {
+// सिर्फ उसी यूजर के कोड लोड करें
+async function loadUserCodes() {
   try {
     const response = await fetch(JSONBIN_BASE_URL, {
       headers: { 'X-Master-Key': JSONBIN_API_KEY }
@@ -874,28 +889,23 @@ async function loadFromJsonBin() {
     if (!response.ok) throw new Error('Failed to fetch JSONBin data');
 
     const { record } = await response.json();
-    
-    // अगर डेटा Array में है, तो सबसे नया कोड लोड करें
-    const latestCode = Array.isArray(record) ? record[record.length - 1] : record;
-    
-    htmlContent = latestCode.html;
-    cssContent = latestCode.css;
-    jsContent = latestCode.js;
-    txtContent = latestCode.txt;
-    
-    changeTab(latestCode.activeTab || 'html');
-    editor.setValue(latestCode[latestCode.activeTab] || '');
-    runCode();
-    
+
+    // सिर्फ लॉगिन किए गए यूजर का कोड निकालें
+    const userCodes = record.filter(entry => entry.user === userId);
+
+    console.log("Your Codes:", userCodes); // Debugging के लिए
+    return userCodes;
+
   } catch (error) {
     console.error('Loading failed:', error);
-    alert('Error loading saved code!');
+    alert('Error loading your saved codes!');
+    return [];
   }
 }
 
-// पेज लोड पर कोड लोड करें
+// पेज लोड होने पर सिर्फ यूजर के कोड लोड करें
 window.addEventListener('load', () => {
-  loadFromJsonBin();
+  loadUserCodes();
   loadDarkModePreference();
 });
         
