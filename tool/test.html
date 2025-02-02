@@ -821,11 +821,11 @@ function downloadAllTabs() {
 }
 
 const JSONBIN_API_KEY = '$2a$10$TL3pjB9vsa4hRFTlamcbIu2jenrUF6o1A3NzDez9XdAPSIpe4cLxW';
-const JSONBIN_BASE_URL = 'https://api.jsonbin.io/v3/b';
-let BIN_ID = localStorage.getItem('binId'); // पहले से स्टोर किया गया बिन ID
+const BIN_ID = '679edbade41b4d34e482972b'; // पहले से बनाए गए Bin की ID
+const JSONBIN_BASE_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
 
 async function shareWithJsonBin() {
-  const data = {
+  const newCode = {
     html: htmlContent,
     css: cssContent,
     js: jsContent,
@@ -835,37 +835,33 @@ async function shareWithJsonBin() {
   };
 
   try {
-    let response;
-    if (BIN_ID) {
-      // अगर बिन ID पहले से है, तो उसे अपडेट करें
-      response = await fetch(`${JSONBIN_BASE_URL}/${BIN_ID}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Master-Key': JSONBIN_API_KEY
-        },
-        body: JSON.stringify(data)
-      });
-    } else {
-      // नई बिन बनाएं
-      response = await fetch(JSONBIN_BASE_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Master-Key': JSONBIN_API_KEY,
-          'X-Bin-Name': 'Code Editor Snapshot' // Optional bin name
-        },
-        body: JSON.stringify(data)
-      });
+    // पहले पुराने डेटा को लोड करें
+    const response = await fetch(JSONBIN_BASE_URL, {
+      headers: { 'X-Master-Key': JSONBIN_API_KEY }
+    });
 
-      const result = await response.json();
-      BIN_ID = result.metadata.id;
-      localStorage.setItem('binId', BIN_ID); // बिन ID को localStorage में स्टोर करें
-    }
+    if (!response.ok) throw new Error('Failed to fetch existing data');
 
-    const shareUrl = `${window.location.href}?bin=${BIN_ID}`;
-    navigator.clipboard.writeText(shareUrl);
-    alert(`Link copied to clipboard:\n${shareUrl}`);
+    const { record } = await response.json();
+    
+    let existingData = Array.isArray(record) ? record : [];
+    
+    // नए कोड को Array में जोड़ें
+    existingData.push(newCode);
+
+    // अपडेट किए गए Array को सेव करें
+    const updateResponse = await fetch(JSONBIN_BASE_URL, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Master-Key': JSONBIN_API_KEY
+      },
+      body: JSON.stringify(existingData)
+    });
+
+    if (!updateResponse.ok) throw new Error('Failed to update JSONBin');
+
+    alert(`Code shared successfully!`);
   } catch (error) {
     console.error('Sharing failed:', error);
     alert('Error sharing code!');
@@ -873,37 +869,39 @@ async function shareWithJsonBin() {
 }
 
 async function loadFromJsonBin() {
-  const urlParams = new URLSearchParams(window.location.search);
-  const binId = urlParams.get('bin');
-
-  if (!binId) return;
-
   try {
-    const response = await fetch(`${JSONBIN_BASE_URL}/${binId}`, {
+    const response = await fetch(JSONBIN_BASE_URL, {
       headers: { 'X-Master-Key': JSONBIN_API_KEY }
     });
 
+    if (!response.ok) throw new Error('Failed to fetch JSONBin data');
+
     const { record } = await response.json();
     
-    htmlContent = record.html;
-    cssContent = record.css;
-    jsContent = record.js;
-    txtContent = record.txt;
+    // अगर डेटा Array में है, तो सबसे नया कोड लोड करें
+    const latestCode = Array.isArray(record) ? record[record.length - 1] : record;
     
-    changeTab(record.activeTab || 'html');
-    editor.setValue(record[record.activeTab]);
+    htmlContent = latestCode.html;
+    cssContent = latestCode.css;
+    jsContent = latestCode.js;
+    txtContent = latestCode.txt;
+    
+    changeTab(latestCode.activeTab || 'html');
+    editor.setValue(latestCode[latestCode.activeTab] || '');
     runCode();
     
   } catch (error) {
     console.error('Loading failed:', error);
-    alert('Invalid or expired share link!');
+    alert('Error loading saved code!');
   }
 }
 
+// पेज लोड पर कोड लोड करें
 window.addEventListener('load', () => {
   loadFromJsonBin();
   loadDarkModePreference();
 });
+        
     </script>
 </body>
 </html>
