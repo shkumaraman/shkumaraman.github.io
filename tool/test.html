@@ -820,11 +820,10 @@ function downloadAllTabs() {
     });
 }
 
-// अपना JSONBin API Key यहां डालें
 const JSONBIN_API_KEY = '$2a$10$TL3pjB9vsa4hRFTlamcbIu2jenrUF6o1A3NzDez9XdAPSIpe4cLxW';
 const JSONBIN_BASE_URL = 'https://api.jsonbin.io/v3/b';
+let BIN_ID = localStorage.getItem('binId'); // पहले से स्टोर किया गया बिन ID
 
-// Share Functionality
 async function shareWithJsonBin() {
   const data = {
     html: htmlContent,
@@ -836,20 +835,35 @@ async function shareWithJsonBin() {
   };
 
   try {
-    const response = await fetch(JSONBIN_BASE_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Master-Key': JSONBIN_API_KEY,
-        'X-Bin-Name': 'Code Editor Snapshot' // Optional bin name
-      },
-      body: JSON.stringify(data)
-    });
+    let response;
+    if (BIN_ID) {
+      // अगर बिन ID पहले से है, तो उसे अपडेट करें
+      response = await fetch(`${JSONBIN_BASE_URL}/${BIN_ID}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Master-Key': JSONBIN_API_KEY
+        },
+        body: JSON.stringify(data)
+      });
+    } else {
+      // नई बिन बनाएं
+      response = await fetch(JSONBIN_BASE_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Master-Key': JSONBIN_API_KEY,
+          'X-Bin-Name': 'Code Editor Snapshot' // Optional bin name
+        },
+        body: JSON.stringify(data)
+      });
 
-    const result = await response.json();
-    const binId = result.metadata.id;
-    const shareUrl = `${window.location.href}?bin=${binId}`;
-    
+      const result = await response.json();
+      BIN_ID = result.metadata.id;
+      localStorage.setItem('binId', BIN_ID); // बिन ID को localStorage में स्टोर करें
+    }
+
+    const shareUrl = `${window.location.href}?bin=${BIN_ID}`;
     navigator.clipboard.writeText(shareUrl);
     alert(`Link copied to clipboard:\n${shareUrl}`);
   } catch (error) {
@@ -858,7 +872,6 @@ async function shareWithJsonBin() {
   }
 }
 
-// Load Shared Code
 async function loadFromJsonBin() {
   const urlParams = new URLSearchParams(window.location.search);
   const binId = urlParams.get('bin');
@@ -887,7 +900,6 @@ async function loadFromJsonBin() {
   }
 }
 
-// Page Load पर Check करें
 window.addEventListener('load', () => {
   loadFromJsonBin();
   loadDarkModePreference();
