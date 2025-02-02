@@ -284,6 +284,10 @@
         <button class="btn tooltip" id="dark-mode-btn" onclick="toggleDarkMode()"><i class="fas fa-moon"></i><span> Light & Dark</span><span class="tooltiptext">Light & Dark</span></button>
         <button class="tooltip btn" id="download-btn" onclick="downloadFile()"><i class="fas fa-download"></i><span class="tooltiptext">Download</span> Download</button>
         <button class="tooltip btn" id="download-all-btn" onclick="downloadAllTabs()"><i class="fa-regular fa-file-zipper"></i><span class="tooltiptext">Export zip</span> Export zip</button>
+<button class="btn tooltip" onclick="shareWithJsonBin()">
+  <i class="fas fa-share-alt"></i>
+  <span class="tooltiptext">Share via JSONBin</span>
+</button>
         <button class="btn tooltip" id="info-btn" onclick="openLink()"><i class="fa-regular fa-circle-question"></i><span class="tooltiptext">About</span> About</button>
     </div>
     </div>
@@ -815,6 +819,79 @@ function downloadAllTabs() {
         link.click();
     });
 }
+
+// अपना JSONBin API Key यहां डालें
+const JSONBIN_API_KEY = '679ed49fe41b4d34e4829454';
+const JSONBIN_BASE_URL = 'https://api.jsonbin.io/v3/b';
+
+// Share Functionality
+async function shareWithJsonBin() {
+  const data = {
+    html: htmlContent,
+    css: cssContent,
+    js: jsContent,
+    txt: txtContent,
+    activeTab: document.querySelector('.tab.active-tab').textContent.trim().toLowerCase(),
+    timestamp: new Date().toISOString()
+  };
+
+  try {
+    const response = await fetch(JSONBIN_BASE_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Master-Key': JSONBIN_API_KEY,
+        'X-Bin-Name': 'Code Editor Snapshot' // Optional bin name
+      },
+      body: JSON.stringify(data)
+    });
+
+    const result = await response.json();
+    const binId = result.metadata.id;
+    const shareUrl = `${window.location.href}?bin=${binId}`;
+    
+    navigator.clipboard.writeText(shareUrl);
+    alert(`Link copied to clipboard:\n${shareUrl}`);
+  } catch (error) {
+    console.error('Sharing failed:', error);
+    alert('Error sharing code!');
+  }
+}
+
+// Load Shared Code
+async function loadFromJsonBin() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const binId = urlParams.get('bin');
+
+  if (!binId) return;
+
+  try {
+    const response = await fetch(`${JSONBIN_BASE_URL}/${binId}`, {
+      headers: { 'X-Master-Key': JSONBIN_API_KEY }
+    });
+
+    const { record } = await response.json();
+    
+    htmlContent = record.html;
+    cssContent = record.css;
+    jsContent = record.js;
+    txtContent = record.txt;
+    
+    changeTab(record.activeTab || 'html');
+    editor.setValue(record[record.activeTab]);
+    runCode();
+    
+  } catch (error) {
+    console.error('Loading failed:', error);
+    alert('Invalid or expired share link!');
+  }
+}
+
+// Page Load पर Check करें
+window.addEventListener('load', () => {
+  loadFromJsonBin();
+  loadDarkModePreference();
+});
     </script>
 </body>
 </html>
