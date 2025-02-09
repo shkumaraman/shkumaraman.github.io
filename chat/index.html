@@ -4,7 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Stranger Chat</title>
-        <style>
+    <!-- Font Awesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
         body {
             font-family: Arial, sans-serif;
             display: flex;
@@ -14,6 +16,7 @@
             height: 100vh;
             background-color: #e5ddd5;
             margin: 0;
+            overflow: hidden;
         }
         .chat-container {
             width: 350px;
@@ -22,6 +25,7 @@
             display: flex;
             flex-direction: column;
             box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.2);
+            position: relative;
         }
         .chat-header {
             display: flex;
@@ -87,12 +91,59 @@
             border: none;
             border-radius: 5px;
         }
+        /* Slide Menu */
+        .slide-menu {
+            position: fixed;
+            top: 0;
+            left: -300px;
+            width: 300px;
+            height: 100vh;
+            background: #075e54;
+            color: white;
+            transition: left 0.3s ease;
+            z-index: 1000;
+            padding: 20px;
+            box-shadow: 2px 0 5px rgba(0, 0, 0, 0.2);
+        }
+        .slide-menu.open {
+            left: 0;
+        }
+        .slide-menu h2 {
+            margin-top: 0;
+        }
+        .friends-list {
+            list-style: none;
+            padding: 0;
+        }
+        .friends-list li {
+            padding: 10px;
+            border-bottom: 1px solid #ccc;
+        }
+        .menu-toggle {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
     </style>
 </head>
 <body>
 
+    <!-- Slide Menu -->
+    <div class="slide-menu" id="slide-menu">
+        <h2>Friends</h2>
+        <ul class="friends-list" id="friends-list">
+            <!-- Friends will be dynamically added here -->
+        </ul>
+    </div>
+
     <div class="chat-container">
         <div class="chat-header">
+            <button class="menu-toggle" onclick="toggleMenu()">
+                <i class="fas fa-bars"></i>
+            </button>
             <span id="stranger-name">Finding Stranger...</span>
             <button id="add-friend-btn" onclick="sendFriendRequest()">
                 <i class="fas fa-user-plus"></i>
@@ -127,10 +178,37 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
 
-        let userId = "user_" + Math.random().toString(36).substr(2, 9);
+        // Use localStorage to persist userId
+        let userId = localStorage.getItem("userId");
+        if (!userId) {
+            userId = "user_" + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem("userId", userId);
+        }
+
         let chatRoom = null;
         let strangerId = null;
 
+        // Toggle Slide Menu
+        function toggleMenu() {
+            const slideMenu = document.getElementById("slide-menu");
+            slideMenu.classList.toggle("open");
+        }
+
+        // Load Friends List
+        function loadFriendsList() {
+            db.ref("friendList").child(userId).on("value", (snapshot) => {
+                const friends = snapshot.val() || {};
+                const friendsList = document.getElementById("friends-list");
+                friendsList.innerHTML = ""; // Clear existing list
+                for (const friendId in friends) {
+                    const li = document.createElement("li");
+                    li.textContent = friendId;
+                    friendsList.appendChild(li);
+                }
+            });
+        }
+
+        // Find Stranger
         function findStranger() {
             db.ref("waiting").once("value", function(snapshot) {
                 let waitingUsers = snapshot.val();
@@ -159,6 +237,7 @@
             });
         }
 
+        // Start Chat
         function startChat(room) {
             document.getElementById("chat-box").innerHTML = "";
             document.getElementById("stranger-name").innerText = "Stranger";
@@ -190,6 +269,7 @@
             });
         }
 
+        // Send Message
         function sendMessage() {
             let input = document.getElementById("message-input");
             if (input.value.trim() !== "" && chatRoom) {
@@ -198,6 +278,7 @@
             }
         }
 
+        // Send Friend Request
         function sendFriendRequest() {
             if (strangerId) {
                 db.ref("friendList").child(userId).update({ [strangerId]: true });
@@ -206,10 +287,13 @@
                 document.getElementById("add-friend-btn").innerHTML = '<i class="fas fa-user-check"></i>';
                 document.getElementById("add-friend-btn").disabled = true;
                 alert("✅ Friend Added!");
+                loadFriendsList(); // Refresh friends list
             }
         }
 
+        // Initialize
         findStranger();
+        loadFriendsList();
     </script>
 
 </body>
