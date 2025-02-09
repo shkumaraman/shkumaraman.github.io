@@ -40,20 +40,17 @@
     <div id="chat-box">Finding a stranger...</div>
     <input type="text" id="message-input" placeholder="Type a message...">
     <button onclick="sendMessage()">Send</button>
-    <button onclick="sendFriendRequest()">Add Friend</button>
-
-    <h3>Your Friends</h3>
-    <ul id="friend-list"></ul>
 
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database.js"></script>
 
     <script>
-        // 🔥 Firebase Configuration (अपना डेटा डालें)
+        // 🔥 Firebase Configuration
         const firebaseConfig = {
             apiKey: "AIzaSyBUayqp6GfJtIVsIIzm6STB9jXQxek6FUc",
             authDomain: "chat-2676a.firebaseapp.com",
+            databaseURL: "https://chat-2676a-default-rtdb.firebaseio.com", // ✅ Fix Database URL
             projectId: "chat-2676a",
             storageBucket: "chat-2676a.appspot.com",
             messagingSenderId: "923348726409",
@@ -72,13 +69,31 @@
         function findStranger() {
             db.ref("waiting").once("value", function(snapshot) {
                 let waitingUsers = snapshot.val();
-                if (waitingUsers) {
+                
+                if (waitingUsers && Object.keys(waitingUsers).length > 0) {
+                    // किसी को पहले से वेटिंग लिस्ट में जोड़ो
                     strangerId = Object.keys(waitingUsers)[0];
                     chatRoom = "chat_" + strangerId + "_" + userId;
                     db.ref("waiting").child(strangerId).remove(); // दूसरे को Waiting से हटाओ
+                    
+                    // चैट रूम स्टोर करो
+                    db.ref("connectedUsers").child(userId).set({ chatRoom, strangerId });
+                    db.ref("connectedUsers").child(strangerId).set({ chatRoom, strangerId: userId });
+
                     startChat(chatRoom);
                 } else {
+                    // अगर कोई नहीं है, तो इस यूजर को वेटिंग में डालो
                     db.ref("waiting").child(userId).set(true);
+                    
+                    // Listen for changes
+                    db.ref("connectedUsers").child(userId).on("value", function(snapshot) {
+                        let data = snapshot.val();
+                        if (data && data.chatRoom) {
+                            chatRoom = data.chatRoom;
+                            strangerId = data.strangerId;
+                            startChat(chatRoom);
+                        }
+                    });
                 }
             });
         }
@@ -105,30 +120,8 @@
             }
         }
 
-        // ➕ Friend Request भेजें
-        function sendFriendRequest() {
-            if (strangerId) {
-                db.ref("friend_requests").child(strangerId).push(userId);
-                alert("Friend request sent!");
-            }
-        }
-
-        // 🟢 Friend List लोड करें
-        function loadFriends() {
-            db.ref("friends").child(userId).on("value", function(snapshot) {
-                let friendList = document.getElementById("friend-list");
-                friendList.innerHTML = "";
-                snapshot.forEach(friend => {
-                    let li = document.createElement("li");
-                    li.textContent = friend.val();
-                    friendList.appendChild(li);
-                });
-            });
-        }
-
         // 🚀 शुरू करें
         findStranger();
-        loadFriends();
     </script>
 
 </body>
