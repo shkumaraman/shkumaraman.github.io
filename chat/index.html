@@ -30,6 +30,7 @@
         button {
             padding: 6px;
             cursor: pointer;
+            margin-top: 5px;
         }
     </style>
 </head>
@@ -39,36 +40,42 @@
     <div id="chat-box">Finding a stranger...</div>
     <input type="text" id="message-input" placeholder="Type a message...">
     <button onclick="sendMessage()">Send</button>
+    <button onclick="sendFriendRequest()">Add Friend</button>
+
+    <h3>Your Friends</h3>
+    <ul id="friend-list"></ul>
 
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database.js"></script>
 
     <script>
-        // 🔥 Firebase Configuration (अपनी डिटेल डालें)
+        // 🔥 Firebase Configuration (अपना डेटा डालें)
         const firebaseConfig = {
-  apiKey: "AIzaSyBUayqp6GfJtIVsIIzm6STB9jXQxek6FUc",
-  authDomain: "chat-2676a.firebaseapp.com",
-  projectId: "chat-2676a",
-  storageBucket: "chat-2676a.appspot.com",
-  messagingSenderId: "923348726409",
-  appId: "1:923348726409:web:d51887a16c8bfa43a7cc58"
-};
+            apiKey: "AIzaSyBUayqp6GfJtIVsIIzm6STB9jXQxek6FUc",
+            authDomain: "chat-2676a.firebaseapp.com",
+            projectId: "chat-2676a",
+            storageBucket: "chat-2676a.appspot.com",
+            messagingSenderId: "923348726409",
+            appId: "1:923348726409:web:d51887a16c8bfa43a7cc58"
+        };
+
         // 🔥 Firebase Initialize
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
 
         let userId = "user_" + Math.random().toString(36).substr(2, 9);
         let chatRoom = null;
+        let strangerId = null;
 
         // 🟢 Stranger को खोजें
         function findStranger() {
             db.ref("waiting").once("value", function(snapshot) {
                 let waitingUsers = snapshot.val();
                 if (waitingUsers) {
-                    let strangerId = Object.keys(waitingUsers)[0];
+                    strangerId = Object.keys(waitingUsers)[0];
                     chatRoom = "chat_" + strangerId + "_" + userId;
-                    db.ref("waiting").child(strangerId).remove(); // उसे हटा दें
+                    db.ref("waiting").child(strangerId).remove(); // दूसरे को Waiting से हटाओ
                     startChat(chatRoom);
                 } else {
                     db.ref("waiting").child(userId).set(true);
@@ -98,8 +105,30 @@
             }
         }
 
+        // ➕ Friend Request भेजें
+        function sendFriendRequest() {
+            if (strangerId) {
+                db.ref("friend_requests").child(strangerId).push(userId);
+                alert("Friend request sent!");
+            }
+        }
+
+        // 🟢 Friend List लोड करें
+        function loadFriends() {
+            db.ref("friends").child(userId).on("value", function(snapshot) {
+                let friendList = document.getElementById("friend-list");
+                friendList.innerHTML = "";
+                snapshot.forEach(friend => {
+                    let li = document.createElement("li");
+                    li.textContent = friend.val();
+                    friendList.appendChild(li);
+                });
+            });
+        }
+
         // 🚀 शुरू करें
         findStranger();
+        loadFriends();
     </script>
 
 </body>
