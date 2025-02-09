@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Stranger Chat</title>
+    <title>Stranger Chat - WhatsApp Style</title>
     <style>
+        /* 🌟 WhatsApp-Style Chat UI */
         body {
             font-family: Arial, sans-serif;
             display: flex;
@@ -12,34 +13,78 @@
             align-items: center;
             justify-content: center;
             height: 100vh;
-            background-color: #f4f4f4;
+            background-color: #e5ddd5;
+        }
+        .chat-container {
+            width: 350px;
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.2);
         }
         #chat-box {
-            width: 300px;
+            width: 100%;
             height: 400px;
-            border: 1px solid #ccc;
-            overflow-y: auto;
+            border-radius: 10px;
             padding: 10px;
-            background: white;
-            margin-bottom: 10px;
+            background: #fafafa;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+        .message {
+            padding: 10px;
+            margin: 5px;
+            border-radius: 10px;
+            max-width: 70%;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+        .my-message {
+            background-color: #dcf8c6;
+            align-self: flex-end;
+        }
+        .stranger-message {
+            background-color: #fff;
+            border: 1px solid #ddd;
+            align-self: flex-start;
+        }
+        .input-container {
+            display: flex;
+            margin-top: 10px;
         }
         #message-input {
-            width: 200px;
-            padding: 5px;
+            flex: 1;
+            padding: 8px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
         }
         button {
-            padding: 6px;
+            padding: 8px 12px;
+            margin-left: 5px;
             cursor: pointer;
+            border: none;
+            background-color: #007bff;
+            color: white;
+            border-radius: 5px;
+        }
+        .add-friend {
+            background-color: #28a745;
             margin-top: 5px;
         }
     </style>
 </head>
 <body>
 
-    <h2>Stranger Chat</h2>
-    <div id="chat-box">Finding a stranger...</div>
-    <input type="text" id="message-input" placeholder="Type a message...">
-    <button onclick="sendMessage()">Send</button>
+    <div class="chat-container">
+        <h2>Stranger Chat</h2>
+        <div id="chat-box">Finding a stranger...</div>
+        <div class="input-container">
+            <input type="text" id="message-input" placeholder="Type a message...">
+            <button onclick="sendMessage()">Send</button>
+        </div>
+        <button class="add-friend" onclick="sendFriendRequest()">Add as Friend</button>
+    </div>
 
     <!-- Firebase SDK (Stable v8) -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
@@ -71,21 +116,17 @@
                 let waitingUsers = snapshot.val();
                 
                 if (waitingUsers && Object.keys(waitingUsers).length > 0) {
-                    // किसी को पहले से वेटिंग लिस्ट में जोड़ो
                     strangerId = Object.keys(waitingUsers)[0];
                     chatRoom = "chat_" + strangerId + "_" + userId;
-                    db.ref("waiting").child(strangerId).remove(); // दूसरे को Waiting से हटाओ
+                    db.ref("waiting").child(strangerId).remove();
                     
-                    // चैट रूम स्टोर करो
                     db.ref("connectedUsers").child(userId).set({ chatRoom, strangerId });
                     db.ref("connectedUsers").child(strangerId).set({ chatRoom, strangerId: userId });
 
                     startChat(chatRoom);
                 } else {
-                    // अगर कोई नहीं है, तो इस यूजर को वेटिंग में डालो
                     db.ref("waiting").child(userId).set(true);
                     
-                    // Listen for changes
                     db.ref("connectedUsers").child(userId).on("value", function(snapshot) {
                         let data = snapshot.val();
                         if (data && data.chatRoom) {
@@ -104,9 +145,20 @@
             chatRoom = room;
             db.ref("messages").child(chatRoom).on("child_added", function(snapshot) {
                 let chatBox = document.getElementById("chat-box");
-                let message = document.createElement("div");
-                message.textContent = snapshot.val();
-                chatBox.appendChild(message);
+                let messageDiv = document.createElement("div");
+                messageDiv.classList.add("message");
+
+                let messageText = snapshot.val();
+                if (messageText.startsWith(userId)) {
+                    messageDiv.classList.add("my-message");
+                    messageDiv.style.alignSelf = "flex-end";
+                } else {
+                    messageDiv.classList.add("stranger-message");
+                    messageDiv.style.alignSelf = "flex-start";
+                }
+
+                messageDiv.textContent = messageText.replace(userId + ": ", "").replace(strangerId + ": ", "");
+                chatBox.appendChild(messageDiv);
                 chatBox.scrollTop = chatBox.scrollHeight;
             });
         }
@@ -117,6 +169,21 @@
             if (input.value.trim() !== "" && chatRoom) {
                 db.ref("messages").child(chatRoom).push(userId + ": " + input.value);
                 input.value = "";
+            }
+        }
+
+        // ➕ Friend Request भेजें
+        function sendFriendRequest() {
+            if (strangerId) {
+                db.ref("friendRequests").push({
+                    from: userId,
+                    to: strangerId,
+                    status: "pending"
+                }).then(() => {
+                    alert("✅ Friend Request Sent!");
+                });
+            } else {
+                alert("❌ No stranger connected yet!");
             }
         }
 
