@@ -97,8 +97,8 @@
         .slide-menu {
             position: fixed;
             top: 0;
-            left: -350px; /* Adjusted */
-            width: 280px; /* Adjusted */
+            left: -350px;
+            width: 280px;
             height: 100vh;
             background: #075e54;
             color: white;
@@ -125,11 +125,9 @@
             border-bottom: 1px solid #ccc;
         }
         .friends-list li button {
-            background: #ff4444;
-            color: white;
+            background: none;
             border: none;
-            padding: 5px 10px;
-            border-radius: 5px;
+            color: white;
             cursor: pointer;
         }
         .friends-list li .chat-icon {
@@ -188,16 +186,6 @@
             border-radius: 5px;
             cursor: pointer;
         }
-        /* Skip Button */
-        .skip-button {
-            padding: 8px;
-            margin-left: 5px;
-            cursor: pointer;
-            background: #ff4444;
-            color: white;
-            border: none;
-            border-radius: 5px;
-        }
         /* Tags Input */
         .tags-input {
             display: flex;
@@ -220,12 +208,26 @@
             color: white;
             cursor: pointer;
         }
+        /* Skip Button */
+        .skip-button {
+            padding: 8px;
+            margin-left: 5px;
+            cursor: pointer;
+            background: #ff4444;
+            color: white;
+            border: none;
+            border-radius: 5px;
+        }
     </style>
 </head>
 <body>
 
     <!-- Slide Menu -->
     <div class="slide-menu" id="slide-menu">
+        <h2>Random Chat</h2>
+        <ul class="friends-list">
+            <li onclick="startRandomChat()">Start Random Chat</li>
+        </ul>
         <h2>Friends</h2>
         <ul class="friends-list" id="friends-list">
             <!-- Friends will be dynamically added here -->
@@ -254,7 +256,7 @@
                 <input type="text" id="tag-input" placeholder="Type a tag and press Enter">
             </div>
             <div id="tags-container"></div>
-            <button onclick="startMatching()">Start</button>
+            <button onclick="saveSettings()">Save</button>
         </div>
     </div>
 
@@ -270,8 +272,8 @@
                 </button>
                 <span class="notification-badge" id="notification-badge" style="display: none;">0</span>
             </div>
-            <button id="add-friend-btn" onclick="sendFriendRequest()">
-                <i class="fas fa-user-plus"></i>
+            <button id="settings-btn" onclick="openSettings()">
+                <i class="fas fa-cog"></i>
             </button>
         </div>
         <div id="chat-box">Finding a stranger...</div>
@@ -280,7 +282,7 @@
             <button class="send-button" onclick="sendMessage()">
                 <i class="fas fa-paper-plane"></i>
             </button>
-            <button class="skip-button" onclick="skipStranger()">
+            <button class="skip-button" onclick="confirmSkip()">
                 <i class="fas fa-forward"></i> Skip
             </button>
         </div>
@@ -306,21 +308,38 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
 
-        // Use localStorage to persist userId
+        // Use localStorage to persist userId, gender, and tags
         let userId = localStorage.getItem("userId");
         if (!userId) {
             userId = "user_" + Math.random().toString(36).substr(2, 9);
             localStorage.setItem("userId", userId);
         }
 
+        let gender = localStorage.getItem("gender") || null;
+        let tags = JSON.parse(localStorage.getItem("tags")) || [];
         let chatRoom = null;
         let strangerId = null;
-        let gender = null;
-        let tags = [];
 
-        // Show Gender and Tags Modal on Load
+        // Show Gender and Tags Modal if not set
         const genderTagsModal = document.getElementById("gender-tags-modal");
-        genderTagsModal.style.display = "flex";
+        if (!gender || tags.length === 0) {
+            genderTagsModal.style.display = "flex";
+        }
+
+        // Open Settings Modal
+        function openSettings() {
+            document.getElementById("gender-select").value = gender;
+            renderTags();
+            genderTagsModal.style.display = "flex";
+        }
+
+        // Save Settings
+        function saveSettings() {
+            gender = document.getElementById("gender-select").value;
+            localStorage.setItem("gender", gender);
+            localStorage.setItem("tags", JSON.stringify(tags));
+            genderTagsModal.style.display = "none";
+        }
 
         // Add Tags
         const tagInput = document.getElementById("tag-input");
@@ -352,123 +371,18 @@
             });
         }
 
-        // Start Matching
-        function startMatching() {
-            gender = document.getElementById("gender-select").value;
-            genderTagsModal.style.display = "none";
+        // Start Random Chat
+        function startRandomChat() {
             findStranger();
+            toggleMenu();
         }
 
-        // Toggle Slide Menu
-        function toggleMenu() {
-            const slideMenu = document.getElementById("slide-menu");
-            slideMenu.classList.toggle("open");
-        }
-
-        // Close Slide Menu when clicking outside
-        document.addEventListener("click", (event) => {
-            const slideMenu = document.getElementById("slide-menu");
-            const menuToggle = document.querySelector(".menu-toggle");
-            if (!slideMenu.contains(event.target) && !menuToggle.contains(event.target)) {
-                slideMenu.classList.remove("open");
+        // Confirm Skip
+        function confirmSkip() {
+            if (confirm("Are you sure you want to skip this stranger?")) {
+                skipStranger();
             }
-        });
-
-        // Load Friends List
-        function loadFriendsList() {
-            db.ref("friendList").child(userId).on("value", (snapshot) => {
-                const friends = snapshot.val() || {};
-                const friendsList = document.getElementById("friends-list");
-                friendsList.innerHTML = ""; // Clear existing list
-                for (const friendId in friends) {
-                    const li = document.createElement("li");
-                    li.textContent = friendId;
-                    const chatIcon = document.createElement("button");
-                    chatIcon.className = "chat-icon";
-                    chatIcon.innerHTML = '<i class="fas fa-comment"></i>';
-                    chatIcon.onclick = () => startPersonalChat(friendId);
-                    const unfriendButton = document.createElement("button");
-                    unfriendButton.textContent = "Unfriend";
-                    unfriendButton.onclick = () => unfriend(friendId);
-                    li.appendChild(chatIcon);
-                    li.appendChild(unfriendButton);
-                    friendsList.appendChild(li);
-                }
-            });
         }
-
-        // Unfriend a User
-        function unfriend(friendId) {
-            db.ref("friendList").child(userId).child(friendId).remove();
-            db.ref("friendList").child(friendId).child(userId).remove();
-            loadFriendsList();
-        }
-
-        // Start Personal Chat
-        function startPersonalChat(friendId) {
-            chatRoom = "personal_" + userId + "_" + friendId;
-            startChat(chatRoom);
-        }
-
-        // Show Friend Requests Modal
-        function showFriendRequests() {
-            const modal = document.getElementById("friend-request-modal");
-            modal.style.display = "flex";
-            db.ref("friendRequests").child(userId).once("value", (snapshot) => {
-                const requests = snapshot.val() || {};
-                const requestsList = document.getElementById("friend-requests-list");
-                requestsList.innerHTML = ""; // Clear existing list
-                for (const requesterId in requests) {
-                    const li = document.createElement("li");
-                    li.textContent = requesterId;
-                    const acceptButton = document.createElement("button");
-                    acceptButton.textContent = "Accept";
-                    acceptButton.onclick = () => acceptFriendRequest(requesterId);
-                    const declineButton = document.createElement("button");
-                    declineButton.textContent = "Decline";
-                    declineButton.onclick = () => declineFriendRequest(requesterId);
-                    li.appendChild(acceptButton);
-                    li.appendChild(declineButton);
-                    requestsList.appendChild(li);
-                }
-            });
-        }
-
-        // Close Modal
-        function closeModal() {
-            const modal = document.getElementById("friend-request-modal");
-            modal.style.display = "none";
-        }
-
-        // Accept Friend Request
-        function acceptFriendRequest(requesterId) {
-            db.ref("friendList").child(userId).update({ [requesterId]: true });
-            db.ref("friendList").child(requesterId).update({ [userId]: true });
-            db.ref("friendRequests").child(userId).child(requesterId).remove();
-            loadFriendsList();
-            updateNotificationBadge(0);
-            closeModal();
-        }
-
-        // Decline Friend Request
-        function declineFriendRequest(requesterId) {
-            db.ref("friendRequests").child(userId).child(requesterId).remove();
-            updateNotificationBadge(0);
-            closeModal();
-        }
-
-        // Update Notification Badge
-        function updateNotificationBadge(count) {
-            const badge = document.getElementById("notification-badge");
-            badge.textContent = count;
-            badge.style.display = count > 0 ? "block" : "none";
-        }
-
-        // Listen for Friend Requests
-        db.ref("friendRequests").child(userId).on("value", (snapshot) => {
-            const requests = snapshot.val() || {};
-            updateNotificationBadge(Object.keys(requests).length);
-        });
 
         // Skip Stranger
         function skipStranger() {
@@ -477,87 +391,6 @@
                 db.ref("connectedUsers").child(strangerId).remove();
                 db.ref("messages").child(chatRoom).remove();
                 findStranger();
-            }
-        }
-
-        // Find Stranger
-        function findStranger() {
-            db.ref("waiting").once("value", function(snapshot) {
-                let waitingUsers = snapshot.val();
-                
-                if (waitingUsers && Object.keys(waitingUsers).length > 0) {
-                    strangerId = Object.keys(waitingUsers)[0];
-                    chatRoom = "chat_" + strangerId + "_" + userId;
-                    db.ref("waiting").child(strangerId).remove();
-                    
-                    db.ref("connectedUsers").child(userId).set({ chatRoom, strangerId });
-                    db.ref("connectedUsers").child(strangerId).set({ chatRoom, strangerId: userId });
-
-                    startChat(chatRoom);
-                } else {
-                    db.ref("waiting").child(userId).set(true);
-                    
-                    db.ref("connectedUsers").child(userId).on("value", function(snapshot) {
-                        let data = snapshot.val();
-                        if (data && data.chatRoom) {
-                            chatRoom = data.chatRoom;
-                            strangerId = data.strangerId;
-                            startChat(chatRoom);
-                        }
-                    });
-                }
-            });
-        }
-
-        // Start Chat
-        function startChat(room) {
-            document.getElementById("chat-box").innerHTML = "";
-            document.getElementById("stranger-name").innerText = "Stranger";
-
-            db.ref("friendList").child(userId).once("value", (snapshot) => {
-                let friends = snapshot.val() || {};
-                if (friends[strangerId]) {
-                    document.getElementById("add-friend-btn").innerHTML = '<i class="fas fa-user-check"></i>';
-                    document.getElementById("add-friend-btn").disabled = true;
-                }
-            });
-
-            chatRoom = room;
-            db.ref("messages").child(chatRoom).on("child_added", function(snapshot) {
-                let chatBox = document.getElementById("chat-box");
-                let messageDiv = document.createElement("div");
-                messageDiv.classList.add("message");
-
-                let messageText = snapshot.val();
-                if (messageText.startsWith(userId)) {
-                    messageDiv.classList.add("my-message");
-                } else {
-                    messageDiv.classList.add("stranger-message");
-                }
-
-                messageDiv.textContent = messageText.replace(userId + ": ", "").replace(strangerId + ": ", "");
-                chatBox.appendChild(messageDiv);
-                chatBox.scrollTop = chatBox.scrollHeight;
-            });
-
-            // Show input container after connection
-            document.querySelector(".input-container").style.display = "flex";
-        }
-
-        // Send Message
-        function sendMessage() {
-            let input = document.getElementById("message-input");
-            if (input.value.trim() !== "" && chatRoom) {
-                db.ref("messages").child(chatRoom).push(userId + ": " + input.value);
-                input.value = "";
-            }
-        }
-
-        // Send Friend Request
-        function sendFriendRequest() {
-            if (strangerId) {
-                db.ref("friendRequests").child(strangerId).update({ [userId]: true });
-                alert("Friend request sent!");
             }
         }
 
