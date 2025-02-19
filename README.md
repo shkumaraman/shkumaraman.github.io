@@ -3,7 +3,7 @@
 Welcome to **SHKUMARAMAN** – Your ultimate destination for Code Editor, TXT Editor, Blogs, etc.
 
 ## 🚀 About Us
-SHKUMARAMAN is dedicated to providing high-quality content and services. Whether you're looking for insightful articles, trending updates, or engaging discussions, we have something for everyone!
+We create tools that make your work easier and more efficient. With our technology, you can effortlessly edit HTML, CSS, JavaScript, TXT, and other files. Our goal is to simplify your workflow and enhance productivity.
 
 ## 🌟 Features
 - ✅ **Informative Blogs** – Stay updated with the latest trends.
