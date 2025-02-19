@@ -1,6 +1,6 @@
 # SHKUMARAMAN
 
-Welcome to **SHKUMARAMAN** – Your ultimate destination for [Code Editor, TXT Editor, Blogs, etc.].
+Welcome to **SHKUMARAMAN** – Your ultimate destination for Code Editor, TXT Editor, Blogs, etc.
 
 ## 🚀 About Us
 SHKUMARAMAN is dedicated to providing high-quality content and services. Whether you're looking for insightful articles, trending updates, or engaging discussions, we have something for everyone!
@@ -20,10 +20,7 @@ SHKUMARAMAN is dedicated to providing high-quality content and services. Whether
 - 📷 Instagram: [@sh.kumar.aman](https://instagram.com/sh.kumar.aman)
 - 💬 Facebook: [Aman Kumar](https://facebook.com/sh.kumar.aman)
 - in LinkedIn: [Aman Kumar](https://linkedin.com/in/shkumaraman)
-- 
-## 📜 License
-This project is licensed under the [MIT License](LICENSE).
-
+  
 ---
 *Thank you for visiting! Stay connected and keep exploring.*
 
