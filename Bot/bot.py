@@ -1,13 +1,11 @@
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 from telegram import Update
-import pytesseract
-from PIL import Image
 import requests
 import io
 import os
 import logging
 
-# Setup logging
+# Logging setup
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -21,7 +19,7 @@ if not TOKEN:
 user_states = {}
 
 def start(update: Update, context):
-    update.message.reply_text("Send your payment screenshot...")
+    update.message.reply_text("Send your payment screenshot (jpg, jpeg, png)...")
 
 def handle_photo(update: Update, context):
     try:
@@ -29,9 +27,14 @@ def handle_photo(update: Update, context):
         photo_file = update.message.photo[-1].get_file()
         photo_bytes = photo_file.download_as_bytearray()
 
-        image = Image.open(io.BytesIO(photo_bytes))
-        text = pytesseract.image_to_string(image)
-
+        # OCR using free ocr.space API
+        res = requests.post(
+            "https://api.ocr.space/parse/image",
+            files={"file": ("screenshot.jpg", photo_bytes)},
+            data={"apikey": "helloworld", "language": "eng"}
+        )
+        result = res.json()
+        text = result['ParsedResults'][0]['ParsedText'] if 'ParsedResults' in result else ""
         logging.info(f"OCR Output from {user_id}: {text}")
 
         amount = 0
@@ -41,12 +44,15 @@ def handle_photo(update: Update, context):
             amount = 50
         elif "10" in text or "₹10" in text:
             amount = 10
+        elif "5" in text or "₹5" in text:
+            amount = 5
 
         if amount > 0:
             user_states[user_id] = amount
             update.message.reply_text(f"Detected payment: ₹{amount}. Now send your email.")
         else:
             update.message.reply_text("Could not detect payment amount. Please try again.")
+
     except Exception as e:
         logging.error(f"Error in handle_photo: {e}")
         update.message.reply_text("There was an error processing the image.")
@@ -89,7 +95,6 @@ def main():
     dp.add_handler(MessageHandler(Filters.photo, handle_photo))
     dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_text))
 
-    # Global error handler
     dp.add_error_handler(error_handler)
 
     updater.start_polling()
