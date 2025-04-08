@@ -26,4 +26,45 @@ def handle_photo(update: Update, context):
 
     amount = 0
     if "100" in text or "₹100" in text:
-        amount
+        amount = 100
+    elif "50" in text or "₹50" in text:
+        amount = 50
+    elif "10" in text or "₹10" in text:
+        amount = 10
+
+    if amount > 0:
+        user_states[user_id] = amount
+        update.message.reply_text(f"Detected payment: ₹{amount}. Now send your email.")
+    else:
+        update.message.reply_text("Could not detect payment amount. Please try again.")
+
+def handle_text(update: Update, context):
+    user_id = update.message.from_user.id
+    if user_id in user_states:
+        email = update.message.text
+        amount = user_states[user_id]
+
+        res = requests.post("https://yourwebsite.com/update_premium.php", data={
+            "email": email,
+            "amount": amount
+        })
+
+        if "Success" in res.text:
+            update.message.reply_text("Your account is now premium!")
+        else:
+            update.message.reply_text("Something went wrong. Please contact support.")
+        del user_states[user_id]
+    else:
+        update.message.reply_text("Please send a payment screenshot first.")
+
+def main():
+    updater = Updater(TOKEN)
+    dp = updater.dispatcher
+    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(MessageHandler(Filters.photo, handle_photo))
+    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_text))
+    updater.start_polling()
+    updater.idle()
+
+if __name__ == "__main__":
+    main()
