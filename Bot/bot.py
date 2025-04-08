@@ -4,11 +4,17 @@ import pytesseract
 from PIL import Image
 import requests
 import io
-
+import os
 import logging
+
+# Logging for debug
 logging.basicConfig(level=logging.INFO)
 
-TOKEN = "YOUR_BOT_TOKEN"
+# Get bot token securely from environment variable
+TOKEN = os.getenv("BOT_TOKEN")
+if not TOKEN:
+    raise ValueError("BOT_TOKEN environment variable not set")
+
 user_states = {}
 
 def start(update: Update, context):
@@ -41,18 +47,24 @@ def handle_photo(update: Update, context):
 def handle_text(update: Update, context):
     user_id = update.message.from_user.id
     if user_id in user_states:
-        email = update.message.text
+        email = update.message.text.strip()
         amount = user_states[user_id]
 
-        res = requests.post("https://yourwebsite.com/update_premium.php", data={
-            "email": email,
-            "amount": amount
-        })
+        try:
+            res = requests.post("https://yourwebsite.com/update_premium.php", data={
+                "email": email,
+                "amount": amount
+            })
 
-        if "Success" in res.text:
-            update.message.reply_text("Your account is now premium!")
-        else:
-            update.message.reply_text("Something went wrong. Please contact support.")
+            if res.ok and "Success" in res.text:
+                update.message.reply_text("Your account is now premium!")
+            else:
+                update.message.reply_text("Something went wrong. Please contact support.")
+
+        except Exception as e:
+            logging.error(f"Error while updating: {e}")
+            update.message.reply_text("Server error. Try again later.")
+
         del user_states[user_id]
     else:
         update.message.reply_text("Please send a payment screenshot first.")
