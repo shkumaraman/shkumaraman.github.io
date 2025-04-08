@@ -15,14 +15,14 @@ TOKEN = os.getenv("BOT_TOKEN")
 if not TOKEN:
     raise ValueError("BOT_TOKEN environment variable not set")
 
-# Webhook URL (your deployed domain)
+# Webhook URL (replace with your actual Render domain)
 WEBHOOK_URL = f"https://your-app-name.onrender.com/{TOKEN}"
 
 # Store user payment states
 user_states = {}
 
 def start(update: Update, context):
-    update.message.reply_text("Please send a screenshot of your payment (₹5).")
+    update.message.reply_text("Send your ₹5 payment screenshot to get premium access.")
 
 def handle_photo(update: Update, context):
     user_id = update.message.from_user.id
@@ -33,44 +33,37 @@ def handle_photo(update: Update, context):
         image = Image.open(io.BytesIO(photo_bytes))
         text = pytesseract.image_to_string(image)
 
-        logging.info(f"OCR Output from {user_id}: {text}")
+        logging.info(f"OCR from {user_id}: {text}")
 
-        amount = 0
         if "5" in text or "₹5" in text:
-            amount = 5
-
-        if amount == 5:
-            user_states[user_id] = amount
-            update.message.reply_text("₹5 detected. Please send your email now.")
+            user_states[user_id] = 5
+            update.message.reply_text("₹5 detected. Now send your email.")
         else:
-            update.message.reply_text("Couldn't detect ₹5 in the screenshot. Try again.")
+            update.message.reply_text("Couldn't detect ₹5. Try again with a clearer screenshot.")
     except Exception as e:
-        logging.error(f"Image processing error: {e}")
-        update.message.reply_text("There was an error processing the image.")
+        logging.error(f"OCR error: {e}")
+        update.message.reply_text("Error processing image. Try again.")
 
 def handle_text(update: Update, context):
     user_id = update.message.from_user.id
     if user_id in user_states:
         email = update.message.text.strip()
-        amount = user_states[user_id]
-
         try:
             res = requests.post("https://yourwebsite.com/update_premium.php", data={
                 "email": email,
-                "amount": amount
+                "amount": user_states[user_id]
             })
-
             if res.ok and "Success" in res.text:
-                update.message.reply_text("Your account has been upgraded to premium!")
+                update.message.reply_text("Premium activated!")
             else:
-                update.message.reply_text("Something went wrong. Please contact support.")
+                update.message.reply_text("Failed. Contact support.")
         except Exception as e:
             logging.error(f"Update error: {e}")
-            update.message.reply_text("Server error. Try again later.")
+            update.message.reply_text("Server error.")
 
         del user_states[user_id]
     else:
-        update.message.reply_text("Please send a payment screenshot first.")
+        update.message.reply_text("Send payment screenshot first.")
 
 def main():
     updater = Updater(TOKEN)
@@ -80,14 +73,15 @@ def main():
     dp.add_handler(MessageHandler(Filters.photo, handle_photo))
     dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_text))
 
-    # Webhook setup
-    PORT = int(os.environ.get("PORT", 8443))
+    PORT = int(os.environ.get("PORT", 10000))
+
     updater.start_webhook(
         listen="0.0.0.0",
         port=PORT,
         url_path=TOKEN
     )
     updater.bot.setWebhook(WEBHOOK_URL)
+
     updater.idle()
 
 if __name__ == "__main__":
