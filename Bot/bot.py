@@ -20,7 +20,7 @@ bot = Bot(TOKEN)
 dispatcher = Dispatcher(bot=bot, update_queue=None, use_context=True)
 
 # Enable logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 # Store user state temporarily
 user_states = {}
@@ -46,10 +46,13 @@ def handle_photo(update, context):
         photo_file = update.message.photo[-1].get_file()
         photo_bytes = photo_file.download_as_bytearray()
 
+        logging.info(f"Received photo from user {user_id}")
+
+        # Try to open image
         image = Image.open(io.BytesIO(photo_bytes))
         text = pytesseract.image_to_string(image)
 
-        logging.info(f"OCR from {user_id}: {text}")
+        logging.info(f"OCR output from {user_id}: {text}")
 
         if "5" in text or "₹5" in text:
             user_states[user_id] = 5
@@ -57,7 +60,7 @@ def handle_photo(update, context):
         else:
             update.message.reply_text("Couldn't detect ₹5. Try again with a clearer screenshot.")
     except Exception as e:
-        logging.error(f"OCR error: {e}")
+        logging.exception("Error during image processing")
         update.message.reply_text("Error processing image. Try again.")
 
 # Handle text (email)
@@ -73,13 +76,13 @@ def handle_text(update, context):
             if res.ok and "Success" in res.text:
                 update.message.reply_text("Premium activated!")
             else:
-                update.message.reply_text("Failed. Contact support.")
+                update.message.reply_text("Failed to activate premium. Please contact support.")
         except Exception as e:
-            logging.error(f"Update error: {e}")
-            update.message.reply_text("Server error.")
+            logging.exception("Error sending premium update request")
+            update.message.reply_text("Server error. Please try again later.")
         del user_states[user_id]
     else:
-        update.message.reply_text("Send payment screenshot first.")
+        update.message.reply_text("Please send a payment screenshot first.")
 
 # Register handlers
 dispatcher.add_handler(CommandHandler("start", start))
@@ -88,14 +91,16 @@ dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_te
 
 # Start Flask app and set webhook
 if __name__ == "__main__":
-    # Dynamically set webhook using Render's hostname
+    # Render external URL
     render_hostname = os.getenv("RENDER_EXTERNAL_HOSTNAME")
     if not render_hostname:
         raise ValueError("RENDER_EXTERNAL_HOSTNAME not set")
-    
+
+    # Set Telegram webhook
     webhook_url = f"https://{render_hostname}/{TOKEN}"
     bot.setWebhook(webhook_url)
+    logging.info(f"Webhook set to {webhook_url}")
 
-    # Run Flask app
+    # Run the Flask app
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
