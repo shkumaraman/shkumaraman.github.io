@@ -1,30 +1,37 @@
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
-from telegram import Update
-import pytesseract
-from PIL import Image
-import requests
-import io
 import os
 import logging
+import requests
+import pytesseract
+from PIL import Image
+from telegram import Update
+from telegram.ext import (
+    Updater, CommandHandler, MessageHandler,
+    Filters, CallbackContext
+)
+import io
 
 # Enable logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
-# Bot token from environment
+# Get environment variables
 TOKEN = os.getenv("BOT_TOKEN")
+PORT = int(os.environ.get("PORT", 8443))  # Render uses this port
+
 if not TOKEN:
     raise ValueError("BOT_TOKEN environment variable not set")
 
-# Webhook URL (your deployed domain)
-WEBHOOK_URL = f"https://your-app-name.onrender.com/{TOKEN}"
+WEBHOOK_URL = f"https://your-service-name.onrender.com/{TOKEN}"  # CHANGE this to your Render app URL
 
-# Store user payment states
 user_states = {}
 
-def start(update: Update, context):
-    update.message.reply_text("Please send a screenshot of your payment (₹5).")
+def start(update: Update, context: CallbackContext):
+    update.message.reply_text("Send your payment screenshot...")
 
-def handle_photo(update: Update, context):
+def handle_photo(update: Update, context: CallbackContext):
     user_id = update.message.from_user.id
     try:
         photo_file = update.message.photo[-1].get_file()
@@ -36,19 +43,25 @@ def handle_photo(update: Update, context):
         logging.info(f"OCR Output from {user_id}: {text}")
 
         amount = 0
-        if "5" in text or "₹5" in text:
+        if "100" in text or "₹100" in text:
+            amount = 100
+        elif "50" in text or "₹50" in text:
+            amount = 50
+        elif "10" in text or "₹10" in text:
+            amount = 10
+        elif "5" in text or "₹5" in text:
             amount = 5
 
-        if amount == 5:
+        if amount > 0:
             user_states[user_id] = amount
-            update.message.reply_text("₹5 detected. Please send your email now.")
+            update.message.reply_text(f"Detected payment: ₹{amount}. Now send your email.")
         else:
-            update.message.reply_text("Couldn't detect ₹5 in the screenshot. Try again.")
+            update.message.reply_text("Could not detect payment amount. Please try again.")
     except Exception as e:
-        logging.error(f"Image processing error: {e}")
+        logger.error(f"Image processing failed: {e}")
         update.message.reply_text("There was an error processing the image.")
 
-def handle_text(update: Update, context):
+def handle_text(update: Update, context: CallbackContext):
     user_id = update.message.from_user.id
     if user_id in user_states:
         email = update.message.text.strip()
@@ -61,11 +74,11 @@ def handle_text(update: Update, context):
             })
 
             if res.ok and "Success" in res.text:
-                update.message.reply_text("Your account has been upgraded to premium!")
+                update.message.reply_text("Your account is now premium!")
             else:
                 update.message.reply_text("Something went wrong. Please contact support.")
         except Exception as e:
-            logging.error(f"Update error: {e}")
+            logger.error(f"Error while updating: {e}")
             update.message.reply_text("Server error. Try again later.")
 
         del user_states[user_id]
@@ -73,21 +86,20 @@ def handle_text(update: Update, context):
         update.message.reply_text("Please send a payment screenshot first.")
 
 def main():
-    updater = Updater(TOKEN)
+    updater = Updater(TOKEN, use_context=True)
     dp = updater.dispatcher
 
     dp.add_handler(CommandHandler("start", start))
     dp.add_handler(MessageHandler(Filters.photo, handle_photo))
     dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_text))
 
-    # Webhook setup
-    PORT = int(os.environ.get("PORT", 8443))
     updater.start_webhook(
         listen="0.0.0.0",
         port=PORT,
-        url_path=TOKEN
+        url_path=TOKEN,
+        webhook_url=WEBHOOK_URL
     )
-    updater.bot.setWebhook(WEBHOOK_URL)
+
     updater.idle()
 
 if __name__ == "__main__":
