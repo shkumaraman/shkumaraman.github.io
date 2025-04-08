@@ -1,5 +1,6 @@
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
-from telegram import Update
+from flask import Flask, request
+from telegram import Update, Bot
+from telegram.ext import Dispatcher, CommandHandler, MessageHandler, Filters
 import pytesseract
 from PIL import Image
 import requests
@@ -7,24 +8,30 @@ import io
 import os
 import logging
 
-# Enable logging
+app = Flask(__name__)
+
+TOKEN = os.getenv("BOT_TOKEN")
+bot = Bot(TOKEN)
+dispatcher = Dispatcher(bot=bot, update_queue=None, use_context=True)
+
 logging.basicConfig(level=logging.INFO)
 
-# Bot token from environment
-TOKEN = os.getenv("BOT_TOKEN")
-if not TOKEN:
-    raise ValueError("BOT_TOKEN environment variable not set")
-
-# Webhook URL (replace with your actual Render domain)
-WEBHOOK_URL = f"https://your-app-name.onrender.com/{TOKEN}"
-
-# Store user payment states
 user_states = {}
 
-def start(update: Update, context):
+@app.route(f'/{TOKEN}', methods=['POST'])
+def webhook():
+    update = Update.de_json(request.get_json(force=True), bot)
+    dispatcher.process_update(update)
+    return 'OK'
+
+@app.route('/')
+def index():
+    return 'Bot is running'
+
+def start(update, context):
     update.message.reply_text("Send your ₹5 payment screenshot to get premium access.")
 
-def handle_photo(update: Update, context):
+def handle_photo(update, context):
     user_id = update.message.from_user.id
     try:
         photo_file = update.message.photo[-1].get_file()
@@ -44,7 +51,7 @@ def handle_photo(update: Update, context):
         logging.error(f"OCR error: {e}")
         update.message.reply_text("Error processing image. Try again.")
 
-def handle_text(update: Update, context):
+def handle_text(update, context):
     user_id = update.message.from_user.id
     if user_id in user_states:
         email = update.message.text.strip()
@@ -60,29 +67,14 @@ def handle_text(update: Update, context):
         except Exception as e:
             logging.error(f"Update error: {e}")
             update.message.reply_text("Server error.")
-
         del user_states[user_id]
     else:
         update.message.reply_text("Send payment screenshot first.")
 
-def main():
-    updater = Updater(TOKEN)
-    dp = updater.dispatcher
+# Register handlers
+dispatcher.add_handler(CommandHandler("start", start))
+dispatcher.add_handler(MessageHandler(Filters.photo, handle_photo))
+dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_text))
 
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(MessageHandler(Filters.photo, handle_photo))
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_text))
-
-    PORT = int(os.environ.get("PORT", 10000))
-
-    updater.start_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        url_path=TOKEN
-    )
-    updater.bot.setWebhook(WEBHOOK_URL)
-
-    updater.idle()
-
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    app.run(host="0.0.0.0", port=443)
