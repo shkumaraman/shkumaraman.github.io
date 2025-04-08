@@ -1,60 +1,51 @@
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 from telegram import Update
+import pytesseract
+from PIL import Image
 import requests
 import io
 import os
 import logging
 
-# Logging setup
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+# Enable logging
+logging.basicConfig(level=logging.INFO)
 
-# Get bot token from environment variable
+# Bot token from environment
 TOKEN = os.getenv("BOT_TOKEN")
 if not TOKEN:
     raise ValueError("BOT_TOKEN environment variable not set")
 
+# Webhook URL (your deployed domain)
+WEBHOOK_URL = f"https://your-app-name.onrender.com/{TOKEN}"
+
+# Store user payment states
 user_states = {}
 
 def start(update: Update, context):
-    update.message.reply_text("Send your payment screenshot (jpg, jpeg, png)...")
+    update.message.reply_text("Please send a screenshot of your payment (₹5).")
 
 def handle_photo(update: Update, context):
+    user_id = update.message.from_user.id
     try:
-        user_id = update.message.from_user.id
         photo_file = update.message.photo[-1].get_file()
         photo_bytes = photo_file.download_as_bytearray()
 
-        # OCR using free ocr.space API
-        res = requests.post(
-            "https://api.ocr.space/parse/image",
-            files={"file": ("screenshot.jpg", photo_bytes)},
-            data={"apikey": "helloworld", "language": "eng"}
-        )
-        result = res.json()
-        text = result['ParsedResults'][0]['ParsedText'] if 'ParsedResults' in result else ""
+        image = Image.open(io.BytesIO(photo_bytes))
+        text = pytesseract.image_to_string(image)
+
         logging.info(f"OCR Output from {user_id}: {text}")
 
         amount = 0
-        if "100" in text or "₹100" in text:
-            amount = 100
-        elif "50" in text or "₹50" in text:
-            amount = 50
-        elif "10" in text or "₹10" in text:
-            amount = 10
-        elif "5" in text or "₹5" in text:
+        if "5" in text or "₹5" in text:
             amount = 5
 
-        if amount > 0:
+        if amount == 5:
             user_states[user_id] = amount
-            update.message.reply_text(f"Detected payment: ₹{amount}. Now send your email.")
+            update.message.reply_text("₹5 detected. Please send your email now.")
         else:
-            update.message.reply_text("Could not detect payment amount. Please try again.")
-
+            update.message.reply_text("Couldn't detect ₹5 in the screenshot. Try again.")
     except Exception as e:
-        logging.error(f"Error in handle_photo: {e}")
+        logging.error(f"Image processing error: {e}")
         update.message.reply_text("There was an error processing the image.")
 
 def handle_text(update: Update, context):
@@ -70,22 +61,16 @@ def handle_text(update: Update, context):
             })
 
             if res.ok and "Success" in res.text:
-                update.message.reply_text("Your account is now premium!")
+                update.message.reply_text("Your account has been upgraded to premium!")
             else:
                 update.message.reply_text("Something went wrong. Please contact support.")
-
         except Exception as e:
-            logging.error(f"Error while updating: {e}")
+            logging.error(f"Update error: {e}")
             update.message.reply_text("Server error. Try again later.")
 
         del user_states[user_id]
     else:
         update.message.reply_text("Please send a payment screenshot first.")
-
-def error_handler(update, context):
-    logging.error(msg="Exception while handling update:", exc_info=context.error)
-    if update and update.effective_message:
-        update.effective_message.reply_text("An unexpected error occurred. Please try again later.")
 
 def main():
     updater = Updater(TOKEN)
@@ -95,9 +80,14 @@ def main():
     dp.add_handler(MessageHandler(Filters.photo, handle_photo))
     dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_text))
 
-    dp.add_error_handler(error_handler)
-
-    updater.start_polling()
+    # Webhook setup
+    PORT = int(os.environ.get("PORT", 8443))
+    updater.start_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        url_path=TOKEN
+    )
+    updater.bot.setWebhook(WEBHOOK_URL)
     updater.idle()
 
 if __name__ == "__main__":
