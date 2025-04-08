@@ -8,29 +8,38 @@ import io
 import os
 import logging
 
+# Setup Flask app
 app = Flask(__name__)
 
+# Get Bot Token from environment
 TOKEN = os.getenv("BOT_TOKEN")
+if not TOKEN:
+    raise ValueError("BOT_TOKEN not set in environment")
+
 bot = Bot(TOKEN)
 dispatcher = Dispatcher(bot=bot, update_queue=None, use_context=True)
 
+# Enable logging
 logging.basicConfig(level=logging.INFO)
 
+# Store user state temporarily
 user_states = {}
 
-@app.route(f'/{TOKEN}', methods=['POST'])
+@app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
     update = Update.de_json(request.get_json(force=True), bot)
     dispatcher.process_update(update)
-    return 'OK'
+    return "OK"
 
-@app.route('/')
+@app.route("/")
 def index():
-    return 'Bot is running'
+    return "Bot is running"
 
+# Command: /start
 def start(update, context):
     update.message.reply_text("Send your ₹5 payment screenshot to get premium access.")
 
+# Handle photo
 def handle_photo(update, context):
     user_id = update.message.from_user.id
     try:
@@ -51,6 +60,7 @@ def handle_photo(update, context):
         logging.error(f"OCR error: {e}")
         update.message.reply_text("Error processing image. Try again.")
 
+# Handle text (email)
 def handle_text(update, context):
     user_id = update.message.from_user.id
     if user_id in user_states:
@@ -76,5 +86,16 @@ dispatcher.add_handler(CommandHandler("start", start))
 dispatcher.add_handler(MessageHandler(Filters.photo, handle_photo))
 dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_text))
 
-if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=443)
+# Start Flask app and set webhook
+if __name__ == "__main__":
+    # Dynamically set webhook using Render's hostname
+    render_hostname = os.getenv("RENDER_EXTERNAL_HOSTNAME")
+    if not render_hostname:
+        raise ValueError("RENDER_EXTERNAL_HOSTNAME not set")
+    
+    webhook_url = f"https://{render_hostname}/{TOKEN}"
+    bot.setWebhook(webhook_url)
+
+    # Run Flask app
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
