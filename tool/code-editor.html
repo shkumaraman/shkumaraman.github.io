@@ -264,608 +264,608 @@
       <div id="editor-container" class="border-top"></div>
     </div>
 
-    <div id="editor-container"></div>
-    
+    <!-- JS Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs/loader.js"></script>
+    
+    <!-- Your existing JavaScript remains exactly the same -->
     <script>
+      // Monaco Editor initialization
+      let editor;
+      let htmlContent = localStorage.getItem('htmlContent') || ''; // Load from localStorage if exists
+      let cssContent = localStorage.getItem('cssContent') || '';  // Load from localStorage if exists
+      let jsContent = localStorage.getItem('jsContent') || '';   // Load from localStorage if exists
+      let txtContent = localStorage.getItem('txtContent') || '';  // Load from localStorage if exists
 
-// Monaco Editor initialization
-let editor;
-let htmlContent = localStorage.getItem('htmlContent') || ''; // Load from localStorage if exists
-let cssContent = localStorage.getItem('cssContent') || '';  // Load from localStorage if exists
-let jsContent = localStorage.getItem('jsContent') || '';   // Load from localStorage if exists
-let txtContent = localStorage.getItem('txtContent') || '';  // Load from localStorage if exists
+      // Dark mode
+      function toggleDarkMode() {
+          const body = document.body;
+          const darkModeBtnIcon = document.querySelector("#dark-mode-btn i"); // Icon element
+          const isDarkMode = body.classList.toggle("dark-mode");
 
-// Dark mode
-function toggleDarkMode() {
-    const body = document.body;
-    const darkModeBtnIcon = document.querySelector("#dark-mode-btn i"); // Icon element
-    const isDarkMode = body.classList.toggle("dark-mode");
+          // Save dark mode preference in localStorage
+          localStorage.setItem("darkMode", isDarkMode ? "enabled" : "disabled");
 
-    // Save dark mode preference in localStorage
-    localStorage.setItem("darkMode", isDarkMode ? "enabled" : "disabled");
+          // Change Monaco editor theme based on dark mode
+          if (isDarkMode) {
+              monaco.editor.setTheme("vs-dark");
+              darkModeBtnIcon.classList.remove("fa-sun"); // Remove Sun Icon
+              darkModeBtnIcon.classList.add("fa-moon"); // Add Moon Icon
+          } else {
+              monaco.editor.setTheme("vs-light");
+              darkModeBtnIcon.classList.remove("fa-moon"); // Remove Moon Icon
+              darkModeBtnIcon.classList.add("fa-sun"); // Add Sun Icon
+          }
+      }
 
-    // Change Monaco editor theme based on dark mode
-    if (isDarkMode) {
-        monaco.editor.setTheme("vs-dark");
-        darkModeBtnIcon.classList.remove("fa-sun"); // Remove Sun Icon
-        darkModeBtnIcon.classList.add("fa-moon"); // Add Moon Icon
-    } else {
-        monaco.editor.setTheme("vs-light");
-        darkModeBtnIcon.classList.remove("fa-moon"); // Remove Moon Icon
-        darkModeBtnIcon.classList.add("fa-sun"); // Add Sun Icon
-    }
-}
+      // Load dark mode preference from localStorage
+      function loadDarkModePreference() {
+          const darkModePreference = localStorage.getItem("darkMode");
+          const darkModeBtnIcon = document.querySelector("#dark-mode-btn i");
 
-// Load dark mode preference from localStorage
-function loadDarkModePreference() {
-    const darkModePreference = localStorage.getItem("darkMode");
-    const darkModeBtnIcon = document.querySelector("#dark-mode-btn i");
+          // Apply dark mode if it was enabled
+          if (darkModePreference === "enabled") {
+              document.body.classList.add("dark-mode");
+              monaco.editor.setTheme("vs-dark");
+              darkModeBtnIcon.classList.remove("fa-sun"); // Remove Sun Icon
+              darkModeBtnIcon.classList.add("fa-moon"); // Add Moon Icon
+          } else {
+              document.body.classList.remove("dark-mode");
+              monaco.editor.setTheme("vs-light");
+              darkModeBtnIcon.classList.remove("fa-moon"); // Remove Moon Icon
+              darkModeBtnIcon.classList.add("fa-sun"); // Add Sun Icon
+          }
+      }
 
-    // Apply dark mode if it was enabled
-    if (darkModePreference === "enabled") {
-        document.body.classList.add("dark-mode");
-        monaco.editor.setTheme("vs-dark");
-        darkModeBtnIcon.classList.remove("fa-sun"); // Remove Sun Icon
-        darkModeBtnIcon.classList.add("fa-moon"); // Add Moon Icon
-    } else {
-        document.body.classList.remove("dark-mode");
-        monaco.editor.setTheme("vs-light");
-        darkModeBtnIcon.classList.remove("fa-moon"); // Remove Moon Icon
-        darkModeBtnIcon.classList.add("fa-sun"); // Add Sun Icon
-    }
-}
+      // Load dark mode preference when the page loads
+      window.addEventListener("load", function () {
+          loadDarkModePreference();
+      });
+          
+      // Monaco editor initialization
+      require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@latest/min/vs' } });
 
-// Load dark mode preference when the page loads
-window.addEventListener("load", function () {
-    loadDarkModePreference();
-});
-        
-// Monaco editor initialization
-require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@latest/min/vs' } });
+      require(['vs/editor/editor.main'], function () {
+          editor = monaco.editor.create(document.getElementById('editor-container'), {
+              language: 'html', // Default language is HTML
+              theme: localStorage.getItem("darkMode") === "enabled" ? "vs-dark" : "vs-light", // Set theme based on localStorage
+          });
 
-require(['vs/editor/editor.main'], function () {
-    editor = monaco.editor.create(document.getElementById('editor-container'), {
-        language: 'html', // Default language is HTML
-        theme: localStorage.getItem("darkMode") === "enabled" ? "vs-dark" : "vs-light", // Set theme based on localStorage
-    });
+          // Initialize editor with the loaded content from localStorage
+          editor.setModel(monaco.editor.createModel(htmlContent, 'html'));
+          
+          // Load saved content into the editor
+          loadSavedContent();
 
-    // Initialize editor with the loaded content from localStorage
-    editor.setModel(monaco.editor.createModel(htmlContent, 'html'));
-    
-    // Load saved content into the editor
-    loadSavedContent();
+          // Auto-update output when editor content changes
+          editor.onDidChangeModelContent(() => {
+              saveCurrentTabContent(); // Save content to localStorage
+              runCode(); // Auto-update output
+          });
+      });
 
-    // Auto-update output when editor content changes
-    editor.onDidChangeModelContent(() => {
-        saveCurrentTabContent(); // Save content to localStorage
-        runCode(); // Auto-update output
-    });
-});
+      // Function to load saved content into the editor
+      function loadSavedContent() {
+          const activeTab = localStorage.getItem('activeTab') || 'html'; // Get active tab from localStorage
+          changeTab(activeTab); // Set the active tab
+      }
 
-// Function to load saved content into the editor
-function loadSavedContent() {
-    const activeTab = localStorage.getItem('activeTab') || 'html'; // Get active tab from localStorage
-    changeTab(activeTab); // Set the active tab
-}
+      // Function to change tabs
+      function changeTab(language) {
+          // Save content when switching to another tab
+          saveCurrentTabContent();
 
-// Function to change tabs
-function changeTab(language) {
-    // Save content when switching to another tab
-    saveCurrentTabContent();
+          // Remove the 'active-tab' class from all tabs
+          let tabs = document.querySelectorAll('.tab');
+          tabs.forEach(tab => {
+              tab.classList.remove('active-tab');
+          });
 
-    // Remove the 'active-tab' class from all tabs
-    let tabs = document.querySelectorAll('.tab');
-    tabs.forEach(tab => {
-        tab.classList.remove('active-tab');
-    });
+          // Add the 'active-tab' class to the clicked tab
+          let activeTab = document.querySelector(`.tab:nth-child(${getTabIndex(language)})`);
+          activeTab.classList.add('active-tab');
 
-    // Add the 'active-tab' class to the clicked tab
-    let activeTab = document.querySelector(`.tab:nth-child(${getTabIndex(language)})`);
-    activeTab.classList.add('active-tab');
+          // Switch content based on the tab clicked
+          if (language === 'html') {
+              editor.setModel(monaco.editor.createModel(htmlContent, 'html'));
+              editor.updateOptions({ language: 'html' });
+          } else if (language === 'css') {
+              editor.setModel(monaco.editor.createModel(cssContent, 'css'));
+              editor.updateOptions({ language: 'css' });
+          } else if (language === 'js') {
+              editor.setModel(monaco.editor.createModel(jsContent, 'javascript'));
+              editor.updateOptions({ language: 'javascript' });
+          } else if (language === 'txt') {
+              editor.setModel(monaco.editor.createModel(txtContent, 'text'));
+              editor.updateOptions({ language: 'text' });
+          }
 
-    // Switch content based on the tab clicked
-    if (language === 'html') {
-        editor.setModel(monaco.editor.createModel(htmlContent, 'html'));
-        editor.updateOptions({ language: 'html' });
-    } else if (language === 'css') {
-        editor.setModel(monaco.editor.createModel(cssContent, 'css'));
-        editor.updateOptions({ language: 'css' });
-    } else if (language === 'js') {
-        editor.setModel(monaco.editor.createModel(jsContent, 'javascript'));
-        editor.updateOptions({ language: 'javascript' });
-    } else if (language === 'txt') {
-        editor.setModel(monaco.editor.createModel(txtContent, 'text'));
-        editor.updateOptions({ language: 'text' });
-    }
+          // Save active tab in localStorage
+          localStorage.setItem('activeTab', language);
+      }
 
-    // Save active tab in localStorage
-    localStorage.setItem('activeTab', language);
-}
+      // Function to save content for the current tab
+      function saveCurrentTabContent() {
+          const activeTab = document.querySelector('.tab.active-tab').textContent.trim().toLowerCase();
 
-// Function to save content for the current tab
-function saveCurrentTabContent() {
-    const activeTab = document.querySelector('.tab.active-tab').textContent.trim().toLowerCase();
+          if (activeTab === 'html') {
+              htmlContent = editor.getValue();
+              localStorage.setItem('htmlContent', htmlContent);
+          } else if (activeTab === 'css') {
+              cssContent = editor.getValue();
+              localStorage.setItem('cssContent', cssContent);
+          } else if (activeTab === 'js') {
+              jsContent = editor.getValue();
+              localStorage.setItem('jsContent', jsContent);
+          } else if (activeTab === 'txt') {
+              txtContent = editor.getValue();
+              localStorage.setItem('txtContent', txtContent);
+          }
+      }
 
-    if (activeTab === 'html') {
-        htmlContent = editor.getValue();
-        localStorage.setItem('htmlContent', htmlContent);
-    } else if (activeTab === 'css') {
-        cssContent = editor.getValue();
-        localStorage.setItem('cssContent', cssContent);
-    } else if (activeTab === 'js') {
-        jsContent = editor.getValue();
-        localStorage.setItem('jsContent', jsContent);
-    } else if (activeTab === 'txt') {
-        txtContent = editor.getValue();
-        localStorage.setItem('txtContent', txtContent);
-    }
-}
+      // Function to get the index of the tab based on the language
+      function getTabIndex(language) {
+          switch (language) {
+              case 'html':
+                  return 1;
+              case 'css':
+                  return 2;
+              case 'js':
+                  return 3;
+              case 'txt':
+                  return 4;
+              default:
+                  return 1;
+          }
+      }
 
-// Function to get the index of the tab based on the language
-function getTabIndex(language) {
-    switch (language) {
-        case 'html':
-            return 1;
-        case 'css':
-            return 2;
-        case 'js':
-            return 3;
-        case 'txt':
-            return 4;
-        default:
-            return 1;
-    }
-}
+      // Function to run code and update output
+      function runCode() {
+          let iframe = document.getElementById('output-frame');
+          let iframeDoc = iframe.contentWindow.document;
 
-// Function to run code and update output
-function runCode() {
-    let iframe = document.getElementById('output-frame');
-    let iframeDoc = iframe.contentWindow.document;
+          iframeDoc.open();
+          iframeDoc.write(`
+              <!DOCTYPE html>
+              <html lang="en">
+              <head>
+                  <meta charset="UTF-8">
+                  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                  <title>Output</title>
+                  <style>
+                      ${cssContent} <!-- Inject CSS -->
+                  </style>
+              </head>
+              <body>
+                  ${htmlContent} <!-- Inject HTML -->
+                  <script>
+                      ${jsContent} <!-- Inject JS -->
+                  <\/script>
+              </body>
+              </html>
+          `);
+          iframeDoc.close();
+      }
 
-    iframeDoc.open();
-    iframeDoc.write(`
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Output</title>
-            <style>
-                ${cssContent} <!-- Inject CSS -->
-            </style>
-        </head>
-        <body>
-            ${htmlContent} <!-- Inject HTML -->
-            <script>
-                ${jsContent} <!-- Inject JS -->
-            <\/script>
-        </body>
-        </html>
-    `);
-    iframeDoc.close();
-}
+      // Load active tab and content on page load
+      window.addEventListener('load', () => {
+          loadSavedContent();
+      });
+          
+      // Function to insert text snippets
+      function insertSnippet(snippet) {
+          editor.trigger('keyboard', 'type', { text: snippet });
+      }
 
-// Load active tab and content on page load
-window.addEventListener('load', () => {
-    loadSavedContent();
-});
-        
-        // Function to insert text snippets
-        function insertSnippet(snippet) {
-            editor.trigger('keyboard', 'type', { text: snippet });
-        }
+      let decorationsCollection = null; // Highlights store karne ke liye
 
-let decorationsCollection = null; // Highlights store karne ke liye
+      function findTextDown() {
+          let searchText = document.getElementById("search-input").value.trim();
+          let editor = monaco.editor.getEditors()[0]; // Monaco editor instance
 
-function findTextDown() {
-    let searchText = document.getElementById("search-input").value.trim();
-    let editor = monaco.editor.getEditors()[0]; // Monaco editor instance
+          // **Old highlights remove karega (hamesha)**
+          if (decorationsCollection) {
+              decorationsCollection.clear();
+              decorationsCollection = null;
+          }
 
-    // **Old highlights remove karega (hamesha)**
-    if (decorationsCollection) {
-        decorationsCollection.clear();
-        decorationsCollection = null;
-    }
+          // **Agar search box empty hai toh function return kar dega**
+          if (!searchText) return;
 
-    // **Agar search box empty hai toh function return kar dega**
-    if (!searchText) return;
+          let model = editor.getModel();
 
-    let model = editor.getModel();
+          // **Case-insensitive search**
+          let matches = model.findMatches(searchText, false, false, false, null, true);
 
-    // **Case-insensitive search**
-    let matches = model.findMatches(searchText, false, false, false, null, true);
+          if (matches.length === 0) {
+              alert("Text not found!");
+              return;
+          }
 
-    if (matches.length === 0) {
-        alert("Text not found!");
-        return;
-    }
+          // **First match ko select & scroll karega**
+          let range = matches[0].range;
+          editor.setSelection(range);
+          editor.revealRangeInCenter(range);
 
-    // **First match ko select & scroll karega**
-    let range = matches[0].range;
-    editor.setSelection(range);
-    editor.revealRangeInCenter(range);
+          // **New highlights set karega**
+          let decorations = matches.map(match => ({
+              range: match.range,
+              options: { inlineClassName: "highlight-match" } 
+          }));
+          decorationsCollection = editor.createDecorationsCollection(decorations);
+      }
 
-    // **New highlights set karega**
-    let decorations = matches.map(match => ({
-        range: match.range,
-        options: { inlineClassName: "highlight-match" } 
-    }));
-    decorationsCollection = editor.createDecorationsCollection(decorations);
-}
+      // **Enter Button Ko Activate Karega**
+      document.getElementById("search-input").addEventListener("keydown", function (event) {
+          if (event.key === "Enter") {
+              findTextDown();
+          }
+      });
+          
+      function undo() {
+          editor.trigger('keyboard', 'undo', {});
+      }
 
-// **Enter Button Ko Activate Karega**
-document.getElementById("search-input").addEventListener("keydown", function (event) {
-    if (event.key === "Enter") {
-        findTextDown();
-    }
-});
-        
-        function undo() {
-            editor.trigger('keyboard', 'undo', {});
-        }
+      function deleteCode() {
+          editor.setValue('');
+      }
 
-        function deleteCode() {
-            editor.setValue('');
-        }
+      // Full Screen
+      function toggleFullScreen() {
+      let outputContainer = document.getElementById("output-container");
+      let editorContainer = document.getElementById("editor-container");
+      let controls = document.getElementById("controls");
+      let leftMenu = document.getElementById("left-menu");
+      let fullscreenBtnIcon = document.querySelector("#fullscreen-btn i"); // Icon element
+      let isFullScreen = outputContainer.classList.contains("fullscreen");
 
- // Full Screen
-    function toggleFullScreen() {
-    let outputContainer = document.getElementById("output-container");
-    let editorContainer = document.getElementById("editor-container");
-    let controls = document.getElementById("controls");
-    let leftMenu = document.getElementById("left-menu");
-    let fullscreenBtnIcon = document.querySelector("#fullscreen-btn i"); // Icon element
-    let isFullScreen = outputContainer.classList.contains("fullscreen");
+      if (!isFullScreen) {
+          // Fullscreen mode enable
+          outputContainer.classList.add("fullscreen");
+          editorContainer.style.display = "none";
+          controls.style.display = "none";
+          leftMenu.style.display = "none";
+          fullscreenBtnIcon.classList.remove("fa-expand"); // Remove Expand Icon
+          fullscreenBtnIcon.classList.add("fa-compress"); // Add Compress Icon
+      } else {
+          // Normal mode wapas laana
+          outputContainer.classList.remove("fullscreen");
+          editorContainer.style.display = "block";
+          controls.style.display = "flex";
+          leftMenu.style.display = "flex";
+          fullscreenBtnIcon.classList.remove("fa-compress"); // Remove Compress Icon
+          fullscreenBtnIcon.classList.add("fa-expand"); // Add Expand Icon
+      }
+      }
+          
+      // Hamburger Menu
+      function toggleMenu() {
+      var menu = document.getElementById("hamburger-menu");
 
-    if (!isFullScreen) {
-        // Fullscreen mode enable
-        outputContainer.classList.add("fullscreen");
-        editorContainer.style.display = "none";
-        controls.style.display = "none";
-        leftMenu.style.display = "none";
-        fullscreenBtnIcon.classList.remove("fa-expand"); // Remove Expand Icon
-        fullscreenBtnIcon.classList.add("fa-compress"); // Add Compress Icon
-    } else {
-        // Normal mode wapas laana
-        outputContainer.classList.remove("fullscreen");
-        editorContainer.style.display = "block";
-        controls.style.display = "flex";
-        leftMenu.style.display = "flex";
-        fullscreenBtnIcon.classList.remove("fa-compress"); // Remove Compress Icon
-        fullscreenBtnIcon.classList.add("fa-expand"); // Add Expand Icon
-    }
-    }
-        
-    // Hamburger Menu
-    function toggleMenu() {
-    var menu = document.getElementById("hamburger-menu");
+      // Mobile mode me toggle kare
+      if (window.innerWidth <= 768) {
+          if (menu.style.display === "block") {
+              menu.style.display = "none";
+          } else {
+              menu.style.display = "block";
+          }
+      }
+      }
 
-    // Mobile mode me toggle kare
-    if (window.innerWidth <= 768) {
-        if (menu.style.display === "block") {
-            menu.style.display = "none";
-        } else {
-            menu.style.display = "block";
-        }
-    }
-}
+      // Page load hone par desktop mode me menu show kare
+      window.onload = function () {
+          if (window.innerWidth >= 769) {
+              document.getElementById("hamburger-menu").style.display = "flex";
+          }
+      };
 
-// Page load hone par desktop mode me menu show kare
-window.onload = function () {
-    if (window.innerWidth >= 769) {
-        document.getElementById("hamburger-menu").style.display = "flex";
-    }
-};
+      // Jab window resize ho, tab bhi check kare
+      window.onresize = function () {
+          if (window.innerWidth >= 769) {
+              document.getElementById("hamburger-menu").style.display = "flex";
+          } else {
+              document.getElementById("hamburger-menu").style.display = "none";
+          }
+      };
 
-// Jab window resize ho, tab bhi check kare
-window.onresize = function () {
-    if (window.innerWidth >= 769) {
-        document.getElementById("hamburger-menu").style.display = "flex";
-    } else {
-        document.getElementById("hamburger-menu").style.display = "none";
-    }
-};
+      function openLink() {
+      // Open the desired link (you can replace the URL with your choice)
+      window.open("https://shkumaraman.github.io", "_blank");
+      }
 
-    function openLink() {
-    // Open the desired link (you can replace the URL with your choice)
-    window.open("https://shkumaraman.github.io", "_blank");
-     }
+      let copiedCode = ""; // This will store the copied code
 
- let copiedCode = ""; // This will store the copied code
+      // Function to copy code from the Monaco editor (active tab)
+      function copyCode() {
+          let activeTab = document.querySelector('.tab.active-tab').textContent.trim(); // Get active tab (HTML, CSS, JS)
+          
+          // Get the code in the Monaco editor
+          copiedCode = editor.getValue();
+          
+          // Use Clipboard API to copy code to the clipboard
+          navigator.clipboard.writeText(copiedCode).then(function() {
+              // Notify the user that the code has been copied
+              alert(`${activeTab} code copied!`);
+          }).catch(function(error) {
+              console.error("Error copying code: ", error);
+          });
+      }
 
-// Function to copy code from the Monaco editor (active tab)
-function copyCode() {
-    let activeTab = document.querySelector('.tab.active-tab').textContent.trim(); // Get active tab (HTML, CSS, JS)
-    
-    // Get the code in the Monaco editor
-    copiedCode = editor.getValue();
-    
-    // Use Clipboard API to copy code to the clipboard
-    navigator.clipboard.writeText(copiedCode).then(function() {
-        // Notify the user that the code has been copied
-        alert(`${activeTab} code copied!`);
-    }).catch(function(error) {
-        console.error("Error copying code: ", error);
-    });
-}
+      // Function to paste the copied code into Monaco editor (active tab)
+      function pasteCode() {
+          navigator.clipboard.readText().then(function(text) {
+              if (text) {
+                  // Insert the clipboard content into Monaco editor
+                  editor.setValue(text);
+                  alert("Code pasted!");
+              } else {
+                  alert("No code to paste!");
+              }
+          }).catch(function(error) {
+              console.error("Error pasting code: ", error);
+              alert("Failed to paste the code!");
+          });
+      }
 
-// Function to paste the copied code into Monaco editor (active tab)
-function pasteCode() {
-    navigator.clipboard.readText().then(function(text) {
-        if (text) {
-            // Insert the clipboard content into Monaco editor
-            editor.setValue(text);
-            alert("Code pasted!");
-        } else {
-            alert("No code to paste!");
-        }
-    }).catch(function(error) {
-        console.error("Error pasting code: ", error);
-        alert("Failed to paste the code!");
-    });
-}
+      // Function to import a file (HTML, CSS, JS, TXT)
+      function importFile() {
+          const fileInput = document.getElementById('file-input');
+          const file = fileInput.files[0];
+          
+          if (file) {
+              const reader = new FileReader();
+              
+              reader.onload = function(event) {
+                  const fileContent = event.target.result;
+                  const fileType = file.name.split('.').pop().toLowerCase(); // Extract file extension
+                  
+                  // Switch to the appropriate tab and load content into the editor based on file type
+                  if (fileType === 'html') {
+                      changeTab('html'); // Switch to HTML tab
+                      setEditorContent('html', fileContent); // Set content in the editor
+                  } else if (fileType === 'css') {
+                      changeTab('css'); // Switch to CSS tab
+                      setEditorContent('css', fileContent); // Set content in the editor
+                  } else if (fileType === 'js') {
+                      changeTab('js'); // Switch to JS tab
+                      setEditorContent('js', fileContent); // Set content in the editor
+                  } else if (fileType === 'txt') {
+                      changeTab('txt'); // Switch to TXT tab
+                      setEditorContent('txt', fileContent); // Set content in the editor
+                  } else {
+                      alert('Unsupported file type');
+                      return;
+                  }
+                  
+                  alert(`${file.name} imported successfully!`);
+              };
+              
+              reader.onerror = function(error) {
+                  console.error("Error reading the file: ", error);
+                  alert("Failed to import the file.");
+              };
+              
+              reader.readAsText(file); // Read the file as text
+          } else {
+              alert("No file selected!");
+          }
+      }
+          
+      // Function to import raw code from a URL
+      function importCode() {
+          const url = prompt("Enter the URL to fetch raw code from:");
 
-// Function to import a file (HTML, CSS, JS, TXT)
-function importFile() {
-    const fileInput = document.getElementById('file-input');
-    const file = fileInput.files[0];
-    
-    if (file) {
-        const reader = new FileReader();
-        
-        reader.onload = function(event) {
-            const fileContent = event.target.result;
-            const fileType = file.name.split('.').pop().toLowerCase(); // Extract file extension
-            
-            // Switch to the appropriate tab and load content into the editor based on file type
-            if (fileType === 'html') {
-                changeTab('html'); // Switch to HTML tab
-                setEditorContent('html', fileContent); // Set content in the editor
-            } else if (fileType === 'css') {
-                changeTab('css'); // Switch to CSS tab
-                setEditorContent('css', fileContent); // Set content in the editor
-            } else if (fileType === 'js') {
-                changeTab('js'); // Switch to JS tab
-                setEditorContent('js', fileContent); // Set content in the editor
-            } else if (fileType === 'txt') {
-                changeTab('txt'); // Switch to TXT tab
-                setEditorContent('txt', fileContent); // Set content in the editor
-            } else {
-                alert('Unsupported file type');
-                return;
-            }
-            
-            alert(`${file.name} imported successfully!`);
+          if (url) {
+              fetch(url)
+                  .then(response => response.text())
+                  .then(data => {
+                      // Check the file type based on the URL or content type
+                      const fileType = url.split('.').pop();
+                      setEditorContent(fileType, data);
+                      alert("Code imported successfully from the URL!");
+                  })
+                  .catch(error => {
+                      console.error("Error importing code: ", error);
+                      alert("Failed to import code from the URL.");
+                  });
+          }
+      }
+
+      // Helper function to set the code in the Monaco editor
+      function setEditorContent(language, content) {
+          if (language === 'html') {
+              editor.setModel(monaco.editor.createModel(content, 'html'));
+          } else if (language === 'css') {
+              editor.setModel(monaco.editor.createModel(content, 'css'));
+          } else if (language === 'js') {
+              editor.setModel(monaco.editor.createModel(content, 'javascript'));
+          } else if (language === 'txt') {
+              editor.setModel(monaco.editor.createModel(content, 'txt'));
+          }
+      }
+
+      // Adding hover event listeners for tooltips
+      document.querySelectorAll('.tooltip').forEach(function(button) {
+          button.addEventListener('mouseenter', function() {
+              let tooltip = button.querySelector('.tooltiptext');
+              tooltip.style.visibility = 'visible';
+              tooltip.style.opacity = 1;
+          });
+
+          button.addEventListener('mouseleave', function() {
+              let tooltip = button.querySelector('.tooltiptext');
+              tooltip.style.visibility = 'hidden';
+              tooltip.style.opacity = 0;
+          });
+      });
+
+      // Function to download the active tab content as a file
+      function downloadFile() {
+          const activeTab = document.querySelector('.tab.active-tab').textContent.trim().toLowerCase();
+          let fileContent = '';
+          let fileName = '';
+
+          if (activeTab === 'html') {
+              fileContent = htmlContent;  // Content for HTML
+              fileName = 'index.html';
+          } else if (activeTab === 'css') {
+              fileContent = cssContent;  // Content for CSS
+              fileName = 'style.css';
+          } else if (activeTab === 'js') {
+              fileContent = jsContent;  // Content for JS
+              fileName = 'script.js';
+          } else if (activeTab === 'txt') {
+              fileContent = editor.getValue();  // Content for TXT (treated as plain text)
+              fileName = 'text.txt';  // Always save as .txt
+          }
+
+          // Create a Blob from the content and download it
+          const blob = new Blob([fileContent], { type: 'text/plain' });
+          const link = document.createElement('a');
+          link.href = URL.createObjectURL(blob);
+          link.download = fileName;
+          link.click();
+      }
+
+      // Function to download all tabs as a ZIP file
+      function downloadAllTabs() {
+          const zip = new JSZip();
+
+          // Add HTML file to zip
+          zip.file("index.html", htmlContent);
+
+          // Add CSS file to zip
+          zip.file("style.css", cssContent);
+
+          // Add JS file to zip
+          zip.file("script.js", jsContent);
+
+          // Add TXT file to zip (always save as .txt)
+          const textContent = editor.getValue();
+          zip.file("text.txt", textContent);
+
+          // Generate the zip file and trigger download
+          zip.generateAsync({ type: "blob" }).then(function (content) {
+              const link = document.createElement('a');
+              link.href = URL.createObjectURL(content);
+              link.download = 'files.zip';
+              link.click();
+          });
+      }
+
+      // रैंडम User ID जनरेट करने का तरीका (localStorage में न रखें)
+      function getUserId() {
+        return 'user_' + Math.random().toString(36).substr(2, 9);
+      }
+
+      const userId = getUserId(); // इस ID को शेयर करने वाले कोड में उपयोग करें
+
+      const JSONBIN_API_KEY = '$2a$10$TL3pjB9vsa4hRFTlamcbIu2jenrUF6o1A3NzDez9XdAPSIpe4cLxW';
+      const BIN_ID = '679edbade41b4d34e482972b';
+      const JSONBIN_BASE_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
+
+      async function shareWithJsonBin() {
+        const newCode = {
+          user: userId,
+          html: htmlContent,
+          css: cssContent,
+          js: jsContent,
+          txt: txtContent,
+          timestamp: new Date().toISOString() // activeTab को हटा दिया गया है
         };
-        
-        reader.onerror = function(error) {
-            console.error("Error reading the file: ", error);
-            alert("Failed to import the file.");
-        };
-        
-        reader.readAsText(file); // Read the file as text
-    } else {
-        alert("No file selected!");
-    }
-}
-        
- // Function to import raw code from a URL
-function importCode() {
-    const url = prompt("Enter the URL to fetch raw code from:");
 
-    if (url) {
-        fetch(url)
-            .then(response => response.text())
-            .then(data => {
-                // Check the file type based on the URL or content type
-                const fileType = url.split('.').pop();
-                setEditorContent(fileType, data);
-                alert("Code imported successfully from the URL!");
-            })
-            .catch(error => {
-                console.error("Error importing code: ", error);
-                alert("Failed to import code from the URL.");
-            });
-    }
-}
+        try {
+          // पुराने डेटा को लोड करें
+          const response = await fetch(JSONBIN_BASE_URL, {
+            headers: { 'X-Master-Key': JSONBIN_API_KEY }
+          });
 
-// Helper function to set the code in the Monaco editor
-function setEditorContent(language, content) {
-    if (language === 'html') {
-        editor.setModel(monaco.editor.createModel(content, 'html'));
-    } else if (language === 'css') {
-        editor.setModel(monaco.editor.createModel(content, 'css'));
-    } else if (language === 'js') {
-        editor.setModel(monaco.editor.createModel(content, 'javascript'));
-    } else if (language === 'txt') {
-        editor.setModel(monaco.editor.createModel(content, 'txt'));
-    }
-}
+          if (!response.ok) throw new Error('Failed to fetch existing data');
 
-// Adding hover event listeners for tooltips
-document.querySelectorAll('.tooltip').forEach(function(button) {
-    button.addEventListener('mouseenter', function() {
-        let tooltip = button.querySelector('.tooltiptext');
-        tooltip.style.visibility = 'visible';
-        tooltip.style.opacity = 1;
-    });
+          const { record } = await response.json();
+          let existingData = Array.isArray(record) ? record : [];
 
-    button.addEventListener('mouseleave', function() {
-        let tooltip = button.querySelector('.tooltiptext');
-        tooltip.style.visibility = 'hidden';
-        tooltip.style.opacity = 0;
-    });
-});
+          // नए कोड को Array में जोड़ें
+          existingData.push(newCode);
 
-// Function to download the active tab content as a file
-function downloadFile() {
-    const activeTab = document.querySelector('.tab.active-tab').textContent.trim().toLowerCase();
-    let fileContent = '';
-    let fileName = '';
+          // अपडेट किए गए Array को सेव करें
+          const updateResponse = await fetch(JSONBIN_BASE_URL, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Master-Key': JSONBIN_API_KEY
+            },
+            body: JSON.stringify(existingData)
+          });
 
-    if (activeTab === 'html') {
-        fileContent = htmlContent;  // Content for HTML
-        fileName = 'index.html';
-    } else if (activeTab === 'css') {
-        fileContent = cssContent;  // Content for CSS
-        fileName = 'style.css';
-    } else if (activeTab === 'js') {
-        fileContent = jsContent;  // Content for JS
-        fileName = 'script.js';
-    } else if (activeTab === 'txt') {
-        fileContent = editor.getValue();  // Content for TXT (treated as plain text)
-        fileName = 'text.txt';  // Always save as .txt
-    }
+          if (!updateResponse.ok) throw new Error('Failed to update JSONBin');
 
-    // Create a Blob from the content and download it
-    const blob = new Blob([fileContent], { type: 'text/plain' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = fileName;
-    link.click();
-}
+          // लिंक बनाएं और उसे क्लिपबोर्ड पर कॉपी करें
+          const shareUrl = `${window.location.origin}/tool/code-editor.html?id=${userId}`;
+          navigator.clipboard.writeText(shareUrl);
+          
+          alert(`Code shared successfully! Link copied to clipboard: ${shareUrl}`);
+        } catch (error) {
+          console.error('Sharing failed:', error);
+          alert('Error sharing code!');
+        }
+      }
 
-// Function to download all tabs as a ZIP file
-function downloadAllTabs() {
-    const zip = new JSZip();
+      async function loadUserCodes() {
+        // URL से userId प्राप्त करें
+        const urlParams = new URLSearchParams(window.location.search);
+        const userId = urlParams.get('id'); // ?id=userId123
 
-    // Add HTML file to zip
-    zip.file("index.html", htmlContent);
+        // अगर URL में 'id' नहीं है, तो कुछ न करें
+        if (!userId) {
+          return; // यूजर को सामान्य पेज दिखाएं, कोई अलर्ट न दिखाएं
+        }
 
-    // Add CSS file to zip
-    zip.file("style.css", cssContent);
+        try {
+          const response = await fetch(JSONBIN_BASE_URL, {
+            headers: { 'X-Master-Key': JSONBIN_API_KEY }
+          });
 
-    // Add JS file to zip
-    zip.file("script.js", jsContent);
+          if (!response.ok) throw new Error('Failed to fetch JSONBin data');
 
-    // Add TXT file to zip (always save as .txt)
-    const textContent = editor.getValue();
-    zip.file("text.txt", textContent);
+          const { record } = await response.json();
 
-    // Generate the zip file and trigger download
-    zip.generateAsync({ type: "blob" }).then(function (content) {
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(content);
-        link.download = 'files.zip';
-        link.click();
-    });
-}
+          // उस userId के कोड को फिल्टर करें
+          const userCodes = record.filter(entry => entry.user === userId);
 
-// रैंडम User ID जनरेट करने का तरीका (localStorage में न रखें)
-function getUserId() {
-  return 'user_' + Math.random().toString(36).substr(2, 9);
-}
+          if (userCodes.length === 0) {
+            alert('No code found for this ID!');
+            return;
+          }
 
-const userId = getUserId(); // इस ID को शेयर करने वाले कोड में उपयोग करें
+          // सबसे नया कोड लोड करें
+          const latestCode = userCodes[userCodes.length - 1];
 
-const JSONBIN_API_KEY = '$2a$10$TL3pjB9vsa4hRFTlamcbIu2jenrUF6o1A3NzDez9XdAPSIpe4cLxW';
-const BIN_ID = '679edbade41b4d34e482972b';
-const JSONBIN_BASE_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
+          // HTML, CSS, JS, TXT कोड लोड करें (activeTab को हटाया गया है)
+          htmlContent = latestCode.html;
+          cssContent = latestCode.css;
+          jsContent = latestCode.js;
+          txtContent = latestCode.txt;
 
-async function shareWithJsonBin() {
-  const newCode = {
-    user: userId,
-    html: htmlContent,
-    css: cssContent,
-    js: jsContent,
-    txt: txtContent,
-    timestamp: new Date().toISOString() // activeTab को हटा दिया गया है
-  };
+          // सही टैब लोड करें (जो active था)
+          changeTab('html'); // हम केवल HTML कोड लोड करेंगे, एक्टिव टैब से कोई लिंक नहीं है
+          
+          // सही टैब का कोड एडिटर में सेट करें
+          editor.setValue(latestCode.html); // हम केवल HTML कोड लोड कर रहे हैं
 
-  try {
-    // पुराने डेटा को लोड करें
-    const response = await fetch(JSONBIN_BASE_URL, {
-      headers: { 'X-Master-Key': JSONBIN_API_KEY }
-    });
+          // रन कोड (आपके कोड को चलाने के लिए)
+          runCode();
 
-    if (!response.ok) throw new Error('Failed to fetch existing data');
+        } catch (error) {
+          console.error('Loading failed:', error);
+          alert('Error loading saved code!');
+        }
+      }
 
-    const { record } = await response.json();
-    let existingData = Array.isArray(record) ? record : [];
-
-    // नए कोड को Array में जोड़ें
-    existingData.push(newCode);
-
-    // अपडेट किए गए Array को सेव करें
-    const updateResponse = await fetch(JSONBIN_BASE_URL, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Master-Key': JSONBIN_API_KEY
-      },
-      body: JSON.stringify(existingData)
-    });
-
-    if (!updateResponse.ok) throw new Error('Failed to update JSONBin');
-
-    // लिंक बनाएं और उसे क्लिपबोर्ड पर कॉपी करें
-    const shareUrl = `${window.location.origin}/tool/code-editor.html?id=${userId}`;
-    navigator.clipboard.writeText(shareUrl);
-    
-    alert(`Code shared successfully! Link copied to clipboard: ${shareUrl}`);
-  } catch (error) {
-    console.error('Sharing failed:', error);
-    alert('Error sharing code!');
-  }
-}
-
-async function loadUserCodes() {
-  // URL से userId प्राप्त करें
-  const urlParams = new URLSearchParams(window.location.search);
-  const userId = urlParams.get('id'); // ?id=userId123
-
-  // अगर URL में 'id' नहीं है, तो कुछ न करें
-  if (!userId) {
-    return; // यूजर को सामान्य पेज दिखाएं, कोई अलर्ट न दिखाएं
-  }
-
-  try {
-    const response = await fetch(JSONBIN_BASE_URL, {
-      headers: { 'X-Master-Key': JSONBIN_API_KEY }
-    });
-
-    if (!response.ok) throw new Error('Failed to fetch JSONBin data');
-
-    const { record } = await response.json();
-
-    // उस userId के कोड को फिल्टर करें
-    const userCodes = record.filter(entry => entry.user === userId);
-
-    if (userCodes.length === 0) {
-      alert('No code found for this ID!');
-      return;
-    }
-
-    // सबसे नया कोड लोड करें
-    const latestCode = userCodes[userCodes.length - 1];
-
-    // HTML, CSS, JS, TXT कोड लोड करें (activeTab को हटाया गया है)
-    htmlContent = latestCode.html;
-    cssContent = latestCode.css;
-    jsContent = latestCode.js;
-    txtContent = latestCode.txt;
-
-    // सही टैब लोड करें (जो active था)
-    changeTab('html'); // हम केवल HTML कोड लोड करेंगे, एक्टिव टैब से कोई लिंक नहीं है
-    
-    // सही टैब का कोड एडिटर में सेट करें
-    editor.setValue(latestCode.html); // हम केवल HTML कोड लोड कर रहे हैं
-
-    // रन कोड (आपके कोड को चलाने के लिए)
-    runCode();
-
-  } catch (error) {
-    console.error('Loading failed:', error);
-    alert('Error loading saved code!');
-  }
-}
-
-window.addEventListener('load', () => {
-  loadUserCodes();
-});
-
+      window.addEventListener('load', () => {
+        loadUserCodes();
+      });
     </script>
 </body>
 </html>
