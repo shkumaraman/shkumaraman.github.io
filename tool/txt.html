@@ -127,16 +127,23 @@
     window.onload = function() {
         let savedText = localStorage.getItem("editorText");
         if (savedText) {
-            document.getElementById('editor').innerHTML = savedText;
+            document.getElementById('editor').innerText = savedText;
         }
     };
 
     // Save text to localStorage whenever content changes
     document.getElementById('editor').addEventListener('input', function() {
-        localStorage.setItem("editorText", this.innerHTML);
+        localStorage.setItem("editorText", this.innerText);
     });
     
-    // Load file content into textarea (from file input)
+    // Prevent HTML rendering when pasting
+    document.getElementById('editor').addEventListener('paste', function(e) {
+        e.preventDefault();
+        const text = e.clipboardData.getData('text/plain');
+        document.execCommand('insertText', false, text);
+    });
+    
+    // Load file content into editor (from file input)
     function loadFile() {
         const fileInput = document.getElementById('file-input');
         const file = fileInput.files[0];
@@ -186,18 +193,23 @@
         const editor = document.getElementById('editor');
         const textContent = editor.innerText;
 
-        // Reset highlights before searching
-        editor.innerHTML = editor.innerHTML.replace(/<span class="highlight">.*?<\/span>/g, '$&'); // Remove existing highlights
-
         // If the find text is empty, remove all highlights
         if (searchText === '') {
             editor.innerHTML = textContent;
             return;
         }
 
+        // Escape HTML entities before highlighting
+        const escapedText = textContent
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+
         // Highlight the found text
-        const regex = new RegExp(`(${searchText})`, 'gi');
-        let updatedText = textContent.replace(regex, `<span class="highlight">$1</span>`);
+        const regex = new RegExp(`(${searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+        let updatedText = escapedText.replace(regex, `<span class="highlight">$1</span>`);
         editor.innerHTML = updatedText; // Highlight matched text
         
         // Close the modal
@@ -224,7 +236,7 @@
     // Clear Text in the Editor and remove from localStorage
     function clearText() {
         document.getElementById('editor').innerText = '';
-        localStorage.removeItem("editorText"); // Also clear from localStorage
+        localStorage.removeItem("editorText");
     }
 
     // Event listener to remove highlight on Enter key press
@@ -233,8 +245,7 @@
             let highlightedText = document.querySelector('#editor .highlight');
 
             if (highlightedText) {
-                e.preventDefault(); // Prevent default new line behavior
-
+                e.preventDefault();
                 // Remove all highlights while keeping text
                 document.querySelectorAll('#editor .highlight').forEach(span => {
                     let textNode = document.createTextNode(span.textContent);
