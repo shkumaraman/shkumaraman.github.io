@@ -549,195 +549,731 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs/loader.js"></script>
   <script>
-    // Monaco Editor initialization
-    let editor;
-    let htmlContent = localStorage.getItem('htmlContent') || '';
-    let cssContent = localStorage.getItem('cssContent') || '';
-    let jsContent = localStorage.getItem('jsContent') || '';
-    let txtContent = localStorage.getItem('txtContent') || '';
-    let consoleEnabled = false;
+      // Monaco Editor initialization
+let editor;
+let htmlContent = localStorage.getItem('htmlContent') || '';
+let cssContent = localStorage.getItem('cssContent') || '';
+let jsContent = localStorage.getItem('jsContent') || '';
+let txtContent = localStorage.getItem('txtContent') || '';
+let consoleEnabled = false;
 
-    // Console functionality
-    function logToConsole(message, type = 'log') {
-      if (!consoleEnabled) return;
+// Console functionality
+function logToConsole(message, type = 'log') {
+  if (!consoleEnabled) return;
+  
+  const consoleContent = document.getElementById('console-content');
+  const messageElement = document.createElement('div');
+  messageElement.className = `console-message console-${type}`;
+  
+  // Format error messages to be more readable
+  if (type === 'error' && message instanceof Error) {
+    messageElement.textContent = `${message.name}: ${message.message}`;
+    
+    // Add stack trace if available
+    if (message.stack) {
+      const stackTrace = document.createElement('div');
+      stackTrace.style.fontSize = '0.8em';
+      stackTrace.style.color = '#aaa';
+      stackTrace.textContent = message.stack.split('\n').slice(1).join('\n');
+      messageElement.appendChild(stackTrace);
+    }
+  } else {
+    messageElement.textContent = typeof message === 'object' 
+      ? JSON.stringify(message, null, 2) 
+      : message.toString();
+  }
+  
+  consoleContent.appendChild(messageElement);
+  consoleContent.scrollTop = consoleContent.scrollHeight;
+}
+
+function clearConsole() {
+  document.getElementById('console-content').innerHTML = '';
+}
+
+function toggleConsole() {
+  const consoleContainer = document.getElementById('console-container');
+  const consoleBtn = document.getElementById('console-btn');
+  consoleEnabled = !consoleEnabled;
+  
+  if (consoleEnabled) {
+    consoleContainer.style.display = 'block';
+    document.getElementById('output-container').style.height = 'calc(100% - 150px)';
+    consoleBtn.classList.add('btn-primary');
+    consoleBtn.classList.remove('btn-secondary');
+  } else {
+    consoleContainer.style.display = 'none';
+    document.getElementById('output-container').style.height = '100%';
+    consoleBtn.classList.remove('btn-primary');
+    consoleBtn.classList.add('btn-secondary');
+  }
+}
+
+// Override console methods to capture logs
+const originalConsole = {
+  log: console.log,
+  error: console.error,
+  warn: console.warn,
+  info: console.info,
+  clear: console.clear
+};
+
+console.log = function() {
+  originalConsole.log.apply(console, arguments);
+  logToConsole(Array.from(arguments).map(arg => 
+    typeof arg === 'object' ? JSON.stringify(arg, null, 2) : arg
+  ).join(' '), 'log');
+};
+
+console.error = function() {
+  originalConsole.error.apply(console, arguments);
+  const error = arguments[0] instanceof Error ? arguments[0] : new Error(Array.from(arguments).join(' '));
+  logToConsole(error, 'error');
+};
+
+console.warn = function() {
+  originalConsole.warn.apply(console, arguments);
+  logToConsole(Array.from(arguments).join(' '), 'warn');
+};
+
+console.info = function() {
+  originalConsole.info.apply(console, arguments);
+  logToConsole(Array.from(arguments).join(' '), 'info');
+};
+
+console.clear = function() {
+  originalConsole.clear.apply(console, arguments);
+  clearConsole();
+};
+
+// Dark mode
+function toggleDarkMode() {
+  const body = document.body;
+  const darkModeBtnIcon = document.querySelector("#dark-mode-btn i");
+  const isDarkMode = body.classList.toggle("dark-mode");
+
+  localStorage.setItem("darkMode", isDarkMode ? "enabled" : "disabled");
+
+  if (isDarkMode) {
+    monaco.editor.setTheme("vs-dark");
+    darkModeBtnIcon.classList.remove("fa-sun");
+    darkModeBtnIcon.classList.add("fa-moon");
+    document.getElementById('dark-mode-btn').querySelector('span').textContent = 'Light Mode';
+  } else {
+    monaco.editor.setTheme("vs-light");
+    darkModeBtnIcon.classList.remove("fa-moon");
+    darkModeBtnIcon.classList.add("fa-sun");
+    document.getElementById('dark-mode-btn').querySelector('span').textContent = 'Dark Mode';
+  }
+}
+
+function loadDarkModePreference() {
+  const darkModePreference = localStorage.getItem("darkMode");
+  const darkModeBtnIcon = document.querySelector("#dark-mode-btn i");
+
+  if (darkModePreference === "enabled") {
+    document.body.classList.add("dark-mode");
+    monaco.editor.setTheme("vs-dark");
+    darkModeBtnIcon.classList.remove("fa-sun");
+    darkModeBtnIcon.classList.add("fa-moon");
+    document.getElementById('dark-mode-btn').querySelector('span').textContent = 'Light Mode';
+  } else {
+    document.body.classList.remove("dark-mode");
+    monaco.editor.setTheme("vs-light");
+    darkModeBtnIcon.classList.remove("fa-moon");
+    darkModeBtnIcon.classList.add("fa-sun");
+    document.getElementById('dark-mode-btn').querySelector('span').textContent = 'Dark Mode';
+  }
+}
+
+// Monaco editor initialization
+require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@latest/min/vs' } });
+
+require(['vs/editor/editor.main'], function() {
+  editor = monaco.editor.create(document.getElementById('editor-container'), {
+    language: 'html',
+    theme: localStorage.getItem("darkMode") === "enabled" ? "vs-dark" : "vs-light",
+    automaticLayout: true,
+    minimap: { enabled: false },
+    scrollBeyondLastLine: false,
+    fontSize: 14,
+    lineNumbers: "on",
+    roundedSelection: true,
+    scrollbar: {
+      vertical: "auto",
+      horizontal: "auto"
+    }
+  });
+
+  // Initialize editor with the loaded content from localStorage
+  editor.setModel(monaco.editor.createModel(htmlContent, 'html'));
+  
+  // Load saved content into the editor
+  loadSavedContent();
+
+  // Auto-update output when editor content changes
+  editor.onDidChangeModelContent(() => {
+    saveCurrentTabContent();
+    runCode();
+  });
+});
+
+// Function to load saved content into the editor
+function loadSavedContent() {
+  const activeTab = localStorage.getItem('activeTab') || 'html';
+  changeTab(activeTab);
+}
+
+// Function to change tabs
+function changeTab(language) {
+  // Save content when switching to another tab
+  saveCurrentTabContent();
+
+  // Remove the 'active-tab' class from all tabs
+  let tabs = document.querySelectorAll('.tab');
+  tabs.forEach(tab => {
+    tab.classList.remove('active-tab');
+  });
+
+  // Add the 'active-tab' class to the clicked tab
+  let activeTab = document.querySelector(`.tab:nth-child(${getTabIndex(language)})`);
+  activeTab.classList.add('active-tab');
+
+  // Switch content based on the tab clicked
+  if (language === 'html') {
+    editor.setModel(monaco.editor.createModel(htmlContent, 'html'));
+    editor.updateOptions({ language: 'html' });
+  } else if (language === 'css') {
+    editor.setModel(monaco.editor.createModel(cssContent, 'css'));
+    editor.updateOptions({ language: 'css' });
+  } else if (language === 'js') {
+    editor.setModel(monaco.editor.createModel(jsContent, 'javascript'));
+    editor.updateOptions({ language: 'javascript' });
+  } else if (language === 'txt') {
+    editor.setModel(monaco.editor.createModel(txtContent, 'text'));
+    editor.updateOptions({ language: 'text' });
+  }
+
+  // Save active tab in localStorage
+  localStorage.setItem('activeTab', language);
+}
+
+// Function to save content for the current tab
+function saveCurrentTabContent() {
+  const activeTab = document.querySelector('.tab.active-tab').textContent.trim().toLowerCase();
+
+  if (activeTab === 'html') {
+    htmlContent = editor.getValue();
+    localStorage.setItem('htmlContent', htmlContent);
+  } else if (activeTab === 'css') {
+    cssContent = editor.getValue();
+    localStorage.setItem('cssContent', cssContent);
+  } else if (activeTab === 'js') {
+    jsContent = editor.getValue();
+    localStorage.setItem('jsContent', jsContent);
+  } else if (activeTab === 'txt') {
+    txtContent = editor.getValue();
+    localStorage.setItem('txtContent', txtContent);
+  }
+}
+
+// Function to get the index of the tab based on the language
+function getTabIndex(language) {
+  switch (language) {
+    case 'html': return 1;
+    case 'css': return 2;
+    case 'js': return 3;
+    case 'txt': return 4;
+    default: return 1;
+  }
+}
+
+// Function to run code and update output
+function runCode() {
+  clearConsole();
+  let iframe = document.getElementById('output-frame');
+  let iframeDoc = iframe.contentWindow.document;
+
+  // Clear previous content
+  iframeDoc.open();
+  
+  // Write new content with error handling
+  iframeDoc.write(`
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Output</title>
+      <style>
+        ${cssContent}
+        body {
+          margin: 0;
+          padding: 10px;
+          font-family: Arial, sans-serif;
+        }
+      </style>
+    </head>
+    <body>
+      ${htmlContent}
+      <script>
+        // Override console methods to capture logs from iframe
+        const originalConsole = {
+          log: console.log,
+          error: console.error,
+          warn: console.warn,
+          info: console.info
+        };
+        
+        console.log = function() {
+          originalConsole.log.apply(console, arguments);
+          window.parent.postMessage({
+            type: 'log',
+            args: Array.from(arguments)
+          }, '*');
+        };
+        
+        console.error = function() {
+          originalConsole.error.apply(console, arguments);
+          window.parent.postMessage({
+            type: 'error',
+            args: Array.from(arguments)
+          }, '*');
+        };
+        
+        console.warn = function() {
+          originalConsole.warn.apply(console, arguments);
+          window.parent.postMessage({
+            type: 'warn',
+            args: Array.from(arguments)
+          }, '*');
+        };
+        
+        console.info = function() {
+          originalConsole.info.apply(console, arguments);
+          window.parent.postMessage({
+            type: 'info',
+            args: Array.from(arguments)
+          }, '*');
+        };
+        
+        try {
+          ${jsContent}
+        } catch (e) {
+          console.error(e);
+        }
+      <\/script>
+    </body>
+    </html>
+  `);
+  iframeDoc.close();
+}
+
+// Listen for messages from iframe
+window.addEventListener('message', function(e) {
+  if (!e.data || !e.data.type) return;
+  
+  const args = e.data.args || [];
+  const message = args.map(arg => {
+    if (typeof arg === 'object') {
+      try {
+        return JSON.stringify(arg, null, 2);
+      } catch {
+        return arg.toString();
+      }
+    }
+    return arg;
+  }).join(' ');
+  
+  switch (e.data.type) {
+    case 'log':
+      logToConsole(message, 'log');
+      break;
+    case 'error':
+      logToConsole(message, 'error');
+      break;
+    case 'warn':
+      logToConsole(message, 'warn');
+      break;
+    case 'info':
+      logToConsole(message, 'info');
+      break;
+  }
+});
+
+// Function to insert text snippets
+function insertSnippet(snippet) {
+  const selection = editor.getSelection();
+  const range = new monaco.Range(
+    selection.startLineNumber,
+    selection.startColumn,
+    selection.endLineNumber,
+    selection.endColumn
+  );
+  
+  editor.executeEdits("", [
+    {
+      range: range,
+      text: snippet,
+      forceMoveMarkers: true
+    }
+  ]);
+}
+
+// Search functionality
+let decorationsCollection = null;
+
+function findTextDown() {
+  const searchText = document.getElementById("search-input").value.trim();
+  const editorInstance = monaco.editor.getEditors()[0];
+
+  if (decorationsCollection) {
+    decorationsCollection.clear();
+    decorationsCollection = null;
+  }
+
+  if (!searchText) return;
+
+  const model = editorInstance.getModel();
+  const matches = model.findMatches(searchText, false, false, false, null, true);
+
+  if (matches.length === 0) {
+    alert("Text not found!");
+    return;
+  }
+
+  const range = matches[0].range;
+  editorInstance.setSelection(range);
+  editorInstance.revealRangeInCenter(range);
+
+  const decorations = matches.map(match => ({
+    range: match.range,
+    options: { inlineClassName: "highlight-match" } 
+  }));
+  decorationsCollection = editorInstance.createDecorationsCollection(decorations);
+}
+
+document.getElementById("search-input").addEventListener("keydown", function(event) {
+  if (event.key === "Enter") {
+    findTextDown();
+  }
+});
+
+// Editor actions
+function undo() {
+  editor.trigger('keyboard', 'undo', {});
+}
+
+function deleteCode() {
+  if (confirm("Are you sure you want to clear the editor?")) {
+    editor.setValue('');
+  }
+}
+
+// Full Screen
+function toggleFullScreen() {
+  const outputContainer = document.getElementById("output-container");
+  const editorContainer = document.getElementById("editor-container");
+  const controls = document.getElementById("controls");
+  const leftMenu = document.getElementById("left-menu");
+  const fullscreenBtnIcon = document.querySelector("#fullscreen-btn i");
+  const isFullScreen = outputContainer.classList.contains("fullscreen");
+
+  if (!isFullScreen) {
+    outputContainer.classList.add("fullscreen");
+    editorContainer.style.display = "none";
+    controls.style.display = "none";
+    leftMenu.style.display = "none";
+    fullscreenBtnIcon.classList.remove("fa-expand");
+    fullscreenBtnIcon.classList.add("fa-compress");
+    document.getElementById('fullscreen-btn').querySelector('span').textContent = 'Exit Fullscreen';
+  } else {
+    outputContainer.classList.remove("fullscreen");
+    editorContainer.style.display = "block";
+    controls.style.display = "flex";
+    leftMenu.style.display = "flex";
+    fullscreenBtnIcon.classList.remove("fa-compress");
+    fullscreenBtnIcon.classList.add("fa-expand");
+    document.getElementById('fullscreen-btn').querySelector('span').textContent = 'Fullscreen';
+  }
+}
+
+// Hamburger Menu
+function toggleMenu() {
+  const menu = document.getElementById('hamburger-menu');
+  if (window.innerWidth <= 768) {
+    menu.style.display = menu.style.display === 'flex' ? 'none' : 'flex';
+  }
+}
+
+// Initialize on load
+window.addEventListener('load', function() {
+  loadDarkModePreference();
+  
+  if (window.innerWidth >= 769) {
+    document.getElementById('hamburger-menu').style.display = 'flex';
+    document.getElementById('hamburger-btn').style.display = 'none';
+  } else {
+    document.getElementById('hamburger-menu').style.display = 'none';
+    document.getElementById('hamburger-btn').style.display = 'block';
+  }
+});
+
+// Handle window resize
+window.addEventListener('resize', function() {
+  if (window.innerWidth >= 769) {
+    document.getElementById('hamburger-menu').style.display = 'flex';
+    document.getElementById('hamburger-btn').style.display = 'none';
+  } else {
+    document.getElementById('hamburger-menu').style.display = 'none';
+  }
+});
+
+function openLink() {
+  window.open("https://shkumaraman.github.io", "_blank");
+}
+
+// Clipboard functions
+let copiedCode = "";
+
+function copyCode() {
+  const activeTab = document.querySelector('.tab.active-tab').textContent.trim();
+  copiedCode = editor.getValue();
+  
+  navigator.clipboard.writeText(copiedCode).then(function() {
+    alert(`${activeTab} code copied!`);
+  }).catch(function(error) {
+    console.error("Error copying code: ", error);
+  });
+}
+
+function pasteCode() {
+  navigator.clipboard.readText().then(function(text) {
+    if (text) {
+      editor.setValue(text);
+      alert("Code pasted!");
+    } else {
+      alert("No code to paste!");
+    }
+  }).catch(function(error) {
+    console.error("Error pasting code: ", error);
+    alert("Failed to paste the code!");
+  });
+}
+
+// File import/export
+function importFile() {
+  const fileInput = document.getElementById('file-input');
+  const file = fileInput.files[0];
+  
+  if (file) {
+    const reader = new FileReader();
+    
+    reader.onload = function(event) {
+      const fileContent = event.target.result;
+      const fileType = file.name.split('.').pop().toLowerCase();
       
-      const consoleContent = document.getElementById('console-content');
-      const messageElement = document.createElement('div');
-      messageElement.className = `console-message console-${type}`;
-      messageElement.textContent = message;
-      consoleContent.appendChild(messageElement);
-      consoleContent.scrollTop = consoleContent.scrollHeight;
-    }
-
-    function clearConsole() {
-      document.getElementById('console-content').innerHTML = '';
-    }
-
-    function toggleConsole() {
-      const consoleContainer = document.getElementById('console-container');
-      consoleEnabled = !consoleEnabled;
+      if (fileType === 'html') {
+        changeTab('html');
+        setEditorContent('html', fileContent);
+      } else if (fileType === 'css') {
+        changeTab('css');
+        setEditorContent('css', fileContent);
+      } else if (fileType === 'js') {
+        changeTab('js');
+        setEditorContent('js', fileContent);
+      } else if (fileType === 'txt') {
+        changeTab('txt');
+        setEditorContent('txt', fileContent);
+      } else {
+        alert('Unsupported file type');
+        return;
+      }
       
-      if (consoleEnabled) {
-        consoleContainer.style.display = 'block';
-        document.getElementById('output-container').style.height = 'calc(100% - 150px)';
-      } else {
-        consoleContainer.style.display = 'none';
-        document.getElementById('output-container').style.height = '100%';
-      }
-    }
-
-    // Override console methods to capture logs
-    const originalConsole = {
-      log: console.log,
-      error: console.error,
-      warn: console.warn,
-      info: console.info
+      alert(`${file.name} imported successfully!`);
     };
-
-    console.log = function() {
-      originalConsole.log.apply(console, arguments);
-      logToConsole(Array.from(arguments).join(' '), 'log');
+    
+    reader.onerror = function(error) {
+      console.error("Error reading the file: ", error);
+      alert("Failed to import the file.");
     };
+    
+    reader.readAsText(file);
+  } else {
+    alert("No file selected!");
+  }
+}
 
-    console.error = function() {
-      originalConsole.error.apply(console, arguments);
-      logToConsole(Array.from(arguments).join(' '), 'error');
-    };
+function importCode() {
+  const url = prompt("Enter the URL to fetch raw code from:");
 
-    console.warn = function() {
-      originalConsole.warn.apply(console, arguments);
-      logToConsole(Array.from(arguments).join(' '), 'warn');
-    };
-
-    console.info = function() {
-      originalConsole.info.apply(console, arguments);
-      logToConsole(Array.from(arguments).join(' '), 'info');
-    };
-
-    // Dark mode
-    function toggleDarkMode() {
-      const body = document.body;
-      const darkModeBtnIcon = document.querySelector("#dark-mode-btn i");
-      const isDarkMode = body.classList.toggle("dark-mode");
-
-      localStorage.setItem("darkMode", isDarkMode ? "enabled" : "disabled");
-
-      if (isDarkMode) {
-        monaco.editor.setTheme("vs-dark");
-        darkModeBtnIcon.classList.remove("fa-sun");
-        darkModeBtnIcon.classList.add("fa-moon");
-      } else {
-        monaco.editor.setTheme("vs-light");
-        darkModeBtnIcon.classList.remove("fa-moon");
-        darkModeBtnIcon.classList.add("fa-sun");
-      }
-    }
-
-    function loadDarkModePreference() {
-      const darkModePreference = localStorage.getItem("darkMode");
-      const darkModeBtnIcon = document.querySelector("#dark-mode-btn i");
-
-      if (darkModePreference === "enabled") {
-        document.body.classList.add("dark-mode");
-        monaco.editor.setTheme("vs-dark");
-        darkModeBtnIcon.classList.remove("fa-sun");
-        darkModeBtnIcon.classList.add("fa-moon");
-      } else {
-        document.body.classList.remove("dark-mode");
-        monaco.editor.setTheme("vs-light");
-        darkModeBtnIcon.classList.remove("fa-moon");
-        darkModeBtnIcon.classList.add("fa-sun");
-      }
-    }
-
-    // Monaco editor initialization
-    require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@latest/min/vs' } });
-
-    require(['vs/editor/editor.main'], function() {
-      editor = monaco.editor.create(document.getElementById('editor-container'), {
-        language: 'html',
-        theme: localStorage.getItem("darkMode") === "enabled" ? "vs-dark" : "vs-light",
+  if (url) {
+    fetch(url)
+      .then(response => response.text())
+      .then(data => {
+        const fileType = url.split('.').pop().toLowerCase();
+        setEditorContent(fileType, data);
+        alert("Code imported successfully from the URL!");
+      })
+      .catch(error => {
+        console.error("Error importing code: ", error);
+        alert("Failed to import code from the URL.");
       });
+  }
+}
 
-      editor.setModel(monaco.editor.createModel(htmlContent, 'html'));
-      loadSavedContent();
+function setEditorContent(language, content) {
+  if (language === 'html') {
+    editor.setModel(monaco.editor.createModel(content, 'html'));
+    changeTab('html');
+  } else if (language === 'css') {
+    editor.setModel(monaco.editor.createModel(content, 'css'));
+    changeTab('css');
+  } else if (language === 'js') {
+    editor.setModel(monaco.editor.createModel(content, 'javascript'));
+    changeTab('js');
+  } else if (language === 'txt') {
+    editor.setModel(monaco.editor.createModel(content, 'text'));
+    changeTab('txt');
+  }
+}
 
-      editor.onDidChangeModelContent(() => {
-        saveCurrentTabContent();
-        runCode();
-      });
+// Download functions
+function downloadFile() {
+  const activeTab = document.querySelector('.tab.active-tab').textContent.trim().toLowerCase();
+  let fileContent = '';
+  let fileName = '';
+
+  if (activeTab === 'html') {
+    fileContent = htmlContent;
+    fileName = 'index.html';
+  } else if (activeTab === 'css') {
+    fileContent = cssContent;
+    fileName = 'style.css';
+  } else if (activeTab === 'js') {
+    fileContent = jsContent;
+    fileName = 'script.js';
+  } else if (activeTab === 'txt') {
+    fileContent = editor.getValue();
+    fileName = 'text.txt';
+  }
+
+  const blob = new Blob([fileContent], { type: 'text/plain' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = fileName;
+  link.click();
+}
+
+function downloadAllTabs() {
+  const zip = new JSZip();
+
+  zip.file("index.html", htmlContent);
+  zip.file("style.css", cssContent);
+  zip.file("script.js", jsContent);
+  zip.file("text.txt", txtContent);
+
+  zip.generateAsync({ type: "blob" }).then(function(content) {
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(content);
+    link.download = 'code-editor-files.zip';
+    link.click();
+  });
+}
+
+// Sharing functionality
+function getUserId() {
+  return 'user_' + Math.random().toString(36).substr(2, 9);
+}
+
+const userId = getUserId();
+const JSONBIN_API_KEY = '$2a$10$TL3pjB9vsa4hRFTlamcbIu2jenrUF6o1A3NzDez9XdAPSIpe4cLxW';
+const BIN_ID = '679edbade41b4d34e482972b';
+const JSONBIN_BASE_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
+
+async function shareWithJsonBin() {
+  const newCode = {
+    user: userId,
+    html: htmlContent,
+    css: cssContent,
+    js: jsContent,
+    txt: txtContent,
+    timestamp: new Date().toISOString()
+  };
+
+  try {
+    const response = await fetch(JSONBIN_BASE_URL, {
+      headers: { 'X-Master-Key': JSONBIN_API_KEY }
     });
 
-    // Function to run code and update output
-    function runCode() {
-      clearConsole();
-      let iframe = document.getElementById('output-frame');
-      let iframeDoc = iframe.contentWindow.document;
+    if (!response.ok) throw new Error('Failed to fetch existing data');
 
-      iframeDoc.open();
-      iframeDoc.write(`
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Output</title>
-          <style>
-            ${cssContent}
-          </style>
-        </head>
-        <body>
-          ${htmlContent}
-          <script>
-            try {
-              ${jsContent}
-            } catch (e) {
-              console.error(e);
-            }
-          <\/script>
-        </body>
-        </html>
-      `);
-      iframeDoc.close();
+    const { record } = await response.json();
+    let existingData = Array.isArray(record) ? record : [];
+
+    existingData.push(newCode);
+
+    const updateResponse = await fetch(JSONBIN_BASE_URL, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Master-Key': JSONBIN_API_KEY
+      },
+      body: JSON.stringify(existingData)
+    });
+
+    if (!updateResponse.ok) throw new Error('Failed to update JSONBin');
+
+    const shareUrl = `${window.location.origin}/tool/code-editor.html?id=${userId}`;
+    navigator.clipboard.writeText(shareUrl);
+    
+    alert(`Code shared successfully! Link copied to clipboard: ${shareUrl}`);
+  } catch (error) {
+    console.error('Sharing failed:', error);
+    alert('Error sharing code!');
+  }
+}
+
+async function loadUserCodes() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const userId = urlParams.get('id');
+
+  if (!userId) return;
+
+  try {
+    const response = await fetch(JSONBIN_BASE_URL, {
+      headers: { 'X-Master-Key': JSONBIN_API_KEY }
+    });
+
+    if (!response.ok) throw new Error('Failed to fetch JSONBin data');
+
+    const { record } = await response.json();
+    const userCodes = record.filter(entry => entry.user === userId);
+
+    if (userCodes.length === 0) {
+      alert('No code found for this ID!');
+      return;
     }
 
-    // Rest of your existing functions (changeTab, saveCurrentTabContent, etc.)
-    // ... [Keep all your existing functions unchanged] ...
+    const latestCode = userCodes[userCodes.length - 1];
+    htmlContent = latestCode.html;
+    cssContent = latestCode.css;
+    jsContent = latestCode.js;
+    txtContent = latestCode.txt;
 
-    // Hamburger menu toggle for mobile
-    function toggleMenu() {
-      const menu = document.getElementById('hamburger-menu');
-      if (window.innerWidth <= 768) {
-        menu.style.display = menu.style.display === 'flex' ? 'none' : 'flex';
-      }
-    }
+    changeTab('html');
+    editor.setValue(latestCode.html);
+    runCode();
+  } catch (error) {
+    console.error('Loading failed:', error);
+    alert('Error loading saved code!');
+  }
+}
 
-    // Initialize on load
-    window.addEventListener('load', function() {
-      loadDarkModePreference();
-      
-      if (window.innerWidth >= 769) {
-        document.getElementById('hamburger-menu').style.display = 'flex';
-        document.getElementById('hamburger-btn').style.display = 'none';
-      } else {
-        document.getElementById('hamburger-menu').style.display = 'none';
-        document.getElementById('hamburger-btn').style.display = 'block';
-      }
-    });
-
-    // Handle window resize
-    window.addEventListener('resize', function() {
-      if (window.innerWidth >= 769) {
-        document.getElementById('hamburger-menu').style.display = 'flex';
-        document.getElementById('hamburger-btn').style.display = 'none';
-      } else {
-        document.getElementById('hamburger-btn').style.display = 'block';
-      }
-    });
-
-    // [Include all your other existing functions here]
-    // Make sure to keep all your existing functionality
-
+// Initialize on page load
+window.addEventListener('load', () => {
+  loadUserCodes();
+});
   </script>
 </body>
 </html>
