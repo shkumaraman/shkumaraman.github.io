@@ -408,7 +408,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs/loader.js"></script>
     <script>
-
 // Monaco Editor initialization
 let editor;
 let htmlContent = localStorage.getItem('htmlContent') || ''; // Load from localStorage if exists
@@ -435,6 +434,9 @@ function toggleDarkMode() {
         darkModeBtnIcon.classList.remove("fa-moon"); // Remove Moon Icon
         darkModeBtnIcon.classList.add("fa-sun"); // Add Sun Icon
     }
+    
+    // Update line counter visibility in dark mode
+    updateLineCounter();
 }
 
 // Load dark mode preference from localStorage
@@ -456,11 +458,23 @@ function loadDarkModePreference() {
     }
 }
 
-// Load dark mode preference when the page loads
-window.addEventListener("load", function () {
-    loadDarkModePreference();
-});
-        
+// Function to update line counter
+function updateLineCounter() {
+    const lineCount = editor.getModel().getLineCount();
+    const lineCounter = document.getElementById('line-counter');
+    lineCounter.textContent = `Lines: ${lineCount}`;
+    
+    // Update position based on fullscreen mode
+    const isFullScreen = document.getElementById('output-container').classList.contains('fullscreen');
+    if (isFullScreen) {
+        lineCounter.style.bottom = '10px';
+        lineCounter.style.right = '10px';
+    } else {
+        lineCounter.style.bottom = '0';
+        lineCounter.style.right = '0';
+    }
+}
+
 // Monaco editor initialization
 require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@latest/min/vs' } });
 
@@ -480,7 +494,11 @@ require(['vs/editor/editor.main'], function () {
     editor.onDidChangeModelContent(() => {
         saveCurrentTabContent(); // Save content to localStorage
         runCode(); // Auto-update output
+        updateLineCounter(); // Update line count
     });
+    
+    // Initialize line counter
+    updateLineCounter();
 });
 
 // Function to load saved content into the editor
@@ -518,6 +536,9 @@ function changeTab(language) {
         editor.setModel(monaco.editor.createModel(txtContent, 'text'));
         editor.updateOptions({ language: 'text' });
     }
+
+    // Update line counter
+    updateLineCounter();
 
     // Save active tab in localStorage
     localStorage.setItem('activeTab', language);
@@ -586,15 +607,11 @@ function runCode() {
     iframeDoc.close();
 }
 
-// Load active tab and content on page load
-window.addEventListener('load', () => {
-    loadSavedContent();
-});
-        
-        // Function to insert text snippets
-        function insertSnippet(snippet) {
-            editor.trigger('keyboard', 'type', { text: snippet });
-        }
+// Function to insert text snippets
+function insertSnippet(snippet) {
+    editor.trigger('keyboard', 'type', { text: snippet });
+    updateLineCounter();
+}
 
 let decorationsCollection = null; // Highlights store karne ke liye
 
@@ -602,18 +619,15 @@ function findTextDown() {
     let searchText = document.getElementById("search-input").value.trim();
     let editor = monaco.editor.getEditors()[0]; // Monaco editor instance
 
-    // **Old highlights remove karega (hamesha)**
+    // Remove old highlights
     if (decorationsCollection) {
         decorationsCollection.clear();
         decorationsCollection = null;
     }
 
-    // **Agar search box empty hai toh function return kar dega**
     if (!searchText) return;
 
     let model = editor.getModel();
-
-    // **Case-insensitive search**
     let matches = model.findMatches(searchText, false, false, false, null, true);
 
     if (matches.length === 0) {
@@ -621,12 +635,10 @@ function findTextDown() {
         return;
     }
 
-    // **First match ko select & scroll karega**
     let range = matches[0].range;
     editor.setSelection(range);
     editor.revealRangeInCenter(range);
 
-    // **New highlights set karega**
     let decorations = matches.map(match => ({
         range: match.range,
         options: { inlineClassName: "highlight-match" } 
@@ -634,23 +646,25 @@ function findTextDown() {
     decorationsCollection = editor.createDecorationsCollection(decorations);
 }
 
-// **Enter Button Ko Activate Karega**
+// Activate search on Enter key
 document.getElementById("search-input").addEventListener("keydown", function (event) {
     if (event.key === "Enter") {
         findTextDown();
     }
 });
-        
-        function undo() {
-            editor.trigger('keyboard', 'undo', {});
-        }
 
-        function deleteCode() {
-            editor.setValue('');
-        }
+function undo() {
+    editor.trigger('keyboard', 'undo', {});
+    updateLineCounter();
+}
 
- // Full Screen
-    function toggleFullScreen() {
+function deleteCode() {
+    editor.setValue('');
+    updateLineCounter();
+}
+
+// Full Screen
+function toggleFullScreen() {
     let outputContainer = document.getElementById("output-container");
     let editorContainer = document.getElementById("editor-container");
     let controls = document.getElementById("controls");
@@ -675,10 +689,13 @@ document.getElementById("search-input").addEventListener("keydown", function (ev
         fullscreenBtnIcon.classList.remove("fa-compress"); // Remove Compress Icon
         fullscreenBtnIcon.classList.add("fa-expand"); // Add Expand Icon
     }
-    }
-        
-    // Hamburger Menu
-    function toggleMenu() {
+    
+    // Update line counter position
+    updateLineCounter();
+}
+
+// Hamburger Menu
+function toggleMenu() {
     var menu = document.getElementById("hamburger-menu");
 
     // Mobile mode me toggle kare
@@ -696,6 +713,8 @@ window.onload = function () {
     if (window.innerWidth >= 769) {
         document.getElementById("hamburger-menu").style.display = "flex";
     }
+    loadDarkModePreference();
+    updateLineCounter();
 };
 
 // Jab window resize ho, tab bhi check kare
@@ -707,12 +726,11 @@ window.onresize = function () {
     }
 };
 
-    function openLink() {
-    // Open the desired link (you can replace the URL with your choice)
+function openLink() {
     window.open("https://shkumaraman.github.io", "_blank");
-     }
+}
 
- let copiedCode = ""; // This will store the copied code
+let copiedCode = ""; // This will store the copied code
 
 // Function to copy code from the Monaco editor (active tab)
 function copyCode() {
@@ -736,6 +754,7 @@ function pasteCode() {
         if (text) {
             // Insert the clipboard content into Monaco editor
             editor.setValue(text);
+            updateLineCounter();
             alert("Code pasted!");
         } else {
             alert("No code to paste!");
@@ -776,6 +795,7 @@ function importFile() {
                 return;
             }
             
+            updateLineCounter();
             alert(`${file.name} imported successfully!`);
         };
         
@@ -789,8 +809,8 @@ function importFile() {
         alert("No file selected!");
     }
 }
-        
- // Function to import raw code from a URL
+
+// Function to import raw code from a URL
 function importCode() {
     const url = prompt("Enter the URL to fetch raw code from:");
 
@@ -801,6 +821,7 @@ function importCode() {
                 // Check the file type based on the URL or content type
                 const fileType = url.split('.').pop();
                 setEditorContent(fileType, data);
+                updateLineCounter();
                 alert("Code imported successfully from the URL!");
             })
             .catch(error => {
@@ -892,12 +913,12 @@ function downloadAllTabs() {
     });
 }
 
-// रैंडम User ID जनरेट करने का तरीका (localStorage में न रखें)
+// Generate random User ID
 function getUserId() {
   return 'user_' + Math.random().toString(36).substr(2, 9);
 }
 
-const userId = getUserId(); // इस ID को शेयर करने वाले कोड में उपयोग करें
+const userId = getUserId();
 
 const JSONBIN_API_KEY = '$2a$10$TL3pjB9vsa4hRFTlamcbIu2jenrUF6o1A3NzDez9XdAPSIpe4cLxW';
 const BIN_ID = '679edbade41b4d34e482972b';
@@ -910,11 +931,10 @@ async function shareWithJsonBin() {
     css: cssContent,
     js: jsContent,
     txt: txtContent,
-    timestamp: new Date().toISOString() // activeTab को हटा दिया गया है
+    timestamp: new Date().toISOString()
   };
 
   try {
-    // पुराने डेटा को लोड करें
     const response = await fetch(JSONBIN_BASE_URL, {
       headers: { 'X-Master-Key': JSONBIN_API_KEY }
     });
@@ -924,10 +944,8 @@ async function shareWithJsonBin() {
     const { record } = await response.json();
     let existingData = Array.isArray(record) ? record : [];
 
-    // नए कोड को Array में जोड़ें
     existingData.push(newCode);
 
-    // अपडेट किए गए Array को सेव करें
     const updateResponse = await fetch(JSONBIN_BASE_URL, {
       method: 'PUT',
       headers: {
@@ -939,7 +957,6 @@ async function shareWithJsonBin() {
 
     if (!updateResponse.ok) throw new Error('Failed to update JSONBin');
 
-    // लिंक बनाएं और उसे क्लिपबोर्ड पर कॉपी करें
     const shareUrl = `${window.location.origin}/tool/code-editor.html?id=${userId}`;
     navigator.clipboard.writeText(shareUrl);
     
@@ -951,13 +968,11 @@ async function shareWithJsonBin() {
 }
 
 async function loadUserCodes() {
-  // URL से userId प्राप्त करें
   const urlParams = new URLSearchParams(window.location.search);
-  const userId = urlParams.get('id'); // ?id=userId123
+  const userId = urlParams.get('id');
 
-  // अगर URL में 'id' नहीं है, तो कुछ न करें
   if (!userId) {
-    return; // यूजर को सामान्य पेज दिखाएं, कोई अलर्ट न दिखाएं
+    return;
   }
 
   try {
@@ -968,8 +983,6 @@ async function loadUserCodes() {
     if (!response.ok) throw new Error('Failed to fetch JSONBin data');
 
     const { record } = await response.json();
-
-    // उस userId के कोड को फिल्टर करें
     const userCodes = record.filter(entry => entry.user === userId);
 
     if (userCodes.length === 0) {
@@ -977,22 +990,15 @@ async function loadUserCodes() {
       return;
     }
 
-    // सबसे नया कोड लोड करें
     const latestCode = userCodes[userCodes.length - 1];
-
-    // HTML, CSS, JS, TXT कोड लोड करें (activeTab को हटाया गया है)
     htmlContent = latestCode.html;
     cssContent = latestCode.css;
     jsContent = latestCode.js;
     txtContent = latestCode.txt;
 
-    // सही टैब लोड करें (जो active था)
-    changeTab('html'); // हम केवल HTML कोड लोड करेंगे, एक्टिव टैब से कोई लिंक नहीं है
-    
-    // सही टैब का कोड एडिटर में सेट करें
-    editor.setValue(latestCode.html); // हम केवल HTML कोड लोड कर रहे हैं
-
-    // रन कोड (आपके कोड को चलाने के लिए)
+    changeTab('html');
+    editor.setValue(latestCode.html);
+    updateLineCounter();
     runCode();
 
   } catch (error) {
@@ -1004,7 +1010,6 @@ async function loadUserCodes() {
 window.addEventListener('load', () => {
   loadUserCodes();
 });
-
     </script>
 </body>
 </html>
