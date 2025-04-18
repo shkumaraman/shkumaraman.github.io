@@ -1,35 +1,240 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>GPT Chat with Puter.js</title>
-  <script type="module">
-    import puter from 'https://cdn.puter.com/js/client.mjs';
-
-    window.addEventListener('DOMContentLoaded', async () => {
-      const client = await puter();
-
-      document.getElementById("send").addEventListener("click", async () => {
-        const prompt = document.getElementById("prompt").value;
-        const output = document.getElementById("response");
-        output.textContent = "Thinking...";
-
-        const chat = await client.ai.chat({
-          model: "gpt-4o", // या "o1-mini" अगर हल्का चाहिए
-          messages: [
-            { role: "user", content: prompt }
-          ]
-        });
-
-        output.textContent = chat.choices[0].message.content;
-      });
-    });
-  </script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple ChatGPT Clone</title>
+    <script src="https://js.puter.com/v2/"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            background-color: #f7f7f8;
+        }
+        
+        .chat-container {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            max-width: 900px;
+            margin: 0 auto;
+            width: 100%;
+            background-color: white;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        
+        .chat-header {
+            padding: 15px;
+            background-color: #202123;
+            color: white;
+            text-align: center;
+            font-weight: bold;
+        }
+        
+        .chat-messages {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        .message {
+            max-width: 80%;
+            padding: 12px 16px;
+            border-radius: 8px;
+            line-height: 1.5;
+        }
+        
+        .user-message {
+            align-self: flex-end;
+            background-color: #e5f6ff;
+            border-bottom-right-radius: 0;
+        }
+        
+        .bot-message {
+            align-self: flex-start;
+            background-color: #f0f0f0;
+            border-bottom-left-radius: 0;
+        }
+        
+        .chat-input {
+            display: flex;
+            padding: 15px;
+            border-top: 1px solid #e5e5e5;
+            background-color: white;
+        }
+        
+        #message-input {
+            flex: 1;
+            padding: 12px 15px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            outline: none;
+        }
+        
+        #send-button {
+            margin-left: 10px;
+            padding: 12px 20px;
+            background-color: #202123;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        
+        #send-button:hover {
+            background-color: #343541;
+        }
+        
+        .typing-indicator {
+            align-self: flex-start;
+            padding: 12px 16px;
+            background-color: #f0f0f0;
+            border-radius: 8px;
+            display: none;
+        }
+        
+        .typing-dots {
+            display: flex;
+            gap: 4px;
+        }
+        
+        .typing-dot {
+            width: 8px;
+            height: 8px;
+            background-color: #666;
+            border-radius: 50%;
+            animation: typing-animation 1.4s infinite ease-in-out;
+        }
+        
+        .typing-dot:nth-child(1) {
+            animation-delay: 0s;
+        }
+        
+        .typing-dot:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+        
+        .typing-dot:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+        
+        @keyframes typing-animation {
+            0%, 60%, 100% {
+                transform: translateY(0);
+            }
+            30% {
+                transform: translateY(-5px);
+            }
+        }
+    </style>
 </head>
 <body>
-  <h2>GPT Chat (Free using Puter.js)</h2>
-  <input id="prompt" type="text" placeholder="Ask something..." style="width:300px;" />
-  <button id="send">Send</button>
-  <pre id="response" style="margin-top:20px; white-space: pre-wrap;"></pre>
+    <div class="chat-container">
+        <div class="chat-header">
+            Simple ChatGPT Clone with Puter.js
+        </div>
+        <div class="chat-messages" id="chat-messages">
+            <div class="message bot-message">
+                Hello! I'm a simple chatbot powered by Puter.js. How can I help you today?
+            </div>
+        </div>
+        <div class="chat-input">
+            <input type="text" id="message-input" placeholder="Type your message here..." autocomplete="off">
+            <button id="send-button">Send</button>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const chatMessages = document.getElementById('chat-messages');
+            const messageInput = document.getElementById('message-input');
+            const sendButton = document.getElementById('send-button');
+            
+            // Create typing indicator element
+            const typingIndicator = document.createElement('div');
+            typingIndicator.className = 'typing-indicator';
+            typingIndicator.innerHTML = `
+                <div class="typing-dots">
+                    <div class="typing-dot"></div>
+                    <div class="typing-dot"></div>
+                    <div class="typing-dot"></div>
+                </div>
+            `;
+            
+            // Function to add a message to the chat
+            function addMessage(content, isUser) {
+                const messageElement = document.createElement('div');
+                messageElement.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
+                messageElement.textContent = content;
+                chatMessages.appendChild(messageElement);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+            
+            // Function to show typing indicator
+            function showTypingIndicator() {
+                chatMessages.appendChild(typingIndicator);
+                typingIndicator.style.display = 'block';
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+            
+            // Function to hide typing indicator
+            function hideTypingIndicator() {
+                typingIndicator.style.display = 'none';
+                chatMessages.removeChild(typingIndicator);
+            }
+            
+            // Function to send message to Puter.js backend
+            async function sendMessageToBot(message) {
+                showTypingIndicator();
+                
+                try {
+                    // Using Puter.js KV storage as a simple backend
+                    // In a real app, you would use Puter's cloud functions for more complex logic
+                    const response = await puter.ai.chat(message);
+                    
+                    hideTypingIndicator();
+                    addMessage(response, false);
+                } catch (error) {
+                    hideTypingIndicator();
+                    addMessage("Sorry, I encountered an error. Please try again later.", false);
+                    console.error("Error:", error);
+                }
+            }
+            
+            // Event listener for send button
+            sendButton.addEventListener('click', function() {
+                const message = messageInput.value.trim();
+                if (message) {
+                    addMessage(message, true);
+                    messageInput.value = '';
+                    sendMessageToBot(message);
+                }
+            });
+            
+            // Event listener for Enter key
+            messageInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    const message = messageInput.value.trim();
+                    if (message) {
+                        addMessage(message, true);
+                        messageInput.value = '';
+                        sendMessageToBot(message);
+                    }
+                }
+            });
+            
+            // Focus the input field when the page loads
+            messageInput.focus();
+        });
+    </script>
 </body>
 </html>
