@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Install all required dependencies
+# Install all dependencies
 pip install -r requirements.txt
 
-# Install Playwright and its required binaries (browsers)
-python -m playwright install
+# Install Playwright dependencies (including browser binaries)
+python -m playwright install --with-deps
