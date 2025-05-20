@@ -210,9 +210,28 @@
     }
 
     .ad-container {
-      max-width: 728px;
+      width: 728px;
+      height: 90px;
       margin: 0 auto 1.5rem;
-      min-height: 90px;
+      background-color: #f1f1f1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    
+    .ad-placeholder {
+      color: #999;
+      font-size: 14px;
+    }
+    
+    @media (max-width: 768px) {
+      .ad-container {
+        width: 100%;
+        height: auto;
+        min-height: 90px;
+      }
     }
   </style>
 </head>
@@ -221,13 +240,11 @@
     <!-- Ad Slot -->
     <div class="ad-container">
       <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7059052735946479" crossorigin="anonymous"></script>
-      <!-- Banner -->
+      <!-- Fixed Size Ad -->
       <ins class="adsbygoogle"
-           style="display:block"
+           style="display:inline-block;width:728px;height:90px"
            data-ad-client="ca-pub-7059052735946479"
-           data-ad-slot="3754934215"
-           data-ad-format="auto"
-           data-full-width-responsive="true"></ins>
+           data-ad-slot="3754934215"></ins>
       <script>
            (adsbygoogle = window.adsbygoogle || []).push({});
       </script>
@@ -278,7 +295,8 @@
           { urls: 'stun:stun1.l.google.com:19302' },
           { urls: 'stun:stun2.l.google.com:19302' }
         ]
-      }
+      },
+      debug: 3 // Enable verbose logging
     });
     
     let conn = null;
@@ -290,6 +308,8 @@
     let isTyping = false;
     let skipClickCount = 0;
     let skipTimer;
+    let connectionAttempts = 0;
+    const maxConnectionAttempts = 5;
 
     const messages = document.getElementById("messages");
     const input = document.getElementById("messageInput");
@@ -301,12 +321,11 @@
     const mediaPreview = document.getElementById("mediaPreview");
     const skipBtn = document.getElementById("skipBtn");
 
+    // Initialize connection
     peer.on("open", (id) => {
       console.log("My ID:", id);
       updateStatus("Looking for strangers...", "info");
       window.myPeerId = id;
-
-      // Start looking for connections
       findStranger();
     });
 
@@ -322,15 +341,36 @@
 
     peer.on("error", (err) => {
       console.error("PeerJS error:", err);
+      
       if (err.type === 'peer-unavailable') {
-        findStranger();
+        if (connectionAttempts < maxConnectionAttempts) {
+          connectionAttempts++;
+          updateStatus(`Trying to connect (${connectionAttempts}/${maxConnectionAttempts})...`, "info");
+          setTimeout(findStranger, 2000);
+        } else {
+          updateStatus("No strangers available. Try again later.", "danger");
+        }
+      } else if (err.type === 'disconnected') {
+        updateStatus("Connection lost. Reconnecting...", "danger");
+        setTimeout(initializeConnection, 3000);
       } else {
         updateStatus("Connection error. Try refreshing.", "danger");
       }
     });
 
     function findStranger() {
+      if (connectionAttempts >= maxConnectionAttempts) {
+        updateStatus("No strangers available. Try again later.", "danger");
+        return;
+      }
+      
       peer.listAllPeers((peers) => {
+        if (!peers) {
+          updateStatus("Error fetching peers. Retrying...", "danger");
+          setTimeout(findStranger, 3000);
+          return;
+        }
+        
         const otherPeers = peers.filter(pid => pid !== peer.id);
         
         if (otherPeers.length > 0) {
@@ -347,6 +387,7 @@
     function setupConnection() {
       conn.on("open", () => {
         isConnected = true;
+        connectionAttempts = 0;
         updateStatus("Connected to stranger", "success");
         input.disabled = false;
         sendBtn.disabled = false;
@@ -388,7 +429,7 @@
 
     function handleDisconnection() {
       isConnected = false;
-      updateStatus("Stranger disconnected", "danger");
+      updateStatus("Stranger disconnected. Reconnecting...", "danger");
       input.disabled = true;
       sendBtn.disabled = true;
       
@@ -588,12 +629,14 @@
       fileInput.value = "";
     });
 
-    // Skip functionality with double click confirmation
+    // Skip functionality with confirmation
     skipBtn.addEventListener("click", () => {
+      if (!isConnected) return;
+      
       skipClickCount++;
       
       if (skipClickCount === 1) {
-        updateStatus("Click again to skip", "danger");
+        updateStatus("Click again to confirm skip", "danger");
         skipBtn.innerHTML = '<i class="fas fa-check"></i>';
         skipBtn.style.backgroundColor = 'var(--success-color)';
         
@@ -601,9 +644,7 @@
           skipClickCount = 0;
           skipBtn.innerHTML = '<i class="fas fa-forward"></i>';
           skipBtn.style.backgroundColor = 'var(--danger-color)';
-          if (isConnected) {
-            updateStatus("Connected to stranger", "success");
-          }
+          updateStatus("Connected to stranger", "success");
         }, 2000);
       } else if (skipClickCount === 2) {
         clearTimeout(skipTimer);
@@ -611,7 +652,19 @@
         skipBtn.innerHTML = '<i class="fas fa-forward"></i>';
         skipBtn.style.backgroundColor = 'var(--danger-color)';
         
+        // Show confirmation message
+        updateStatus("Skipping stranger...", "info");
+        
+        // Disconnect and find new stranger
         handleDisconnection();
+      }
+    });
+    
+    // Reconnect if page becomes visible again
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && !isConnected) {
+        updateStatus("Reconnecting...", "info");
+        findStranger();
       }
     });
   </script>
