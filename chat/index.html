@@ -6,105 +6,844 @@
   <title>Stranger Chat</title>
 
   <!-- Bootstrap (latest) -->
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@latest/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@latest/dist/js/bootstrap.bundle.min.js"></script>
 
   <!-- PeerJS (latest) -->
-  <script src="https://cdn.jsdelivr.net/npm/peerjs@1/dist/peerjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/peerjs@latest/dist/peerjs.min.js"></script>
+
+  <!-- Font Awesome (latest) -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/latest/css/all.min.css">
 
   <style>
-    #messages {
-      height: 300px;
-      overflow-y: auto;
-      border: 1px solid #ccc;
-      padding: 1rem;
-      margin-bottom: 1rem;
+    :root {
+      --primary-color: #6c5ce7;
+      --secondary-color: #a29bfe;
+      --dark-color: #2d3436;
+      --light-color: #f5f6fa;
+      --success-color: #00b894;
+      --danger-color: #d63031;
+      --warning-color: #fdcb6e;
+    }
+    
+    body {
       background-color: #f8f9fa;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      height: 100vh;
+    }
+    
+    .chat-container {
+      max-width: 800px;
+      height: 90vh;
+      margin: 20px auto;
+      border-radius: 15px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      background-color: white;
+    }
+    
+    .chat-header {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      color: white;
+      padding: 15px 20px;
+      text-align: center;
+      position: relative;
+    }
+    
+    .chat-status {
+      font-size: 0.9rem;
+      opacity: 0.9;
+      margin-top: 5px;
+    }
+    
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      background-color: var(--light-color);
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+    }
+    
+    .message {
+      max-width: 70%;
+      padding: 12px 15px;
+      border-radius: 18px;
+      position: relative;
+      word-wrap: break-word;
+      line-height: 1.4;
+      animation: fadeIn 0.3s ease;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .message.sent {
+      align-self: flex-end;
+      background-color: var(--primary-color);
+      color: white;
+      border-bottom-right-radius: 5px;
+    }
+    
+    .message.received {
+      align-self: flex-start;
+      background-color: white;
+      color: var(--dark-color);
+      border-bottom-left-radius: 5px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    }
+    
+    .message-info {
+      font-size: 0.75rem;
+      opacity: 0.8;
+      margin-top: 5px;
+      display: flex;
+      justify-content: space-between;
+    }
+    
+    .chat-input-area {
+      padding: 15px;
+      background-color: white;
+      border-top: 1px solid #eee;
+      display: flex;
+      gap: 10px;
+    }
+    
+    .message-input {
+      flex: 1;
+      border-radius: 25px;
+      padding: 10px 20px;
+      border: 1px solid #ddd;
+      outline: none;
+      transition: all 0.3s;
+    }
+    
+    .message-input:focus {
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 3px rgba(108, 92, 231, 0.2);
+    }
+    
+    .action-btn {
+      width: 45px;
+      height: 45px;
+      border-radius: 50%;
+      background-color: var(--light-color);
+      border: none;
+      color: var(--dark-color);
+      cursor: pointer;
+      transition: all 0.3s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .action-btn:hover {
+      background-color: var(--secondary-color);
+      color: white;
+    }
+    
+    .action-btn.primary {
+      background-color: var(--primary-color);
+      color: white;
+    }
+    
+    .action-btn.primary:hover {
+      background-color: #5a4bd1;
+    }
+    
+    .action-btn.danger {
+      background-color: var(--danger-color);
+      color: white;
+    }
+    
+    .action-btn.danger:hover {
+      background-color: #c0392b;
+    }
+    
+    .action-btn.warning {
+      background-color: var(--warning-color);
+      color: var(--dark-color);
+    }
+    
+    .action-btn.warning:hover {
+      background-color: #e8b259;
+    }
+    
+    .file-input {
+      display: none;
+    }
+    
+    .voice-recording {
+      animation: pulse 1.5s infinite;
+    }
+    
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.7); }
+      70% { box-shadow: 0 0 0 10px rgba(220, 53, 69, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0); }
+    }
+    
+    .video-container {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0,0,0,0.9);
+      z-index: 1000;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .video-box {
+      width: 80%;
+      max-width: 800px;
+      position: relative;
+    }
+    
+    .remote-video {
+      width: 100%;
+      background-color: black;
+      border-radius: 10px;
+    }
+    
+    .local-video {
+      position: absolute;
+      width: 25%;
+      right: 20px;
+      bottom: 20px;
+      border-radius: 5px;
+      border: 2px solid white;
+    }
+    
+    .call-controls {
+      margin-top: 20px;
+      display: flex;
+      gap: 15px;
+    }
+    
+    .typing-indicator {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 8px 15px;
+      background-color: white;
+      border-radius: 18px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+      align-self: flex-start;
+      margin-bottom: 5px;
+    }
+    
+    .typing-dot {
+      width: 8px;
+      height: 8px;
+      background-color: var(--dark-color);
+      border-radius: 50%;
+      animation: typingAnimation 1.4s infinite ease-in-out;
+    }
+    
+    .typing-dot:nth-child(1) {
+      animation-delay: 0s;
+    }
+    
+    .typing-dot:nth-child(2) {
+      animation-delay: 0.2s;
+    }
+    
+    .typing-dot:nth-child(3) {
+      animation-delay: 0.4s;
+    }
+    
+    @keyframes typingAnimation {
+      0%, 60%, 100% { transform: translateY(0); }
+      30% { transform: translateY(-5px); }
+    }
+    
+    .message-image {
+      max-width: 100%;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: transform 0.3s;
+    }
+    
+    .message-image:hover {
+      transform: scale(1.02);
+    }
+    
+    .message-audio {
+      width: 100%;
+      border-radius: 10px;
+    }
+    
+    .call-notification {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background-color: white;
+      padding: 15px 25px;
+      border-radius: 10px;
+      box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+      z-index: 1001;
+      display: none;
+      align-items: center;
+      gap: 15px;
+    }
+    
+    .badge-online {
+      background-color: var(--success-color);
+    }
+    
+    .badge-offline {
+      background-color: var(--danger-color);
+    }
+    
+    /* Responsive adjustments */
+    @media (max-width: 768px) {
+      .chat-container {
+        height: 100vh;
+        margin: 0;
+        border-radius: 0;
+      }
+      
+      .video-box {
+        width: 95%;
+      }
+      
+      .local-video {
+        width: 30%;
+      }
     }
   </style>
 </head>
-<body class="container py-4">
-
-  <h2 class="text-center mb-4">Chat with a Stranger</h2>
-  <div id="status" class="mb-2 text-center text-secondary">Connecting...</div>
-
-  <div id="messages" class="rounded"></div>
-  <input id="messageInput" class="form-control" placeholder="Type a message and press Enter..." disabled />
-
+<body>
+  <div class="chat-container">
+    <div class="chat-header">
+      <h4 class="mb-1">Stranger Chat</h4>
+      <div class="chat-status" id="status">
+        <span class="badge badge-offline">Connecting...</span>
+      </div>
+    </div>
+    
+    <div class="chat-messages" id="messages"></div>
+    
+    <div class="chat-input-area">
+      <button class="action-btn" id="attachBtn" title="Attach file">
+        <i class="fas fa-paperclip"></i>
+      </button>
+      <input type="file" id="fileInput" class="file-input" accept="image/*">
+      
+      <input type="text" class="message-input" id="messageInput" placeholder="Type a message..." disabled>
+      
+      <button class="action-btn" id="voiceBtn" title="Record voice message">
+        <i class="fas fa-microphone"></i>
+      </button>
+      <button class="action-btn primary" id="sendBtn" title="Send message" disabled>
+        <i class="fas fa-paper-plane"></i>
+      </button>
+    </div>
+  </div>
+  
+  <!-- Video call UI -->
+  <div class="video-container" id="videoContainer">
+    <div class="video-box">
+      <video id="remoteVideo" class="remote-video" autoplay playsinline></video>
+      <video id="localVideo" class="local-video" autoplay playsinline muted></video>
+    </div>
+    <div class="call-controls">
+      <button class="action-btn danger" id="endCallBtn">
+        <i class="fas fa-phone-slash"></i>
+      </button>
+      <button class="action-btn" id="toggleVideoBtn">
+        <i class="fas fa-video"></i>
+      </button>
+      <button class="action-btn" id="toggleAudioBtn">
+        <i class="fas fa-microphone"></i>
+      </button>
+    </div>
+  </div>
+  
+  <!-- Incoming call notification -->
+  <div class="call-notification" id="callNotification">
+    <div>
+      <strong>Incoming Video Call</strong>
+      <div class="text-muted small">From stranger</div>
+    </div>
+    <button class="action-btn primary" id="acceptCallBtn">
+      <i class="fas fa-phone"></i>
+    </button>
+    <button class="action-btn danger" id="rejectCallBtn">
+      <i class="fas fa-phone-slash"></i>
+    </button>
+  </div>
+  
   <script>
-    const peer = new Peer(); // auto-generated ID using PeerJS Cloud
+    // DOM Elements
+    const messagesEl = document.getElementById("messages");
+    const inputEl = document.getElementById("messageInput");
+    const statusEl = document.getElementById("status");
+    const sendBtn = document.getElementById("sendBtn");
+    const attachBtn = document.getElementById("attachBtn");
+    const fileInput = document.getElementById("fileInput");
+    const voiceBtn = document.getElementById("voiceBtn");
+    const videoContainer = document.getElementById("videoContainer");
+    const remoteVideo = document.getElementById("remoteVideo");
+    const localVideo = document.getElementById("localVideo");
+    const endCallBtn = document.getElementById("endCallBtn");
+    const toggleVideoBtn = document.getElementById("toggleVideoBtn");
+    const toggleAudioBtn = document.getElementById("toggleAudioBtn");
+    const callNotification = document.getElementById("callNotification");
+    const acceptCallBtn = document.getElementById("acceptCallBtn");
+    const rejectCallBtn = document.getElementById("rejectCallBtn");
+    
+    // PeerJS setup
+    const peer = new Peer({
+      debug: 3
+    });
+    
     let conn = null;
-    let allPeers = [];
+    let mediaConn = null;
+    let currentStream = null;
     let isConnected = false;
-
-    const messages = document.getElementById("messages");
-    const input = document.getElementById("messageInput");
-    const status = document.getElementById("status");
-
-    // Store peers in window so we can match later
-    const PEER_CACHE = [];
-
-    peer.on("open", (id) => {
-      console.log("My ID:", id);
-      addStatus("Looking for strangers...");
-      window.myPeerId = id;
-
-      // Simulate global peer list using PeerJS cloud events (no real list, so workaround)
-      peer.listAllPeers((peers) => {
-        allPeers = peers.filter(pid => pid !== id);
-        if (allPeers.length > 0) {
-          const randomPeerId = allPeers[Math.floor(Math.random() * allPeers.length)];
-          conn = peer.connect(randomPeerId);
-          setupConnection();
-        } else {
-          addStatus("Waiting for someone to connect...");
+    let isTyping = false;
+    let lastTypingTime = 0;
+    let isRecording = false;
+    let mediaRecorder;
+    let audioChunks = [];
+    
+    // Initialize the app
+    init();
+    
+    function init() {
+      setupEventListeners();
+      
+      peer.on("open", (id) => {
+        console.log("My ID:", id);
+        updateStatus("Looking for strangers...", "warning");
+        
+        // In a real app, you'd have a signaling server to find peers
+        // For demo, we'll simulate with a timeout
+        setTimeout(() => {
+          findStranger();
+        }, 1500);
+      });
+      
+      peer.on("error", (err) => {
+        console.error("Peer error:", err);
+        updateStatus("Connection error: " + err.type, "danger");
+      });
+    }
+    
+    function setupEventListeners() {
+      // Message input events
+      inputEl.addEventListener("input", handleTyping);
+      inputEl.addEventListener("keypress", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          sendMessage();
         }
       });
-    });
-
-    peer.on("connection", (incoming) => {
-      if (isConnected) return;
-      conn = incoming;
-      setupConnection();
-    });
-
-    function setupConnection() {
-      conn.on("open", () => {
-        isConnected = true;
-        addStatus("Connected to stranger.");
-        input.disabled = false;
-
-        conn.on("data", (data) => {
-          addMessage("Stranger: " + data);
-        });
-
-        input.addEventListener("keypress", (e) => {
-          if (e.key === "Enter" && conn.open) {
-            const msg = input.value.trim();
-            if (msg) {
-              conn.send(msg);
-              addMessage("You: " + msg);
-              input.value = "";
-            }
+      
+      sendBtn.addEventListener("click", sendMessage);
+      
+      // File attachment
+      attachBtn.addEventListener("click", () => fileInput.click());
+      fileInput.addEventListener("change", handleFileUpload);
+      
+      // Voice recording
+      voiceBtn.addEventListener("mousedown", startRecording);
+      voiceBtn.addEventListener("mouseup", stopRecording);
+      voiceBtn.addEventListener("mouseleave", stopRecording);
+      voiceBtn.addEventListener("touchstart", (e) => {
+        e.preventDefault();
+        startRecording();
+      });
+      voiceBtn.addEventListener("touchend", (e) => {
+        e.preventDefault();
+        stopRecording();
+      });
+      
+      // Call controls
+      endCallBtn.addEventListener("click", endCall);
+      toggleVideoBtn.addEventListener("click", toggleVideo);
+      toggleAudioBtn.addEventListener("click", toggleAudio);
+      acceptCallBtn.addEventListener("click", acceptCall);
+      rejectCallBtn.addEventListener("click", rejectCall);
+    }
+    
+    function findStranger() {
+      // In a real app, you would connect to a signaling server here
+      // For demo purposes, we'll simulate finding a stranger
+      updateStatus("Connecting to a stranger...", "warning");
+      
+      // Simulate connection delay
+      setTimeout(() => {
+        peer.listAllPeers((peers) => {
+          if (peers && peers.length > 1) {
+            const otherPeers = peers.filter(peerId => peerId !== peer.id);
+            const randomPeer = otherPeers[Math.floor(Math.random() * otherPeers.length)];
+            connectToPeer(randomPeer);
+          } else {
+            updateStatus("Waiting for someone to connect...", "warning");
+            // Set up to receive incoming connections
+            peer.on("connection", (incomingConn) => {
+              if (!isConnected) {
+                setupDataConnection(incomingConn);
+              }
+            });
           }
         });
+      }, 2000);
+    }
+    
+    function connectToPeer(peerId) {
+      if (isConnected) return;
+      
+      conn = peer.connect(peerId, {
+        reliable: true,
+        serialization: "json"
       });
-
-      conn.on("close", () => {
-        addStatus("Stranger disconnected.");
-        input.disabled = true;
+      
+      setupDataConnection(conn);
+    }
+    
+    function setupDataConnection(connection) {
+      conn = connection;
+      
+      conn.on("open", () => {
+        isConnected = true;
+        updateStatus("Connected to stranger", "success");
+        inputEl.disabled = false;
+        sendBtn.disabled = false;
+        
+        // Set up data handler
+        conn.on("data", (data) => {
+          handleIncomingData(data);
+        });
+        
+        // Set up call handler
+        peer.on("call", (call) => {
+          showIncomingCall(call);
+        });
+        
+        // Connection closed
+        conn.on("close", () => {
+          handleDisconnection();
+        });
+        
+        // Connection error
+        conn.on("error", (err) => {
+          console.error("Connection error:", err);
+          updateStatus("Connection error", "danger");
+        });
       });
     }
-
-    function addMessage(msg) {
-      const p = document.createElement("p");
-      p.textContent = msg;
-      messages.appendChild(p);
-      messages.scrollTop = messages.scrollHeight;
+    
+    function handleIncomingData(data) {
+      if (typeof data === "string") {
+        // Regular text message
+        addMessage(data, "received", "text");
+      } else if (data.type === "typing") {
+        // Typing indicator
+        showTypingIndicator();
+      } else if (data.type === "image") {
+        // Image message
+        addMessage(data.url, "received", "image");
+      } else if (data.type === "audio") {
+        // Audio message
+        addMessage(data.url, "received", "audio");
+      }
     }
-
-    function addStatus(msg) {
-      status.textContent = msg;
+    
+    function sendMessage() {
+      const message = inputEl.value.trim();
+      if (!message || !conn || !conn.open) return;
+      
+      conn.send(message);
+      addMessage(message, "sent", "text");
+      inputEl.value = "";
+      resetTyping();
+    }
+    
+    function handleTyping() {
+      if (!isConnected) return;
+      
+      const now = Date.now();
+      const typingTimeout = 3000; // 3 seconds
+      
+      if (!isTyping) {
+        isTyping = true;
+        conn.send({ type: "typing", isTyping: true });
+      }
+      
+      lastTypingTime = now;
+      
+      setTimeout(() => {
+        if (now - lastTypingTime >= typingTimeout && isTyping) {
+          resetTyping();
+        }
+      }, typingTimeout);
+    }
+    
+    function resetTyping() {
+      if (isTyping) {
+        isTyping = false;
+        conn.send({ type: "typing", isTyping: false });
+      }
+    }
+    
+    function showTypingIndicator() {
+      // Remove any existing typing indicators
+      const existingIndicators = document.querySelectorAll(".typing-indicator");
+      existingIndicators.forEach(el => el.remove());
+      
+      // Add new typing indicator
+      const typingEl = document.createElement("div");
+      typingEl.className = "typing-indicator";
+      typingEl.innerHTML = `
+        <span class="typing-dot"></span>
+        <span class="typing-dot"></span>
+        <span class="typing-dot"></span>
+        <span>Stranger is typing...</span>
+      `;
+      
+      messagesEl.appendChild(typingEl);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      
+      // Remove after some time if no new messages
+      setTimeout(() => {
+        if (messagesEl.lastChild === typingEl) {
+          typingEl.remove();
+        }
+      }, 5000);
+    }
+    
+    function handleFileUpload(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      
+      if (file.type.startsWith("image/")) {
+        // Handle image upload
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const imageUrl = event.target.result;
+          conn.send({ type: "image", url: imageUrl });
+          addMessage(imageUrl, "sent", "image");
+        };
+        reader.readAsDataURL(file);
+      }
+      
+      // Reset file input
+      fileInput.value = "";
+    }
+    
+    async function startRecording() {
+      if (isRecording) return;
+      
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+        audioChunks = [];
+        
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data.size > 0) {
+            audioChunks.push(e.data);
+          }
+        };
+        
+        mediaRecorder.onstop = async () => {
+          const audioBlob = new Blob(audioChunks, { type: "audio/wav" });
+          const audioUrl = URL.createObjectURL(audioBlob);
+          
+          conn.send({ type: "audio", url: audioUrl });
+          addMessage(audioUrl, "sent", "audio");
+          
+          // Stop all tracks
+          stream.getTracks().forEach(track => track.stop());
+        };
+        
+        mediaRecorder.start();
+        isRecording = true;
+        voiceBtn.classList.add("voice-recording");
+      } catch (err) {
+        console.error("Error recording audio:", err);
+      }
+    }
+    
+    function stopRecording() {
+      if (!isRecording) return;
+      
+      if (mediaRecorder.state !== "inactive") {
+        mediaRecorder.stop();
+      }
+      
+      isRecording = false;
+      voiceBtn.classList.remove("voice-recording");
+    }
+    
+    function startVideoCall() {
+      if (!isConnected || mediaConn) return;
+      
+      updateStatus("Starting video call...", "warning");
+      
+      navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+        .then((stream) => {
+          currentStream = stream;
+          localVideo.srcObject = stream;
+          
+          // Call the other peer
+          mediaConn = peer.call(conn.peer, stream);
+          
+          mediaConn.on("stream", (remoteStream) => {
+            remoteVideo.srcObject = remoteStream;
+            videoContainer.style.display = "flex";
+            updateStatus("In video call", "success");
+          });
+          
+          mediaConn.on("close", endCall);
+        })
+        .catch((err) => {
+          console.error("Error starting call:", err);
+          updateStatus("Couldn't start call", "danger");
+        });
+    }
+    
+    function showIncomingCall(call) {
+      mediaConn = call;
+      callNotification.style.display = "flex";
+    }
+    
+    function acceptCall() {
+      callNotification.style.display = "none";
+      
+      navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+        .then((stream) => {
+          currentStream = stream;
+          localVideo.srcObject = stream;
+          
+          mediaConn.answer(stream);
+          
+          mediaConn.on("stream", (remoteStream) => {
+            remoteVideo.srcObject = remoteStream;
+            videoContainer.style.display = "flex";
+            updateStatus("In video call", "success");
+          });
+          
+          mediaConn.on("close", endCall);
+        })
+        .catch((err) => {
+          console.error("Error answering call:", err);
+          updateStatus("Couldn't answer call", "danger");
+          mediaConn.close();
+        });
+    }
+    
+    function rejectCall() {
+      callNotification.style.display = "none";
+      if (mediaConn) {
+        mediaConn.close();
+        mediaConn = null;
+      }
+    }
+    
+    function endCall() {
+      if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
+        currentStream = null;
+      }
+      
+      if (mediaConn) {
+        mediaConn.close();
+        mediaConn = null;
+      }
+      
+      videoContainer.style.display = "none";
+      remoteVideo.srcObject = null;
+      localVideo.srcObject = null;
+      
+      updateStatus("Connected to stranger", "success");
+    }
+    
+    function toggleVideo() {
+      if (!currentStream) return;
+      
+      const videoTrack = currentStream.getVideoTracks()[0];
+      if (videoTrack) {
+        videoTrack.enabled = !videoTrack.enabled;
+        toggleVideoBtn.innerHTML = videoTrack.enabled ? 
+          '<i class="fas fa-video"></i>' : 
+          '<i class="fas fa-video-slash"></i>';
+        toggleVideoBtn.classList.toggle("warning", !videoTrack.enabled);
+      }
+    }
+    
+    function toggleAudio() {
+      if (!currentStream) return;
+      
+      const audioTrack = currentStream.getAudioTracks()[0];
+      if (audioTrack) {
+        audioTrack.enabled = !audioTrack.enabled;
+        toggleAudioBtn.innerHTML = audioTrack.enabled ? 
+          '<i class="fas fa-microphone"></i>' : 
+          '<i class="fas fa-microphone-slash"></i>';
+        toggleAudioBtn.classList.toggle("warning", !audioTrack.enabled);
+      }
+    }
+    
+    function handleDisconnection() {
+      isConnected = false;
+      inputEl.disabled = true;
+      sendBtn.disabled = true;
+      
+      if (mediaConn) {
+        endCall();
+      }
+      
+      updateStatus("Stranger disconnected", "danger");
+      
+      // Try to reconnect after a delay
+      setTimeout(() => {
+        updateStatus("Looking for new stranger...", "warning");
+        findStranger();
+      }, 3000);
+    }
+    
+    function addMessage(content, type, messageType) {
+      const messageEl = document.createElement("div");
+      messageEl.className = `message ${type}`;
+      
+      if (messageType === "text") {
+        messageEl.textContent = content;
+      } else if (messageType === "image") {
+        messageEl.innerHTML = `<img src="${content}" class="message-image" alt="Shared image">`;
+      } else if (messageType === "audio") {
+        messageEl.innerHTML = `
+          <audio controls class="message-audio">
+            <source src="${content}" type="audio/wav">
+            Your browser does not support the audio element.
+          </audio>
+        `;
+      }
+      
+      // Add timestamp
+      const timeEl = document.createElement("div");
+      timeEl.className = "message-info";
+      timeEl.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      messageEl.appendChild(timeEl);
+      
+      messagesEl.appendChild(messageEl);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+    
+    function updateStatus(text, status) {
+      statusEl.innerHTML = `<span class="badge badge-${status}">${text}</span>`;
     }
   </script>
 </body>
