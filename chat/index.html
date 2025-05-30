@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Stranger Chat</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; background: #121212; color: white; margin: 0; padding: 20px; }
+    #chatLog { background: #1e1e1e; padding: 10px; border-radius: 10px; height: 300px; overflow-y: auto; margin-bottom: 10px; }
+    #msgInput { padding: 10px; width: 70%; border-radius: 5px; border: none; }
+    #sendBtn { padding: 10px 20px; border: none; border-radius: 5px; background: #007bff; color: white; cursor: pointer; }
+    #sendBtn:hover { background: #0056b3; }
+  </style>
+</head>
+<body>
+
+  <h1>🔗 Stranger Chat</h1>
+  <div id="chatLog">Connecting to stranger...</div>
+  <input id="msgInput" placeholder="Type a message..." />
+  <button id="sendBtn">Send</button>
+
+  <!-- PeerJS & Firebase SDKs -->
+  <script src="https://unpkg.com/peerjs@1.3.2/dist/peerjs.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database.js"></script>
+
+  <script>
+    // Firebase config
+    const firebaseConfig = {
+      databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
+    };
+    const app = firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    const peer = new Peer(); // will generate random ID
+    let myConn = null;
+
+    peer.on('open', async (id) => {
+      console.log("My ID:", id);
+      log("Your ID: " + id);
+      await matchStranger(id);
+    });
+
+    async function matchStranger(myId) {
+      const waitingRef = db.ref("waiting");
+
+      const snapshot = await waitingRef.once("value");
+      const waitingList = snapshot.val();
+
+      if (waitingList) {
+        const entries = Object.entries(waitingList);
+        for (const [key, peerId] of entries) {
+          if (peerId !== myId) {
+            db.ref("waiting/" + key).remove();
+            connectToStranger(peerId);
+            return;
+          }
+        }
+      }
+
+      // No one to connect, add self to waiting
+      const newRef = waitingRef.push();
+      newRef.set(myId);
+
+      // Wait for someone to connect to you
+      peer.on("connection", (conn) => {
+        log("🔗 Stranger connected!");
+        setupConnection(conn);
+      });
+    }
+
+    function connectToStranger(peerId) {
+      const conn = peer.connect(peerId);
+      conn.on("open", () => {
+        log("🔗 Connected to stranger!");
+        setupConnection(conn);
+        conn.send("👋 Hello stranger!");
+      });
+    }
+
+    function setupConnection(conn) {
+      myConn = conn;
+
+      conn.on("data", (data) => {
+        log("👤 Stranger: " + data);
+      });
+
+      conn.on("close", () => {
+        log("⚠️ Stranger disconnected.");
+      });
+
+      document.getElementById("sendBtn").onclick = () => {
+        const msg = document.getElementById("msgInput").value;
+        if (msg && myConn) {
+          myConn.send(msg);
+          log("🧑 You: " + msg);
+          document.getElementById("msgInput").value = "";
+        }
+      };
+    }
+
+    function log(message) {
+      const chatLog = document.getElementById("chatLog");
+      chatLog.innerHTML += message + "<br>";
+      chatLog.scrollTop = chatLog.scrollHeight;
+    }
+  </script>
+</body>
+</html>
