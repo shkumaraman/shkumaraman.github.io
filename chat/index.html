@@ -1,22 +1,108 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <title>Stranger Chat</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  
+  <!-- Font Awesome for icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
   <style>
-    body { font-family: sans-serif; text-align: center; background: #121212; color: white; margin: 0; padding: 20px; }
-    #chatLog { background: #1e1e1e; padding: 10px; border-radius: 10px; height: 300px; overflow-y: auto; margin-bottom: 10px; }
-    #msgInput { padding: 10px; width: 70%; border-radius: 5px; border: none; }
-    #sendBtn { padding: 10px 20px; border: none; border-radius: 5px; background: #007bff; color: white; cursor: pointer; }
-    #sendBtn:hover { background: #0056b3; }
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', sans-serif;
+      background: #121212;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+    #chatLog {
+      flex: 1;
+      padding: 20px;
+      overflow-y: auto;
+      background: #1e1e1e;
+      border-bottom: 1px solid #333;
+    }
+    .msg {
+      margin: 10px 0;
+      padding: 10px;
+      background: #2b2b2b;
+      border-radius: 10px;
+      max-width: 70%;
+      word-wrap: break-word;
+    }
+    .me { align-self: flex-end; background: #007bff; }
+    .stranger { align-self: flex-start; }
+    .timestamp {
+      font-size: 0.7em;
+      color: #aaa;
+      margin-top: 5px;
+    }
+
+    .chat-controls {
+      display: flex;
+      align-items: center;
+      padding: 10px;
+      background: #181818;
+    }
+    #skipBtn {
+      margin-right: 10px;
+      background: #ff4d4d;
+      border: none;
+      padding: 10px;
+      border-radius: 5px;
+      color: white;
+      cursor: pointer;
+    }
+    .input-area {
+      flex: 1;
+      position: relative;
+    }
+    #msgInput {
+      width: 100%;
+      padding: 10px 80px 10px 10px;
+      border-radius: 5px;
+      border: none;
+      background: #333;
+      color: white;
+    }
+    .input-icons {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      display: flex;
+      gap: 10px;
+    }
+    .icon-btn {
+      background: none;
+      border: none;
+      color: #ccc;
+      font-size: 1.2em;
+      cursor: pointer;
+    }
+    .icon-btn:hover { color: #fff; }
+    #imgInput { display: none; }
   </style>
 </head>
 <body>
 
-  <h1>🔗 Stranger Chat</h1>
-  <div id="chatLog">Connecting to stranger...</div>
-  <input id="msgInput" placeholder="Type a message..." />
-  <button id="sendBtn">Send</button>
+  <div id="chatLog"></div>
+
+  <div class="chat-controls">
+    <button id="skipBtn"><i class="fas fa-random"></i> Skip</button>
+    
+    <div class="input-area">
+      <input type="text" id="msgInput" placeholder="Type your message..." />
+      <div class="input-icons">
+        <label for="imgInput" class="icon-btn"><i class="fas fa-image"></i></label>
+        <button id="sendBtn" class="icon-btn"><i class="fas fa-paper-plane"></i></button>
+      </div>
+    </div>
+  </div>
+  <input type="file" id="imgInput" accept="image/*" />
 
   <!-- Scripts -->
   <script src="https://unpkg.com/peerjs@1.3.2/dist/peerjs.min.js"></script>
@@ -31,23 +117,24 @@
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
-    const peer = new Peer();
-    let myConn = null;
+    let peer, myConn, myId, waitingRef;
 
-    peer.on('open', async (id) => {
-      console.log("My Peer ID:", id);
-      log("Your ID: " + id);
-      tryToFindMatch(id);
-    });
+    startPeer();
 
-    function tryToFindMatch(myId) {
-      const waitingRef = db.ref("waiting");
+    function startPeer() {
+      peer = new Peer();
+      peer.on('open', (id) => {
+        myId = id;
+        tryToFindMatch();
+      });
+    }
 
+    function tryToFindMatch() {
+      waitingRef = db.ref("waiting");
       waitingRef.once('value', (snapshot) => {
         const list = snapshot.val();
         if (list) {
-          const entries = Object.entries(list);
-          for (let [key, otherId] of entries) {
+          for (let [key, otherId] of Object.entries(list)) {
             if (otherId !== myId) {
               db.ref("waiting/" + key).remove();
               connectToPeer(otherId);
@@ -55,14 +142,11 @@
             }
           }
         }
-
-        // No one found, add yourself to waiting list
+        // No match found, add self
         const newRef = waitingRef.push();
         newRef.set(myId);
-
-        // Wait for incoming connection
         peer.on("connection", (conn) => {
-          log("🔗 Stranger connected!");
+          logSystem("Stranger connected");
           setupConnection(conn);
         });
       });
@@ -71,37 +155,96 @@
     function connectToPeer(otherId) {
       const conn = peer.connect(otherId);
       conn.on("open", () => {
-        log("🔗 Connected to stranger!");
+        logSystem("Connected to stranger");
         setupConnection(conn);
-        conn.send("👋 Hello stranger!");
       });
     }
 
     function setupConnection(conn) {
+      if (myConn) myConn.close();
       myConn = conn;
       conn.on("data", (data) => {
-        log("👤 Stranger: " + data);
-      });
-
-      conn.on("close", () => {
-        log("❌ Stranger disconnected.");
-      });
-
-      document.getElementById("sendBtn").onclick = () => {
-        const msg = document.getElementById("msgInput").value;
-        if (msg) {
-          myConn.send(msg);
-          log("🧑 You: " + msg);
-          document.getElementById("msgInput").value = "";
+        if (typeof data === "string") {
+          appendMessage("stranger", data);
+        } else if (data.type === "image") {
+          appendImage("stranger", data.blob);
         }
-      };
+      });
+      conn.on("close", () => {
+        logSystem("Stranger disconnected");
+      });
     }
 
-    function log(msg) {
-      const logDiv = document.getElementById("chatLog");
-      logDiv.innerHTML += msg + "<br>";
-      logDiv.scrollTop = logDiv.scrollHeight;
+    function appendMessage(sender, msg) {
+      const div = document.createElement("div");
+      div.className = "msg " + sender;
+      div.textContent = msg;
+      const time = document.createElement("div");
+      time.className = "timestamp";
+      time.textContent = new Date().toLocaleTimeString();
+      div.appendChild(time);
+      document.getElementById("chatLog").appendChild(div);
+      scrollToBottom();
     }
+
+    function appendImage(sender, blob) {
+      const div = document.createElement("div");
+      div.className = "msg " + sender;
+      const img = document.createElement("img");
+      img.src = blob;
+      img.style.maxWidth = "200px";
+      img.style.borderRadius = "8px";
+      div.appendChild(img);
+      const time = document.createElement("div");
+      time.className = "timestamp";
+      time.textContent = new Date().toLocaleTimeString();
+      div.appendChild(time);
+      document.getElementById("chatLog").appendChild(div);
+      scrollToBottom();
+    }
+
+    function scrollToBottom() {
+      const log = document.getElementById("chatLog");
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function logSystem(msg) {
+      const div = document.createElement("div");
+      div.className = "msg";
+      div.style.fontStyle = "italic";
+      div.textContent = msg;
+      document.getElementById("chatLog").appendChild(div);
+      scrollToBottom();
+    }
+
+    document.getElementById("sendBtn").onclick = () => {
+      const input = document.getElementById("msgInput");
+      const msg = input.value.trim();
+      if (msg && myConn) {
+        myConn.send(msg);
+        appendMessage("me", msg);
+        input.value = "";
+      }
+    };
+
+    document.getElementById("imgInput").addEventListener("change", (e) => {
+      const file = e.target.files[0];
+      if (!file || !myConn) return;
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        myConn.send({ type: "image", blob: reader.result });
+        appendImage("me", reader.result);
+      };
+      reader.readAsDataURL(file);
+    });
+
+    document.getElementById("skipBtn").onclick = () => {
+      if (myConn) myConn.close();
+      peer.destroy();
+      document.getElementById("chatLog").innerHTML = "";
+      startPeer();
+    };
   </script>
 </body>
 </html>
