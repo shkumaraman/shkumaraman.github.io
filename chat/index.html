@@ -18,99 +18,90 @@
   <input id="msgInput" placeholder="Type a message..." />
   <button id="sendBtn">Send</button>
 
-  <!-- PeerJS & Firebase SDKs -->
+  <!-- Scripts -->
   <script src="https://unpkg.com/peerjs@1.3.2/dist/peerjs.min.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 
-  <script type="module">
-  // Firebase SDKs
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js";
-  import { getDatabase, ref, push, set, get, child, remove } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-database.js";
+  <script>
+    // Firebase config
+    const firebaseConfig = {
+      databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
 
-  const firebaseConfig = {
-    databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
-  };
+    const peer = new Peer();
+    let myConn = null;
 
-  const app = initializeApp(firebaseConfig);
-  const db = getDatabase(app);
+    peer.on('open', async (id) => {
+      console.log("My Peer ID:", id);
+      log("Your ID: " + id);
+      tryToFindMatch(id);
+    });
 
-  // PeerJS setup
-  import Peer from "https://unpkg.com/peerjs@1.3.2/dist/peerjs.min.js";
-  const peer = new Peer();
-  let myConn = null;
+    function tryToFindMatch(myId) {
+      const waitingRef = db.ref("waiting");
 
-  peer.on('open', async (id) => {
-    console.log("My ID:", id);
-    log("Your ID: " + id);
-    await matchStranger(id);
-  });
-
-  async function matchStranger(myId) {
-    const waitingRef = ref(db, "waiting");
-
-    // Get current list
-    const snapshot = await get(waitingRef);
-    const waitingList = snapshot.exists() ? snapshot.val() : null;
-
-    if (waitingList) {
-      for (const key in waitingList) {
-        const otherId = waitingList[key];
-        if (otherId !== myId) {
-          // Connect to that ID
-          await remove(ref(db, "waiting/" + key));
-          connectToStranger(otherId);
-          return;
+      waitingRef.once('value', (snapshot) => {
+        const list = snapshot.val();
+        if (list) {
+          const entries = Object.entries(list);
+          for (let [key, otherId] of entries) {
+            if (otherId !== myId) {
+              db.ref("waiting/" + key).remove();
+              connectToPeer(otherId);
+              return;
+            }
+          }
         }
-      }
+
+        // No one found, add yourself to waiting list
+        const newRef = waitingRef.push();
+        newRef.set(myId);
+
+        // Wait for incoming connection
+        peer.on("connection", (conn) => {
+          log("🔗 Stranger connected!");
+          setupConnection(conn);
+        });
+      });
     }
 
-    // No one to match with — add self
-    const newRef = push(waitingRef);
-    await set(newRef, myId);
+    function connectToPeer(otherId) {
+      const conn = peer.connect(otherId);
+      conn.on("open", () => {
+        log("🔗 Connected to stranger!");
+        setupConnection(conn);
+        conn.send("👋 Hello stranger!");
+      });
+    }
 
-    peer.on("connection", (conn) => {
-      log("🔗 Stranger connected!");
-      setupConnection(conn);
-    });
-  }
+    function setupConnection(conn) {
+      myConn = conn;
+      conn.on("data", (data) => {
+        log("👤 Stranger: " + data);
+      });
 
-  function connectToStranger(peerId) {
-    const conn = peer.connect(peerId);
-    conn.on("open", () => {
-      log("🔗 Connected to stranger!");
-      setupConnection(conn);
-      conn.send("👋 Hello stranger!");
-    });
-  }
+      conn.on("close", () => {
+        log("❌ Stranger disconnected.");
+      });
 
-  function setupConnection(conn) {
-    myConn = conn;
+      document.getElementById("sendBtn").onclick = () => {
+        const msg = document.getElementById("msgInput").value;
+        if (msg) {
+          myConn.send(msg);
+          log("🧑 You: " + msg);
+          document.getElementById("msgInput").value = "";
+        }
+      };
+    }
 
-    conn.on("data", (data) => {
-      log("👤 Stranger: " + data);
-    });
-
-    conn.on("close", () => {
-      log("⚠️ Stranger disconnected.");
-    });
-
-    document.getElementById("sendBtn").onclick = () => {
-      const msg = document.getElementById("msgInput").value;
-      if (msg && myConn) {
-        myConn.send(msg);
-        log("🧑 You: " + msg);
-        document.getElementById("msgInput").value = "";
-      }
-    };
-  }
-
-  function log(message) {
-    const chatLog = document.getElementById("chatLog");
-    chatLog.innerHTML += message + "<br>";
-    chatLog.scrollTop = chatLog.scrollHeight;
-  }
-</script>
-
+    function log(msg) {
+      const logDiv = document.getElementById("chatLog");
+      logDiv.innerHTML += msg + "<br>";
+      logDiv.scrollTop = logDiv.scrollHeight;
+    }
+  </script>
 </body>
 </html>
