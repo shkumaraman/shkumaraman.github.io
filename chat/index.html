@@ -138,7 +138,7 @@
     
     #msgInput {
       width: 100%;
-      padding: 12px 60px 12px 15px;
+      padding: 12px 80px 12px 15px;
       border-radius: 25px;
       border: none;
       background: #333;
@@ -157,18 +157,18 @@
       top: 50%;
       transform: translateY(-50%);
       display: flex;
-      gap: 10px;
+      gap: 8px;
     }
     
     .icon-btn {
       background: none;
       border: none;
       color: #ccc;
-      font-size: 1.2em;
+      font-size: 1.1em;
       cursor: pointer;
       transition: color 0.2s;
-      width: 30px;
-      height: 30px;
+      width: 28px;
+      height: 28px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -180,7 +180,7 @@
       background: rgba(255,255,255,0.1);
     }
     
-    #imgInput { display: none; }
+    #imgInput, #gifInput { display: none; }
     
     /* Message images */
     .msg img {
@@ -218,6 +218,53 @@
       background: #555;
     }
     
+    /* GIF search modal */
+    .gif-modal {
+      display: none;
+      position: fixed;
+      bottom: 80px;
+      right: 20px;
+      width: 300px;
+      max-height: 400px;
+      background: #2a2a2a;
+      border-radius: 10px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+      z-index: 1001;
+      padding: 15px;
+      overflow: hidden;
+    }
+    
+    .gif-search {
+      width: 100%;
+      padding: 8px 12px;
+      border-radius: 20px;
+      border: none;
+      background: #333;
+      color: white;
+      margin-bottom: 10px;
+    }
+    
+    .gif-results {
+      height: 300px;
+      overflow-y: auto;
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+    
+    .gif-item {
+      width: 100%;
+      height: 100px;
+      object-fit: cover;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+    
+    .gif-item:hover {
+      transform: scale(1.05);
+    }
+    
     /* Responsive adjustments */
     @media (max-width: 600px) {
       .msg {
@@ -231,6 +278,12 @@
       #skipBtn {
         padding: 8px 12px;
         font-size: 0.9em;
+      }
+      
+      .gif-modal {
+        width: 90%;
+        left: 5%;
+        right: 5%;
       }
     }
   </style>
@@ -292,12 +345,21 @@
     <div class="input-area">
       <input type="text" id="msgInput" placeholder="Type your message..." />
       <div class="input-icons">
-        <label for="imgInput" class="icon-btn"><i class="fas fa-image"></i></label>
-        <button id="sendBtn" class="icon-btn"><i class="fas fa-paper-plane"></i></button>
+        <label for="imgInput" class="icon-btn" title="Send Image"><i class="fas fa-image"></i></label>
+        <label for="gifInput" class="icon-btn" title="Send GIF"><i class="fas fa-film"></i></label>
+        <button id="sendBtn" class="icon-btn" title="Send"><i class="fas fa-paper-plane"></i></button>
       </div>
     </div>
   </div>
+  
   <input type="file" id="imgInput" accept="image/*" />
+  <input type="file" id="gifInput" accept="image/gif" />
+  
+  <!-- GIF Search Modal -->
+  <div class="gif-modal" id="gifModal">
+    <input type="text" class="gif-search" id="gifSearch" placeholder="Search GIFs..." />
+    <div class="gif-results" id="gifResults"></div>
+  </div>
   
  <main class="info-section" style="padding: 20px; max-width: 800px; margin: 0 auto;">
   <h1>TalkRush - Free Anonymous Chat With Strangers</h1>
@@ -398,6 +460,8 @@
           appendMessage("stranger", data);
         } else if (data.type === "image") {
           appendImage("stranger", data.blob);
+        } else if (data.type === "gif") {
+          appendGif("stranger", data.url);
         }
       });
       conn.on("close", () => {
@@ -422,6 +486,20 @@
       div.className = "msg " + sender;
       const img = document.createElement("img");
       img.src = blob;
+      div.appendChild(img);
+      const time = document.createElement("div");
+      time.className = "timestamp";
+      time.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      div.appendChild(time);
+      document.getElementById("chatLog").appendChild(div);
+      scrollToBottom();
+    }
+    
+    function appendGif(sender, url) {
+      const div = document.createElement("div");
+      div.className = "msg " + sender;
+      const img = document.createElement("img");
+      img.src = url;
       div.appendChild(img);
       const time = document.createElement("div");
       time.className = "timestamp";
@@ -475,6 +553,19 @@
       reader.readAsDataURL(file);
       e.target.value = ""; // Reset input
     });
+    
+    document.getElementById("gifInput").addEventListener("change", (e) => {
+      const file = e.target.files[0];
+      if (!file || !myConn) return;
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        myConn.send({ type: "image", blob: reader.result });
+        appendImage("me", reader.result);
+      };
+      reader.readAsDataURL(file);
+      e.target.value = ""; // Reset input
+    });
 
     document.getElementById("skipBtn").onclick = () => {
       if (myConn) myConn.close();
@@ -483,6 +574,73 @@
       logSystem("Looking for a new stranger...");
       startPeer();
     };
+    
+    // GIF Search functionality
+    const gifModal = document.getElementById("gifModal");
+    const gifSearch = document.getElementById("gifSearch");
+    const gifResults = document.getElementById("gifResults");
+    const gifBtn = document.querySelector('[for="gifInput"]');
+    
+    gifBtn.onclick = (e) => {
+      e.preventDefault();
+      gifModal.style.display = gifModal.style.display === "block" ? "none" : "block";
+      if (gifModal.style.display === "block") {
+        fetchTrendingGifs();
+      }
+    };
+    
+    gifSearch.addEventListener("keypress", (e) => {
+      if (e.key === "Enter") {
+        searchGifs(gifSearch.value);
+      }
+    });
+    
+    // Using Giphy API (free tier)
+    async function fetchTrendingGifs() {
+      try {
+        // Using Tenor API (free) as Giphy requires API key
+        const response = await fetch(`https://g.tenor.com/v1/trending?key=LIVDSRZULELA&limit=20`);
+        const data = await response.json();
+        displayGifs(data.results);
+      } catch (error) {
+        console.error("Error fetching GIFs:", error);
+      }
+    }
+    
+    async function searchGifs(query) {
+      try {
+        const response = await fetch(`https://g.tenor.com/v1/search?q=${encodeURIComponent(query)}&key=LIVDSRZULELA&limit=20`);
+        const data = await response.json();
+        displayGifs(data.results);
+      } catch (error) {
+        console.error("Error searching GIFs:", error);
+      }
+    }
+    
+    function displayGifs(gifs) {
+      gifResults.innerHTML = "";
+      gifs.forEach(gif => {
+        const gifUrl = gif.media[0].gif.url;
+        const img = document.createElement("img");
+        img.src = gifUrl;
+        img.className = "gif-item";
+        img.onclick = () => {
+          if (myConn) {
+            myConn.send({ type: "gif", url: gifUrl });
+            appendGif("me", gifUrl);
+            gifModal.style.display = "none";
+          }
+        };
+        gifResults.appendChild(img);
+      });
+    }
+    
+    // Close modal when clicking outside
+    window.addEventListener("click", (e) => {
+      if (e.target === gifModal) {
+        gifModal.style.display = "none";
+      }
+    });
   </script>
 </body>
 </html>
