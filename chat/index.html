@@ -33,6 +33,65 @@
       flex-direction: column;
       height: 100vh;
       padding-top: 50px;
+      transition: background 0.3s, color 0.3s;
+    }
+
+    body.light-mode {
+      background: #f5f5f5;
+      color: #333;
+    }
+
+    .light-mode .app-header {
+      background: #ffffff;
+      border-bottom: 1px solid #e0e0e0;
+    }
+
+    .light-mode #chatLog {
+      background: #f9f9f9;
+    }
+
+    .light-mode .msg {
+      background: #e9e9e9;
+      color: #333;
+    }
+
+    .light-mode .me { 
+      background: #007bff;
+      color: white;
+    }
+
+    .light-mode .timestamp {
+      color: #666;
+    }
+
+    .light-mode .chat-controls {
+      background: #ffffff;
+    }
+
+    .light-mode #msgInput {
+      background: #e0e0e0;
+      color: #333;
+    }
+
+    .light-mode #msgInput:focus {
+      background: #d0d0d0;
+    }
+
+    .light-mode .icon-btn {
+      color: #666;
+    }
+
+    .light-mode .icon-btn:hover { 
+      color: #333;
+    }
+
+    .light-mode .gif-modal {
+      background: #f0f0f0;
+    }
+
+    .light-mode .gif-search {
+      background: #e0e0e0;
+      color: #333;
     }
 
 .app-header {
@@ -57,6 +116,12 @@
   gap: 15px;
 }
 
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .logo {
   height: 40px;
   width: 40px;
@@ -67,6 +132,10 @@
   font-size: 1.5em;
   color: #fff;
   margin: 0;
+}
+
+.light-mode .app-title {
+  color: #333;
 }
 
 .share-btn {
@@ -85,6 +154,33 @@
 
 .share-btn:hover {
   background: #128C7E;
+}
+
+.theme-toggle {
+  background: none;
+  border: none;
+  color: #ccc;
+  font-size: 1.1em;
+  cursor: pointer;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.3s;
+}
+
+.theme-toggle:hover {
+  background: rgba(255,255,255,0.1);
+}
+
+.light-mode .theme-toggle {
+  color: #666;
+}
+
+.light-mode .theme-toggle:hover {
+  background: rgba(0,0,0,0.05);
 }
     
     #chatLog {
@@ -219,6 +315,10 @@
       text-align: center;
       padding: 5px 0;
     }
+
+    .light-mode .system-msg {
+      color: #777;
+    }
     
     /* Scrollbar styling */
     #chatLog::-webkit-scrollbar {
@@ -236,6 +336,18 @@
     
     #chatLog::-webkit-scrollbar-thumb:hover {
       background: #555;
+    }
+
+    .light-mode #chatLog::-webkit-scrollbar-track {
+      background: #f9f9f9;
+    }
+    
+    .light-mode #chatLog::-webkit-scrollbar-thumb {
+      background: #ccc;
+    }
+    
+    .light-mode #chatLog::-webkit-scrollbar-thumb:hover {
+      background: #aaa;
     }
     
     /* GIF search modal */
@@ -326,6 +438,10 @@
       .share-btn {
         padding: 8px;
       }
+
+      .header-right {
+        gap: 5px;
+      }
     }
   </style>
 
@@ -378,10 +494,15 @@
     <img src="logo.png" alt="TalkRush Logo" class="logo">
     <h1 class="app-title">TalkRush</h1>
   </div>
-  <button class="share-btn" onclick="window.open('https://wa.me/?text=Try%20this%20free%20stranger%20chat:%20https://shkumaraman.github.io/chat', '_blank')">
-    <i class="fab fa-whatsapp"></i>
-    <span>Share</span>
-  </button>
+  <div class="header-right">
+    <button class="theme-toggle" id="themeToggle" title="Toggle Dark/Light Mode">
+      <i class="fas fa-moon"></i>
+    </button>
+    <button class="share-btn" onclick="window.open('https://wa.me/?text=Try%20this%20free%20stranger%20chat:%20https://shkumaraman.github.io/chat', '_blank')">
+      <i class="fab fa-whatsapp"></i>
+      <span>Share</span>
+    </button>
+  </div>
 </header>
 
   <div id="chatLog"></div>
@@ -420,7 +541,7 @@
   </ul>
   
   <h2>How to Use TalkRush – Start Chatting Now</h2>
-  <p>Using TalkRush is simple! Just open the site in your browser and click "Start Chat" to begin. You don’t need to create an account. Want to talk to someone else? Just click "Skip" to get a new random stranger instantly. It’s that easy!</p>
+  <p>Using TalkRush is simple! Just open the site in your browser and click "Start Chat" to begin. You don't need to create an account. Want to talk to someone else? Just click "Skip" to get a new random stranger instantly. It's that easy!</p>
   
   <h2>Why Choose TalkRush Over Other Random Chat Sites?</h2>
   <p><strong>TalkRush</strong> stands out as the fastest, easiest, and most secure way to chat with strangers online. Unlike other platforms like Omegle, Chitchat.gg, or OmeTV, TalkRush offers:</p>
@@ -467,19 +588,24 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
 let peer, myConn, myId, waitingRef;
+let currentSystemMessage = null;
 
 // Initialize PeerJS connection
 startPeer();
 
 function startPeer() {
+  // Clear any existing system message
+  clearSystemMessage();
+  
   // Destroy existing peer if any
   if (peer) peer.destroy();
+  
+  logSystem("Looking for a stranger...");
   
   peer = new Peer();
   
   peer.on('open', (id) => {
     myId = id;
-    logSystem("Looking for a stranger...");
     tryToFindMatch();
   });
   
@@ -527,6 +653,7 @@ function tryToFindMatch() {
 
   // Set up listener for incoming connections
   peer.on("connection", (conn) => {
+    clearSystemMessage();
     logSystem("Stranger connected");
     setupConnection(conn);
     // Clean up waiting status if we were waiting
@@ -537,10 +664,12 @@ function tryToFindMatch() {
 }
 
 function connectToPeer(otherId) {
+  clearSystemMessage();
   logSystem("Connecting to stranger...");
   const conn = peer.connect(otherId);
   
   conn.on("open", () => {
+    clearSystemMessage();
     logSystem("Connected to stranger");
     setupConnection(conn);
   });
@@ -626,11 +755,20 @@ function scrollToBottom() {
 }
 
 function logSystem(msg) {
+  clearSystemMessage();
   const div = document.createElement("div");
   div.className = "msg system-msg";
   div.textContent = msg;
   document.getElementById("chatLog").appendChild(div);
+  currentSystemMessage = div;
   scrollToBottom();
+}
+
+function clearSystemMessage() {
+  if (currentSystemMessage && currentSystemMessage.parentNode) {
+    currentSystemMessage.parentNode.removeChild(currentSystemMessage);
+  }
+  currentSystemMessage = null;
 }
 
 // Event Listeners
@@ -751,6 +889,35 @@ function displayGifs(gifs) {
 window.addEventListener("click", (e) => {
   if (e.target === gifModal) {
     gifModal.style.display = "none";
+  }
+});
+
+// Theme toggle functionality
+const themeToggle = document.getElementById('themeToggle');
+const body = document.body;
+
+// Check for saved theme preference or use preferred color scheme
+const savedTheme = localStorage.getItem('theme') || 
+                   (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+
+// Apply the saved theme
+if (savedTheme === 'light') {
+  body.classList.add('light-mode');
+  themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
+} else {
+  themeToggle.innerHTML = '<i class="fas fa-moon"></i>';
+}
+
+// Toggle theme on button click
+themeToggle.addEventListener('click', () => {
+  body.classList.toggle('light-mode');
+  
+  if (body.classList.contains('light-mode')) {
+    localStorage.setItem('theme', 'light');
+    themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
+  } else {
+    localStorage.setItem('theme', 'dark');
+    themeToggle.innerHTML = '<i class="fas fa-moon"></i>';
   }
 });
   </script>
