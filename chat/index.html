@@ -580,7 +580,7 @@
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
   
   <script>
-   // Firebase config
+  // Firebase config
 const firebaseConfig = {
   databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
 };
@@ -589,6 +589,7 @@ const db = firebase.database();
 
 let peer, myConn, myId, waitingRef;
 let currentSystemMessage = null;
+let isConnected = false;
 
 // Initialize PeerJS connection
 startPeer();
@@ -596,6 +597,9 @@ startPeer();
 function startPeer() {
   // Clear any existing system message
   clearSystemMessage();
+  
+  // Reset connection status
+  isConnected = false;
   
   // Destroy existing peer if any
   if (peer) peer.destroy();
@@ -624,7 +628,7 @@ function tryToFindMatch() {
     const list = snapshot.val();
     if (list) {
       for (let [key, otherId] of Object.entries(list)) {
-        if (otherId !== myId) {
+        if (otherId !== myId && !isConnected) {
           db.ref("waiting/" + key).remove();
           connectToPeer(otherId);
           return;
@@ -632,52 +636,62 @@ function tryToFindMatch() {
       }
     }
     
-    // If no match found, add self to waiting list
-    const newRef = waitingRef.push();
-    newRef.set(myId);
-    
-    // Then listen for new users being added to waiting list
-    waitingRef.on('child_added', (childSnapshot) => {
-      const otherId = childSnapshot.val();
-      if (otherId !== myId) {
-        // Remove both from waiting list
-        waitingRef.off(); // Stop listening
-        childSnapshot.ref.remove();
-        db.ref("waiting").orderByValue().equalTo(myId).once('value', (snap) => {
-          snap.forEach(child => child.ref.remove());
-        });
-        connectToPeer(otherId);
-      }
-    });
+    // If no match found and not already connected, add self to waiting list
+    if (!isConnected) {
+      const newRef = waitingRef.push();
+      newRef.set(myId);
+      
+      // Then listen for new users being added to waiting list
+      waitingRef.on('child_added', (childSnapshot) => {
+        const otherId = childSnapshot.val();
+        if (otherId !== myId && !isConnected) {
+          // Remove both from waiting list
+          waitingRef.off(); // Stop listening
+          childSnapshot.ref.remove();
+          db.ref("waiting").orderByValue().equalTo(myId).once('value', (snap) => {
+            snap.forEach(child => child.ref.remove());
+          });
+          connectToPeer(otherId);
+        }
+      });
+    }
   });
 
   // Set up listener for incoming connections
   peer.on("connection", (conn) => {
-    clearSystemMessage();
-    logSystem("Stranger connected");
-    setupConnection(conn);
-    // Clean up waiting status if we were waiting
-    db.ref("waiting").orderByValue().equalTo(myId).once('value', (snap) => {
-      snap.forEach(child => child.ref.remove());
-    });
+    if (!isConnected) {
+      clearSystemMessage();
+      logSystem("Stranger connected");
+      setupConnection(conn);
+      // Clean up waiting status if we were waiting
+      db.ref("waiting").orderByValue().equalTo(myId).once('value', (snap) => {
+        snap.forEach(child => child.ref.remove());
+      });
+    }
   });
 }
 
 function connectToPeer(otherId) {
+  if (isConnected) return;
+  
   clearSystemMessage();
   logSystem("Connecting to stranger...");
   const conn = peer.connect(otherId);
   
   conn.on("open", () => {
-    clearSystemMessage();
-    logSystem("Connected to stranger");
-    setupConnection(conn);
+    if (!isConnected) {
+      clearSystemMessage();
+      logSystem("Connected to stranger");
+      setupConnection(conn);
+    }
   });
   
   conn.on("error", (err) => {
     console.error("Connection error:", err);
-    logSystem("Failed to connect. Trying again...");
-    setTimeout(() => tryToFindMatch(), 1000);
+    if (!isConnected) {
+      logSystem("Failed to connect. Trying again...");
+      setTimeout(() => tryToFindMatch(), 1000);
+    }
   });
 }
 
@@ -686,6 +700,7 @@ function setupConnection(conn) {
   if (myConn) myConn.close();
   
   myConn = conn;
+  isConnected = true;
   
   conn.on("data", (data) => {
     if (typeof data === "string") {
@@ -700,11 +715,20 @@ function setupConnection(conn) {
   conn.on("close", () => {
     logSystem("Stranger disconnected");
     myConn = null;
+    isConnected = false;
+    // Automatically look for new connection
+    setTimeout(() => {
+      if (!isConnected) {
+        document.getElementById("chatLog").innerHTML = "";
+        startPeer();
+      }
+    }, 1000);
   });
   
   conn.on("error", (err) => {
     console.error("Data connection error:", err);
     logSystem("Connection error");
+    isConnected = false;
   });
 }
 
@@ -783,7 +807,7 @@ document.getElementById("sendBtn").onclick = sendMessage;
 function sendMessage() {
   const input = document.getElementById("msgInput");
   const msg = input.value.trim();
-  if (msg && myConn) {
+  if (msg && myConn && isConnected) {
     myConn.send(msg);
     appendMessage("me", msg);
     input.value = "";
@@ -792,7 +816,7 @@ function sendMessage() {
 
 document.getElementById("imgInput").addEventListener("change", (e) => {
   const file = e.target.files[0];
-  if (!file || !myConn) return;
+  if (!file || !myConn || !isConnected) return;
 
   const reader = new FileReader();
   reader.onload = () => {
@@ -805,7 +829,7 @@ document.getElementById("imgInput").addEventListener("change", (e) => {
 
 document.getElementById("gifInput").addEventListener("change", (e) => {
   const file = e.target.files[0];
-  if (!file || !myConn) return;
+  if (!file || !myConn || !isConnected) return;
 
   const reader = new FileReader();
   reader.onload = () => {
@@ -875,7 +899,7 @@ function displayGifs(gifs) {
     img.src = gifUrl;
     img.className = "gif-item";
     img.onclick = () => {
-      if (myConn) {
+      if (myConn && isConnected) {
         myConn.send({ type: "gif", url: gifUrl });
         appendGif("me", gifUrl);
         gifModal.style.display = "none";
