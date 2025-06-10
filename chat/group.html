@@ -591,14 +591,23 @@ let currentSystemMessage = null;
 let lastMessageTimestamp = 0;
 const messageLimit = 25;
 let isSendingGif = false; // Flag to prevent multiple GIF sends
+let deadPeers = new Set(); // Track peers that are no longer active
+let isFirstConnection = true;
 
 // Initialize PeerJS connection
 function initializeChat() {
-  peer = new Peer();
+  peer = new Peer({
+    debug: 0 // Reduce debug logging
+  });
   
   peer.on('open', (id) => {
     myId = id;
+    if (isFirstConnection) {
+      logSystem("Welcome to TalkRush Group Chat!");
+      isFirstConnection = false;
+    }
     joinGroupChat();
+    
     // Add user to online list
     db.ref(`group/users/${myId}`).set({
       online: true,
@@ -613,7 +622,10 @@ function initializeChat() {
   
   peer.on('error', (err) => {
     console.error('PeerJS error:', err);
-    logSystem("Connection error. Reconnecting...");
+    if (err.type === 'peer-unavailable') {
+      deadPeers.add(err.peer);
+    }
+    // Don't show error messages to users
     setTimeout(initializeChat, 2000);
   });
   
@@ -657,7 +669,7 @@ function joinGroupChat() {
     const users = snapshot.val();
     if (users) {
       Object.entries(users).forEach(([userId, userData]) => {
-        if (userId !== myId && userData.online && !connections[userId]) {
+        if (userId !== myId && userData.online && !connections[userId] && !deadPeers.has(userId)) {
           connectToUser(userId);
         }
       });
@@ -668,7 +680,7 @@ function joinGroupChat() {
   usersRef.on('child_added', (childSnapshot) => {
     const userId = childSnapshot.key;
     const userData = childSnapshot.val();
-    if (userId !== myId && userData.online && !connections[userId]) {
+    if (userId !== myId && userData.online && !connections[userId] && !deadPeers.has(userId)) {
       connectToUser(userId);
     }
   });
@@ -682,18 +694,18 @@ function joinGroupChat() {
       delete connections[userId];
     }
   });
-  
-  logSystem("Connected to group chat");
 }
 
 function connectToUser(userId) {
-  if (connections[userId]) return;
+  if (connections[userId] || deadPeers.has(userId)) return;
   
-  const conn = peer.connect(userId);
+  const conn = peer.connect(userId, {
+    reliable: true,
+    serialization: 'json'
+  });
   
   conn.on('open', () => {
     connections[userId] = conn;
-    logSystem(`Connected to ${userId.substring(0, 6)}...`);
   });
   
   conn.on('data', (data) => {
@@ -710,12 +722,14 @@ function connectToUser(userId) {
   conn.on('close', () => {
     if (connections[userId]) {
       delete connections[userId];
-      logSystem(`User ${userId.substring(0, 6)}... disconnected`);
     }
   });
   
   conn.on('error', (err) => {
     console.error(`Connection error with ${userId}:`, err);
+    if (err.type === 'peer-unavailable') {
+      deadPeers.add(userId);
+    }
     if (connections[userId]) {
       delete connections[userId];
     }
@@ -727,7 +741,6 @@ function setupConnection(conn) {
   
   conn.on('open', () => {
     connections[userId] = conn;
-    logSystem(`User ${userId.substring(0, 6)}... connected to you`);
   });
   
   conn.on('data', (data) => {
@@ -743,12 +756,14 @@ function setupConnection(conn) {
   conn.on('close', () => {
     if (connections[userId]) {
       delete connections[userId];
-      logSystem(`User ${userId.substring(0, 6)}... disconnected`);
     }
   });
   
   conn.on('error', (err) => {
     console.error(`Connection error with ${userId}:`, err);
+    if (err.type === 'peer-unavailable') {
+      deadPeers.add(userId);
+    }
     if (connections[userId]) {
       delete connections[userId];
     }
@@ -1020,7 +1035,6 @@ async function fetchTrendingGifs() {
     displayGifs(data.results);
   } catch (error) {
     console.error("Error fetching GIFs:", error);
-    logSystem("Failed to load GIFs");
   }
 }
 
@@ -1031,7 +1045,6 @@ async function searchGifs(query) {
     displayGifs(data.results);
   } catch (error) {
     console.error("Error searching GIFs:", error);
-    logSystem("Failed to search GIFs");
   }
 }
 
