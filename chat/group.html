@@ -593,6 +593,7 @@ const messageLimit = 25;
 let isSendingGif = false; // Flag to prevent multiple GIF sends
 let deadPeers = new Set(); // Track peers that are no longer active
 let isFirstConnection = true;
+let isSendingMessage = false; // Flag to prevent duplicate message display
 
 // Initialize PeerJS connection
 function initializeChat() {
@@ -656,6 +657,7 @@ function joinGroupChat() {
   // Listen for new messages
   messagesRef.on('child_added', (snapshot) => {
     const msg = snapshot.val();
+    // Only display if not our own message (to prevent duplicates) and newer than last timestamp
     if (msg.timestamp > lastMessageTimestamp && msg.sender !== myId) {
       displayMessage(msg);
       lastMessageTimestamp = msg.timestamp;
@@ -771,80 +773,90 @@ function setupConnection(conn) {
 }
 
 function sendMessageToGroup(text) {
-  if (!text.trim()) return;
+  if (!text.trim() || isSendingMessage) return;
+  isSendingMessage = true;
   
+  const timestamp = Date.now();
   const message = {
     text: text,
     sender: myId,
-    timestamp: firebase.database.ServerValue.TIMESTAMP
+    timestamp: timestamp
   };
+  
+  // Display our message immediately (local echo)
+  appendMessage("me", text, timestamp);
   
   // Push to Firebase (stores last 25 messages)
   const newMsgRef = db.ref("group/messages").push();
   newMsgRef.set(message)
     .then(() => {
-      // Display our message immediately
-      appendMessage("me", text);
-      
       // Also send via PeerJS to all connected users for real-time
       Object.values(connections).forEach(conn => {
         if (conn.open) {
           conn.send(text);
         }
       });
+      isSendingMessage = false;
     })
     .catch(err => {
       console.error("Error sending message:", err);
+      isSendingMessage = false;
     });
 }
 
 function sendImageToGroup(blob) {
-  // Create a message for Firebase
+  if (isSendingMessage) return;
+  isSendingMessage = true;
+  
+  const timestamp = Date.now();
   const message = {
     type: "image",
     sender: myId,
-    timestamp: firebase.database.ServerValue.TIMESTAMP,
+    timestamp: timestamp,
     blob: blob
   };
+  
+  // Display our image immediately (local echo)
+  appendImage("me", blob, timestamp);
   
   // Push to Firebase
   const newMsgRef = db.ref("group/messages").push();
   newMsgRef.set(message)
     .then(() => {
-      // Display our image immediately
-      appendImage("me", blob);
-      
       // Send via PeerJS to all connected users
       Object.values(connections).forEach(conn => {
         if (conn.open) {
           conn.send({ type: "image", blob: blob });
         }
       });
+      isSendingMessage = false;
     })
     .catch(err => {
       console.error("Error sending image:", err);
+      isSendingMessage = false;
     });
 }
 
 function sendGifToGroup(url) {
-  if (isSendingGif) return;
+  if (isSendingGif || isSendingMessage) return;
   isSendingGif = true;
+  isSendingMessage = true;
   
-  // Create a message for Firebase
+  const timestamp = Date.now();
   const message = {
     type: "gif",
     sender: myId,
-    timestamp: firebase.database.ServerValue.TIMESTAMP,
+    timestamp: timestamp,
     url: url
   };
+  
+  // Display our GIF immediately (local echo)
+  appendGif("me", url, timestamp);
   
   // Push to Firebase
   const newMsgRef = db.ref("group/messages").push();
   newMsgRef.set(message)
     .then(() => {
-      // Display our GIF immediately
-      appendGif("me", url);
-      
       // Send via PeerJS to all connected users
       Object.values(connections).forEach(conn => {
         if (conn.open) {
@@ -852,10 +864,12 @@ function sendGifToGroup(url) {
         }
       });
       isSendingGif = false;
+      isSendingMessage = false;
     })
     .catch(err => {
       console.error("Error sending GIF:", err);
       isSendingGif = false;
+      isSendingMessage = false;
     });
 }
 
@@ -904,41 +918,53 @@ function displayMessage(msg) {
   document.getElementById("chatLog").appendChild(div);
 }
 
-function appendMessage(sender, msg) {
+function appendMessage(sender, msg, timestamp = Date.now()) {
+  // Check if message is already displayed
+  if (document.querySelector(`[data-id="${timestamp}"]`)) return;
+  
   const div = document.createElement("div");
   div.className = "msg " + sender;
+  div.setAttribute('data-id', timestamp);
   div.textContent = msg;
   const time = document.createElement("div");
   time.className = "timestamp";
-  time.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  time.textContent = formatTimestamp(timestamp);
   div.appendChild(time);
   document.getElementById("chatLog").appendChild(div);
   scrollToBottom();
 }
 
-function appendImage(sender, blob) {
+function appendImage(sender, blob, timestamp = Date.now()) {
+  // Check if message is already displayed
+  if (document.querySelector(`[data-id="${timestamp}"]`)) return;
+  
   const div = document.createElement("div");
   div.className = "msg " + sender;
+  div.setAttribute('data-id', timestamp);
   const img = document.createElement("img");
   img.src = blob;
   div.appendChild(img);
   const time = document.createElement("div");
   time.className = "timestamp";
-  time.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  time.textContent = formatTimestamp(timestamp);
   div.appendChild(time);
   document.getElementById("chatLog").appendChild(div);
   scrollToBottom();
 }
 
-function appendGif(sender, url) {
+function appendGif(sender, url, timestamp = Date.now()) {
+  // Check if message is already displayed
+  if (document.querySelector(`[data-id="${timestamp}"]`)) return;
+  
   const div = document.createElement("div");
   div.className = "msg " + sender;
+  div.setAttribute('data-id', timestamp);
   const img = document.createElement("img");
   img.src = url;
   div.appendChild(img);
   const time = document.createElement("div");
   time.className = "timestamp";
-  time.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  time.textContent = formatTimestamp(timestamp);
   div.appendChild(time);
   document.getElementById("chatLog").appendChild(div);
   scrollToBottom();
