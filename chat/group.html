@@ -593,6 +593,7 @@ const messageLimit = 25;
 let isSendingGif = false; // Flag to prevent multiple GIF sends
 let deadPeers = new Set(); // Track peers that are no longer active
 let isFirstConnection = true;
+let displayedMessages = new Set(); // Track displayed messages to prevent duplicates
 
 // Initialize PeerJS connection
 function initializeChat() {
@@ -709,8 +710,11 @@ function connectToUser(userId) {
   });
   
   conn.on('data', (data) => {
+    // Skip messages that came from Firebase (they're already handled)
+    if (data.isFromFirebase) return;
+    
     // Handle incoming data (messages, images, GIFs)
-    if (typeof data === 'string') {
+    if (typeof data === "string") {
       appendMessage("stranger", data);
     } else if (data.type === "image") {
       appendImage("stranger", data.blob);
@@ -744,7 +748,10 @@ function setupConnection(conn) {
   });
   
   conn.on('data', (data) => {
-    if (typeof data === 'string') {
+    // Skip messages that came from Firebase (they're already handled)
+    if (data.isFromFirebase) return;
+    
+    if (typeof data === "string") {
       appendMessage("stranger", data);
     } else if (data.type === "image") {
       appendImage("stranger", data.blob);
@@ -787,9 +794,13 @@ function sendMessageToGroup(text) {
       appendMessage("me", text);
       
       // Also send via PeerJS to all connected users for real-time
+      // Mark these as not from Firebase to prevent duplicates
       Object.values(connections).forEach(conn => {
         if (conn.open) {
-          conn.send(text);
+          conn.send({
+            text: text,
+            isFromFirebase: false
+          });
         }
       });
     })
@@ -815,9 +826,14 @@ function sendImageToGroup(blob) {
       appendImage("me", blob);
       
       // Send via PeerJS to all connected users
+      // Mark these as not from Firebase to prevent duplicates
       Object.values(connections).forEach(conn => {
         if (conn.open) {
-          conn.send({ type: "image", blob: blob });
+          conn.send({ 
+            type: "image", 
+            blob: blob,
+            isFromFirebase: false
+          });
         }
       });
     })
@@ -846,9 +862,14 @@ function sendGifToGroup(url) {
       appendGif("me", url);
       
       // Send via PeerJS to all connected users
+      // Mark these as not from Firebase to prevent duplicates
       Object.values(connections).forEach(conn => {
         if (conn.open) {
-          conn.send({ type: "gif", url: url });
+          conn.send({ 
+            type: "gif", 
+            url: url,
+            isFromFirebase: false
+          });
         }
       });
       isSendingGif = false;
@@ -878,8 +899,9 @@ function cleanupUser() {
 
 // UI Functions
 function displayMessage(msg) {
-  // Check if message is already displayed
-  if (document.querySelector(`[data-id="${msg.timestamp}"]`)) return;
+  // Skip if message is already displayed
+  if (displayedMessages.has(msg.timestamp)) return;
+  displayedMessages.add(msg.timestamp);
   
   const div = document.createElement("div");
   div.className = "msg " + (msg.sender === myId ? "me" : "stranger");
@@ -905,6 +927,10 @@ function displayMessage(msg) {
 }
 
 function appendMessage(sender, msg) {
+  const timestamp = Date.now();
+  if (displayedMessages.has(timestamp)) return;
+  displayedMessages.add(timestamp);
+  
   const div = document.createElement("div");
   div.className = "msg " + sender;
   div.textContent = msg;
@@ -917,6 +943,10 @@ function appendMessage(sender, msg) {
 }
 
 function appendImage(sender, blob) {
+  const timestamp = Date.now();
+  if (displayedMessages.has(timestamp)) return;
+  displayedMessages.add(timestamp);
+  
   const div = document.createElement("div");
   div.className = "msg " + sender;
   const img = document.createElement("img");
@@ -931,6 +961,10 @@ function appendImage(sender, blob) {
 }
 
 function appendGif(sender, url) {
+  const timestamp = Date.now();
+  if (displayedMessages.has(timestamp)) return;
+  displayedMessages.add(timestamp);
+  
   const div = document.createElement("div");
   div.className = "msg " + sender;
   const img = document.createElement("img");
