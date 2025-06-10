@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>TalkRush - Public Group Chat</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="TalkRush - Join the public group chat. No signup. Text chat with everyone at once.">
+  <link rel="icon" type="image/png" href="logo.png">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@latest/css/all.min.css">
+<style>
+:root {
+  --dark-bg: #121212; --dark-header-bg: #181818; --dark-header-border: #2a2a2a; --dark-chat-bg: #1e1e1e;
+  --dark-msg-bg: #2b2b2b; --dark-msg-me: #007bff; --dark-text: #fff; --dark-timestamp: #aaa; --dark-input-bg: #333;
+  --dark-input-focus: #444; --dark-icon-color: #ccc; --dark-icon-hover: #fff; --dark-icon-hover-bg: rgba(255,255,255,0.1);
+  --dark-system-msg: #aaa; --dark-scroll-track: #1e1e1e; --dark-scroll-thumb: #444; --dark-scroll-hover: #555;
+  --light-bg: #f5f5f5; --light-header-bg: #ffffff; --light-header-border: #e0e0e0; --light-chat-bg: #f9f9f9;
+  --light-msg-bg: #e9e9e9; --light-msg-me: #007bff; --light-text: #333; --light-timestamp: #666; --light-input-bg: #e0e0e0;
+  --light-input-focus: #d0d0d0; --light-icon-color: #666; --light-icon-hover: #333; --light-icon-hover-bg: rgba(0,0,0,0.05);
+  --light-system-msg: #777; --light-scroll-track: #f9f9f9; --light-scroll-thumb: #ccc; --light-scroll-hover: #aaa;
+  --share-btn: #25D366; --share-btn-hover: #128C7E;
+}
+* { box-sizing: border-box; }
+html, body { overflow-x: hidden; }
+body { margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; background: var(--dark-bg); color: var(--dark-text); display: flex; flex-direction: column; height: 100vh; transition: background 0.3s, color 0.3s; }
+body.light-mode { background: var(--light-bg); color: var(--light-text); }
+.app-header { position: sticky; top: 0; width: 100%; height: 60px; background: var(--dark-header-bg); padding: 8px 15px; display: flex; align-items: center; justify-content: space-between; gap: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.4); border-bottom: 1px solid var(--dark-header-border); z-index: 10000; }
+.light-mode .app-header { background: var(--light-header-bg); border-bottom: 1px solid var(--light-header-border); }
+.header-left, .header-right { display: flex; align-items: center; gap: 10px; }
+.logo { height: 40px; width: 40px; border-radius: 10px; }
+.app-title { font-size: 1.5em; color: var(--dark-text); margin: 0; }
+.light-mode .app-title { color: var(--light-text); }
+.share-btn { background: var(--share-btn); color: white; border: none; padding: 8px 12px; border-radius: 20px; cursor: pointer; display: flex; align-items: center; gap: 5px; font-size: 0.9em; transition: background 0.2s; }
+.share-btn:hover { background: var(--share-btn-hover); }
+.theme-toggle { background: none; border: none; color: var(--dark-icon-color); font-size: 1.1em; cursor: pointer; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 50%; transition: all 0.3s; }
+.theme-toggle:hover { background: var(--dark-icon-hover-bg); }
+.light-mode .theme-toggle { color: var(--light-icon-color); }
+.light-mode .theme-toggle:hover { background: var(--light-icon-hover-bg); }
+.chat-container { display: flex; flex-direction: column; flex-grow: 1; position: relative; height: calc(100vh - 60px); }
+#chatLog { padding: 12px; overflow-y: auto; background: var(--dark-chat-bg); display: flex; flex-direction: column; flex-grow: 1; }
+.light-mode #chatLog { background: var(--light-chat-bg); }
+.msg { margin: 8px 0; padding: 8px 12px; background: var(--dark-msg-bg); border-radius: 15px; max-width: 80%; word-wrap: break-word; box-shadow: 0 1px 2px rgba(0,0,0,0.1); display: flex; flex-direction: column; }
+.light-mode .msg { background: var(--light-msg-bg); color: var(--light-text); }
+.me { align-self: flex-end; background: var(--dark-msg-me); border-bottom-right-radius: 5px; color: white; }
+.light-mode .me { background: var(--light-msg-me); color: white; }
+.stranger { align-self: flex-start; border-bottom-left-radius: 5px; }
+.sender-id { font-size: 0.75em; font-weight: bold; color: #a2cffe; margin-bottom: 4px; }
+.light-mode .sender-id { color: #0056b3; }
+.me .sender-id { display: none; }
+.timestamp { font-size: 0.7em; color: var(--dark-timestamp); margin-top: 2px; text-align: right; align-self: flex-end; }
+.light-mode .timestamp { color: var(--light-timestamp); }
+.chat-controls { display: flex; align-items: center; padding: 8px; background: var(--dark-header-bg); width: 100%; z-index: 1000; gap: 8px; flex-shrink: 0; }
+.light-mode .chat-controls { background: var(--light-header-bg); }
+.input-area { flex: 1; position: relative; }
+#msgInput { width: 100%; padding: 12px 50px 12px 15px; border-radius: 25px; border: none; background: var(--dark-input-bg); color: var(--dark-text); font-size: 1em; outline: none; }
+#msgInput:focus { background: var(--dark-input-focus); }
+.light-mode #msgInput { background: var(--light-input-bg); color: var(--light-text); }
+.light-mode #msgInput:focus { background: var(--light-input-focus); }
+.input-icons { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); display: flex; }
+.icon-btn { background: none; border: none; color: var(--dark-icon-color); font-size: 1.1em; cursor: pointer; transition: color 0.2s; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border-radius: 50%; }
+.icon-btn:hover { color: var(--dark-icon-hover); background: var(--dark-icon-hover-bg); }
+.light-mode .icon-btn { color: var(--light-icon-color); }
+.light-mode .icon-btn:hover { color: var(--light-icon-hover); background: var(--light-icon-hover-bg); }
+.system-msg { align-self: center; background: transparent; color: var(--dark-system-msg); text-align: center; padding: 5px 0; }
+.light-mode .system-msg { color: var(--light-system-msg); }
+#chatLog::-webkit-scrollbar { width: 8px; } #chatLog::-webkit-scrollbar-track { background: var(--dark-scroll-track); } #chatLog::-webkit-scrollbar-thumb { background: var(--dark-scroll-thumb); border-radius: 4px; } #chatLog::-webkit-scrollbar-thumb:hover { background: var(--dark-scroll-hover); }
+.light-mode #chatLog::-webkit-scrollbar-track { background: var(--light-scroll-track); } .light-mode #chatLog::-webkit-scrollbar-thumb { background: var(--light-scroll-thumb); } .light-mode #chatLog::-webkit-scrollbar-thumb:hover { background: var(--light-scroll-hover); }
+@media (max-width: 600px) { .msg { max-width: 90%; } .share-btn span { display: none; } .share-btn { padding: 8px; } .header-right { gap: 5px; } }
+</style>
+</head>
+<body>
+<div class="chat-container">
+    <header class="app-header">
+        <div class="header-left">
+            <img src="logo.png" alt="TalkRush Logo" class="logo">
+            <h1 class="app-title">Public Chat</h1>
+        </div>
+        <div class="header-right">
+            <button class="theme-toggle" id="themeToggle" title="Toggle Dark/Light Mode"><i class="fas fa-moon"></i></button>
+            <button class="share-btn" onclick="window.open('https://wa.me/?text=Join%20this%20public%20chat%20on%20TalkRush!%20' + window.location.href, '_blank')"><i class="fab fa-whatsapp"></i><span>Share</span></button>
+        </div>
+    </header>
+    <div id="chatLog"></div>
+    <div class="chat-controls">
+        <div class="input-area">
+            <input type="text" id="msgInput" placeholder="Loading chat..."/><div class="input-icons"><button id="sendBtn" class="icon-btn" title="Send"><i class="fas fa-paper-plane"></i></button></div>
+        </div>
+    </div>
+</div>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+<script>
+const firebaseConfig = { databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/" };
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+const msgInput = document.getElementById("msgInput");
+const sendBtn = document.getElementById("sendBtn");
+const chatLog = document.getElementById("chatLog");
+const PUBLIC_GROUP_NAME = "global-public-chat-v1";
+let messagesRef;
+let myUserId = "User" + Math.floor(1000 + Math.random() * 9000);
+function initChat() {
+    msgInput.placeholder = "Type your message...";
+    messagesRef = db.ref(`groups/${PUBLIC_GROUP_NAME}/messages`);
+    logSystem(`You joined the Public Chat as ${myUserId}`);
+    messagesRef.limitToLast(25).on('child_added', (snapshot) => {
+        const msg = snapshot.val();
+        if (msg) { appendMessage(msg.userId, msg.text, msg.timestamp); }
+    });
+}
+function appendMessage(senderId, text, timestamp) {
+    const div = document.createElement("div");
+    const senderClass = senderId === myUserId ? "me" : "stranger";
+    div.className = "msg " + senderClass;
+    if (senderClass === 'stranger') {
+        const senderDiv = document.createElement("div");
+        senderDiv.className = 'sender-id';
+        senderDiv.textContent = senderId;
+        div.appendChild(senderDiv);
+    }
+    const textNode = document.createElement('span');
+    textNode.textContent = text;
+    div.appendChild(textNode);
+    const time = document.createElement("div");
+    time.className = "timestamp";
+    time.textContent = new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    div.appendChild(time);
+    chatLog.appendChild(div);
+    scrollToBottom();
+}
+function logSystem(msg) {
+    const div = document.createElement("div");
+    div.className = "msg system-msg";
+    div.textContent = msg;
+    chatLog.appendChild(div);
+    scrollToBottom();
+}
+function scrollToBottom() { chatLog.scrollTop = chatLog.scrollHeight; }
+function sendMessage() {
+    const msgText = msgInput.value.trim();
+    if (msgText && messagesRef) {
+        const newMessage = { userId: myUserId, text: msgText, timestamp: firebase.database.ServerValue.TIMESTAMP };
+        messagesRef.push(newMessage);
+        msgInput.value = "";
+    }
+}
+msgInput.addEventListener("keypress", (e) => { if (e.key === "Enter") { sendMessage(); } });
+sendBtn.onclick = sendMessage;
+const themeToggle = document.getElementById('themeToggle');
+const body = document.body;
+const savedTheme = localStorage.getItem('theme') || 'dark';
+if (savedTheme === 'light') {
+  body.classList.add('light-mode');
+  themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
+} else { themeToggle.innerHTML = '<i class="fas fa-moon"></i>'; }
+themeToggle.addEventListener('click', () => {
+  body.classList.toggle('light-mode');
+  if (body.classList.contains('light-mode')) {
+    localStorage.setItem('theme', 'light');
+    themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
+  } else { localStorage.setItem('theme', 'dark'); themeToggle.innerHTML = '<i class="fas fa-moon"></i>'; }
+});
+window.onload = () => { initChat(); };
+</script>
+</body>
+</html>
