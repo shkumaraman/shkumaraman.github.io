@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <title>TalkRush - Public Group Chat</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="TalkRush Public Group - Chat with multiple strangers in a public group. Share text, images and GIFs instantly.">
+  <meta name="description" content="TalkRush Public Group - Chat with multiple strangers in a public group. Share text instantly.">
   <link rel="icon" type="image/png" href="logo.png">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@latest/css/all.min.css">
@@ -28,8 +28,6 @@
     --dark-scroll-track: #1e1e1e;
     --dark-scroll-thumb: #444;
     --dark-scroll-hover: #555;
-    --dark-gif-modal: #2a2a2a;
-    --dark-gif-search: #333;
 
     /* Light Theme Colors */
     --light-bg: #f5f5f5;
@@ -49,8 +47,6 @@
     --light-scroll-track: #f9f9f9;
     --light-scroll-thumb: #ccc;
     --light-scroll-hover: #aaa;
-    --light-gif-modal: #f0f0f0;
-    --light-gif-search: #e0e0e0;
 
     /* Common Colors */
     --share-btn: #25D366;
@@ -278,7 +274,7 @@
 
   #msgInput {
     width: 100%;
-    padding: 12px 80px 12px 15px;
+    padding: 12px 50px 12px 15px;
     border-radius: 25px;
     border: none;
     background: var(--dark-input-bg);
@@ -337,16 +333,6 @@
     background: var(--light-icon-hover-bg);
   }
 
-  #imgInput, #gifInput { display: none; }
-
-  /* Message images */
-  .msg img {
-    max-width: 100%;
-    max-height: 300px;
-    border-radius: 8px;
-    margin-bottom: 5px;
-  }
-
   /* System messages */
   .system-msg {
     align-self: center;
@@ -390,72 +376,10 @@
     background: var(--light-scroll-hover);
   }
 
-  /* GIF search modal */
-  .gif-modal {
-    display: none;
-    position: fixed;
-    bottom: 80px;
-    right: 20px;
-    width: 300px;
-    max-height: 400px;
-    background: var(--dark-gif-modal);
-    border-radius: 10px;
-    box-shadow: 0 4px 8px rgba(0,0,0,0.3);
-    z-index: 1001;
-    padding: 15px;
-    overflow: hidden;
-  }
-
-  .light-mode .gif-modal {
-    background: var(--light-gif-modal);
-  }
-
-  .gif-search {
-    width: 100%;
-    padding: 8px 12px;
-    border-radius: 20px;
-    border: none;
-    background: var(--dark-gif-search);
-    color: white;
-    margin-bottom: 10px;
-  }
-
-  .light-mode .gif-search {
-    background: var(--light-gif-search);
-    color: var(--light-text);
-  }
-
-  .gif-results {
-    height: 300px;
-    overflow-y: auto;
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 8px;
-  }
-
-  .gif-item {
-    width: 100%;
-    height: 100px;
-    object-fit: cover;
-    border-radius: 5px;
-    cursor: pointer;
-    transition: transform 0.2s;
-  }
-
-  .gif-item:hover {
-    transform: scale(1.05);
-  }
-
   /* Responsive adjustments */
   @media (max-width: 600px) {
     .msg {
       max-width: 85%;
-    }
-    
-    .gif-modal {
-      width: 90%;
-      left: 5%;
-      right: 5%;
     }
   }
   </style>
@@ -484,22 +408,19 @@
     <div class="input-area">
       <input type="text" id="msgInput" placeholder="Type your message..." />
       <div class="input-icons">
-        <label for="imgInput" class="icon-btn" title="Send Image"><i class="fas fa-image"></i></label>
-        <label for="gifInput" class="icon-btn" title="Send GIF"><i class="fas fa-film"></i></label>
         <button id="sendBtn" class="icon-btn" title="Send"><i class="fas fa-paper-plane"></i></button>
       </div>
     </div>
   </div>
-  
-  <input type="file" id="imgInput" accept="image/*" />
-  <input type="file" id="gifInput" accept="image/gif" />
-  
-  <!-- GIF Search Modal -->
-  <div class="gif-modal" id="gifModal">
-    <input type="text" class="gif-search" id="gifSearch" placeholder="Search GIFs..." />
-    <div class="gif-results" id="gifResults"></div>
+</div>
+
+<div style="width:95%; height:100px; background:#fff3cd; border:1px dashed #ff0000; display:flex; align-items:center; padding:5px; margin:5px auto;">
+  <img src="qr.png" alt="UPI QR" style="height:80px; width:80px; margin-right:10px;">
+  <div style="font-size:16px; font-weight:bold; color:#000;">
+    Donate us By Scanning UPI QR Code And Support TalkRush!
   </div>
 </div>
+  
 
 <!-- PeerJS (v1.5.4) -->
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
@@ -590,13 +511,8 @@ function setupConnection(conn) {
   myConn = conn;
   
   conn.on('data', (data) => {
-    // In a real app, would handle different data types
-    if (typeof data === 'object' && data.type === 'image') {
-      appendImage(data.sender === myId ? "me" : "stranger", data.blob);
-    } else if (typeof data === 'object' && data.type === 'gif') {
-      appendGif(data.sender === myId ? "me" : "stranger", data.url);
-    } else if (typeof data === 'string') {
-      // For demo, just display as stranger message
+    // For demo, just display as stranger message
+    if (typeof data === 'string') {
       appendMessage("stranger", data);
     }
   });
@@ -637,28 +553,6 @@ function sendMessageToGroup(text) {
     });
 }
 
-function sendImageToGroup(blob) {
-  if (myConn) {
-    myConn.send({
-      type: 'image',
-      blob: blob,
-      sender: myId
-    });
-    appendImage("me", blob);
-  }
-}
-
-function sendGifToGroup(url) {
-  if (myConn) {
-    myConn.send({
-      type: 'gif',
-      url: url,
-      sender: myId
-    });
-    appendGif("me", url);
-  }
-}
-
 // UI Functions
 function displayMessage(msg) {
   // Check if message is already displayed
@@ -667,15 +561,7 @@ function displayMessage(msg) {
   const div = document.createElement("div");
   div.className = "msg " + (msg.sender === myId ? "me" : "stranger");
   div.setAttribute('data-id', msg.timestamp);
-  
-  // Check if message contains an image (simple check)
-  if (msg.text.startsWith("data:image")) {
-    const img = document.createElement("img");
-    img.src = msg.text;
-    div.appendChild(img);
-  } else {
-    div.textContent = msg.text;
-  }
+  div.textContent = msg.text;
   
   const time = document.createElement("div");
   time.className = "timestamp";
@@ -688,34 +574,6 @@ function appendMessage(sender, msg) {
   const div = document.createElement("div");
   div.className = "msg " + sender;
   div.textContent = msg;
-  const time = document.createElement("div");
-  time.className = "timestamp";
-  time.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  div.appendChild(time);
-  document.getElementById("chatLog").appendChild(div);
-  scrollToBottom();
-}
-
-function appendImage(sender, blob) {
-  const div = document.createElement("div");
-  div.className = "msg " + sender;
-  const img = document.createElement("img");
-  img.src = blob;
-  div.appendChild(img);
-  const time = document.createElement("div");
-  time.className = "timestamp";
-  time.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  div.appendChild(time);
-  document.getElementById("chatLog").appendChild(div);
-  scrollToBottom();
-}
-
-function appendGif(sender, url) {
-  const div = document.createElement("div");
-  div.className = "msg " + sender;
-  const img = document.createElement("img");
-  img.src = url;
-  div.appendChild(img);
   const time = document.createElement("div");
   time.className = "timestamp";
   time.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -768,88 +626,6 @@ function sendMessage() {
     sendMessageToGroup(msg);
     input.value = "";
   }
-}
-
-document.getElementById("imgInput").addEventListener("change", (e) => {
-  const file = e.target.files[0];
-  if (!file || !isConnected) return;
-
-  const reader = new FileReader();
-  reader.onload = () => {
-    sendImageToGroup(reader.result);
-  };
-  reader.readAsDataURL(file);
-  e.target.value = ""; // Reset input
-});
-
-document.getElementById("gifInput").addEventListener("change", (e) => {
-  const file = e.target.files[0];
-  if (!file || !isConnected) return;
-
-  const reader = new FileReader();
-  reader.onload = () => {
-    sendImageToGroup(reader.result);
-  };
-  reader.readAsDataURL(file);
-  e.target.value = ""; // Reset input
-});
-
-// GIF Search functionality
-const gifModal = document.getElementById("gifModal");
-const gifSearch = document.getElementById("gifSearch");
-const gifResults = document.getElementById("gifResults");
-const gifBtn = document.querySelector('[for="gifInput"]');
-
-gifBtn.onclick = (e) => {
-  e.preventDefault();
-  gifModal.style.display = gifModal.style.display === "block" ? "none" : "block";
-  if (gifModal.style.display === "block") {
-    fetchTrendingGifs();
-  }
-};
-
-gifSearch.addEventListener("keypress", (e) => {
-  if (e.key === "Enter") {
-    searchGifs(gifSearch.value);
-  }
-});
-
-// Using Tenor API for GIFs
-async function fetchTrendingGifs() {
-  try {
-    const response = await fetch(`https://g.tenor.com/v1/trending?key=LIVDSRZULELA&limit=20`);
-    const data = await response.json();
-    displayGifs(data.results);
-  } catch (error) {
-    console.error("Error fetching GIFs:", error);
-  }
-}
-
-async function searchGifs(query) {
-  try {
-    const response = await fetch(`https://g.tenor.com/v1/search?q=${encodeURIComponent(query)}&key=LIVDSRZULELA&limit=20`);
-    const data = await response.json();
-    displayGifs(data.results);
-  } catch (error) {
-    console.error("Error searching GIFs:", error);
-  }
-}
-
-function displayGifs(gifs) {
-  gifResults.innerHTML = "";
-  gifs.forEach(gif => {
-    const gifUrl = gif.media[0].gif.url;
-    const img = document.createElement("img");
-    img.src = gifUrl;
-    img.className = "gif-item";
-    img.onclick = () => {
-      if (isConnected) {
-        sendGifToGroup(gifUrl);
-        gifModal.style.display = "none";
-      }
-    };
-    gifResults.appendChild(img);
-  });
 }
 
 // Theme toggle functionality
