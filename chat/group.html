@@ -180,6 +180,19 @@
     font-size: 1.1em;
   }
 
+  .share-text {
+    display: inline;
+  }
+
+  @media (max-width: 480px) {
+    .share-text {
+      display: none;
+    }
+    .share-btn {
+      padding: 6px;
+    }
+  }
+
   .chat-container {
     display: flex;
     flex-direction: column;
@@ -460,7 +473,7 @@
     </button>
     <button class="share-btn" onclick="window.open('https://wa.me/?text=Try%20this%20free%20stranger%20chat:%20https://shkumaraman.github.io/chat', '_blank')">
       <i class="fab fa-whatsapp"></i>
-      <span>Share</span>
+      <span class="share-text">Share</span>
     </button>
   </div>
 </header>
@@ -505,6 +518,7 @@ let peer, myConn, myId;
 let currentSystemMessage = null;
 let isConnected = false;
 const messageLimit = 25;
+let lastMessageTimestamp = 0;
 
 // Initialize PeerJS connection
 function initializeChat() {
@@ -534,7 +548,10 @@ function joinGroupChat() {
     const messages = snapshot.val();
     if (messages) {
       Object.values(messages).forEach(msg => {
-        displayMessage(msg);
+        if (msg.timestamp > lastMessageTimestamp) {
+          displayMessage(msg);
+          lastMessageTimestamp = msg.timestamp;
+        }
       });
     }
     scrollToBottom();
@@ -543,7 +560,11 @@ function joinGroupChat() {
   // Listen for new messages
   messagesRef.on('child_added', (snapshot) => {
     const msg = snapshot.val();
-    displayMessage(msg);
+    // Only display if it's a new message and not our own (our own messages are handled in sendMessage)
+    if (msg.timestamp > lastMessageTimestamp && msg.sender !== myId) {
+      displayMessage(msg);
+      lastMessageTimestamp = msg.timestamp;
+    }
     scrollToBottom();
   });
   
@@ -604,11 +625,12 @@ function sendMessageToGroup(text) {
   const newMsgRef = db.ref("group/messages").push();
   newMsgRef.set(message)
     .then(() => {
+      // Display our message immediately (Firebase will also send it back to us)
+      appendMessage("me", text);
       // Also send via PeerJS for real-time
       if (myConn) {
         myConn.send(text);
       }
-      appendMessage("me", text);
     })
     .catch(err => {
       console.error("Error sending message:", err);
@@ -645,7 +667,16 @@ function displayMessage(msg) {
   const div = document.createElement("div");
   div.className = "msg " + (msg.sender === myId ? "me" : "stranger");
   div.setAttribute('data-id', msg.timestamp);
-  div.textContent = msg.text;
+  
+  // Check if message contains an image (simple check)
+  if (msg.text.startsWith("data:image")) {
+    const img = document.createElement("img");
+    img.src = msg.text;
+    div.appendChild(img);
+  } else {
+    div.textContent = msg.text;
+  }
+  
   const time = document.createElement("div");
   time.className = "timestamp";
   time.textContent = formatTimestamp(msg.timestamp);
