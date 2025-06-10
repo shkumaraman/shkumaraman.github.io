@@ -475,6 +475,11 @@
       right: 5%;
     }
   }
+  
+  /* Hide file inputs */
+  #imgInput, #gifInput {
+    display: none;
+  }
   </style>
 <script type="application/ld+json">
 {
@@ -533,8 +538,8 @@
     <div class="input-area">
       <input type="text" id="msgInput" placeholder="Type your message..." />
       <div class="input-icons">
-        <label for="imgInput" class="icon-btn" title="Send Image"><i class="fas fa-image"></i></label>
-        <label for="gifInput" class="icon-btn" title="Send GIF"><i class="fas fa-film"></i></label>
+        <button id="imgBtn" class="icon-btn" title="Send Image"><i class="fas fa-image"></i></button>
+        <button id="gifBtn" class="icon-btn" title="Send GIF"><i class="fas fa-film"></i></button>
         <button id="sendBtn" class="icon-btn" title="Send"><i class="fas fa-paper-plane"></i></button>
       </div>
     </div>
@@ -585,6 +590,7 @@ let connections = {}; // Store all active connections
 let currentSystemMessage = null;
 let lastMessageTimestamp = 0;
 const messageLimit = 25;
+let isSendingGif = false; // Flag to prevent multiple GIF sends
 
 // Initialize PeerJS connection
 function initializeChat() {
@@ -806,6 +812,9 @@ function sendImageToGroup(blob) {
 }
 
 function sendGifToGroup(url) {
+  if (isSendingGif) return;
+  isSendingGif = true;
+  
   // Create a message for Firebase
   const message = {
     type: "gif",
@@ -827,9 +836,11 @@ function sendGifToGroup(url) {
           conn.send({ type: "gif", url: url });
         }
       });
+      isSendingGif = false;
     })
     .catch(err => {
       console.error("Error sending GIF:", err);
+      isSendingGif = false;
     });
 }
 
@@ -964,6 +975,11 @@ function sendMessage() {
   }
 }
 
+// Image button click handler
+document.getElementById("imgBtn").addEventListener("click", () => {
+  document.getElementById("imgInput").click();
+});
+
 document.getElementById("imgInput").addEventListener("change", (e) => {
   const file = e.target.files[0];
   if (!file) return;
@@ -976,31 +992,19 @@ document.getElementById("imgInput").addEventListener("change", (e) => {
   e.target.value = ""; // Reset input
 });
 
-document.getElementById("gifInput").addEventListener("change", (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-
-  const reader = new FileReader();
-  reader.onload = () => {
-    sendImageToGroup(reader.result);
-  };
-  reader.readAsDataURL(file);
-  e.target.value = ""; // Reset input
+// GIF button click handler
+document.getElementById("gifBtn").addEventListener("click", (e) => {
+  e.preventDefault();
+  gifModal.style.display = gifModal.style.display === "block" ? "none" : "block";
+  if (gifModal.style.display === "block") {
+    fetchTrendingGifs();
+  }
 });
 
 // GIF Search functionality
 const gifModal = document.getElementById("gifModal");
 const gifSearch = document.getElementById("gifSearch");
 const gifResults = document.getElementById("gifResults");
-const gifBtn = document.querySelector('[for="gifInput"]');
-
-gifBtn.onclick = (e) => {
-  e.preventDefault();
-  gifModal.style.display = gifModal.style.display === "block" ? "none" : "block";
-  if (gifModal.style.display === "block") {
-    fetchTrendingGifs();
-  }
-};
 
 gifSearch.addEventListener("keypress", (e) => {
   if (e.key === "Enter") {
