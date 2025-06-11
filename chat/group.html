@@ -605,6 +605,7 @@ let isSendingGif = false; // Flag to prevent multiple GIF sends
 let deadPeers = new Set(); // Track peers that are no longer active
 let isFirstConnection = true;
 let isSendingMessage = false; // Flag to prevent duplicate message display
+let initialMessagesLoaded = false; // Flag to track if initial messages are loaded
 
 // Initialize PeerJS connection
 function initializeChat() {
@@ -651,30 +652,22 @@ function joinGroupChat() {
   // Reference to the group chat messages
   const messagesRef = db.ref("group/messages").limitToLast(messageLimit);
   
-  // Load previous messages
-  messagesRef.once('value', (snapshot) => {
-    const messages = snapshot.val();
-    if (messages) {
-      Object.values(messages).forEach(msg => {
-        if (msg.timestamp > lastMessageTimestamp) {
-          displayMessage(msg);
-          lastMessageTimestamp = msg.timestamp;
-        }
-      });
-    }
-    scrollToBottom();
-  });
-  
-  // Listen for new messages
-  messagesRef.on('child_added', (snapshot) => {
-    const msg = snapshot.val();
-    // Only display if not our own message (to prevent duplicates) and newer than last timestamp
-    if (msg.timestamp > lastMessageTimestamp && msg.sender !== myId) {
-      displayMessage(msg);
-      lastMessageTimestamp = msg.timestamp;
-    }
-    scrollToBottom();
-  });
+  // Load previous messages only once
+  if (!initialMessagesLoaded) {
+    messagesRef.once('value', (snapshot) => {
+      const messages = snapshot.val();
+      if (messages) {
+        Object.values(messages).forEach(msg => {
+          if (msg.timestamp > lastMessageTimestamp) {
+            displayMessage(msg);
+            lastMessageTimestamp = msg.timestamp;
+          }
+        });
+      }
+      scrollToBottom();
+      initialMessagesLoaded = true;
+    });
+  }
   
   // Connect to existing users
   const usersRef = db.ref("group/users");
@@ -689,7 +682,7 @@ function joinGroupChat() {
     }
   });
   
-  // Listen for new users joining
+  // Listen for new users joining (but not for messages)
   usersRef.on('child_added', (childSnapshot) => {
     const userId = childSnapshot.key;
     const userData = childSnapshot.val();
