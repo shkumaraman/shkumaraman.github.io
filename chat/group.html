@@ -583,8 +583,6 @@
   Made with love in Bharat ♥️
 </footer>
   
-<!-- PeerJS (v1.5.4) -->
-<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap/dist/js/bootstrap.bundle.min.js"></script>  
@@ -596,55 +594,30 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
-let peer, myId;
-let connections = {}; // Store all active connections
-let currentSystemMessage = null;
+let myId;
 let lastMessageTimestamp = 0;
 const messageLimit = 25;
 let isSendingGif = false; // Flag to prevent multiple GIF sends
-let deadPeers = new Set(); // Track peers that are no longer active
-let isFirstConnection = true;
 let isSendingMessage = false; // Flag to prevent duplicate message display
 let initialMessagesLoaded = false; // Flag to track if initial messages are loaded
 
-// Initialize PeerJS connection
+// Initialize chat when page loads
 function initializeChat() {
-  peer = new Peer({
-    debug: 0 // Reduce debug logging
+  // Generate a random ID for this user
+  myId = 'user_' + Math.random().toString(36).substr(2, 9);
+  
+  logSystem("Welcome to TalkRush Group Chat!");
+  joinGroupChat();
+  
+  // Add user to online list
+  db.ref(`group/users/${myId}`).set({
+    online: true,
+    lastActive: firebase.database.ServerValue.TIMESTAMP
   });
   
-  peer.on('open', (id) => {
-    myId = id;
-    if (isFirstConnection) {
-      logSystem("Welcome to TalkRush Group Chat!");
-      isFirstConnection = false;
-    }
-    joinGroupChat();
-    
-    // Add user to online list
-    db.ref(`group/users/${myId}`).set({
-      online: true,
-      lastActive: firebase.database.ServerValue.TIMESTAMP
-    });
-    
-    // Remove user when they leave
-    window.addEventListener('beforeunload', () => {
-      cleanupUser();
-    });
-  });
-  
-  peer.on('error', (err) => {
-    console.error('PeerJS error:', err);
-    if (err.type === 'peer-unavailable') {
-      deadPeers.add(err.peer);
-    }
-    // Don't show error messages to users
-    setTimeout(initializeChat, 2000);
-  });
-  
-  // Listen for incoming connections
-  peer.on('connection', (conn) => {
-    setupConnection(conn);
+  // Remove user when they leave
+  window.addEventListener('beforeunload', () => {
+    cleanupUser();
   });
 }
 
@@ -669,109 +642,13 @@ function joinGroupChat() {
     });
   }
   
-  // Connect to existing users
-  const usersRef = db.ref("group/users");
-  usersRef.once('value', (snapshot) => {
-    const users = snapshot.val();
-    if (users) {
-      Object.entries(users).forEach(([userId, userData]) => {
-        if (userId !== myId && userData.online && !connections[userId] && !deadPeers.has(userId)) {
-          connectToUser(userId);
-        }
-      });
-    }
-  });
-  
-  // Listen for new users joining (but not for messages)
-  usersRef.on('child_added', (childSnapshot) => {
-    const userId = childSnapshot.key;
-    const userData = childSnapshot.val();
-    if (userId !== myId && userData.online && !connections[userId] && !deadPeers.has(userId)) {
-      connectToUser(userId);
-    }
-  });
-  
-  // Listen for users leaving
-  usersRef.on('child_changed', (childSnapshot) => {
-    const userId = childSnapshot.key;
-    const userData = childSnapshot.val();
-    if (!userData.online && connections[userId]) {
-      connections[userId].close();
-      delete connections[userId];
-    }
-  });
-}
-
-function connectToUser(userId) {
-  if (connections[userId] || deadPeers.has(userId)) return;
-  
-  const conn = peer.connect(userId, {
-    reliable: true,
-    serialization: 'json'
-  });
-  
-  conn.on('open', () => {
-    connections[userId] = conn;
-  });
-  
-  conn.on('data', (data) => {
-    // Handle incoming data (messages, images, GIFs)
-    if (typeof data === 'string') {
-      appendMessage("stranger", data);
-    } else if (data.type === "image") {
-      appendImage("stranger", data.blob);
-    } else if (data.type === "gif") {
-      appendGif("stranger", data.url);
-    }
-  });
-  
-  conn.on('close', () => {
-    if (connections[userId]) {
-      delete connections[userId];
-    }
-  });
-  
-  conn.on('error', (err) => {
-    console.error(`Connection error with ${userId}:`, err);
-    if (err.type === 'peer-unavailable') {
-      deadPeers.add(userId);
-    }
-    if (connections[userId]) {
-      delete connections[userId];
-    }
-  });
-}
-
-function setupConnection(conn) {
-  const userId = conn.peer;
-  
-  conn.on('open', () => {
-    connections[userId] = conn;
-  });
-  
-  conn.on('data', (data) => {
-    if (typeof data === 'string') {
-      appendMessage("stranger", data);
-    } else if (data.type === "image") {
-      appendImage("stranger", data.blob);
-    } else if (data.type === "gif") {
-      appendGif("stranger", data.url);
-    }
-  });
-  
-  conn.on('close', () => {
-    if (connections[userId]) {
-      delete connections[userId];
-    }
-  });
-  
-  conn.on('error', (err) => {
-    console.error(`Connection error with ${userId}:`, err);
-    if (err.type === 'peer-unavailable') {
-      deadPeers.add(userId);
-    }
-    if (connections[userId]) {
-      delete connections[userId];
+  // Listen for new messages
+  messagesRef.on('child_added', (snapshot) => {
+    const msg = snapshot.val();
+    if (msg.timestamp > lastMessageTimestamp && msg.sender !== myId) {
+      displayMessage(msg);
+      lastMessageTimestamp = msg.timestamp;
+      scrollToBottom();
     }
   });
 }
@@ -790,16 +667,10 @@ function sendMessageToGroup(text) {
   // Display our message immediately (local echo)
   appendMessage("me", text, timestamp);
   
-  // Push to Firebase (stores last 25 messages)
+  // Push to Firebase
   const newMsgRef = db.ref("group/messages").push();
   newMsgRef.set(message)
     .then(() => {
-      // Also send via PeerJS to all connected users for real-time
-      Object.values(connections).forEach(conn => {
-        if (conn.open) {
-          conn.send(text);
-        }
-      });
       isSendingMessage = false;
     })
     .catch(err => {
@@ -827,12 +698,6 @@ function sendImageToGroup(blob) {
   const newMsgRef = db.ref("group/messages").push();
   newMsgRef.set(message)
     .then(() => {
-      // Send via PeerJS to all connected users
-      Object.values(connections).forEach(conn => {
-        if (conn.open) {
-          conn.send({ type: "image", blob: blob });
-        }
-      });
       isSendingMessage = false;
     })
     .catch(err => {
@@ -861,12 +726,6 @@ function sendGifToGroup(url) {
   const newMsgRef = db.ref("group/messages").push();
   newMsgRef.set(message)
     .then(() => {
-      // Send via PeerJS to all connected users
-      Object.values(connections).forEach(conn => {
-        if (conn.open) {
-          conn.send({ type: "gif", url: url });
-        }
-      });
       isSendingGif = false;
       isSendingMessage = false;
     })
@@ -885,13 +744,6 @@ function cleanupUser() {
       lastActive: firebase.database.ServerValue.TIMESTAMP
     });
   }
-  
-  // Close all connections
-  Object.values(connections).forEach(conn => conn.close());
-  connections = {};
-  
-  // Destroy peer
-  if (peer) peer.destroy();
 }
 
 // UI Functions
@@ -986,20 +838,11 @@ function scrollToBottom() {
 }
 
 function logSystem(msg) {
-  clearSystemMessage();
   const div = document.createElement("div");
   div.className = "msg system-msg";
   div.textContent = msg;
   document.getElementById("chatLog").appendChild(div);
-  currentSystemMessage = div;
   scrollToBottom();
-}
-
-function clearSystemMessage() {
-  if (currentSystemMessage && currentSystemMessage.parentNode) {
-    currentSystemMessage.parentNode.removeChild(currentSystemMessage);
-  }
-  currentSystemMessage = null;
 }
 
 // Event Listeners
