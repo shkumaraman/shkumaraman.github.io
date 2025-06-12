@@ -4,13 +4,13 @@
   <meta charset="UTF-8">
   <title>TalkRush - Free Public Group Chat with Strangers</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="TalkRush Public Group Chat - Connect & chat with multiple strangers instantly. No signup needed! Anonymous text chat with image & GIF sharing.">
-  <meta name="keywords" content="TalkRush, group chat, chat with strangers, public chat, anonymous chat, free chat app, online chat, Omegle alternative, image sharing, GIF chat">  
+  <meta name="description" content="Join TalkRush Public Group Chat – Instantly connect with strangers in fun, fast, and anonymous group chats. No sign-up required! Share images, GIFs, and make new friends online.">
+  <meta name="keywords" content="TalkRush, public group chat, anonymous chat app, chat with strangers, meet new people, free online chat, image and GIF sharing, Omegle alternative, fun group chat, instant messaging, no signup chat">
   <link rel="icon" type="image/png" href="logo.png">
   <meta name="author" content="Aman Kumar">
   <meta property="og:image" content="https://shkumaraman.github.io/chat/logo.png">
   <meta property="og:title" content="TalkRush - Free Public Group Chat with Strangers">
-  <meta property="og:description" content="TalkRush Public Group Chat - Connect & chat with multiple strangers instantly with image & GIF sharing.">
+  <meta property="og:description" content="Join TalkRush Public Group Chat – Instantly connect with strangers in fun, fast, and anonymous group chats. No sign-up required! Share images, GIFs, and make new friends online.">
   <meta property="og:type" content="website">  
   <link href="https://cdn.jsdelivr.net/npm/bootstrap/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@latest/css/all.min.css">
@@ -668,6 +668,66 @@ function sendMessageToGroup(text) {
     });
 }
 
+function compressImage(file, callback) {
+  const reader = new FileReader();
+  reader.onload = function(event) {
+    const img = new Image();
+    img.onload = function() {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      
+      // Calculate new dimensions while maintaining aspect ratio
+      let width = img.width;
+      let height = img.height;
+      const maxDimension = 1024; // Max width or height
+      const quality = 0.7; // Initial quality
+      
+      if (width > height) {
+        if (width > maxDimension) {
+          height *= maxDimension / width;
+          width = maxDimension;
+        }
+      } else {
+        if (height > maxDimension) {
+          width *= maxDimension / height;
+          height = maxDimension;
+        }
+      }
+      
+      canvas.width = width;
+      canvas.height = height;
+      ctx.drawImage(img, 0, 0, width, height);
+      
+      // Convert to JPEG first (smaller than PNG)
+      let qualityAdjusted = quality;
+      let result;
+      
+      // Try to get the image between 80-100KB
+      do {
+        result = canvas.toDataURL('image/jpeg', qualityAdjusted);
+        qualityAdjusted -= 0.05;
+        
+        // Prevent infinite loop
+        if (qualityAdjusted <= 0.1) break;
+      } while (result.length > 100 * 1024); // 100KB in bytes
+      
+      // If still too large, resize further
+      if (result.length > 100 * 1024) {
+        width *= 0.9;
+        height *= 0.9;
+        canvas.width = width;
+        canvas.height = height;
+        ctx.drawImage(img, 0, 0, width, height);
+        result = canvas.toDataURL('image/jpeg', 0.7);
+      }
+      
+      callback(result);
+    };
+    img.src = event.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
 function sendImageToGroup(blob) {
   if (isSendingMessage) return;
   isSendingMessage = true;
@@ -795,14 +855,14 @@ function appendGif(sender, url, timestamp = Date.now()) {
   div.className = "msg " + sender;
   div.setAttribute('data-id', timestamp);
   const img = document.createElement("img");
-  img.src = url;
-  div.appendChild(img);
-  const time = document.createElement("div");
-  time.className = "timestamp";
-  time.textContent = formatTimestamp(timestamp);
-  div.appendChild(time);
-  document.getElementById("chatLog").appendChild(div);
-  scrollToBottom();
+    img.src = url;
+    div.appendChild(img);
+    const time = document.createElement("div");
+    time.className = "timestamp";
+    time.textContent = formatTimestamp(timestamp);
+    div.appendChild(time);
+    document.getElementById("chatLog").appendChild(div);
+    scrollToBottom();
 }
 
 function formatTimestamp(timestamp) {
@@ -851,11 +911,18 @@ document.getElementById("imgInput").addEventListener("change", (e) => {
   const file = e.target.files[0];
   if (!file) return;
 
-  const reader = new FileReader();
-  reader.onload = () => {
-    sendImageToGroup(reader.result);
-  };
-  reader.readAsDataURL(file);
+  // Check if file is too large (>5MB)
+  if (file.size > 5 * 1024 * 1024) {
+    logSystem("Image too large! Please select an image smaller than 5MB.");
+    e.target.value = ""; // Reset input
+    return;
+  }
+
+  // Compress the image before sending
+  compressImage(file, (compressedImage) => {
+    sendImageToGroup(compressedImage);
+  });
+  
   e.target.value = ""; // Reset input
 });
 
