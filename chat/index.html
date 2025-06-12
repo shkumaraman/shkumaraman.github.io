@@ -855,10 +855,8 @@ h1 {
   let peer, myConn, myId, waitingRef;
   let currentSystemMessage = null;
   let isConnected = false;
-  let connectionAttempts = 0;
-  const MAX_CONNECTION_ATTEMPTS = 5;
 
-  // Initialize PeerJS connection with STUN servers
+  // Initialize PeerJS connection
   startPeer();
 
   function startPeer() {
@@ -873,39 +871,28 @@ h1 {
     
     logSystem("Looking for a stranger...");
     
-    // Configure PeerJS with STUN servers for better connectivity
+    // PeerJS configuration with STUN servers
     peer = new Peer({
       config: {
         iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun2.l.google.com:19302' },
-          { urls: 'stun:stun3.l.google.com:19302' },
-          { urls: 'stun:stun4.l.google.com:19302' }
+          { url: 'stun:stun.l.google.com:19302' },
+          { url: 'stun:stun1.l.google.com:19302' },
+          { url: 'stun:stun2.l.google.com:19302' },
+          { url: 'stun:stun3.l.google.com:19302' },
+          { url: 'stun:stun4.l.google.com:19302' }
         ]
-      },
-      debug: 3 // Enable verbose logging
+      }
     });
     
     peer.on('open', (id) => {
       myId = id;
-      connectionAttempts = 0; // Reset attempts counter on successful peer creation
       tryToFindMatch();
     });
     
     peer.on('error', (err) => {
       console.error('PeerJS error:', err);
-      connectionAttempts++;
-      
-      if (connectionAttempts >= MAX_CONNECTION_ATTEMPTS) {
-        logSystem("Connection failed after multiple attempts. Please refresh the page.");
-        return;
-      }
-      
-      let retryDelay = 2000 * Math.pow(2, connectionAttempts); // Exponential backoff
-      logSystem(`Connection error (attempt ${connectionAttempts}/${MAX_CONNECTION_ATTEMPTS}). Trying again in ${retryDelay/1000} seconds...`);
-      
-      setTimeout(startPeer, retryDelay);
+      logSystem("Connection error. Trying again...");
+      setTimeout(startPeer, 2000);
     });
   }
 
@@ -930,21 +917,10 @@ h1 {
         const newRef = waitingRef.push();
         newRef.set(myId);
         
-        // Set timeout for waiting (30 seconds)
-        const waitTimeout = setTimeout(() => {
-          if (!isConnected) {
-            waitingRef.off();
-            newRef.remove();
-            logSystem("Couldn't find a stranger. Trying again...");
-            tryToFindMatch();
-          }
-        }, 30000);
-        
         // Then listen for new users being added to waiting list
         waitingRef.on('child_added', (childSnapshot) => {
           const otherId = childSnapshot.val();
           if (otherId !== myId && !isConnected) {
-            clearTimeout(waitTimeout);
             // Remove both from waiting list
             waitingRef.off(); // Stop listening
             childSnapshot.ref.remove();
@@ -967,9 +943,6 @@ h1 {
         db.ref("waiting").orderByValue().equalTo(myId).once('value', (snap) => {
           snap.forEach(child => child.ref.remove());
         });
-      } else {
-        // If already connected, reject the new connection
-        conn.close();
       }
     });
   }
@@ -979,23 +952,9 @@ h1 {
     
     clearSystemMessage();
     logSystem("Connecting to stranger...");
-    const conn = peer.connect(otherId, {
-      reliable: true,
-      serialization: 'json',
-      metadata: { connectionType: 'chat' }
-    });
-    
-    // Set connection timeout (10 seconds)
-    const connectionTimeout = setTimeout(() => {
-      if (!isConnected) {
-        conn.close();
-        logSystem("Connection timed out. Trying again...");
-        tryToFindMatch();
-      }
-    }, 10000);
+    const conn = peer.connect(otherId);
     
     conn.on("open", () => {
-      clearTimeout(connectionTimeout);
       if (!isConnected) {
         clearSystemMessage();
         logSystem("Connected to stranger");
@@ -1004,7 +963,6 @@ h1 {
     });
     
     conn.on("error", (err) => {
-      clearTimeout(connectionTimeout);
       console.error("Connection error:", err);
       if (!isConnected) {
         logSystem("Failed to connect. Trying again...");
@@ -1019,18 +977,6 @@ h1 {
     
     myConn = conn;
     isConnected = true;
-    connectionAttempts = 0; // Reset attempts counter on successful connection
-    
-    // Add ping-pong mechanism to keep connection alive
-    const keepAliveInterval = setInterval(() => {
-      if (isConnected) {
-        try {
-          conn.send({ type: "ping" });
-        } catch (e) {
-          console.log("Ping failed", e);
-        }
-      }
-    }, 15000);
     
     conn.on("data", (data) => {
       if (typeof data === "string") {
@@ -1039,18 +985,10 @@ h1 {
         appendImage("stranger", data.blob);
       } else if (data.type === "gif") {
         appendGif("stranger", data.url);
-      } else if (data.type === "ping") {
-        // Respond to pings to keep connection alive
-        try {
-          conn.send({ type: "pong" });
-        } catch (e) {
-          console.log("Pong failed", e);
-        }
       }
     });
     
     conn.on("close", () => {
-      clearInterval(keepAliveInterval);
       logSystem("Stranger disconnected");
       myConn = null;
       isConnected = false;
@@ -1064,7 +1002,6 @@ h1 {
     });
     
     conn.on("error", (err) => {
-      clearInterval(keepAliveInterval);
       console.error("Data connection error:", err);
       logSystem("Connection error");
       isConnected = false;
@@ -1147,16 +1084,9 @@ h1 {
     const input = document.getElementById("msgInput");
     const msg = input.value.trim();
     if (msg && myConn && isConnected) {
-      try {
-        myConn.send(msg);
-        appendMessage("me", msg);
-        input.value = "";
-      } catch (err) {
-        console.error("Failed to send message:", err);
-        logSystem("Failed to send message. Reconnecting...");
-        isConnected = false;
-        startPeer();
-      }
+      myConn.send(msg);
+      appendMessage("me", msg);
+      input.value = "";
     }
   }
 
@@ -1166,18 +1096,8 @@ h1 {
 
     const reader = new FileReader();
     reader.onload = () => {
-      try {
-        myConn.send({ type: "image", blob: reader.result });
-        appendImage("me", reader.result);
-      } catch (err) {
-        console.error("Failed to send image:", err);
-        logSystem("Failed to send image. Reconnecting...");
-        isConnected = false;
-        startPeer();
-      }
-    };
-    reader.onerror = () => {
-      logSystem("Error reading image file");
+      myConn.send({ type: "image", blob: reader.result });
+      appendImage("me", reader.result);
     };
     reader.readAsDataURL(file);
     e.target.value = ""; // Reset input
@@ -1189,18 +1109,8 @@ h1 {
 
     const reader = new FileReader();
     reader.onload = () => {
-      try {
-        myConn.send({ type: "image", blob: reader.result });
-        appendImage("me", reader.result);
-      } catch (err) {
-        console.error("Failed to send GIF:", err);
-        logSystem("Failed to send GIF. Reconnecting...");
-        isConnected = false;
-        startPeer();
-      }
-    };
-    reader.onerror = () => {
-      logSystem("Error reading GIF file");
+      myConn.send({ type: "image", blob: reader.result });
+      appendImage("me", reader.result);
     };
     reader.readAsDataURL(file);
     e.target.value = ""; // Reset input
@@ -1266,16 +1176,9 @@ h1 {
       img.className = "gif-item";
       img.onclick = () => {
         if (myConn && isConnected) {
-          try {
-            myConn.send({ type: "gif", url: gifUrl });
-            appendGif("me", gifUrl);
-            gifModal.style.display = "none";
-          } catch (err) {
-            console.error("Failed to send GIF:", err);
-            logSystem("Failed to send GIF. Reconnecting...");
-            isConnected = false;
-            startPeer();
-          }
+          myConn.send({ type: "gif", url: gifUrl });
+          appendGif("me", gifUrl);
+          gifModal.style.display = "none";
         }
       };
       gifResults.appendChild(img);
