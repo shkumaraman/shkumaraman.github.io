@@ -643,10 +643,34 @@ let isSendingGif = false; // Flag to prevent multiple GIF sends
 let isSendingMessage = false; // Flag to prevent duplicate message display
 let initialMessagesLoaded = false; // Flag to track if initial messages are loaded
 
+// Bad word filter system
+let bannedWords = [];
+
+// Load the banned words from filter.txt
+async function loadBannedWords() {
+  try {
+    const response = await fetch('filter.txt');
+    const text = await response.text();
+    bannedWords = text.split('\n').map(word => word.trim().toLowerCase());
+    console.log("Banned words loaded successfully");
+  } catch (err) {
+    console.error("Error loading banned words:", err);
+  }
+}
+
+// Check if message contains banned words
+function containsBannedWords(message) {
+  const lowerMsg = message.toLowerCase();
+  return bannedWords.some(word => word && lowerMsg.includes(word));
+}
+
 // Initialize chat when page loads
 function initializeChat() {
   // Generate a random ID for this user
   myId = 'user_' + Math.random().toString(36).substr(2, 9);
+  
+  // Load banned words
+  loadBannedWords();
   
   logSystem("Welcome to TalkRush Group Chat!");
   joinGroupChat();
@@ -938,7 +962,14 @@ document.getElementById("sendBtn").onclick = sendMessage;
 function sendMessage() {
   const input = document.getElementById("msgInput");
   const msg = input.value.trim();
+  
   if (msg) {
+    if (containsBannedWords(msg)) {
+      logSystem("Your message contains inappropriate content and cannot be sent.");
+      input.value = "";
+      return;
+    }
+    
     sendMessageToGroup(msg);
     input.value = "";
   }
