@@ -34,7 +34,7 @@ Use our **EMI Loan Calculator** to easily calculate your monthly loan payments b
 Our **Investment Calculator** helps you find the future value of your investments based on your initial amount, interest rate, and time period.
 
 ## 💬 TalkRush – Chat With Strangers
-**TalkRush** lets you chat with strangers anonymously – no sign-up or login required! Share media, exchange thoughts, and make new friends quickly and safely through a simple interface.
+**TalkRush** lets you Chat and Video Call with strangers anonymously – no sign-up or login required! Share media, exchange thoughts, and make new friends quickly and safely through a simple interface.
 
 ---
 
