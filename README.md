@@ -2,13 +2,12 @@
 
 👋 *My name is Aman Kumar, and I created all of this – to make your work easier and more efficient!*
 
-Welcome to **SHKUMARAMAN** – Your ultimate destination for Code Editor, TXT Editor, Blogs, Finance Tools, and **TalkRush – Chat With Strangers**!
+Welcome to **SHKUMARAMAN** – Your ultimate destination for Code Editor, TXT Editor, Blogs, and **TalkRush – Chat With Strangers**!
 
 ## 🚀 About Us
-We create tools that simplify your work and boost productivity. With our platform, you can easily edit **HTML, CSS, JavaScript, TXT**, and other files. We also provide smart finance tools like the **EMI Loan Calculator** and the **Investment Calculator** to help you make informed financial decisions. Now with **TalkRush**, you can chat anonymously with strangers – no login or registration needed!
+We create tools that simplify your work and boost productivity. With our platform, you can easily edit **HTML, CSS, JavaScript, TXT**, and other files. Now with **TalkRush**, you can chat anonymously with strangers – no login or registration needed!
 
 ## 🌟 Features
-- ✅ **Finance Tools** – EMI Loan Calculator & Investment Calculator for accurate financial planning.
 - ✅ **TalkRush – Chat With Strangers** – Talk anonymously without registering. Share media and connect instantly.
 - ✅ **Informative Blogs** – Stay updated with the latest trends and tips.
 - ✅ **User-Friendly Design** – Smooth navigation and a responsive interface.
@@ -25,16 +24,13 @@ We create tools that simplify your work and boost productivity. With our platfor
 - 💬 Facebook: [Aman Kumar](https://facebook.com/sh.kumar.aman)  
 - 💼 LinkedIn: [Aman Kumar](https://linkedin.com/in/shkumaraman)
 
-## 💸 Finance Tools
-
-### EMI Loan Calculator
-Use our **EMI Loan Calculator** to easily calculate your monthly loan payments based on loan amount, interest rate, and duration.
-
-### Investment Calculator
-Our **Investment Calculator** helps you find the future value of your investments based on your initial amount, interest rate, and time period.
-
 ## 💬 TalkRush – Chat With Strangers
+
 **TalkRush** lets you Chat and Video Call with strangers anonymously – no sign-up or login required! Share media, exchange thoughts, and make new friends quickly and safely through a simple interface.
+
+🔗 **Try TalkRush Now:**
+- 🌐 [TalkRush Chat With Strangers](https://shkumaraman.github.io/chat/index.html)
+- 💬 [Start Chatting Instantly](https://shkumaraman.github.io/chat/app.html)
 
 ---
 
