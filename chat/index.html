@@ -912,9 +912,7 @@ window.addEventListener('beforeunload', function(e) {
   }
 });
 
-// Initialize PeerJS connection
-startPeer();
-
+// Initialize PeerJS connection only when Start New Chat is clicked
 function startPeer() {
   // Clear any existing system message
   clearSystemMessage();
@@ -947,8 +945,8 @@ function startPeer() {
   
   peer.on('error', (err) => {
     console.error('PeerJS error:', err);
-    logSystem("Connection error. Trying again...");
-    setTimeout(startPeer, 2000);
+    logSystem("Connection error. Click 'Start New Chat' to try again.");
+    document.getElementById("newChatBtn").style.display = "block";
   });
 }
 
@@ -1021,8 +1019,8 @@ function connectToPeer(otherId) {
   conn.on("error", (err) => {
     console.error("Connection error:", err);
     if (!isConnected) {
-      logSystem("Failed to connect. Trying again...");
-      setTimeout(() => tryToFindMatch(), 1000);
+      logSystem("Failed to connect. Click 'Start New Chat' to try again.");
+      document.getElementById("newChatBtn").style.display = "block";
     }
   });
 }
@@ -1046,18 +1044,25 @@ function setupConnection(conn) {
   
   conn.on("close", () => {
     logSystem("Stranger disconnected");
-    myConn = null;
-    isConnected = false;
-    // Show new chat button instead of automatically reconnecting
-    document.getElementById("newChatBtn").style.display = "block";
+    endCurrentSession();
   });
   
   conn.on("error", (err) => {
     console.error("Data connection error:", err);
     logSystem("Connection error");
-    isConnected = false;
-    document.getElementById("newChatBtn").style.display = "block";
+    endCurrentSession();
   });
+}
+
+function endCurrentSession() {
+  myConn = null;
+  isConnected = false;
+  if (waitingRef) waitingRef.off();
+  if (peer) {
+    peer.destroy();
+    peer = null;
+  }
+  document.getElementById("newChatBtn").style.display = "block";
 }
 
 // UI Functions
@@ -1169,10 +1174,8 @@ document.getElementById("gifInput").addEventListener("change", (e) => {
 });
 
 document.getElementById("skipBtn").onclick = () => {
-  if (myConn) myConn.close();
-  if (waitingRef) waitingRef.off();
-  document.getElementById("newChatBtn").style.display = "block";
-  logSystem("Disconnected from stranger");
+  endCurrentSession();
+  logSystem("Chat ended. Click 'Start New Chat' to begin again.");
 };
 
 // New Chat Button functionality
