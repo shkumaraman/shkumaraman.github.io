@@ -904,6 +904,12 @@ let peer, myConn, myId, waitingRef;
 let currentSystemMessage = null;
 let isConnected = false;
 
+// Initialize when page loads
+window.addEventListener('load', function() {
+  startPeer();
+});
+
+// Handle page refresh/close
 window.addEventListener('beforeunload', function(e) {
   if (isConnected) {
     e.preventDefault();
@@ -912,20 +918,14 @@ window.addEventListener('beforeunload', function(e) {
   }
 });
 
-// Initialize PeerJS connection only when Start New Chat is clicked
 function startPeer() {
-  // Clear any existing system message
   clearSystemMessage();
-  
-  // Reset connection status
   isConnected = false;
   
-  // Destroy existing peer if any
   if (peer) peer.destroy();
   
   logSystem("Looking for a stranger...");
   
-  // PeerJS configuration with STUN servers
   peer = new Peer({
     config: {
       iceServers: [
@@ -945,15 +945,14 @@ function startPeer() {
   
   peer.on('error', (err) => {
     console.error('PeerJS error:', err);
+    showNewChatButton();
     logSystem("Connection error. Click 'Start New Chat' to try again.");
-    document.getElementById("newChatBtn").style.display = "block";
   });
 }
 
 function tryToFindMatch() {
   waitingRef = db.ref("waiting");
   
-  // First check if there are any existing waiting users
   waitingRef.once('value', (snapshot) => {
     const list = snapshot.val();
     if (list) {
@@ -966,17 +965,14 @@ function tryToFindMatch() {
       }
     }
     
-    // If no match found and not already connected, add self to waiting list
     if (!isConnected) {
       const newRef = waitingRef.push();
       newRef.set(myId);
       
-      // Then listen for new users being added to waiting list
       waitingRef.on('child_added', (childSnapshot) => {
         const otherId = childSnapshot.val();
         if (otherId !== myId && !isConnected) {
-          // Remove both from waiting list
-          waitingRef.off(); // Stop listening
+          waitingRef.off();
           childSnapshot.ref.remove();
           db.ref("waiting").orderByValue().equalTo(myId).once('value', (snap) => {
             snap.forEach(child => child.ref.remove());
@@ -987,13 +983,11 @@ function tryToFindMatch() {
     }
   });
 
-  // Set up listener for incoming connections
   peer.on("connection", (conn) => {
     if (!isConnected) {
       clearSystemMessage();
       logSystem("Stranger connected");
       setupConnection(conn);
-      // Clean up waiting status if we were waiting
       db.ref("waiting").orderByValue().equalTo(myId).once('value', (snap) => {
         snap.forEach(child => child.ref.remove());
       });
@@ -1019,18 +1013,18 @@ function connectToPeer(otherId) {
   conn.on("error", (err) => {
     console.error("Connection error:", err);
     if (!isConnected) {
+      showNewChatButton();
       logSystem("Failed to connect. Click 'Start New Chat' to try again.");
-      document.getElementById("newChatBtn").style.display = "block";
     }
   });
 }
 
 function setupConnection(conn) {
-  // Close existing connection if any
   if (myConn) myConn.close();
   
   myConn = conn;
   isConnected = true;
+  hideNewChatButton();
   
   conn.on("data", (data) => {
     if (typeof data === "string") {
@@ -1043,26 +1037,29 @@ function setupConnection(conn) {
   });
   
   conn.on("close", () => {
-    logSystem("Stranger disconnected");
-    endCurrentSession();
+    endConnection("Stranger disconnected");
   });
   
   conn.on("error", (err) => {
     console.error("Data connection error:", err);
-    logSystem("Connection error");
-    endCurrentSession();
+    endConnection("Connection error");
   });
 }
 
-function endCurrentSession() {
+function endConnection(message) {
+  logSystem(message);
   myConn = null;
   isConnected = false;
-  if (waitingRef) waitingRef.off();
-  if (peer) {
-    peer.destroy();
-    peer = null;
+  showNewChatButton();
+}
+
+function cleanUpWaitingList() {
+  if (waitingRef) {
+    waitingRef.off();
+    db.ref("waiting").orderByValue().equalTo(myId).once('value', (snap) => {
+      snap.forEach(child => child.ref.remove());
+    });
   }
-  document.getElementById("newChatBtn").style.display = "block";
 }
 
 // UI Functions
@@ -1128,11 +1125,17 @@ function clearSystemMessage() {
   currentSystemMessage = null;
 }
 
+function showNewChatButton() {
+  document.getElementById("newChatBtn").style.display = "block";
+}
+
+function hideNewChatButton() {
+  document.getElementById("newChatBtn").style.display = "none";
+}
+
 // Event Listeners
 document.getElementById("msgInput").addEventListener("keypress", (e) => {
-  if (e.key === "Enter") {
-    sendMessage();
-  }
+  if (e.key === "Enter") sendMessage();
 });
 
 document.getElementById("sendBtn").onclick = sendMessage;
@@ -1157,7 +1160,7 @@ document.getElementById("imgInput").addEventListener("change", (e) => {
     appendImage("me", reader.result);
   };
   reader.readAsDataURL(file);
-  e.target.value = ""; // Reset input
+  e.target.value = "";
 });
 
 document.getElementById("gifInput").addEventListener("change", (e) => {
@@ -1170,18 +1173,20 @@ document.getElementById("gifInput").addEventListener("change", (e) => {
     appendImage("me", reader.result);
   };
   reader.readAsDataURL(file);
-  e.target.value = ""; // Reset input
+  e.target.value = "";
 });
 
 document.getElementById("skipBtn").onclick = () => {
-  endCurrentSession();
-  logSystem("Chat ended. Click 'Start New Chat' to begin again.");
+  if (myConn) myConn.close();
+  cleanUpWaitingList();
+  isConnected = false;
+  logSystem("Chat ended. Click 'Start New Chat' to find someone new.");
+  showNewChatButton();
 };
 
-// New Chat Button functionality
 document.getElementById("newChatBtn").onclick = () => {
-  document.getElementById("newChatBtn").style.display = "none";
   document.getElementById("chatLog").innerHTML = "";
+  hideNewChatButton();
   startPeer();
 };
 
@@ -1194,18 +1199,13 @@ const gifBtn = document.querySelector('[for="gifInput"]');
 gifBtn.onclick = (e) => {
   e.preventDefault();
   gifModal.style.display = gifModal.style.display === "block" ? "none" : "block";
-  if (gifModal.style.display === "block") {
-    fetchTrendingGifs();
-  }
+  if (gifModal.style.display === "block") fetchTrendingGifs();
 };
 
 gifSearch.addEventListener("keypress", (e) => {
-  if (e.key === "Enter") {
-    searchGifs(gifSearch.value);
-  }
+  if (e.key === "Enter") searchGifs(gifSearch.value);
 });
 
-// Using Tenor API for GIFs
 async function fetchTrendingGifs() {
   try {
     const response = await fetch(`https://g.tenor.com/v1/trending?key=LIVDSRZULELA&limit=20`);
@@ -1246,22 +1246,17 @@ function displayGifs(gifs) {
   });
 }
 
-// Close modal when clicking outside
 window.addEventListener("click", (e) => {
-  if (e.target === gifModal) {
-    gifModal.style.display = "none";
-  }
+  if (e.target === gifModal) gifModal.style.display = "none";
 });
 
 // Theme toggle functionality
 const themeToggle = document.getElementById('themeToggle');
 const body = document.body;
 
-// Check for saved theme preference or use preferred color scheme
 const savedTheme = localStorage.getItem('theme') || 
-                   (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+                 (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
 
-// Apply the saved theme
 if (savedTheme === 'light') {
   body.classList.add('light-mode');
   themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
@@ -1269,7 +1264,6 @@ if (savedTheme === 'light') {
   themeToggle.innerHTML = '<i class="fas fa-moon"></i>';
 }
 
-// Toggle theme on button click
 themeToggle.addEventListener('click', () => {
   body.classList.toggle('light-mode');
   
