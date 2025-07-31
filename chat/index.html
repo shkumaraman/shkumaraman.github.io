@@ -942,8 +942,9 @@ body.light-mode {
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap/dist/js/bootstrap.bundle.min.js"></script> 
+
 <script>
-  // Firebase config
+// Firebase config
 const firebaseConfig = {
   databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
 };
@@ -953,11 +954,52 @@ const db = firebase.database();
 let peer, myConn, myId, waitingRef;
 let currentSystemMessage = null;
 let isConnected = false;
+let escPressCount = 0;
+let escTimeout;
 
 // Initialize when page loads
 window.addEventListener('load', function() {
   startPeer();
+  setupEscapeListener();
 });
+
+function setupEscapeListener() {
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      escPressCount++;
+      
+      // Reset counter after 1 second
+      clearTimeout(escTimeout);
+      escTimeout = setTimeout(() => {
+        escPressCount = 0;
+      }, 1000);
+      
+      // First press - skip current chat
+      if (escPressCount === 1 && isConnected) {
+        skipChat();
+      }
+      // Second press - start new connection
+      else if (escPressCount === 2) {
+        startNewConnection();
+      }
+    }
+  });
+}
+
+function skipChat() {
+  if (myConn) myConn.close();
+  cleanUpWaitingList();
+  isConnected = false;
+  logSystem("Chat ended. Press ESC again to find someone new.");
+  showNewChatButton();
+}
+
+function startNewConnection() {
+  document.getElementById("chatLog").innerHTML = "";
+  hideNewChatButton();
+  startPeer();
+  escPressCount = 0; // Reset counter
+}
 
 // Handle page refresh/close
 window.addEventListener('beforeunload', function(e) {
@@ -996,7 +1038,7 @@ function startPeer() {
   peer.on('error', (err) => {
     console.error('PeerJS error:', err);
     showNewChatButton();
-    logSystem("Connection error. Click 'Start New Chat' to try again.");
+    logSystem("Connection error. Press ESC to try again.");
   });
 }
 
@@ -1064,7 +1106,7 @@ function connectToPeer(otherId) {
     console.error("Connection error:", err);
     if (!isConnected) {
       showNewChatButton();
-      logSystem("Failed to connect. Click 'Start New Chat' to try again.");
+      logSystem("Failed to connect. Press ESC to try again.");
     }
   });
 }
@@ -1226,19 +1268,9 @@ document.getElementById("gifInput").addEventListener("change", (e) => {
   e.target.value = "";
 });
 
-document.getElementById("skipBtn").onclick = () => {
-  if (myConn) myConn.close();
-  cleanUpWaitingList();
-  isConnected = false;
-  logSystem("Chat ended. Click 'Start New Chat' to find someone new.");
-  showNewChatButton();
-};
+document.getElementById("skipBtn").onclick = skipChat;
 
-document.getElementById("newChatBtn").onclick = () => {
-  document.getElementById("chatLog").innerHTML = "";
-  hideNewChatButton();
-  startPeer();
-};
+document.getElementById("newChatBtn").onclick = startNewConnection;
 
 // GIF Search functionality
 const gifModal = document.getElementById("gifModal");
