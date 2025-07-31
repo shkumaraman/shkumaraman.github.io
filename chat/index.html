@@ -954,52 +954,13 @@ const db = firebase.database();
 let peer, myConn, myId, waitingRef;
 let currentSystemMessage = null;
 let isConnected = false;
-let escPressCount = 0;
-let escTimeout;
+let escPressedOnce = false;
+let escTimer = null;
 
 // Initialize when page loads
 window.addEventListener('load', function() {
   startPeer();
-  setupEscapeListener();
 });
-
-function setupEscapeListener() {
-  document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') {
-      escPressCount++;
-      
-      // Reset counter after 1 second
-      clearTimeout(escTimeout);
-      escTimeout = setTimeout(() => {
-        escPressCount = 0;
-      }, 1000);
-      
-      // First press - skip current chat
-      if (escPressCount === 1 && isConnected) {
-        skipChat();
-      }
-      // Second press - start new connection
-      else if (escPressCount === 2) {
-        startNewConnection();
-      }
-    }
-  });
-}
-
-function skipChat() {
-  if (myConn) myConn.close();
-  cleanUpWaitingList();
-  isConnected = false;
-  logSystem("Chat ended. Press ESC again to find someone new.");
-  showNewChatButton();
-}
-
-function startNewConnection() {
-  document.getElementById("chatLog").innerHTML = "";
-  hideNewChatButton();
-  startPeer();
-  escPressCount = 0; // Reset counter
-}
 
 // Handle page refresh/close
 window.addEventListener('beforeunload', function(e) {
@@ -1007,6 +968,33 @@ window.addEventListener('beforeunload', function(e) {
     e.preventDefault();
     e.returnValue = 'Are you sure you want to leave? Your chat will be disconnected.';
     return e.returnValue;
+  }
+});
+
+// Escape key functionality
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    if (!escPressedOnce) {
+      // First press - show message
+      escPressedOnce = true;
+      logSystem("Press Esc again to skip this chat and find someone new");
+      
+      // Set timer to reset after 3 seconds
+      escTimer = setTimeout(() => {
+        escPressedOnce = false;
+        clearSystemMessage();
+      }, 3000);
+    } else {
+      // Second press - skip chat
+      clearTimeout(escTimer);
+      escPressedOnce = false;
+      if (myConn) myConn.close();
+      cleanUpWaitingList();
+      isConnected = false;
+      document.getElementById("chatLog").innerHTML = "";
+      hideNewChatButton();
+      startPeer();
+    }
   }
 });
 
@@ -1038,7 +1026,7 @@ function startPeer() {
   peer.on('error', (err) => {
     console.error('PeerJS error:', err);
     showNewChatButton();
-    logSystem("Connection error. Press ESC to try again.");
+    logSystem("Connection error. Click 'Start New Chat' to try again.");
   });
 }
 
@@ -1106,7 +1094,7 @@ function connectToPeer(otherId) {
     console.error("Connection error:", err);
     if (!isConnected) {
       showNewChatButton();
-      logSystem("Failed to connect. Press ESC to try again.");
+      logSystem("Failed to connect. Click 'Start New Chat' to try again.");
     }
   });
 }
@@ -1268,9 +1256,19 @@ document.getElementById("gifInput").addEventListener("change", (e) => {
   e.target.value = "";
 });
 
-document.getElementById("skipBtn").onclick = skipChat;
+document.getElementById("skipBtn").onclick = () => {
+  if (myConn) myConn.close();
+  cleanUpWaitingList();
+  isConnected = false;
+  logSystem("Chat ended. Click 'Start New Chat' to find someone new.");
+  showNewChatButton();
+};
 
-document.getElementById("newChatBtn").onclick = startNewConnection;
+document.getElementById("newChatBtn").onclick = () => {
+  document.getElementById("chatLog").innerHTML = "";
+  hideNewChatButton();
+  startPeer();
+};
 
 // GIF Search functionality
 const gifModal = document.getElementById("gifModal");
