@@ -598,6 +598,21 @@
 </script>
 </head>
 <body>
+<!-- Nickname Modal -->
+<div id="nicknameModal" class="modal-overlay" style="display: none;">
+  <div class="modal-content">
+    <h3>Choose Your Nickname</h3>
+    <p>Pick a name that will be displayed with your messages</p>
+    <input type="text" id="nicknameInput" placeholder="CoolChatter123" maxlength="20" 
+           style="width: 100%; padding: 10px; margin: 15px 0; border-radius: 5px; border: 1px solid #ccc;">
+    <div class="modal-buttons">
+      <button onclick="saveNickname()" class="modal-btn green-btn">
+        Continue
+      </button>
+    </div>
+  </div>
+</div>
+
 <div class="chat-container">
 <header class="app-header">
   <div class="header-left">
@@ -616,6 +631,25 @@
 </header>
 
   <div id="chatLog"></div>
+
+  <!-- Nickname Display -->
+  <div id="nicknameDisplay" style="
+    position: fixed;
+    bottom: 60px;
+    left: 10px;
+    background: var(--dark-msg-bg);
+    padding: 5px 10px;
+    border-radius: 15px;
+    font-size: 0.8em;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    cursor: pointer;
+    z-index: 1000;
+  ">
+    <span id="currentNickname">Guest</span>
+    <i class="fas fa-pencil-alt" style="font-size: 0.7em;"></i>
+  </div>
 
   <div class="chat-controls">
     <div class="input-area">
@@ -819,6 +853,8 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
 let myId;
+let myNickname = 'Guest';
+let nicknameSet = false;
 let lastMessageTimestamp = 0;
 const messageLimit = 25;
 let isSendingGif = false;
@@ -855,8 +891,61 @@ function containsBannedWords(message) {
 function initializeChat() {
   myId = 'user_' + Math.random().toString(36).substr(2, 9);
   loadBannedWords();
+  
+  // Check if nickname exists in localStorage
+  const savedNickname = localStorage.getItem('talkrush_nickname');
+  if (savedNickname) {
+    myNickname = savedNickname;
+    nicknameSet = true;
+    document.getElementById('currentNickname').textContent = myNickname;
+    updateNicknameInDB();
+  }
+  
+  // Show nickname modal if not set
+  if (!nicknameSet) {
+    showNicknameModal();
+  }
+  
   logSystem("Welcome to TalkRush Group Chat!");
   joinGroupChat();
+}
+
+function showNicknameModal() {
+  document.getElementById('nicknameModal').style.display = 'flex';
+  document.getElementById('nicknameInput').focus();
+}
+
+function saveNickname() {
+  const nicknameInput = document.getElementById('nicknameInput');
+  const newNickname = nicknameInput.value.trim();
+  
+  if (!newNickname) {
+    alert("Please enter a nickname");
+    return;
+  }
+  
+  if (containsBannedWords(newNickname)) {
+    alert("Nickname contains inappropriate words");
+    return;
+  }
+  
+  myNickname = newNickname.substring(0, 20);
+  nicknameSet = true;
+  document.getElementById('currentNickname').textContent = myNickname;
+  document.getElementById('nicknameModal').style.display = 'none';
+  
+  // Save to localStorage
+  localStorage.setItem('talkrush_nickname', myNickname);
+  
+  // Update in Firebase
+  updateNicknameInDB();
+}
+
+function updateNicknameInDB() {
+  db.ref(`group/nicknames/${myId}`).set({
+    nickname: myNickname,
+    lastActive: Date.now()
+  });
 }
 
 function joinGroupChat() {
@@ -896,7 +985,8 @@ function sendMessageToGroup(text) {
   const message = {
     text: text,
     sender: myId,
-    timestamp: timestamp
+    timestamp: timestamp,
+    nickname: myNickname
   };
   
   appendMessage("me", text, timestamp);
@@ -905,6 +995,7 @@ function sendMessageToGroup(text) {
   newMsgRef.set(message)
     .then(() => {
       isSendingMessage = false;
+      updateNicknameInDB();
     })
     .catch(err => {
       console.error("Error sending message:", err);
@@ -975,7 +1066,8 @@ function sendImageToGroup(blob) {
     type: "image",
     sender: myId,
     timestamp: timestamp,
-    blob: blob
+    blob: blob,
+    nickname: myNickname
   };
   
   appendImage("me", blob, timestamp);
@@ -1001,7 +1093,8 @@ function sendGifToGroup(url) {
     type: "gif",
     sender: myId,
     timestamp: timestamp,
-    url: url
+    url: url,
+    nickname: myNickname
   };
   
   appendGif("me", url, timestamp);
@@ -1027,6 +1120,25 @@ function displayMessage(msg) {
   div.className = "msg " + (msg.sender === myId ? "me" : "stranger");
   div.setAttribute('data-id', msg.timestamp);
   
+  // Add nickname element
+  const nicknameEl = document.createElement("div");
+  nicknameEl.className = "msg-nickname";
+  nicknameEl.style.fontWeight = "bold";
+  nicknameEl.style.marginBottom = "3px";
+  
+  // Get nickname from Firebase or use default
+  if (msg.nickname) {
+    nicknameEl.textContent = msg.nickname;
+  } else {
+    // Fallback to check nicknames in database
+    db.ref(`group/nicknames/${msg.sender}`).once('value').then(snapshot => {
+      const userData = snapshot.val();
+      nicknameEl.textContent = userData?.nickname || 'Guest';
+    });
+  }
+  
+  div.appendChild(nicknameEl);
+  
   if (msg.type === "image") {
     const img = document.createElement("img");
     img.src = msg.blob;
@@ -1036,7 +1148,7 @@ function displayMessage(msg) {
     img.src = msg.url;
     div.appendChild(img);
   } else {
-    div.textContent = msg.text;
+    div.appendChild(document.createTextNode(msg.text));
   }
   
   const time = document.createElement("div");
@@ -1052,7 +1164,17 @@ function appendMessage(sender, msg, timestamp = Date.now()) {
   const div = document.createElement("div");
   div.className = "msg " + sender;
   div.setAttribute('data-id', timestamp);
-  div.textContent = msg;
+  
+  // Add nickname
+  const nicknameEl = document.createElement("div");
+  nicknameEl.className = "msg-nickname";
+  nicknameEl.style.fontWeight = "bold";
+  nicknameEl.style.marginBottom = "3px";
+  nicknameEl.textContent = myNickname;
+  div.appendChild(nicknameEl);
+  
+  div.appendChild(document.createTextNode(msg));
+  
   const time = document.createElement("div");
   time.className = "timestamp";
   time.textContent = formatTimestamp(timestamp);
@@ -1067,9 +1189,19 @@ function appendImage(sender, blob, timestamp = Date.now()) {
   const div = document.createElement("div");
   div.className = "msg " + sender;
   div.setAttribute('data-id', timestamp);
+  
+  // Add nickname
+  const nicknameEl = document.createElement("div");
+  nicknameEl.className = "msg-nickname";
+  nicknameEl.style.fontWeight = "bold";
+  nicknameEl.style.marginBottom = "3px";
+  nicknameEl.textContent = myNickname;
+  div.appendChild(nicknameEl);
+  
   const img = document.createElement("img");
   img.src = blob;
   div.appendChild(img);
+  
   const time = document.createElement("div");
   time.className = "timestamp";
   time.textContent = formatTimestamp(timestamp);
@@ -1084,9 +1216,19 @@ function appendGif(sender, url, timestamp = Date.now()) {
   const div = document.createElement("div");
   div.className = "msg " + sender;
   div.setAttribute('data-id', timestamp);
+  
+  // Add nickname
+  const nicknameEl = document.createElement("div");
+  nicknameEl.className = "msg-nickname";
+  nicknameEl.style.fontWeight = "bold";
+  nicknameEl.style.marginBottom = "3px";
+  nicknameEl.textContent = myNickname;
+  div.appendChild(nicknameEl);
+  
   const img = document.createElement("img");
   img.src = url;
   div.appendChild(img);
+  
   const time = document.createElement("div");
   time.className = "timestamp";
   time.textContent = formatTimestamp(timestamp);
@@ -1221,6 +1363,9 @@ window.addEventListener("click", (e) => {
     gifModal.style.display = "none";
   }
 });
+
+// Nickname display click handler
+document.getElementById("nicknameDisplay").addEventListener("click", showNicknameModal);
 
 // Theme toggle functionality
 const themeToggle = document.getElementById('themeToggle');
