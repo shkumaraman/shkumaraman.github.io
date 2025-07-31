@@ -662,6 +662,8 @@ let peer, myConn, myId, waitingRef;
 let currentSystemMessage = null;
 let isConnected = false;
 let localStream, remoteStream;
+let escPressedOnce = false;
+let escTimer = null;
 
 // DOM elements
 const remoteVideo = document.getElementById('remoteVideo');
@@ -674,6 +676,57 @@ const newChatBtn = document.getElementById('newChatBtn');
 // Initialize video chat when page loads
 window.addEventListener('load', function() {
   initVideoChat();
+});
+
+// Handle page refresh/close
+window.addEventListener('beforeunload', function(e) {
+  if (isConnected) {
+    e.preventDefault();
+    e.returnValue = 'Are you sure you want to leave? Your video chat will be disconnected.';
+    return e.returnValue;
+  }
+  
+  // Clean up resources
+  if (peer) peer.destroy();
+  if (localStream) {
+    localStream.getTracks().forEach(track => track.stop());
+  }
+  if (remoteStream) {
+    remoteStream.getTracks().forEach(track => track.stop());
+  }
+  
+  // Remove from waiting list if still there
+  if (myId) {
+    db.ref("videoWaiting").orderByValue().equalTo(myId).once('value', (snap) => {
+      snap.forEach(child => child.ref.remove());
+    });
+  }
+});
+
+// Escape key functionality
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    if (!escPressedOnce) {
+      // First press - show message
+      escPressedOnce = true;
+      showSystemMessage("Press Esc again to skip this chat and find someone new");
+      
+      // Set timer to reset after 3 seconds
+      escTimer = setTimeout(() => {
+        escPressedOnce = false;
+        hideSystemMessage();
+      }, 3000);
+    } else {
+      // Second press - skip chat
+      clearTimeout(escTimer);
+      escPressedOnce = false;
+      if (myConn) myConn.close();
+      cleanUpWaitingList();
+      isConnected = false;
+      hideNewChatButton();
+      startPeer();
+    }
+  }
 });
 
 async function initVideoChat() {
@@ -897,23 +950,6 @@ themeToggle.addEventListener('click', () => {
     themeToggle.innerHTML = '<i class="fas fa-moon"></i>';
   }
 });
-
-// Clean up on page unload
-window.addEventListener('beforeunload', () => {
-  if (peer) peer.destroy();
-  if (localStream) {
-    localStream.getTracks().forEach(track => track.stop());
-  }
-  if (remoteStream) {
-    remoteStream.getTracks().forEach(track => track.stop());
-  }
-  // Remove from waiting list if still there
-  if (myId) {
-    db.ref("videoWaiting").orderByValue().equalTo(myId).once('value', (snap) => {
-      snap.forEach(child => child.ref.remove());
-    });
-  }
-});
-  </script>
+</script>
 </body>
 </html>
