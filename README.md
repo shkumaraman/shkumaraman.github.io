@@ -1,5 +1,3 @@
-# SHKUMARAMAN  
-
 👋 *Hi, I’m Aman Kumar – creator of TalkRush, the fastest way to chat with strangers anonymously!*  
 
 ---
