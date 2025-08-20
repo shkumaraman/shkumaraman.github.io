@@ -23,4 +23,4 @@
 - 🐦 Twitter: [@sh_kumar_aman](https://twitter.com/sh_kumar_aman)  
 - 📷 Instagram: [@sh.kumar.aman](https://instagram.com/sh.kumar.aman)  
 
-*Let’s make conversations fun and effortless!* �  
+*Let’s make conversations fun and effortless!*
