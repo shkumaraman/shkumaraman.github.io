@@ -870,9 +870,11 @@
   Made with love in Bharat ♥️
 </footer>
   
-<script src="https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js"></script>
-<script src="https://www.gstatic.com/firebasejs/12.1.0/firebase-database.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap/dist/js/bootstrap.bundle.min.js"></script>  
+<!-- Firebase v12.1.0 compat -->
+<script src="https://www.gstatic.com/firebasejs/12.1.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.1.0/firebase-database-compat.js"></script>
+
 <script>
 // Firebase config
 const firebaseConfig = {
@@ -890,542 +892,181 @@ let isSendingGif = false;
 let isSendingMessage = false;
 let initialMessagesLoaded = false;
 
-// Bad word filter system
+// Bad word filter
 let bannedWords = [];
-
-// Load the banned words from filter.txt
 async function loadBannedWords() {
   try {
-    const response = await fetch('filter.txt');
-    const text = await response.text();
-    bannedWords = text.split('\n').map(word => word.trim().toLowerCase());
-    console.log("Banned words loaded successfully");
-  } catch (err) {
-    console.error("Error loading banned words:", err);
-  }
+    const res = await fetch('filter.txt');
+    const text = await res.text();
+    bannedWords = text.split('\n').map(w => w.trim().toLowerCase());
+    console.log("Banned words loaded:", bannedWords.length);
+  } catch(e){ console.error("Error loading banned words", e); }
+}
+function containsBannedWords(msg) {
+  return bannedWords.some(w => w && new RegExp(`\\b${w}\\b`, 'i').test(msg));
 }
 
-// Enhanced check for banned words with case insensitivity and word boundaries
-function containsBannedWords(message) {
-  const lowerMsg = message.toLowerCase();
-  return bannedWords.some(word => {
-    if (!word) return false;
-    // Create regex pattern that matches word with any case variation
-    const pattern = new RegExp(`\\b${word}\\b`, 'i');
-    return pattern.test(message);
-  });
-}
-
-// Initialize chat when page loads
+// Initialize chat
 function initializeChat() {
   myId = 'user_' + Math.random().toString(36).substr(2, 9);
   loadBannedWords();
-  
-  // Check if nickname exists in localStorage
+
   const savedNickname = localStorage.getItem('talkrush_nickname');
-  if (savedNickname) {
-    myNickname = savedNickname;
+  if(savedNickname){ 
+    myNickname = savedNickname; 
     nicknameSet = true;
     document.getElementById('currentNickname').textContent = myNickname;
     updateNicknameInDB();
   }
-  
-  // Show nickname modal if not set
-  if (!nicknameSet) {
-    showNicknameModal();
-  }
-  
+  if(!nicknameSet) showNicknameModal();
   logSystem("Welcome to TalkRush Group Chat!");
   joinGroupChat();
 }
 
-function showNicknameModal() {
-  document.getElementById('nicknameModal').style.display = 'flex';
+// Nickname modal
+function showNicknameModal(){ 
+  document.getElementById('nicknameModal').style.display='flex';
   document.getElementById('nicknameInput').focus();
 }
-
-function saveNickname() {
-  const nicknameInput = document.getElementById('nicknameInput');
-  const newNickname = nicknameInput.value.trim();
-  
-  if (!newNickname) {
-    alert("Please enter a nickname");
-    return;
-  }
-  
-  if (containsBannedWords(newNickname)) {
-    alert("Nickname contains inappropriate words");
-    return;
-  }
-  
-  myNickname = newNickname.substring(0, 20);
+function saveNickname(){
+  const val = document.getElementById('nicknameInput').value.trim();
+  if(!val){ alert("Enter nickname"); return; }
+  if(containsBannedWords(val)){ alert("Inappropriate nickname"); return; }
+  myNickname = val.substring(0,20);
   nicknameSet = true;
-  document.getElementById('currentNickname').textContent = myNickname;
-  document.getElementById('nicknameModal').style.display = 'none';
-  
-  // Save to localStorage
+  document.getElementById('currentNickname').textContent=myNickname;
+  document.getElementById('nicknameModal').style.display='none';
   localStorage.setItem('talkrush_nickname', myNickname);
-  
-  // Update in Firebase
   updateNicknameInDB();
 }
-
-function updateNicknameInDB() {
-  db.ref(`group/nicknames/${myId}`).set({
-    nickname: myNickname,
-    lastActive: Date.now()
-  });
+function updateNicknameInDB(){
+  db.ref(`group/nicknames/${myId}`).set({ nickname: myNickname, lastActive: Date.now() });
 }
 
-function joinGroupChat() {
-  const messagesRef = db.ref("group/messages").limitToLast(messageLimit);
-  
-  if (!initialMessagesLoaded) {
-    messagesRef.once('value', (snapshot) => {
-      const messages = snapshot.val();
-      if (messages) {
-        Object.values(messages).forEach(msg => {
-          if (msg.timestamp > lastMessageTimestamp) {
-            displayMessage(msg);
-            lastMessageTimestamp = msg.timestamp;
-          }
-        });
-      }
-      scrollToBottom();
-      initialMessagesLoaded = true;
+// Group chat
+function joinGroupChat(){
+  const ref = db.ref("group/messages").limitToLast(messageLimit);
+  if(!initialMessagesLoaded){
+    ref.once('value', snap => {
+      const msgs = snap.val();
+      if(msgs) Object.values(msgs).forEach(m => { if(m.timestamp>lastMessageTimestamp){ displayMessage(m); lastMessageTimestamp=m.timestamp; }});
+      scrollToBottom(); initialMessagesLoaded=true;
     });
   }
-  
-  messagesRef.on('child_added', (snapshot) => {
-    const msg = snapshot.val();
-    if (msg.timestamp > lastMessageTimestamp && msg.sender !== myId) {
-      displayMessage(msg);
-      lastMessageTimestamp = msg.timestamp;
-      scrollToBottom();
-    }
+  ref.on('child_added', snap=>{
+    const m = snap.val();
+    if(m.timestamp>lastMessageTimestamp && m.sender!==myId){ displayMessage(m); lastMessageTimestamp=m.timestamp; scrollToBottom(); }
   });
 }
-
-function sendMessageToGroup(text) {
-  if (!text.trim() || isSendingMessage) return;
-  isSendingMessage = true;
-  
+function sendMessageToGroup(text){
+  if(!text.trim() || isSendingMessage) return; isSendingMessage=true;
   const timestamp = Date.now();
-  const message = {
-    text: text,
-    sender: myId,
-    timestamp: timestamp,
-    nickname: myNickname
-  };
-  
+  const msg = { text, sender:myId, timestamp, nickname:myNickname };
   appendMessage("me", text, timestamp);
-  
-  const newMsgRef = db.ref("group/messages").push();
-  newMsgRef.set(message)
-    .then(() => {
-      isSendingMessage = false;
-      updateNicknameInDB();
-    })
-    .catch(err => {
-      console.error("Error sending message:", err);
-      isSendingMessage = false;
-    });
+  db.ref("group/messages").push().set(msg).then(()=>{ isSendingMessage=false; updateNicknameInDB(); })
+  .catch(e=>{ console.error(e); isSendingMessage=false; });
 }
 
-function compressImage(file, callback) {
+// Image/GIF
+function compressImage(file, callback){
   const reader = new FileReader();
-  reader.onload = function(event) {
+  reader.onload = e=>{
     const img = new Image();
-    img.onload = function() {
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      
-      let width = img.width;
-      let height = img.height;
-      const maxDimension = 1024;
-      const quality = 0.7;
-      
-      if (width > height) {
-        if (width > maxDimension) {
-          height *= maxDimension / width;
-          width = maxDimension;
-        }
-      } else {
-        if (height > maxDimension) {
-          width *= maxDimension / height;
-          height = maxDimension;
-        }
-      }
-      
-      canvas.width = width;
-      canvas.height = height;
-      ctx.drawImage(img, 0, 0, width, height);
-      
-      let qualityAdjusted = quality;
-      let result;
-      
-      do {
-        result = canvas.toDataURL('image/jpeg', qualityAdjusted);
-        qualityAdjusted -= 0.05;
-        if (qualityAdjusted <= 0.1) break;
-      } while (result.length > 100 * 1024);
-      
-      if (result.length > 100 * 1024) {
-        width *= 0.9;
-        height *= 0.9;
-        canvas.width = width;
-        canvas.height = height;
-        ctx.drawImage(img, 0, 0, width, height);
-        result = canvas.toDataURL('image/jpeg', 0.7);
-      }
-      
+    img.onload = ()=>{
+      const canvas=document.createElement('canvas'); const ctx=canvas.getContext('2d');
+      let w=img.width, h=img.height, max=1024; if(w>h){ if(w>max){h*=max/w; w=max;} } else { if(h>max){ w*=max/h; h=max;} }
+      canvas.width=w; canvas.height=h; ctx.drawImage(img,0,0,w,h);
+      let q=0.7, result; do{ result=canvas.toDataURL('image/jpeg',q); q-=0.05; if(q<=0.1) break; }while(result.length>100*1024);
+      if(result.length>100*1024){ w*=0.9; h*=0.9; canvas.width=w; canvas.height=h; ctx.drawImage(img,0,0,w,h); result=canvas.toDataURL('image/jpeg',0.7); }
       callback(result);
-    };
-    img.src = event.target.result;
-  };
-  reader.readAsDataURL(file);
+    }; img.src=e.target.result;
+  }; reader.readAsDataURL(file);
 }
-
-function sendImageToGroup(blob) {
-  if (isSendingMessage) return;
-  isSendingMessage = true;
-  
-  const timestamp = Date.now();
-  const message = {
-    type: "image",
-    sender: myId,
-    timestamp: timestamp,
-    blob: blob,
-    nickname: myNickname
-  };
-  
+function sendImageToGroup(blob){
+  if(isSendingMessage) return; isSendingMessage=true;
+  const timestamp=Date.now();
+  const msg={type:"image", sender:myId, timestamp, blob, nickname:myNickname};
   appendImage("me", blob, timestamp);
-  
-  const newMsgRef = db.ref("group/messages").push();
-  newMsgRef.set(message)
-    .then(() => {
-      isSendingMessage = false;
-    })
-    .catch(err => {
-      console.error("Error sending image:", err);
-      isSendingMessage = false;
-    });
+  db.ref("group/messages").push().set(msg).then(()=>isSendingMessage=false).catch(e=>{console.error(e); isSendingMessage=false; });
 }
-
-function sendGifToGroup(url) {
-  if (isSendingGif || isSendingMessage) return;
-  isSendingGif = true;
-  isSendingMessage = true;
-  
-  const timestamp = Date.now();
-  const message = {
-    type: "gif",
-    sender: myId,
-    timestamp: timestamp,
-    url: url,
-    nickname: myNickname
-  };
-  
+function sendGifToGroup(url){
+  if(isSendingGif || isSendingMessage) return; isSendingGif=true; isSendingMessage=true;
+  const timestamp=Date.now();
+  const msg={type:"gif", sender:myId, timestamp, url, nickname:myNickname};
   appendGif("me", url, timestamp);
-  
-  const newMsgRef = db.ref("group/messages").push();
-  newMsgRef.set(message)
-    .then(() => {
-      isSendingGif = false;
-      isSendingMessage = false;
-    })
-    .catch(err => {
-      console.error("Error sending GIF:", err);
-      isSendingGif = false;
-      isSendingMessage = false;
-    });
+  db.ref("group/messages").push().set(msg).then(()=>{ isSendingGif=false; isSendingMessage=false; })
+  .catch(e=>{ console.error(e); isSendingGif=false; isSendingMessage=false; });
 }
 
 // UI Functions
-function displayMessage(msg) {
-  if (document.querySelector(`[data-id="${msg.timestamp}"]`)) return;
-  
-  const div = document.createElement("div");
-  div.className = "msg " + (msg.sender === myId ? "me" : "stranger");
-  div.setAttribute('data-id', msg.timestamp);
-  
-  // Add nickname element
-  const nicknameEl = document.createElement("div");
-  nicknameEl.className = "msg-nickname";
-  nicknameEl.style.fontWeight = "bold";
-  nicknameEl.style.marginBottom = "3px";
-  
-  // Get nickname from Firebase or use default
-  if (msg.nickname) {
-    nicknameEl.textContent = msg.nickname;
-  } else {
-    // Fallback to check nicknames in database
-    db.ref(`group/nicknames/${msg.sender}`).once('value').then(snapshot => {
-      const userData = snapshot.val();
-      nicknameEl.textContent = userData?.nickname || 'Guest';
-    });
-  }
-  
-  div.appendChild(nicknameEl);
-  
-  if (msg.type === "image") {
-    const img = document.createElement("img");
-    img.src = msg.blob;
-    div.appendChild(img);
-  } else if (msg.type === "gif") {
-    const img = document.createElement("img");
-    img.src = msg.url;
-    div.appendChild(img);
-  } else {
-    div.appendChild(document.createTextNode(msg.text));
-  }
-  
-  const time = document.createElement("div");
-  time.className = "timestamp";
-  time.textContent = formatTimestamp(msg.timestamp);
-  div.appendChild(time);
-  document.getElementById("chatLog").appendChild(div);
+function displayMessage(m){ if(document.querySelector(`[data-id="${m.timestamp}"]`)) return;
+  const div=document.createElement("div"); div.className="msg "+(m.sender===myId?"me":"stranger"); div.setAttribute('data-id',m.timestamp);
+  const nick=document.createElement("div"); nick.className="msg-nickname"; nick.style.fontWeight="bold"; nick.style.marginBottom="3px";
+  nick.textContent=m.nickname||'Guest'; div.appendChild(nick);
+  if(m.type==="image"){ const img=document.createElement("img"); img.src=m.blob; div.appendChild(img); }
+  else if(m.type==="gif"){ const img=document.createElement("img"); img.src=m.url; div.appendChild(img); }
+  else div.appendChild(document.createTextNode(m.text));
+  const time=document.createElement("div"); time.className="timestamp"; time.textContent=formatTimestamp(m.timestamp); div.appendChild(time);
+  document.getElementById("chatLog").appendChild(div); scrollToBottom();
 }
-
-function appendMessage(sender, msg, timestamp = Date.now()) {
-  if (document.querySelector(`[data-id="${timestamp}"]`)) return;
-  
-  const div = document.createElement("div");
-  div.className = "msg " + sender;
-  div.setAttribute('data-id', timestamp);
-  
-  // Add nickname
-  const nicknameEl = document.createElement("div");
-  nicknameEl.className = "msg-nickname";
-  nicknameEl.style.fontWeight = "bold";
-  nicknameEl.style.marginBottom = "3px";
-  nicknameEl.textContent = myNickname;
-  div.appendChild(nicknameEl);
-  
+function appendMessage(sender,msg,timestamp=Date.now()){ if(document.querySelector(`[data-id="${timestamp}"]`)) return;
+  const div=document.createElement("div"); div.className="msg "+sender; div.setAttribute('data-id',timestamp);
+  const nick=document.createElement("div"); nick.className="msg-nickname"; nick.style.fontWeight="bold"; nick.style.marginBottom="3px"; nick.textContent=myNickname; div.appendChild(nick);
   div.appendChild(document.createTextNode(msg));
-  
-  const time = document.createElement("div");
-  time.className = "timestamp";
-  time.textContent = formatTimestamp(timestamp);
-  div.appendChild(time);
-  document.getElementById("chatLog").appendChild(div);
-  scrollToBottom();
+  const time=document.createElement("div"); time.className="timestamp"; time.textContent=formatTimestamp(timestamp); div.appendChild(time);
+  document.getElementById("chatLog").appendChild(div); scrollToBottom();
+}
+function appendImage(sender,blob,timestamp=Date.now()){ if(document.querySelector(`[data-id="${timestamp}"]`)) return;
+  const div=document.createElement("div"); div.className="msg "+sender; div.setAttribute('data-id',timestamp);
+  const nick=document.createElement("div"); nick.className="msg-nickname"; nick.style.fontWeight="bold"; nick.style.marginBottom="3px"; nick.textContent=myNickname; div.appendChild(nick);
+  const img=document.createElement("img"); img.src=blob; div.appendChild(img);
+  const time=document.createElement("div"); time.className="timestamp"; time.textContent=formatTimestamp(timestamp); div.appendChild(time);
+  document.getElementById("chatLog").appendChild(div); scrollToBottom();
+}
+function appendGif(sender,url,timestamp=Date.now()){ if(document.querySelector(`[data-id="${timestamp}"]`)) return;
+  const div=document.createElement("div"); div.className="msg "+sender; div.setAttribute('data-id',timestamp);
+  const nick=document.createElement("div"); nick.className="msg-nickname"; nick.style.fontWeight="bold"; nick.style.marginBottom="3px"; nick.textContent=myNickname; div.appendChild(nick);
+  const img=document.createElement("img"); img.src=url; div.appendChild(img);
+  const time=document.createElement("div"); time.className="timestamp"; time.textContent=formatTimestamp(timestamp); div.appendChild(time);
+  document.getElementById("chatLog").appendChild(div); scrollToBottom();
+}
+function formatTimestamp(ts){ return ts?new Date(ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}):""; }
+function scrollToBottom(){ const log=document.getElementById("chatLog"); log.scrollTop=log.scrollHeight; }
+function logSystem(msg){ const div=document.createElement("div"); div.className="msg system-msg"; div.textContent=msg; document.getElementById("chatLog").appendChild(div); scrollToBottom(); }
+
+// Event listeners
+document.getElementById("msgInput").addEventListener("keypress", e=>{ if(e.key==="Enter") sendMessage(); });
+document.getElementById("sendBtn").onclick=sendMessage;
+function sendMessage(){ const input=document.getElementById("msgInput"); const msg=input.value.trim();
+  if(msg){ if(containsBannedWords(msg)){ logSystem("Message contains inappropriate content."); input.value=""; return; }
+    sendMessageToGroup(msg); input.value=""; }
 }
 
-function appendImage(sender, blob, timestamp = Date.now()) {
-  if (document.querySelector(`[data-id="${timestamp}"]`)) return;
-  
-  const div = document.createElement("div");
-  div.className = "msg " + sender;
-  div.setAttribute('data-id', timestamp);
-  
-  // Add nickname
-  const nicknameEl = document.createElement("div");
-  nicknameEl.className = "msg-nickname";
-  nicknameEl.style.fontWeight = "bold";
-  nicknameEl.style.marginBottom = "3px";
-  nicknameEl.textContent = myNickname;
-  div.appendChild(nicknameEl);
-  
-  const img = document.createElement("img");
-  img.src = blob;
-  div.appendChild(img);
-  
-  const time = document.createElement("div");
-  time.className = "timestamp";
-  time.textContent = formatTimestamp(timestamp);
-  div.appendChild(time);
-  document.getElementById("chatLog").appendChild(div);
-  scrollToBottom();
-}
+// Nickname modal
+document.getElementById('nicknameInput').addEventListener('keypress',e=>{ if(e.key==="Enter") saveNickname(); });
+document.getElementById('nicknameDisplay')?.addEventListener('click',showNicknameModal);
 
-function appendGif(sender, url, timestamp = Date.now()) {
-  if (document.querySelector(`[data-id="${timestamp}"]`)) return;
-  
-  const div = document.createElement("div");
-  div.className = "msg " + sender;
-  div.setAttribute('data-id', timestamp);
-  
-  // Add nickname
-  const nicknameEl = document.createElement("div");
-  nicknameEl.className = "msg-nickname";
-  nicknameEl.style.fontWeight = "bold";
-  nicknameEl.style.marginBottom = "3px";
-  nicknameEl.textContent = myNickname;
-  div.appendChild(nicknameEl);
-  
-  const img = document.createElement("img");
-  img.src = url;
-  div.appendChild(img);
-  
-  const time = document.createElement("div");
-  time.className = "timestamp";
-  time.textContent = formatTimestamp(timestamp);
-  div.appendChild(time);
-  document.getElementById("chatLog").appendChild(div);
-  scrollToBottom();
-}
-
-function formatTimestamp(timestamp) {
-  if (!timestamp) return "";
-  const date = new Date(timestamp);
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
-
-function scrollToBottom() {
-  const log = document.getElementById("chatLog");
-  log.scrollTop = log.scrollHeight;
-}
-
-function logSystem(msg) {
-  const div = document.createElement("div");
-  div.className = "msg system-msg";
-  div.textContent = msg;
-  document.getElementById("chatLog").appendChild(div);
-  scrollToBottom();
-}
-
-// Event Listeners
-document.getElementById("msgInput").addEventListener("keypress", (e) => {
-  if (e.key === "Enter") {
-    sendMessage();
-  }
+// Image/GIF inputs
+document.getElementById('imgInput')?.addEventListener('change', e=>{
+  const file=e.target.files[0]; if(!file) return;
+  if(file.size>5*1024*1024){ logSystem("Image too large!"); e.target.value=""; return; }
+  compressImage(file,sendImageToGroup); e.target.value="";
+});
+document.getElementById('gifBtn')?.addEventListener('click', e=>{
+  e.preventDefault(); const gifModal=document.getElementById('gifModal'); gifModal.style.display=gifModal.style.display==='block'?'none':'block';
 });
 
-document.getElementById("sendBtn").onclick = sendMessage;
-
-function sendMessage() {
-  const input = document.getElementById("msgInput");
-  const msg = input.value.trim();
-  
-  if (msg) {
-    if (containsBannedWords(msg)) {
-      logSystem("Your message contains inappropriate content and cannot be sent.");
-      input.value = "";
-      return;
-    }
-    
-    sendMessageToGroup(msg);
-    input.value = "";
-  }
-}
-
-// Image button click handler
-document.getElementById("imgBtn").addEventListener("click", () => {
-  document.getElementById("imgInput").click();
-});
-
-document.getElementById("imgInput").addEventListener("change", (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-
-  if (file.size > 5 * 1024 * 1024) {
-    logSystem("Image too large! Please select an image smaller than 5MB.");
-    e.target.value = "";
-    return;
-  }
-
-  compressImage(file, (compressedImage) => {
-    sendImageToGroup(compressedImage);
-  });
-  
-  e.target.value = "";
-});
-
-// GIF button click handler
-document.getElementById("gifBtn").addEventListener("click", (e) => {
-  e.preventDefault();
-  gifModal.style.display = gifModal.style.display === "block" ? "none" : "block";
-  if (gifModal.style.display === "block") {
-    fetchTrendingGifs();
-  }
-});
-
-// GIF Search functionality
-const gifModal = document.getElementById("gifModal");
-const gifSearch = document.getElementById("gifSearch");
-const gifResults = document.getElementById("gifResults");
-
-gifSearch.addEventListener("keypress", (e) => {
-  if (e.key === "Enter") {
-    searchGifs(gifSearch.value);
-  }
-});
-
-async function fetchTrendingGifs() {
-  try {
-    const response = await fetch(`https://g.tenor.com/v1/trending?key=LIVDSRZULELA&limit=20`);
-    const data = await response.json();
-    displayGifs(data.results);
-  } catch (error) {
-    console.error("Error fetching GIFs:", error);
-  }
-}
-
-async function searchGifs(query) {
-  try {
-    const response = await fetch(`https://g.tenor.com/v1/search?q=${encodeURIComponent(query)}&key=LIVDSRZULELA&limit=20`);
-    const data = await response.json();
-    displayGifs(data.results);
-  } catch (error) {
-    console.error("Error searching GIFs:", error);
-  }
-}
-
-function displayGifs(gifs) {
-  gifResults.innerHTML = "";
-  gifs.forEach(gif => {
-    const gifUrl = gif.media[0].gif.url;
-    const img = document.createElement("img");
-    img.src = gifUrl;
-    img.className = "gif-item";
-    img.onclick = () => {
-      sendGifToGroup(gifUrl);
-      gifModal.style.display = "none";
-    };
-    gifResults.appendChild(img);
-  });
-}
-
-window.addEventListener("click", (e) => {
-  if (e.target === gifModal) {
-    gifModal.style.display = "none";
-  }
-});
-
-// Nickname display click handler
-document.getElementById("nicknameDisplay").addEventListener("click", showNicknameModal);
-
-// Theme toggle functionality
-const themeToggle = document.getElementById('themeToggle');
-const body = document.body;
-
-const savedTheme = localStorage.getItem('theme') || 
-                   (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
-
-if (savedTheme === 'light') {
-  body.classList.add('light-mode');
-  themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
-} else {
-  themeToggle.innerHTML = '<i class="fas fa-moon"></i>';
-}
-
-themeToggle.addEventListener('click', () => {
+// Theme toggle
+const themeToggle=document.getElementById('themeToggle'), body=document.body;
+const savedTheme=localStorage.getItem('theme')|| (window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');
+if(savedTheme==='light'){ body.classList.add('light-mode'); themeToggle.innerHTML='<i class="fas fa-sun"></i>'; } else themeToggle.innerHTML='<i class="fas fa-moon"></i>';
+themeToggle?.addEventListener('click',()=>{
   body.classList.toggle('light-mode');
-  
-  if (body.classList.contains('light-mode')) {
-    localStorage.setItem('theme', 'light');
-    themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
-  } else {
-    localStorage.setItem('theme', 'dark');
-    themeToggle.innerHTML = '<i class="fas fa-moon"></i>';
-  }
+  if(body.classList.contains('light-mode')){ localStorage.setItem('theme','light'); themeToggle.innerHTML='<i class="fas fa-sun"></i>'; }
+  else { localStorage.setItem('theme','dark'); themeToggle.innerHTML='<i class="fas fa-moon"></i>'; }
 });
 
-function closeModal() {
-  document.getElementById('chatModal').style.display = 'none';
-}
-
+// Initialize on load
 window.addEventListener('load', initializeChat);
 </script>
 </body>
