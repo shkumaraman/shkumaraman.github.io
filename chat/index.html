@@ -536,6 +536,66 @@ body.light-mode {
   color: var(--light-text);
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
 }
+
+/* Typing Indicator */
+.typing-indicator {
+  display: none;
+  align-self: flex-start;
+  background: var(--dark-msg-bg);
+  color: var(--dark-text);
+  padding: 8px 12px;
+  border-radius: 15px;
+  margin: 5px 0;
+  font-size: 0.9em;
+  font-style: italic;
+  max-width: 80%;
+  border-bottom-left-radius: 5px;
+}
+
+.light-mode .typing-indicator {
+  background: var(--light-msg-bg);
+  color: var(--light-text);
+}
+
+.typing-dots {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+}
+
+.typing-dots span {
+  height: 6px;
+  width: 6px;
+  border-radius: 50%;
+  background-color: currentColor;
+  display: inline-block;
+  margin: 0 1px;
+  opacity: 0.6;
+  animation: typingAnimation 1.4s infinite ease-in-out both;
+}
+
+.typing-dots span:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.typing-dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.typing-dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes typingAnimation {
+  0%, 80%, 100% { 
+    transform: scale(0.8);
+    opacity: 0.5;
+  }
+  40% { 
+    transform: scale(1);
+    opacity: 1;
+  }
+}
   
 /* Responsive adjustments */
 @media (max-width: 600px) {
@@ -646,7 +706,18 @@ body.light-mode {
   </div>
 </header>
 
-  <div id="chatLog"></div>
+  <div id="chatLog">
+    
+  <div id="typingIndicator" class="typing-indicator">
+  <span>Stranger is typing</span>
+  <div class="typing-dots">
+    <span></span>
+    <span></span>
+    <span></span>
+  </div>
+  </div>
+    
+  </div>
   
   <button id="newChatBtn" class="new-chat-btn" style="display: none;">Start New Chat</button>
   
@@ -924,6 +995,12 @@ let isConnected = false;
 let escPressedOnce = false;
 let escTimer = null;
 
+// Typing indicator variables
+let typingTimer;
+let isTyping = false;
+const TYPING_TIMEOUT = 1000; // 1 second delay
+const TYPING_DURATION = 3000; // Show typing for 3 seconds
+
 // Initialize when page loads
 window.addEventListener('load', function() {
   startPeer();
@@ -1075,21 +1152,37 @@ function setupConnection(conn) {
   
   conn.on("data", (data) => {
     if (typeof data === "string") {
+      // Check if it's a typing indicator message
+      if (data === "TYPING_START") {
+        showTypingIndicator();
+        return;
+      } else if (data === "TYPING_STOP") {
+        hideTypingIndicator();
+        return;
+      }
+      
+      // Regular message
       appendMessage("stranger", data);
+      // Hide typing indicator when message is received
+      hideTypingIndicator();
     } else if (data.type === "image") {
       appendImage("stranger", data.blob);
+      hideTypingIndicator();
     } else if (data.type === "gif") {
       appendGif("stranger", data.url);
+      hideTypingIndicator();
     }
   });
   
   conn.on("close", () => {
     endConnection("Stranger disconnected");
+    hideTypingIndicator();
   });
   
   conn.on("error", (err) => {
     console.error("Data connection error:", err);
     endConnection("Connection error");
+    hideTypingIndicator();
   });
 }
 
@@ -1098,6 +1191,11 @@ function endConnection(message) {
   myConn = null;
   isConnected = false;
   showNewChatButton();
+  
+  // Clear typing indicators
+  isTyping = false;
+  clearTimeout(typingTimer);
+  hideTypingIndicator();
 }
 
 function cleanUpWaitingList() {
@@ -1180,9 +1278,63 @@ function hideNewChatButton() {
   document.getElementById("newChatBtn").style.display = "none";
 }
 
+// Typing indicator functions
+function showTypingIndicator() {
+  const indicator = document.getElementById("typingIndicator");
+  indicator.style.display = "block";
+  scrollToBottom();
+}
+
+function hideTypingIndicator() {
+  const indicator = document.getElementById("typingIndicator");
+  indicator.style.display = "none";
+}
+
+// Send typing status to other user
+function sendTypingStatus(isTyping) {
+  if (myConn && isConnected) {
+    myConn.send(isTyping ? "TYPING_START" : "TYPING_STOP");
+  }
+}
+
 // Event Listeners
+document.getElementById("msgInput").addEventListener("input", (e) => {
+  if (!isTyping && e.target.value.length > 0) {
+    isTyping = true;
+    sendTypingStatus(true);
+  }
+  
+  // Clear previous timer
+  clearTimeout(typingTimer);
+  
+  if (e.target.value.length > 0) {
+    // Set a timer to stop typing indicator
+    typingTimer = setTimeout(() => {
+      isTyping = false;
+      sendTypingStatus(false);
+    }, TYPING_TIMEOUT);
+  } else {
+    // Input is empty, stop typing indicator
+    isTyping = false;
+    sendTypingStatus(false);
+  }
+});
+
 document.getElementById("msgInput").addEventListener("keypress", (e) => {
-  if (e.key === "Enter") sendMessage();
+  if (e.key === "Enter") {
+    // Stop typing indicator when message is sent
+    isTyping = false;
+    sendTypingStatus(false);
+    clearTimeout(typingTimer);
+    sendMessage();
+  }
+});
+
+document.getElementById("msgInput").addEventListener("blur", () => {
+  // Stop typing indicator when input loses focus
+  isTyping = false;
+  sendTypingStatus(false);
+  clearTimeout(typingTimer);
 });
 
 document.getElementById("sendBtn").onclick = sendMessage;
@@ -1194,6 +1346,11 @@ function sendMessage() {
     myConn.send(msg);
     appendMessage("me", msg);
     input.value = "";
+    
+    // Stop typing indicator
+    isTyping = false;
+    sendTypingStatus(false);
+    clearTimeout(typingTimer);
   }
 }
 
