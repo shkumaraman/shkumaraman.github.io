@@ -924,6 +924,9 @@ let isConnected = false;
 let escPressedOnce = false;
 let escTimer = null;
 
+// GIPHY API Key (public beta key - consider getting your own)
+const GIPHY_API_KEY = 'Gc7131jiJuvI7IdN0HZ1D7w0K3vz2Z6p';
+
 // Initialize when page loads
 window.addEventListener('load', function() {
   startPeer();
@@ -1214,14 +1217,11 @@ document.getElementById("newChatBtn").onclick = () => {
   startPeer();
 };
 
-// Updated GIF Search functionality with Tenor API v2
+// GIF Search functionality with GIPHY
 const gifModal = document.getElementById("gifModal");
 const gifSearch = document.getElementById("gifSearch");
 const gifResults = document.getElementById("gifResults");
 const gifBtn = document.querySelector('[for="gifInput"]');
-
-const TENOR_API_KEY = "LIVDSRZULELA"; // demo key
-const CLIENT_KEY = "my_chat_app";     // koi bhi naam de sakte ho
 
 gifBtn.onclick = (e) => {
   e.preventDefault();
@@ -1235,12 +1235,9 @@ gifSearch.addEventListener("keypress", (e) => {
 
 async function fetchTrendingGifs() {
   try {
-    const response = await fetch(
-      `https://tenor.googleapis.com/v2/featured?key=${TENOR_API_KEY}&client_key=${CLIENT_KEY}&limit=20`
-    );
-    if (!response.ok) throw new Error("HTTP " + response.status);
+    const response = await fetch(`https://api.giphy.com/v1/gifs/trending?api_key=${GIPHY_API_KEY}&limit=20`);
     const data = await response.json();
-    displayGifs(data.results || []);
+    displayGifs(data.data);
   } catch (error) {
     console.error("Error fetching GIFs:", error);
     logSystem("Failed to load GIFs");
@@ -1248,15 +1245,15 @@ async function fetchTrendingGifs() {
 }
 
 async function searchGifs(query) {
-  if (!query.trim()) return fetchTrendingGifs();
+  if (!query.trim()) {
+    fetchTrendingGifs();
+    return;
+  }
   
   try {
-    const response = await fetch(
-      `https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(query)}&key=${TENOR_API_KEY}&client_key=${CLIENT_KEY}&limit=20`
-    );
-    if (!response.ok) throw new Error("HTTP " + response.status);
+    const response = await fetch(`https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_API_KEY}&q=${encodeURIComponent(query)}&limit=20`);
     const data = await response.json();
-    displayGifs(data.results || []);
+    displayGifs(data.data);
   } catch (error) {
     console.error("Error searching GIFs:", error);
     logSystem("Failed to search GIFs");
@@ -1266,8 +1263,7 @@ async function searchGifs(query) {
 function displayGifs(gifs) {
   gifResults.innerHTML = "";
   gifs.forEach(gif => {
-    const gifUrl = gif.media_formats?.tinygif?.url || gif.media_formats?.gif?.url;
-    if (!gifUrl) return;
+    const gifUrl = gif.images.fixed_height.url;
     const img = document.createElement("img");
     img.src = gifUrl;
     img.className = "gif-item";
