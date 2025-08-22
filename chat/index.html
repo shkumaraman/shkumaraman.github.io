@@ -536,6 +536,33 @@ body.light-mode {
   color: var(--light-text);
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
 }
+
+/* Typing indicator hidden by default */
+#typingIndicator {
+  display: none;
+  font-style: italic;
+  color: gray;
+  margin: 5px 10px;
+  font-size: 14px;
+}
+
+/* Animation dots */
+.typing-indicator span {
+  animation: blink 1.5s infinite;
+}
+
+.typing-indicator span:nth-child(2) {
+  animation-delay: 0.3s;
+}
+.typing-indicator span:nth-child(3) {
+  animation-delay: 0.6s;
+}
+
+@keyframes blink {
+  0%   { opacity: 0.2; }
+  20%  { opacity: 1; }
+  100% { opacity: 0.2; }
+}
   
 /* Responsive adjustments */
 @media (max-width: 600px) {
@@ -646,7 +673,13 @@ body.light-mode {
   </div>
 </header>
 
-  <div id="chatLog"></div>
+  <div id="chatLog">
+
+    <div id="typingIndicator" class="typing-indicator">
+  Stranger is typing<span>.</span><span>.</span><span>.</span>
+    </div>
+    
+  </div>
   
   <button id="newChatBtn" class="new-chat-btn" style="display: none;">Start New Chat</button>
   
@@ -924,13 +957,16 @@ let isConnected = false;
 let escPressedOnce = false;
 let escTimer = null;
 
-// Initialize when page loads
-window.addEventListener('load', function() {
-  startPeer();
-});
+// Typing indicator variables
+let typingTimer;
+let isTyping = false;
+const TYPING_TIMEOUT = 1000;
 
-// Handle page refresh/close
-window.addEventListener('beforeunload', function(e) {
+// Initialize when page loads
+window.addEventListener('load', startPeer);
+
+// Warn on refresh/close
+window.addEventListener('beforeunload', (e) => {
   if (isConnected) {
     e.preventDefault();
     e.returnValue = 'Are you sure you want to leave? Your chat will be disconnected.';
@@ -938,21 +974,17 @@ window.addEventListener('beforeunload', function(e) {
   }
 });
 
-// Escape key functionality
+// Escape key double press (skip chat)
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (!escPressedOnce) {
-      // First press - show message
       escPressedOnce = true;
       logSystem("Press Esc again to skip this chat and find someone new");
-      
-      // Set timer to reset after 3 seconds
       escTimer = setTimeout(() => {
         escPressedOnce = false;
         clearSystemMessage();
       }, 3000);
     } else {
-      // Second press - skip chat
       clearTimeout(escTimer);
       escPressedOnce = false;
       if (myConn) myConn.close();
@@ -965,31 +997,31 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+// Start PeerJS
 function startPeer() {
   clearSystemMessage();
   isConnected = false;
-  
   if (peer) peer.destroy();
-  
+
   logSystem("Looking for a stranger...");
-  
+
   peer = new Peer({
     config: {
       iceServers: [
-        { url: 'stun:stun.l.google.com:19302' },
-        { url: 'stun:stun1.l.google.com:19302' },
-        { url: 'stun:stun2.l.google.com:19302' },
-        { url: 'stun:stun3.l.google.com:19302' },
-        { url: 'stun:stun4.l.google.com:19302' }
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' },
+        { urls: 'stun:stun4.l.google.com:19302' }
       ]
     }
   });
-  
+
   peer.on('open', (id) => {
     myId = id;
     tryToFindMatch();
   });
-  
+
   peer.on('error', (err) => {
     console.error('PeerJS error:', err);
     showNewChatButton();
@@ -997,9 +1029,10 @@ function startPeer() {
   });
 }
 
+// Try to match with stranger
 function tryToFindMatch() {
   waitingRef = db.ref("waiting");
-  
+
   waitingRef.once('value', (snapshot) => {
     const list = snapshot.val();
     if (list) {
@@ -1011,11 +1044,11 @@ function tryToFindMatch() {
         }
       }
     }
-    
+
     if (!isConnected) {
       const newRef = waitingRef.push();
       newRef.set(myId);
-      
+
       waitingRef.on('child_added', (childSnapshot) => {
         const otherId = childSnapshot.val();
         if (otherId !== myId && !isConnected) {
@@ -1042,13 +1075,14 @@ function tryToFindMatch() {
   });
 }
 
+// Connect to peer
 function connectToPeer(otherId) {
   if (isConnected) return;
-  
+
   clearSystemMessage();
   logSystem("Connecting to stranger...");
   const conn = peer.connect(otherId);
-  
+
   conn.on("open", () => {
     if (!isConnected) {
       clearSystemMessage();
@@ -1056,7 +1090,7 @@ function connectToPeer(otherId) {
       setupConnection(conn);
     }
   });
-  
+
   conn.on("error", (err) => {
     console.error("Connection error:", err);
     if (!isConnected) {
@@ -1066,40 +1100,62 @@ function connectToPeer(otherId) {
   });
 }
 
+// Setup peer connection
 function setupConnection(conn) {
+  console.log("setupConnection called with peer:", conn.peer);
+
   if (myConn) myConn.close();
-  
+
   myConn = conn;
   isConnected = true;
   hideNewChatButton();
-  
+
   conn.on("data", (data) => {
+    console.log("Data received:", data);
+
     if (typeof data === "string") {
+      if (data === "TYPING_START") {
+        console.log("Received typing start from peer");
+        showTypingIndicator();
+        return;
+      } else if (data === "TYPING_STOP") {
+        console.log("Received typing stop from peer");
+        hideTypingIndicator();
+        return;
+      }
       appendMessage("stranger", data);
+      hideTypingIndicator();
     } else if (data.type === "image") {
       appendImage("stranger", data.blob);
+      hideTypingIndicator();
     } else if (data.type === "gif") {
       appendGif("stranger", data.url);
+      hideTypingIndicator();
     }
   });
-  
+
   conn.on("close", () => {
     endConnection("Stranger disconnected");
   });
-  
+
   conn.on("error", (err) => {
     console.error("Data connection error:", err);
     endConnection("Connection error");
   });
 }
 
+// End connection
 function endConnection(message) {
   logSystem(message);
   myConn = null;
   isConnected = false;
   showNewChatButton();
+  isTyping = false;
+  clearTimeout(typingTimer);
+  hideTypingIndicator();
 }
 
+// Clean waiting list
 function cleanUpWaitingList() {
   if (waitingRef) {
     waitingRef.off();
@@ -1109,7 +1165,7 @@ function cleanUpWaitingList() {
   }
 }
 
-// UI Functions
+// UI helpers
 function appendMessage(sender, msg) {
   const div = document.createElement("div");
   div.className = "msg " + sender;
@@ -1180,27 +1236,70 @@ function hideNewChatButton() {
   document.getElementById("newChatBtn").style.display = "none";
 }
 
-// Event Listeners
-document.getElementById("msgInput").addEventListener("keypress", (e) => {
-  if (e.key === "Enter") sendMessage();
+// Typing indicator
+function showTypingIndicator() {
+  document.getElementById("typingIndicator").style.display = "block";
+  scrollToBottom();
+}
+function hideTypingIndicator() {
+  document.getElementById("typingIndicator").style.display = "none";
+}
+function sendTypingStatus(isTyping) {
+  if (myConn && isConnected) {
+    myConn.send(isTyping ? "TYPING_START" : "TYPING_STOP");
+  }
+}
+
+// Message input listeners
+const msgInput = document.getElementById("msgInput");
+msgInput.addEventListener("input", (e) => {
+  if (!isTyping && e.target.value.length > 0) {
+    isTyping = true;
+    sendTypingStatus(true);
+  }
+  clearTimeout(typingTimer);
+  if (e.target.value.length > 0) {
+    typingTimer = setTimeout(() => {
+      isTyping = false;
+      sendTypingStatus(false);
+    }, TYPING_TIMEOUT);
+  } else {
+    isTyping = false;
+    sendTypingStatus(false);
+  }
+});
+msgInput.addEventListener("keypress", (e) => {
+  if (e.key === "Enter") {
+    isTyping = false;
+    sendTypingStatus(false);
+    clearTimeout(typingTimer);
+    sendMessage();
+  }
+});
+msgInput.addEventListener("blur", () => {
+  isTyping = false;
+  sendTypingStatus(false);
+  clearTimeout(typingTimer);
 });
 
 document.getElementById("sendBtn").onclick = sendMessage;
 
 function sendMessage() {
-  const input = document.getElementById("msgInput");
-  const msg = input.value.trim();
+  const msg = msgInput.value.trim();
   if (msg && myConn && isConnected) {
     myConn.send(msg);
     appendMessage("me", msg);
-    input.value = "";
+    msgInput.value = "";
+    isTyping = false;
+    sendTypingStatus(false);
+    clearTimeout(typingTimer);
   }
 }
 
+// Image send
 document.getElementById("imgInput").addEventListener("change", (e) => {
   const file = e.target.files[0];
   if (!file || !myConn || !isConnected) return;
-
   const reader = new FileReader();
   reader.onload = () => {
     myConn.send({ type: "image", blob: reader.result });
@@ -1210,19 +1309,20 @@ document.getElementById("imgInput").addEventListener("change", (e) => {
   e.target.value = "";
 });
 
+// GIF send
 document.getElementById("gifInput").addEventListener("change", (e) => {
   const file = e.target.files[0];
   if (!file || !myConn || !isConnected) return;
-
   const reader = new FileReader();
   reader.onload = () => {
-    myConn.send({ type: "image", blob: reader.result });
-    appendImage("me", reader.result);
+    myConn.send({ type: "gif", url: reader.result });
+    appendGif("me", reader.result);
   };
   reader.readAsDataURL(file);
   e.target.value = "";
 });
 
+// Skip chat
 document.getElementById("skipBtn").onclick = () => {
   if (myConn) myConn.close();
   cleanUpWaitingList();
@@ -1231,13 +1331,14 @@ document.getElementById("skipBtn").onclick = () => {
   showNewChatButton();
 };
 
+// Start new chat
 document.getElementById("newChatBtn").onclick = () => {
   document.getElementById("chatLog").innerHTML = "";
   hideNewChatButton();
   startPeer();
 };
 
-// GIF Search functionality
+// GIF search modal
 const gifModal = document.getElementById("gifModal");
 const gifSearch = document.getElementById("gifSearch");
 const gifResults = document.getElementById("gifResults");
@@ -1263,7 +1364,6 @@ async function fetchTrendingGifs() {
     logSystem("Failed to load GIFs");
   }
 }
-
 async function searchGifs(query) {
   try {
     const response = await fetch(`https://g.tenor.com/v1/search?q=${encodeURIComponent(query)}&key=LIVDSRZULELA&limit=20`);
@@ -1274,7 +1374,6 @@ async function searchGifs(query) {
     logSystem("Failed to search GIFs");
   }
 }
-
 function displayGifs(gifs) {
   gifResults.innerHTML = "";
   gifs.forEach(gif => {
@@ -1292,15 +1391,13 @@ function displayGifs(gifs) {
     gifResults.appendChild(img);
   });
 }
-
 window.addEventListener("click", (e) => {
   if (e.target === gifModal) gifModal.style.display = "none";
 });
 
-// Theme toggle functionality
+// Theme toggle
 const themeToggle = document.getElementById('themeToggle');
 const body = document.body;
-
 const savedTheme = localStorage.getItem('theme') || 
                  (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
 
@@ -1310,10 +1407,8 @@ if (savedTheme === 'light') {
 } else {
   themeToggle.innerHTML = '<i class="fas fa-moon"></i>';
 }
-
 themeToggle.addEventListener('click', () => {
   body.classList.toggle('light-mode');
-  
   if (body.classList.contains('light-mode')) {
     localStorage.setItem('theme', 'light');
     themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
