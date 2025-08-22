@@ -905,9 +905,10 @@ body.light-mode {
 </footer>
   
 <script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
-<script src="https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js"></script>
-<script src="https://www.gstatic.com/firebasejs/12.1.0/firebase-database.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap/dist/js/bootstrap.bundle.min.js"></script> 
+<!-- Firebase v12.1.0 (compat version) -->
+<script src="https://www.gstatic.com/firebasejs/12.1.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.1.0/firebase-database-compat.js"></script>
 
 <script>
 // Firebase config
@@ -941,17 +942,13 @@ window.addEventListener('beforeunload', function(e) {
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (!escPressedOnce) {
-      // First press - show message
       escPressedOnce = true;
       logSystem("Press Esc again to skip this chat and find someone new");
-      
-      // Set timer to reset after 3 seconds
       escTimer = setTimeout(() => {
         escPressedOnce = false;
         clearSystemMessage();
       }, 3000);
     } else {
-      // Second press - skip chat
       clearTimeout(escTimer);
       escPressedOnce = false;
       if (myConn) myConn.close();
@@ -967,11 +964,8 @@ document.addEventListener('keydown', (e) => {
 function startPeer() {
   clearSystemMessage();
   isConnected = false;
-  
   if (peer) peer.destroy();
-  
   logSystem("Looking for a stranger...");
-  
   peer = new Peer({
     config: {
       iceServers: [
@@ -983,12 +977,10 @@ function startPeer() {
       ]
     }
   });
-  
   peer.on('open', (id) => {
     myId = id;
     tryToFindMatch();
   });
-  
   peer.on('error', (err) => {
     console.error('PeerJS error:', err);
     showNewChatButton();
@@ -998,7 +990,6 @@ function startPeer() {
 
 function tryToFindMatch() {
   waitingRef = db.ref("waiting");
-  
   waitingRef.once('value', (snapshot) => {
     const list = snapshot.val();
     if (list) {
@@ -1010,11 +1001,9 @@ function tryToFindMatch() {
         }
       }
     }
-    
     if (!isConnected) {
       const newRef = waitingRef.push();
       newRef.set(myId);
-      
       waitingRef.on('child_added', (childSnapshot) => {
         const otherId = childSnapshot.val();
         if (otherId !== myId && !isConnected) {
@@ -1028,7 +1017,6 @@ function tryToFindMatch() {
       });
     }
   });
-
   peer.on("connection", (conn) => {
     if (!isConnected) {
       clearSystemMessage();
@@ -1043,11 +1031,9 @@ function tryToFindMatch() {
 
 function connectToPeer(otherId) {
   if (isConnected) return;
-  
   clearSystemMessage();
   logSystem("Connecting to stranger...");
   const conn = peer.connect(otherId);
-  
   conn.on("open", () => {
     if (!isConnected) {
       clearSystemMessage();
@@ -1055,7 +1041,6 @@ function connectToPeer(otherId) {
       setupConnection(conn);
     }
   });
-  
   conn.on("error", (err) => {
     console.error("Connection error:", err);
     if (!isConnected) {
@@ -1067,11 +1052,9 @@ function connectToPeer(otherId) {
 
 function setupConnection(conn) {
   if (myConn) myConn.close();
-  
   myConn = conn;
   isConnected = true;
   hideNewChatButton();
-  
   conn.on("data", (data) => {
     if (typeof data === "string") {
       appendMessage("stranger", data);
@@ -1081,11 +1064,9 @@ function setupConnection(conn) {
       appendGif("stranger", data.url);
     }
   });
-  
   conn.on("close", () => {
     endConnection("Stranger disconnected");
   });
-  
   conn.on("error", (err) => {
     console.error("Data connection error:", err);
     endConnection("Connection error");
@@ -1108,7 +1089,7 @@ function cleanUpWaitingList() {
   }
 }
 
-// UI Functions
+// ----------------- UI functions -----------------
 function appendMessage(sender, msg) {
   const div = document.createElement("div");
   div.className = "msg " + sender;
@@ -1179,11 +1160,10 @@ function hideNewChatButton() {
   document.getElementById("newChatBtn").style.display = "none";
 }
 
-// Event Listeners
+// Input + Buttons
 document.getElementById("msgInput").addEventListener("keypress", (e) => {
   if (e.key === "Enter") sendMessage();
 });
-
 document.getElementById("sendBtn").onclick = sendMessage;
 
 function sendMessage() {
@@ -1199,7 +1179,6 @@ function sendMessage() {
 document.getElementById("imgInput").addEventListener("change", (e) => {
   const file = e.target.files[0];
   if (!file || !myConn || !isConnected) return;
-
   const reader = new FileReader();
   reader.onload = () => {
     myConn.send({ type: "image", blob: reader.result });
@@ -1212,7 +1191,6 @@ document.getElementById("imgInput").addEventListener("change", (e) => {
 document.getElementById("gifInput").addEventListener("change", (e) => {
   const file = e.target.files[0];
   if (!file || !myConn || !isConnected) return;
-
   const reader = new FileReader();
   reader.onload = () => {
     myConn.send({ type: "image", blob: reader.result });
@@ -1299,20 +1277,16 @@ window.addEventListener("click", (e) => {
 // Theme toggle functionality
 const themeToggle = document.getElementById('themeToggle');
 const body = document.body;
-
 const savedTheme = localStorage.getItem('theme') || 
                  (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
-
 if (savedTheme === 'light') {
   body.classList.add('light-mode');
   themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
 } else {
   themeToggle.innerHTML = '<i class="fas fa-moon"></i>';
 }
-
 themeToggle.addEventListener('click', () => {
   body.classList.toggle('light-mode');
-  
   if (body.classList.contains('light-mode')) {
     localStorage.setItem('theme', 'light');
     themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
