@@ -19,8 +19,7 @@
 ---
 
 ## 📬 **Connect With Me**  
-- 📧 Email: `kumarsharma2580@gmail.com`  
-- 🐦 Twitter: [@sh_kumar_aman](https://twitter.com/sh_kumar_aman)  
+- 📧 Email: `kumarsharma2580@gmail.com`    
 - 📷 Instagram: [@sh.kumar.aman](https://instagram.com/sh.kumar.aman)  
 
 *Let’s make conversations fun and effortless!*
