@@ -13,8 +13,8 @@
 ✅ **Simple & Fast** – Start chatting in one click.  
 
 🔗 **Try Now:**  
-- 💬 [Chat Now](https://shkumaraman.github.io/chat/app.html)  
-- 🌐 [Learn More](https://shkumaraman.github.io/chat/index.html)  
+- 💬 [Chat Now](https://shkumaraman.github.io)  
+- 🌐 [Learn More](https://shkumaraman.github.io/page/stranger-chat-app.html)  
 
 ---
 
