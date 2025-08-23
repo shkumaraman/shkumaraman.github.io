@@ -944,12 +944,10 @@ let escTimer = null;
 const GIPHY_API_KEY = 'EKvv5S1CcXqYuHgxPNVKiNuiuNHRTzFk';
 
 // Initialize when page loads
-window.addEventListener('load', function() {
-  startPeer();
-});
+window.addEventListener('load', startPeer);
 
 // Handle page refresh/close
-window.addEventListener('beforeunload', function(e) {
+window.addEventListener('beforeunload', (e) => {
   if (isConnected) {
     e.preventDefault();
     e.returnValue = 'Are you sure you want to leave? Your chat will be disconnected.';
@@ -980,11 +978,13 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+// ----------------- PeerJS -----------------
 function startPeer() {
   clearSystemMessage();
   isConnected = false;
   if (peer) peer.destroy();
   logSystem("Looking for a stranger...");
+  
   peer = new Peer({
     config: {
       iceServers: [
@@ -996,10 +996,14 @@ function startPeer() {
       ]
     }
   });
+
   peer.on('open', (id) => {
     myId = id;
     tryToFindMatch();
   });
+
+  peer.on('connection', handleNewConnection);
+
   peer.on('error', (err) => {
     console.error('PeerJS error:', err);
     showNewChatButton();
@@ -1036,16 +1040,6 @@ function tryToFindMatch() {
       });
     }
   });
-  peer.on("connection", (conn) => {
-    if (!isConnected) {
-      clearSystemMessage();
-      logSystem("Stranger connected");
-      setupConnection(conn);
-      db.ref("waiting").orderByValue().equalTo(myId).once('value', (snap) => {
-        snap.forEach(child => child.ref.remove());
-      });
-    }
-  });
 }
 
 function connectToPeer(otherId) {
@@ -1053,13 +1047,7 @@ function connectToPeer(otherId) {
   clearSystemMessage();
   logSystem("Connecting to stranger...");
   const conn = peer.connect(otherId);
-  conn.on("open", () => {
-    if (!isConnected) {
-      clearSystemMessage();
-      logSystem("Connected to stranger");
-      setupConnection(conn);
-    }
-  });
+  conn.on("open", () => handleNewConnection(conn));
   conn.on("error", (err) => {
     console.error("Connection error:", err);
     if (!isConnected) {
@@ -1069,11 +1057,29 @@ function connectToPeer(otherId) {
   });
 }
 
+// Unified connection handler
+function handleNewConnection(conn) {
+  if (isConnected) {
+    conn.close(); // Already connected, reject new connection
+    return;
+  }
+  clearSystemMessage();
+  logSystem("Connected to stranger");
+  setupConnection(conn);
+
+  if (waitingRef) {
+    db.ref("waiting").orderByValue().equalTo(myId).once('value', (snap) => {
+      snap.forEach(child => child.ref.remove());
+    });
+  }
+}
+
 function setupConnection(conn) {
   if (myConn) myConn.close();
   myConn = conn;
   isConnected = true;
   hideNewChatButton();
+
   conn.on("data", (data) => {
     if (typeof data === "string") {
       appendMessage("stranger", data);
@@ -1083,9 +1089,11 @@ function setupConnection(conn) {
       appendGif("stranger", data.url);
     }
   });
+
   conn.on("close", () => {
     endConnection("Stranger disconnected");
   });
+
   conn.on("error", (err) => {
     console.error("Data connection error:", err);
     endConnection("Connection error");
@@ -1179,7 +1187,7 @@ function hideNewChatButton() {
   document.getElementById("newChatBtn").style.display = "none";
 }
 
-// Input + Buttons
+// ----------------- Input + Buttons -----------------
 document.getElementById("msgInput").addEventListener("keypress", (e) => {
   if (e.key === "Enter") sendMessage();
 });
@@ -1233,7 +1241,7 @@ document.getElementById("newChatBtn").onclick = () => {
   startPeer();
 };
 
-// GIF Search functionality with GIPHY
+// ----------------- GIF Search -----------------
 const gifModal = document.getElementById("gifModal");
 const gifSearch = document.getElementById("gifSearch");
 const gifResults = document.getElementById("gifResults");
@@ -1265,7 +1273,6 @@ async function searchGifs(query) {
     fetchTrendingGifs();
     return;
   }
-  
   try {
     const response = await fetch(`https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_API_KEY}&q=${encodeURIComponent(query)}&limit=20`);
     const data = await response.json();
@@ -1298,7 +1305,7 @@ window.addEventListener("click", (e) => {
   if (e.target === gifModal) gifModal.style.display = "none";
 });
 
-// Theme toggle functionality
+// ----------------- Theme toggle -----------------
 const themeToggle = document.getElementById('themeToggle');
 const body = document.body;
 const savedTheme = localStorage.getItem('theme') || 
