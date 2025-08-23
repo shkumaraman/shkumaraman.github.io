@@ -827,11 +827,11 @@
     
   <script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap/dist/js/bootstrap.bundle.min.js"></script> 
-<!-- Firebase v12.1.0 (compat version) -->
-<script src="https://www.gstatic.com/firebasejs/12.1.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/12.1.0/firebase-database-compat.js"></script>
+  <!-- Firebase v12.1.0 (compat version) -->
+  <script src="https://www.gstatic.com/firebasejs/12.1.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.1.0/firebase-database-compat.js"></script>
 
-<script>
+  <script>
 // Firebase config
 const firebaseConfig = {
   databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
@@ -845,6 +845,7 @@ let isConnected = false;
 let localStream, remoteStream;
 let escPressedOnce = false;
 let escTimer = null;
+let dataChannel; // For peer-to-peer text messaging
 
 // DOM elements
 const remoteVideo = document.getElementById('remoteVideo');
@@ -854,9 +855,19 @@ const localPlaceholder = document.getElementById('localPlaceholder');
 const systemMsg = document.getElementById('systemMsg');
 const newChatBtn = document.getElementById('newChatBtn');
 
+// Chat DOM elements
+const chatToggle = document.getElementById('chatToggle');
+const chatContainer = document.getElementById('chatContainer');
+const chatMessages = document.getElementById('chatMessages');
+const chatInput = document.getElementById('chatInput');
+const chatSendBtn = document.getElementById('chatSendBtn');
+
+let chatVisible = false;
+
 // Initialize video chat when page loads
 window.addEventListener('load', function() {
   initVideoChat();
+  setupChatEvents();
 });
 
 // Handle page refresh/close
@@ -905,10 +916,67 @@ document.addEventListener('keydown', (e) => {
       cleanUpWaitingList();
       isConnected = false;
       hideNewChatButton();
+      clearChat();
       startPeer();
     }
   }
 });
+
+// Setup chat event listeners
+function setupChatEvents() {
+  // Toggle chat visibility
+  chatToggle.addEventListener('click', () => {
+    chatVisible = !chatVisible;
+    chatContainer.style.display = chatVisible ? 'flex' : 'none';
+    if (chatVisible) {
+      chatInput.focus();
+    }
+  });
+
+  // Send message function
+  chatSendBtn.addEventListener('click', sendMessage);
+  chatInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      sendMessage();
+    }
+  });
+}
+
+// Send message function
+function sendMessage() {
+  const message = chatInput.value.trim();
+  if (message && myConn && dataChannel && dataChannel.readyState === 'open') {
+    // Add message to UI
+    addMessage(message, 'me');
+    
+    // Send via data channel
+    dataChannel.send(JSON.stringify({
+      type: 'message',
+      text: message,
+      timestamp: new Date().getTime()
+    }));
+    
+    // Clear input
+    chatInput.value = '';
+  }
+}
+
+// Add message to UI
+function addMessage(text, sender) {
+  const messageDiv = document.createElement('div');
+  messageDiv.classList.add('chat-message');
+  messageDiv.classList.add(sender === 'me' ? 'message-me' : 'message-them');
+  messageDiv.textContent = text;
+  chatMessages.appendChild(messageDiv);
+  
+  // Scroll to bottom
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+// Clear chat messages
+function clearChat() {
+  chatMessages.innerHTML = '';
+}
 
 async function initVideoChat() {
   try {
@@ -935,6 +1003,9 @@ function startPeer() {
   remoteVideo.srcObject = null;
   remotePlaceholder.style.display = 'flex';
   remotePlaceholder.textContent = "Waiting for stranger to connect...";
+  
+  // Clear chat
+  clearChat();
   
   // Destroy existing peer if any
   if (peer) peer.destroy();
@@ -963,6 +1034,20 @@ function startPeer() {
     console.error('PeerJS error:', err);
     showSystemMessage("Connection error. Click 'New Chat' to try again.");
     showNewChatButton();
+  });
+  
+  // Handle incoming data connections
+  peer.on('connection', (conn) => {
+    conn.on('data', (data) => {
+      try {
+        const parsedData = JSON.parse(data);
+        if (parsedData.type === 'message') {
+          addMessage(parsedData.text, 'them');
+        }
+      } catch (e) {
+        console.error("Error parsing incoming data:", e);
+      }
+    });
   });
 }
 
@@ -1046,6 +1131,22 @@ function setupCall(call) {
     hideSystemMessage();
   });
   
+  // Set up data channel for text chat
+  try {
+    // Try to create data channel if it doesn't exist
+    if (call.peerConnection) {
+      dataChannel = call.peerConnection.createDataChannel("chat");
+      setupDataChannel();
+    } else {
+      call.on("peerConnection", () => {
+        dataChannel = call.peerConnection.createDataChannel("chat");
+        setupDataChannel();
+      });
+    }
+  } catch (error) {
+    console.error("Error creating data channel:", error);
+  }
+  
   call.on("close", () => {
     endConnection("Stranger disconnected! 💔");
   });
@@ -1056,6 +1157,36 @@ function setupCall(call) {
   });
 }
 
+// Set up data channel event handlers
+function setupDataChannel() {
+  if (!dataChannel) return;
+  
+  dataChannel.onopen = () => {
+    console.log("Data channel is open");
+    addMessage("Chat connected", 'system');
+  };
+  
+  dataChannel.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      if (data.type === 'message') {
+        addMessage(data.text, 'them');
+      }
+    } catch (e) {
+      console.error("Error parsing message:", e);
+    }
+  };
+  
+  dataChannel.onclose = () => {
+    console.log("Data channel closed");
+    addMessage("Chat disconnected", 'system');
+  };
+  
+  dataChannel.onerror = (error) => {
+    console.error("Data channel error:", error);
+  };
+}
+
 function endConnection(message) {
   showSystemMessage(message);
   remoteVideo.srcObject = null;
@@ -1063,7 +1194,9 @@ function endConnection(message) {
   remotePlaceholder.textContent = message;
   myConn = null;
   isConnected = false;
+  dataChannel = null;
   showNewChatButton();
+  addMessage("Connection ended", 'system');
 }
 
 function cleanUpWaitingList() {
