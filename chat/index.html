@@ -514,6 +514,15 @@ body.light-mode {
   color: var(--light-text);
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
 }
+
+#typingIndicator {
+  padding: 8px 12px;
+  color: #666;
+  font-style: italic;
+  font-size: 14px;
+  text-align: left;
+  background-color: #f0f0f0;
+  }
   
 /* Responsive adjustments */
 @media (max-width: 600px) {
@@ -613,7 +622,9 @@ body.light-mode {
   </div>
 </header>
 
-  <div id="chatLog"></div>
+  <div id="chatLog">
+    <div id="typingIndicator" style="display:none;">Stranger is typing...</div>
+  </div>
   
   <button id="newChatBtn" class="new-chat-btn" style="display: none;">Start New Chat</button>
   
@@ -894,7 +905,7 @@ body.light-mode {
 <script src="https://www.gstatic.com/firebasejs/12.1.0/firebase-database-compat.js"></script>
 
 <script>
-// Firebase config
+  // Firebase config
 const firebaseConfig = {
   databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
 };
@@ -909,6 +920,11 @@ let escTimer = null;
 
 // GIPHY API Key
 const GIPHY_API_KEY = 'EKvv5S1CcXqYuHgxPNVKiNuiuNHRTzFk';
+
+// Typing indicator variables
+let typingTimer;
+const TYPING_TIMEOUT = 1000; // 1 second of inactivity
+let isTyping = false;
 
 // Initialize when page loads
 window.addEventListener('load', startPeer);
@@ -1054,14 +1070,25 @@ function setupConnection(conn) {
       appendImage("stranger", data.blob);
     } else if (data.type === "gif") {
       appendGif("stranger", data.url);
+    } else if (data.type === "typing") {
+      // Handle typing indicator
+      if (data.isTyping) {
+        showTypingIndicator();
+      } else {
+        hideTypingIndicator();
+      }
     }
   });
 
   conn.on("close", () => {
+    // Hide typing indicator when connection closes
+    hideTypingIndicator();
     endConnection("Stranger disconnected! 💔");
   });
 
   conn.on("error", (err) => {
+    // Hide typing indicator on error
+    hideTypingIndicator();
     console.error("Data connection error:", err);
     endConnection("Connection error");
   });
@@ -1079,6 +1106,24 @@ function cleanUpWaitingList() {
     waitingRef.off();
     db.ref("waiting").orderByValue().equalTo(myId).once('value', (snap) => {
       snap.forEach(child => child.ref.remove());
+    });
+  }
+}
+
+// ----------------- Typing Indicator Functions -----------------
+function showTypingIndicator() {
+  document.getElementById('typingIndicator').style.display = 'block';
+}
+
+function hideTypingIndicator() {
+  document.getElementById('typingIndicator').style.display = 'none';
+}
+
+function sendTypingStatus(isTyping) {
+  if (myConn && isConnected) {
+    myConn.send({
+      type: "typing",
+      isTyping: isTyping
     });
   }
 }
@@ -1158,6 +1203,35 @@ function hideNewChatButton() {
 document.getElementById("msgInput").addEventListener("keypress", (e) => {
   if (e.key === "Enter") sendMessage();
 });
+
+// Typing detection for input field
+document.getElementById("msgInput").addEventListener('input', (e) => {
+  if (!isConnected || !myConn) return;
+  
+  // Clear previous timer
+  clearTimeout(typingTimer);
+  
+  // Send typing started if there's text
+  if (e.target.value.length > 0) {
+    if (!isTyping) {
+      sendTypingStatus(true);
+      isTyping = true;
+    }
+    
+    // Set timer to stop typing indication after timeout
+    typingTimer = setTimeout(() => {
+      sendTypingStatus(false);
+      isTyping = false;
+    }, TYPING_TIMEOUT);
+  } else {
+    // Input is empty, stop typing indication
+    if (isTyping) {
+      sendTypingStatus(false);
+      isTyping = false;
+    }
+  }
+});
+
 document.getElementById("sendBtn").onclick = sendMessage;
 
 function sendMessage() {
@@ -1167,6 +1241,13 @@ function sendMessage() {
     myConn.send(msg);
     appendMessage("me", msg);
     input.value = "";
+    
+    // Stop typing indication after sending
+    if (isTyping) {
+      clearTimeout(typingTimer);
+      sendTypingStatus(false);
+      isTyping = false;
+    }
   }
 }
 
@@ -1195,6 +1276,7 @@ document.getElementById("gifInput").addEventListener("change", (e) => {
 });
 
 document.getElementById("skipBtn").onclick = () => {
+  hideTypingIndicator();
   if (myConn) myConn.close();
   cleanUpWaitingList();
   isConnected = false;
@@ -1203,6 +1285,7 @@ document.getElementById("skipBtn").onclick = () => {
 };
 
 document.getElementById("newChatBtn").onclick = () => {
+  hideTypingIndicator();
   document.getElementById("chatLog").innerHTML = "";
   hideNewChatButton();
   startPeer();
