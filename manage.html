@@ -5,81 +5,105 @@
   <title>TalkRush Data Manager</title>
   <style>
     body { font-family: Arial, sans-serif; padding: 20px; background: #f7f7f7; }
+    h1 { text-align: center; }
     h2 { margin-top: 30px; }
     .data-block { background: #fff; padding: 15px; margin: 10px 0; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
     button { background: crimson; color: #fff; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer; }
     button:hover { background: darkred; }
     pre { background: #eee; padding: 10px; border-radius: 5px; max-height: 300px; overflow: auto; }
+    #manager { display: none; }
+    #loginBox { text-align: center; margin-top: 100px; }
+    input[type=password] { padding: 8px; font-size: 16px; border: 1px solid #ccc; border-radius: 5px; }
   </style>
 </head>
 <body>
   <h1>TalkRush Data Manager</h1>
-  <p>Manage and delete Firebase Realtime Database data without console.</p>
+  
+  <!-- Password Lock -->
+  <div id="loginBox">
+    <p>Enter Password to access Data Manager:</p>
+    <input type="password" id="passInput" placeholder="Enter password">
+    <button onclick="checkPassword()">Login</button>
+  </div>
 
-  <div id="waiting"></div>
-  <div id="videoWaiting"></div>
-  <div id="messages"></div>
-  <div id="nicknames"></div>
-  <div id="photos"></div>
+  <!-- Main Manager -->
+  <div id="manager">
+    <p>Manage and delete Firebase Realtime Database data without console.</p>
+    <div id="waiting"></div>
+    <div id="videoWaiting"></div>
+    <div id="messages"></div>
+    <div id="nicknames"></div>
+    <div id="photos"></div>
+  </div>
 
+  <!-- Firebase SDK -->
   <script src="https://www.gstatic.com/firebasejs/12.1.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/12.1.0/firebase-database-compat.js"></script>
   
   <script>
-    // Firebase Config
-    const firebaseConfig = {
-      apiKey: "YOUR_API_KEY",
-      authDomain: "talkrush-76259.firebaseapp.com",
-      databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/",
-      projectId: "talkrush-76259",
-      storageBucket: "talkrush-76259.appspot.com",
-      messagingSenderId: "YOUR_SENDER_ID",
-      appId: "YOUR_APP_ID"
-    };
+    // 🔑 Change this password for your private use
+    const ADMIN_PASSWORD = "12345";
 
-    // Init
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.database();
-
-    // Function to render data
-    function renderSection(refPath, containerId) {
-      const ref = db.ref(refPath);
-      const container = document.getElementById(containerId);
-
-      ref.on("value", snapshot => {
-        container.innerHTML = `<h2>${refPath}</h2>`;
-        const data = snapshot.val();
-        if (!data) {
-          container.innerHTML += "<p>No data found.</p>";
-          return;
-        }
-        Object.entries(data).forEach(([key, value]) => {
-          const block = document.createElement("div");
-          block.className = "data-block";
-          block.innerHTML = `
-            <pre>${JSON.stringify(value, null, 2)}</pre>
-            <button onclick="deleteItem('${refPath}/${key}')">Delete</button>
-          `;
-          container.appendChild(block);
-        });
-      });
-    }
-
-    // Delete function
-    function deleteItem(path) {
-      if (confirm("Delete this item?")) {
-        db.ref(path).remove()
-          .then(() => alert("Deleted!"))
-          .catch(err => alert("Error: " + err));
+    function checkPassword() {
+      const input = document.getElementById("passInput").value;
+      if (input === ADMIN_PASSWORD) {
+        document.getElementById("loginBox").style.display = "none";
+        document.getElementById("manager").style.display = "block";
+        loadManager();
+      } else {
+        alert("Wrong password!");
       }
     }
 
-    // Load sections
-    renderSection("waiting", "waiting");
-    renderSection("videoWaiting", "videoWaiting");
-    renderSection("group/messages", "messages");
-    renderSection("group/nicknames", "nicknames");
-    renderSection("photos", "photos");
+    function loadManager() {
+      // Firebase Config (Minimal)
+      const firebaseConfig = {
+        databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
+      };
+
+      firebase.initializeApp(firebaseConfig);
+      const db = firebase.database();
+
+      // Render Function
+      function renderSection(refPath, containerId) {
+        const ref = db.ref(refPath);
+        const container = document.getElementById(containerId);
+
+        ref.on("value", snapshot => {
+          container.innerHTML = `<h2>${refPath}</h2>`;
+          const data = snapshot.val();
+          if (!data) {
+            container.innerHTML += "<p>No data found.</p>";
+            return;
+          }
+          Object.entries(data).forEach(([key, value]) => {
+            const block = document.createElement("div");
+            block.className = "data-block";
+            block.innerHTML = `
+              <pre>${JSON.stringify(value, null, 2)}</pre>
+              <button onclick="deleteItem('${refPath}/${key}')">Delete</button>
+            `;
+            container.appendChild(block);
+          });
+        });
+      }
+
+      // Delete Function
+      window.deleteItem = function(path) {
+        if (confirm("Delete this item?")) {
+          db.ref(path).remove()
+            .then(() => alert("Deleted!"))
+            .catch(err => alert("Error: " + err));
+        }
+      }
+
+      // Load sections
+      renderSection("waiting", "waiting");
+      renderSection("videoWaiting", "videoWaiting");
+      renderSection("group/messages", "messages");
+      renderSection("group/nicknames", "nicknames");
+      renderSection("photos", "photos");
+    }
   </script>
 </body>
 </html>
