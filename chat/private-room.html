@@ -937,41 +937,35 @@ body.light-mode {
         return Math.floor(10000 + Math.random() * 90000).toString();
     }
 
-    // Create room functionality - FIXED
+    // Create room functionality - FIXED: Now creates room in a single click
     createRoomBtn.onclick = () => {
-        // Only create room if we don't already have one
-        if (!currentRoomCode) {
-            const code = generateRoomCode();
-            roomCodeDisplay.textContent = code;
+        const code = generateRoomCode();
+        roomCodeDisplay.textContent = code;
+        
+        // Save room to Firebase with participants node
+        db.ref("rooms/" + code).set({
+            creator: myId,
+            createdAt: firebase.database.ServerValue.TIMESTAMP,
+            participants: {
+                [myId]: "active"
+            }
+        }).then(() => {
+            currentRoomCode = code;
+            isRoomCreator = true;
+            logSystem(`Room created with code: ${code}. Share this code with someone to chat.`);
+            roomModal.style.display = "none";
             
-            // Save room to Firebase with participants node
-            db.ref("rooms/" + code).set({
-                creator: myId,
-                createdAt: firebase.database.ServerValue.TIMESTAMP,
-                participants: {
-                    [myId]: "active"
+            // Listen for participants joining
+            db.ref("rooms/" + code + "/participants").on("child_added", (snapshot) => {
+                if (snapshot.key !== myId) {
+                    // Another participant joined, connect to them
+                    connectToPeer(snapshot.key);
                 }
-            }).then(() => {
-                currentRoomCode = code;
-                isRoomCreator = true;
-                logSystem(`Room created with code: ${code}. Share this code with someone to chat.`);
-                roomModal.style.display = "none";
-                
-                // Listen for participants joining
-                db.ref("rooms/" + code + "/participants").on("child_added", (snapshot) => {
-                    if (snapshot.key !== myId) {
-                        // Another participant joined, connect to them
-                        connectToPeer(snapshot.key);
-                    }
-                });
-            }).catch((error) => {
-                console.error("Error creating room:", error);
-                logSystem("Error creating room. Please try again.");
             });
-        } else {
-            // If room already exists, just show the code
-            roomCodeDisplay.textContent = currentRoomCode;
-        }
+        }).catch((error) => {
+            console.error("Error creating room:", error);
+            logSystem("Error creating room. Please try again.");
+        });
     };
 
     // Join room functionality
