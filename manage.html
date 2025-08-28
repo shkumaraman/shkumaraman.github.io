@@ -17,6 +17,9 @@ layout: default
     #manager { display: none; }
     #loginBox { text-align: center; margin-top: 100px; }
     input[type=password] { padding: 8px; font-size: 16px; border: 1px solid #ccc; border-radius: 5px; }
+    #topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    #logoutBtn { background: gray; }
+    #logoutBtn:hover { background: black; }
   </style>
 </head>
 <body>
@@ -31,12 +34,15 @@ layout: default
 
   <!-- Main Manager -->
   <div id="manager">
-    <p>Manage and delete Firebase Realtime Database data without console.</p>
+    <div id="topbar">
+      <p>Manage and delete Firebase Realtime Database data without console.</p>
+      <button id="logoutBtn" onclick="logout()">Logout</button>
+    </div>
+
     <div id="waiting"></div>
     <div id="videoWaiting"></div>
-    <div id="messages"></div>
-    <div id="nicknames"></div>
-    <div id="photos"></div>
+    <div id="group"></div>
+    <div id="photosTools"></div>
   </div>
 
   <!-- Firebase SDK -->
@@ -47,65 +53,133 @@ layout: default
     // 🔑 Change this password for your private use
     const ADMIN_PASSWORD = "12345";
 
+    // Firebase Config (Minimal)
+    const firebaseConfig = {
+      databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    // ---- LOGIN ----
     function checkPassword() {
       const input = document.getElementById("passInput").value;
       if (input === ADMIN_PASSWORD) {
-        document.getElementById("loginBox").style.display = "none";
-        document.getElementById("manager").style.display = "block";
-        loadManager();
+        sessionStorage.setItem("loggedIn", "true");
+        showManager();
       } else {
         alert("Wrong password!");
       }
     }
 
+    function logout() {
+      sessionStorage.removeItem("loggedIn");
+      location.reload();
+    }
+
+    function showManager() {
+      document.getElementById("loginBox").style.display = "none";
+      document.getElementById("manager").style.display = "block";
+      loadManager();
+    }
+
+    if (sessionStorage.getItem("loggedIn") === "true") {
+      showManager();
+    }
+
+    // ---- DATA MANAGER ----
     function loadManager() {
-      // Firebase Config (Minimal)
-      const firebaseConfig = {
-        databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
-      };
-
-      firebase.initializeApp(firebaseConfig);
-      const db = firebase.database();
-
-      // Render Function
-      function renderSection(refPath, containerId) {
-        const ref = db.ref(refPath);
-        const container = document.getElementById(containerId);
-
-        ref.on("value", snapshot => {
-          container.innerHTML = `<h2>${refPath}</h2>`;
-          const data = snapshot.val();
-          if (!data) {
-            container.innerHTML += "<p>No data found.</p>";
-            return;
-          }
-          Object.entries(data).forEach(([key, value]) => {
-            const block = document.createElement("div");
-            block.className = "data-block";
-            block.innerHTML = `
-              <pre>${JSON.stringify(value, null, 2)}</pre>
-              <button onclick="deleteItem('${refPath}/${key}')">Delete</button>
-            `;
-            container.appendChild(block);
-          });
-        });
-      }
-
-      // Delete Function
-      window.deleteItem = function(path) {
-        if (confirm("Delete this item?")) {
-          db.ref(path).remove()
-            .then(() => alert("Deleted!"))
-            .catch(err => alert("Error: " + err));
-        }
-      }
-
-      // Load sections
       renderSection("waiting", "waiting");
       renderSection("videoWaiting", "videoWaiting");
-      renderSection("group/messages", "messages");
-      renderSection("group/nicknames", "nicknames");
-      renderSection("photos", "photos");
+      renderGroup("group", "group");
+
+      renderPhotosCleaner();
+    }
+
+    // Generic section renderer
+    function renderSection(refPath, containerId) {
+      const ref = db.ref(refPath);
+      const container = document.getElementById(containerId);
+
+      ref.on("value", snapshot => {
+        container.innerHTML = `<h2>${refPath}</h2>`;
+        const data = snapshot.val();
+        if (!data) {
+          container.innerHTML += "<p>No data found.</p>";
+          return;
+        }
+        Object.entries(data).forEach(([key, value]) => {
+          const block = document.createElement("div");
+          block.className = "data-block";
+          block.innerHTML = `
+            <pre>${JSON.stringify(value, null, 2)}</pre>
+            <button onclick="deleteItem('${refPath}/${key}')">Delete</button>
+          `;
+          container.appendChild(block);
+        });
+      });
+    }
+
+    // Group section (messages + nicknames combined)
+    function renderGroup(refPath, containerId) {
+      const ref = db.ref(refPath);
+      const container = document.getElementById(containerId);
+
+      ref.on("value", snapshot => {
+        container.innerHTML = `<h2>${refPath}</h2>
+          <button onclick="deleteItem('${refPath}')">Delete Entire Group (messages + nicknames)</button>`;
+        const data = snapshot.val();
+        if (!data) {
+          container.innerHTML += "<p>No data found.</p>";
+          return;
+        }
+        const block = document.createElement("div");
+        block.className = "data-block";
+        block.innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+        container.appendChild(block);
+      });
+    }
+
+    // Expired photos cleaner
+    function renderPhotosCleaner() {
+      const container = document.getElementById("photosTools");
+      container.innerHTML = `
+        <h2>Photos</h2>
+        <button onclick="cleanExpiredPhotos()">Clean Expired Photos</button>
+      `;
+    }
+
+    async function cleanExpiredPhotos() {
+      if (!confirm("Remove all expired photos?")) return;
+      const ref = db.ref("photos");
+      const snap = await ref.get();
+      if (!snap.exists()) {
+        alert("No photos found.");
+        return;
+      }
+      const now = Date.now();
+      const updates = {};
+      snap.forEach(child => {
+        const val = child.val();
+        if (val && val.expires && val.expires <= now) {
+          updates[child.key] = null; // mark for deletion
+        }
+      });
+      if (Object.keys(updates).length === 0) {
+        alert("No expired photos found.");
+        return;
+      }
+      ref.update(updates)
+        .then(() => alert("Expired photos cleaned!"))
+        .catch(err => alert("Error: " + err));
+    }
+
+    // Delete function
+    function deleteItem(path) {
+      if (confirm("Delete this item?")) {
+        db.ref(path).remove()
+          .then(() => alert("Deleted!"))
+          .catch(err => alert("Error: " + err));
+      }
     }
   </script>
 </body>
