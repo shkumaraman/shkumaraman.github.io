@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>TalkRush Data Manager</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; background: #f7f7f7; }
+    h2 { margin-top: 30px; }
+    .data-block { background: #fff; padding: 15px; margin: 10px 0; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
+    button { background: crimson; color: #fff; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer; }
+    button:hover { background: darkred; }
+    pre { background: #eee; padding: 10px; border-radius: 5px; max-height: 300px; overflow: auto; }
+  </style>
+</head>
+<body>
+  <h1>TalkRush Data Manager</h1>
+  <p>Manage and delete Firebase Realtime Database data without console.</p>
+
+  <div id="waiting"></div>
+  <div id="videoWaiting"></div>
+  <div id="messages"></div>
+  <div id="nicknames"></div>
+  <div id="photos"></div>
+
+  <script src="https://www.gstatic.com/firebasejs/12.1.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.1.0/firebase-database-compat.js"></script>
+  
+  <script>
+    // Firebase Config
+    const firebaseConfig = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "talkrush-76259.firebaseapp.com",
+      databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/",
+      projectId: "talkrush-76259",
+      storageBucket: "talkrush-76259.appspot.com",
+      messagingSenderId: "YOUR_SENDER_ID",
+      appId: "YOUR_APP_ID"
+    };
+
+    // Init
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    // Function to render data
+    function renderSection(refPath, containerId) {
+      const ref = db.ref(refPath);
+      const container = document.getElementById(containerId);
+
+      ref.on("value", snapshot => {
+        container.innerHTML = `<h2>${refPath}</h2>`;
+        const data = snapshot.val();
+        if (!data) {
+          container.innerHTML += "<p>No data found.</p>";
+          return;
+        }
+        Object.entries(data).forEach(([key, value]) => {
+          const block = document.createElement("div");
+          block.className = "data-block";
+          block.innerHTML = `
+            <pre>${JSON.stringify(value, null, 2)}</pre>
+            <button onclick="deleteItem('${refPath}/${key}')">Delete</button>
+          `;
+          container.appendChild(block);
+        });
+      });
+    }
+
+    // Delete function
+    function deleteItem(path) {
+      if (confirm("Delete this item?")) {
+        db.ref(path).remove()
+          .then(() => alert("Deleted!"))
+          .catch(err => alert("Error: " + err));
+      }
+    }
+
+    // Load sections
+    renderSection("waiting", "waiting");
+    renderSection("videoWaiting", "videoWaiting");
+    renderSection("group/messages", "messages");
+    renderSection("group/nicknames", "nicknames");
+    renderSection("photos", "photos");
+  </script>
+</body>
+</html>
