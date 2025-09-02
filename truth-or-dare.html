@@ -30,7 +30,7 @@
       width: 100%;
       max-width: 500px;
       padding: 0;
-      margin: 10px;
+      margin: 20px;
     }
     .header {
       background: #ff6b6b;
@@ -44,19 +44,18 @@
       align-items: center;
     }
     .exit-btn {
-      background: rgba(255, 255, 255, 0.3);
+      background: rgba(255, 255, 255, 0.2);
       border: none;
       color: white;
-      border-radius: 50%;
-      width: 30px;
-      height: 30px;
+      padding: 8px 12px;
+      border-radius: 50px;
       cursor: pointer;
       display: flex;
       align-items: center;
-      justify-content: center;
+      gap: 5px;
     }
     .exit-btn:hover {
-      background: rgba(255, 255, 255, 0.5);
+      background: rgba(255, 255, 255, 0.3);
     }
     .game-area {
       padding: 20px;
@@ -400,7 +399,7 @@
     <div class="header">
       <i class="fas fa-gamepad"></i> Truth & Dare Bottle Game
       <button class="exit-btn hidden" id="exitBtn">
-        <i class="fas fa-times"></i>
+        <i class="fas fa-sign-out-alt"></i> Exit
       </button>
     </div>
 
@@ -608,8 +607,9 @@
     let currentPlayerIndex = 0;
     let playerName = "";
     let myId = 'user_' + Math.random().toString(36).substr(2, 9);
-    let myNickname = localStorage.getItem('talkrush_nickname') || 'Guest';
+    let myNickname = localStorage.getItem('talkrush_nickname') || '';
     let isSendingMessage = false;
+    let playerRef = null;
     
     let gameState = {
       players: {},
@@ -623,7 +623,7 @@
 
     // Load saved nickname if available
     window.addEventListener('load', () => {
-      if (myNickname !== 'Guest') {
+      if (myNickname !== '') {
         playerNameInput.value = myNickname;
       }
     });
@@ -642,21 +642,23 @@
       }
     });
 
-    // Exit button click
+    // Exit game button click
     exitBtn.addEventListener("click", () => {
       if (confirm("Are you sure you want to exit the game?")) {
-        if (currentPlayerId) {
-          database.ref('truthDare/players/' + currentPlayerId).remove();
+        if (playerRef) {
+          playerRef.remove();
         }
         resetGame();
       }
     });
 
-    // Reset game function
     function resetGame() {
+      // Reset UI
       loginSection.classList.remove('hidden');
       gameSection.classList.add('hidden');
       exitBtn.classList.add('hidden');
+      
+      // Reset game state
       currentPlayerId = null;
       currentPlayerIndex = 0;
       
@@ -666,24 +668,16 @@
         player.querySelector('.player-name').textContent = "Waiting...";
       });
       
-      // Reset UI sections
+      // Reset bottle position
+      bottle.style.transform = `rotate(0deg)`;
+      
+      // Hide all sections
       choiceSection.classList.add('hidden');
       questionSection.classList.add('hidden');
       answerSection.classList.add('hidden');
       
-      // Reset bottle position
-      bottle.style.transform = `rotate(0deg)`;
-      
-      // Reset game state
-      gameState = {
-        players: {},
-        currentPlayer: 1,
-        bottleAngle: 0,
-        targetPlayer: 0,
-        question: "",
-        challengeType: "",
-        answer: ""
-      };
+      // Reset turn info
+      turnInfo.textContent = "Waiting for players to join...";
     }
 
     // Join game function
@@ -699,10 +693,10 @@
         }
         
         // Add player to the game
-        const newPlayerRef = database.ref('truthDare/players').push();
-        currentPlayerId = newPlayerRef.key;
+        playerRef = database.ref('truthDare/players').push();
+        currentPlayerId = playerRef.key;
         
-        newPlayerRef.set({
+        playerRef.set({
           name: name,
           position: playerCount + 1,
           active: true,
@@ -711,7 +705,7 @@
         });
         
         // Set up player removal on disconnect
-        newPlayerRef.onDisconnect().remove();
+        playerRef.onDisconnect().remove();
         
         // Hide login, show game and exit button
         loginSection.classList.add('hidden');
@@ -823,6 +817,7 @@
       // Re-enable after spin
       setTimeout(() => {
         spinBtn.innerHTML = '<i class="fas fa-redo-alt"></i> Spin Bottle';
+        // The button will be re-enabled when it's the player's turn again
       }, 3000);
     });
 
