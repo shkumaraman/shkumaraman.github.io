@@ -315,6 +315,65 @@
       font-weight: bold;
       color: #ff6b6b;
     }
+    
+    /* Chat Section Styles */
+    .chat-container {
+      width: 100%;
+      margin-top: 20px;
+      max-height: 200px;
+      overflow-y: auto;
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      padding: 10px;
+      background: white;
+    }
+    .chat-message {
+      margin-bottom: 10px;
+      padding: 8px;
+      border-radius: 8px;
+      background: #f1f1f1;
+    }
+    .chat-sender {
+      font-weight: bold;
+      color: #ff6b6b;
+      font-size: 12px;
+    }
+    .chat-text {
+      margin-top: 3px;
+    }
+    .chat-image {
+      max-width: 100%;
+      max-height: 100px;
+      border-radius: 5px;
+      margin-top: 5px;
+    }
+    .chat-input-container {
+      display: flex;
+      margin-top: 10px;
+    }
+    .chat-input {
+      flex: 1;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 5px 0 0 5px;
+    }
+    .chat-send-btn {
+      padding: 8px 12px;
+      background: #4caf50;
+      color: white;
+      border: none;
+      border-radius: 0 5px 5px 0;
+      cursor: pointer;
+    }
+    .chat-img-btn {
+      padding: 8px 12px;
+      background: #2575fc;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      margin-left: 5px;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
@@ -445,6 +504,24 @@
           <i class="fas fa-check"></i> Submit Answer
         </button>
       </div>
+      
+      <!-- Chat Section -->
+      <div class="message-area">
+        <div class="message-header">
+          <i class="fas fa-comments"></i> Group Chat
+        </div>
+        <div class="chat-container" id="chatLog"></div>
+        <div class="chat-input-container">
+          <input type="text" class="chat-input" id="chatInput" placeholder="Type a message...">
+          <button class="chat-send-btn" id="chatSendBtn">
+            <i class="fas fa-paper-plane"></i>
+          </button>
+          <button class="chat-img-btn" id="chatImgBtn">
+            <i class="fas fa-image"></i>
+          </button>
+          <input type="file" id="chatImageUpload" accept="image/*" class="hidden">
+        </div>
+      </div>
     </div>
   </div>
 
@@ -455,9 +532,9 @@
 
   <script>
     // Firebase configuration
-  const firebaseConfig = {
-    databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
-  };
+    const firebaseConfig = {
+      databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
+    };
 
     // Initialize Firebase
     firebase.initializeApp(firebaseConfig);
@@ -484,6 +561,13 @@
     const submitAnswerBtn = document.getElementById("submitAnswerBtn");
     const targetPlayerName = document.getElementById("targetPlayerName");
     
+    // Chat elements
+    const chatLog = document.getElementById("chatLog");
+    const chatInput = document.getElementById("chatInput");
+    const chatSendBtn = document.getElementById("chatSendBtn");
+    const chatImgBtn = document.getElementById("chatImgBtn");
+    const chatImageUpload = document.getElementById("chatImageUpload");
+    
     // Get player elements
     const players = [
       document.getElementById("player1"),
@@ -501,6 +585,10 @@
     let currentPlayerId = null;
     let currentPlayerIndex = 0;
     let playerName = "";
+    let myId = 'user_' + Math.random().toString(36).substr(2, 9);
+    let myNickname = localStorage.getItem('talkrush_nickname') || 'Guest';
+    let isSendingMessage = false;
+    
     let gameState = {
       players: {},
       currentPlayer: 1,
@@ -511,10 +599,21 @@
       answer: ""
     };
 
+    // Load saved nickname if available
+    window.addEventListener('load', () => {
+      if (myNickname !== 'Guest') {
+        playerNameInput.value = myNickname;
+      }
+    });
+
     // Join game button click
     joinBtn.addEventListener("click", () => {
       playerName = playerNameInput.value.trim();
       if (playerName !== "") {
+        // Save nickname to localStorage
+        localStorage.setItem('talkrush_nickname', playerName);
+        myNickname = playerName;
+        
         joinGame(playerName);
       } else {
         alert("Please enter your name");
@@ -524,7 +623,7 @@
     // Join game function
     function joinGame(name) {
       // Check if there's space in the game
-      database.ref('game/players').once('value', (snapshot) => {
+      database.ref('truthDare/players').once('value', (snapshot) => {
         const players = snapshot.val() || {};
         const playerCount = Object.keys(players).length;
         
@@ -534,13 +633,15 @@
         }
         
         // Add player to the game
-        const newPlayerRef = database.ref('game/players').push();
+        const newPlayerRef = database.ref('truthDare/players').push();
         currentPlayerId = newPlayerRef.key;
         
         newPlayerRef.set({
           name: name,
           position: playerCount + 1,
-          active: true
+          active: true,
+          userId: myId,
+          nickname: myNickname
         });
         
         // Set up player removal on disconnect
@@ -550,6 +651,9 @@
         loginSection.classList.add('hidden');
         gameSection.classList.remove('hidden');
         
+        // Set up chat functionality
+        setupChat();
+        
         // Listen for game changes
         setupGameListeners();
       });
@@ -558,7 +662,7 @@
     // Set up Firebase listeners
     function setupGameListeners() {
       // Listen for player changes
-      database.ref('game/players').on('value', (snapshot) => {
+      database.ref('truthDare/players').on('value', (snapshot) => {
         const playersData = snapshot.val() || {};
         const playerCount = Object.keys(playersData).length;
         
@@ -585,7 +689,7 @@
       });
       
       // Listen for game state changes
-      database.ref('game/state').on('value', (snapshot) => {
+      database.ref('truthDare/state').on('value', (snapshot) => {
         if (snapshot.exists()) {
           gameState = snapshot.val();
           
@@ -619,7 +723,7 @@
       });
       
       // Find our current player index
-      const currentPlayer = Object.values(playersData).find(p => p.name === playerName);
+      const currentPlayer = Object.values(playersData).find(p => p.userId === myId);
       if (currentPlayer) {
         currentPlayerIndex = currentPlayer.position;
       }
@@ -636,7 +740,7 @@
       const targetPlayer = (currentPlayerIndex + segment) % 4 || 4;
       
       // Update game state
-      database.ref('game/state').update({
+      database.ref('truthDare/state').update({
         bottleAngle: randomDegree,
         targetPlayer: targetPlayer,
         currentPlayer: targetPlayer, // Next player's turn
@@ -664,7 +768,7 @@
       
       // If we have a target player and it's not the current player's turn
       if (gameState.targetPlayer && gameState.targetPlayer !== currentPlayerIndex) {
-        const playersRef = database.ref('game/players');
+        const playersRef = database.ref('truthDare/players');
         playersRef.once('value', (snapshot) => {
           const playersData = snapshot.val() || {};
           const targetPlayer = Object.values(playersData).find(p => p.position === gameState.targetPlayer);
@@ -687,7 +791,7 @@
 
     // Truth button click
     truthBtn.addEventListener("click", () => {
-      database.ref('game/state').update({
+      database.ref('truthDare/state').update({
         challengeType: "truth"
       });
       choiceSection.classList.add('hidden');
@@ -695,7 +799,7 @@
 
     // Dare button click
     dareBtn.addEventListener("click", () => {
-      database.ref('game/state').update({
+      database.ref('truthDare/state').update({
         challengeType: "dare"
       });
       choiceSection.classList.add('hidden');
@@ -705,13 +809,13 @@
     sendBtn.addEventListener("click", () => {
       const question = questionInput.value.trim();
       if (question !== "") {
-        database.ref('game/state').update({
+        database.ref('truthDare/state').update({
           question: question
         });
         
         messageText.textContent = question;
         
-        const playersRef = database.ref('game/players');
+        const playersRef = database.ref('truthDare/players');
         playersRef.once('value', (snapshot) => {
           const playersData = snapshot.val() || {};
           const askingPlayer = Object.values(playersData).find(p => p.position === gameState.currentPlayer);
@@ -748,7 +852,7 @@
     submitAnswerBtn.addEventListener("click", () => {
       const answer = answerInput.value.trim();
       if (answer !== "") {
-        database.ref('game/state').update({
+        database.ref('truthDare/state').update({
           answer: answer,
           targetPlayer: 0, // Reset target player
           currentPlayer: currentPlayerIndex // Set turn back to the answerer
@@ -760,6 +864,192 @@
         imagePreview.classList.add('hidden');
       }
     });
+
+    // Chat functionality
+    function setupChat() {
+      // Load initial chat messages
+      const messagesRef = database.ref("truthDare/chat").limitToLast(20);
+      messagesRef.once('value', (snapshot) => {
+        const messages = snapshot.val();
+        if (messages) {
+          Object.values(messages).forEach(msg => {
+            displayChatMessage(msg);
+          });
+        }
+        scrollChatToBottom();
+      });
+      
+      // Listen for new chat messages
+      messagesRef.on('child_added', (snapshot) => {
+        const msg = snapshot.val();
+        displayChatMessage(msg);
+        scrollChatToBottom();
+      });
+      
+      // Send message on button click
+      chatSendBtn.addEventListener("click", sendChatMessage);
+      
+      // Send message on Enter key
+      chatInput.addEventListener("keypress", (e) => {
+        if (e.key === "Enter") {
+          sendChatMessage();
+        }
+      });
+      
+      // Image upload for chat
+      chatImgBtn.addEventListener("click", () => {
+        chatImageUpload.click();
+      });
+      
+      chatImageUpload.addEventListener("change", function() {
+        const file = this.files[0];
+        if (file) {
+          if (file.size > 5 * 1024 * 1024) {
+            alert("Image too large! Please select an image smaller than 5MB.");
+            this.value = "";
+            return;
+          }
+          
+          compressImage(file, (compressedImage) => {
+            sendChatImage(compressedImage);
+          });
+        }
+      });
+    }
+    
+    function sendChatMessage() {
+      const text = chatInput.value.trim();
+      if (!text || isSendingMessage) return;
+      isSendingMessage = true;
+      
+      const timestamp = Date.now();
+      const message = {
+        text: text,
+        sender: myId,
+        timestamp: timestamp,
+        nickname: myNickname
+      };
+      
+      const newMsgRef = database.ref("truthDare/chat").push();
+      newMsgRef.set(message)
+        .then(() => {
+          isSendingMessage = false;
+          chatInput.value = "";
+        })
+        .catch(err => {
+          console.error("Error sending message:", err);
+          isSendingMessage = false;
+        });
+    }
+    
+    function sendChatImage(blob) {
+      if (isSendingMessage) return;
+      isSendingMessage = true;
+      
+      const timestamp = Date.now();
+      const message = {
+        type: "image",
+        sender: myId,
+        timestamp: timestamp,
+        blob: blob,
+        nickname: myNickname
+      };
+      
+      const newMsgRef = database.ref("truthDare/chat").push();
+      newMsgRef.set(message)
+        .then(() => {
+          isSendingMessage = false;
+        })
+        .catch(err => {
+          console.error("Error sending image:", err);
+          isSendingMessage = false;
+        });
+      
+      chatImageUpload.value = "";
+    }
+    
+    function displayChatMessage(msg) {
+      const messageDiv = document.createElement("div");
+      messageDiv.className = "chat-message";
+      
+      const senderDiv = document.createElement("div");
+      senderDiv.className = "chat-sender";
+      senderDiv.textContent = msg.nickname || "Guest";
+      
+      messageDiv.appendChild(senderDiv);
+      
+      if (msg.type === "image") {
+        const img = document.createElement("img");
+        img.src = msg.blob;
+        img.className = "chat-image";
+        messageDiv.appendChild(img);
+      } else {
+        const textDiv = document.createElement("div");
+        textDiv.className = "chat-text";
+        textDiv.textContent = msg.text;
+        messageDiv.appendChild(textDiv);
+      }
+      
+      chatLog.appendChild(messageDiv);
+    }
+    
+    function scrollChatToBottom() {
+      chatLog.scrollTop = chatLog.scrollHeight;
+    }
+    
+    function compressImage(file, callback) {
+      const reader = new FileReader();
+      reader.onload = function(event) {
+        const img = new Image();
+        img.onload = function() {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          
+          let width = img.width;
+          let height = img.height;
+          const maxDimension = 1024;
+          const quality = 0.7;
+          
+          if (width > height) {
+            if (width > maxDimension) {
+              height *= maxDimension / width;
+              width = maxDimension;
+            }
+          } else {
+            if (height > maxDimension) {
+              width *= maxDimension / height;
+              height = maxDimension;
+            }
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          let qualityAdjusted = quality;
+          let result;
+          
+          do {
+            result = canvas.toDataURL('image/jpeg', qualityAdjusted);
+            qualityAdjusted -= 0.05;
+            if (qualityAdjusted <= 0.1) break;
+          } while (result.length > 100 * 1024);
+          
+          if (result.length > 100 * 1024) {
+            width *= 0.9;
+            height *= 0.9;
+            canvas.width = width;
+            canvas.height = height;
+            ctx.drawImage(img, 0, 0, width, height);
+            result = canvas.toDataURL('image/jpeg', 0.7);
+          }
+          
+          callback(result);
+        };
+        img.src = event.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
 
     // Initialize the game
     spinBtn.disabled = true;
