@@ -20,7 +20,6 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      padding: 20px;
       color: #333;
     }
     .container {
@@ -31,6 +30,7 @@
       width: 100%;
       max-width: 500px;
       padding: 0;
+      margin: 10px;
     }
     .header {
       background: #ff6b6b;
@@ -39,6 +39,24 @@
       text-align: center;
       font-size: 22px;
       font-weight: bold;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .exit-btn {
+      background: rgba(255, 255, 255, 0.3);
+      border: none;
+      color: white;
+      border-radius: 50%;
+      width: 30px;
+      height: 30px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .exit-btn:hover {
+      background: rgba(255, 255, 255, 0.5);
     }
     .game-area {
       padding: 20px;
@@ -381,6 +399,9 @@
   <div class="container">
     <div class="header">
       <i class="fas fa-gamepad"></i> Truth & Dare Bottle Game
+      <button class="exit-btn hidden" id="exitBtn">
+        <i class="fas fa-times"></i>
+      </button>
     </div>
 
     <!-- Login Section -->
@@ -560,6 +581,7 @@
     const imagePreview = document.getElementById("imagePreview");
     const submitAnswerBtn = document.getElementById("submitAnswerBtn");
     const targetPlayerName = document.getElementById("targetPlayerName");
+    const exitBtn = document.getElementById("exitBtn");
     
     // Chat elements
     const chatLog = document.getElementById("chatLog");
@@ -620,6 +642,50 @@
       }
     });
 
+    // Exit button click
+    exitBtn.addEventListener("click", () => {
+      if (confirm("Are you sure you want to exit the game?")) {
+        if (currentPlayerId) {
+          database.ref('truthDare/players/' + currentPlayerId).remove();
+        }
+        resetGame();
+      }
+    });
+
+    // Reset game function
+    function resetGame() {
+      loginSection.classList.remove('hidden');
+      gameSection.classList.add('hidden');
+      exitBtn.classList.add('hidden');
+      currentPlayerId = null;
+      currentPlayerIndex = 0;
+      
+      // Reset player displays
+      players.forEach(player => {
+        player.classList.remove('active');
+        player.querySelector('.player-name').textContent = "Waiting...";
+      });
+      
+      // Reset UI sections
+      choiceSection.classList.add('hidden');
+      questionSection.classList.add('hidden');
+      answerSection.classList.add('hidden');
+      
+      // Reset bottle position
+      bottle.style.transform = `rotate(0deg)`;
+      
+      // Reset game state
+      gameState = {
+        players: {},
+        currentPlayer: 1,
+        bottleAngle: 0,
+        targetPlayer: 0,
+        question: "",
+        challengeType: "",
+        answer: ""
+      };
+    }
+
     // Join game function
     function joinGame(name) {
       // Check if there's space in the game
@@ -647,9 +713,10 @@
         // Set up player removal on disconnect
         newPlayerRef.onDisconnect().remove();
         
-        // Hide login, show game
+        // Hide login, show game and exit button
         loginSection.classList.add('hidden');
         gameSection.classList.remove('hidden');
+        exitBtn.classList.remove('hidden');
         
         // Set up chat functionality
         setupChat();
