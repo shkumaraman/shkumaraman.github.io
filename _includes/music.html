@@ -1,4 +1,4 @@
-   <style>
+    <style>
         /* Mini floating player */
         #miniPlayer {
             position: fixed;
@@ -77,6 +77,52 @@
             outline: none;
             border-color: #ff5252;
         }
+        
+        /* Search input styling */
+        #searchInput {
+            width: 80%; 
+            max-width: 500px;
+            padding:12px 15px; 
+            margin-bottom:15px; 
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            transition: border-color 0.3s;
+        }
+        #searchInput:focus {
+            outline: none;
+            border-color: #4CAF50;
+        }
+        
+        /* Search results container */
+        #searchResults {
+            width: 80%;
+            max-width: 500px;
+            max-height: 200px;
+            overflow-y: auto;
+            margin-bottom: 20px;
+            border: 1px solid #eee;
+            border-radius: 8px;
+            background: white;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .search-result-item {
+            padding: 10px 15px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .search-result-item:hover {
+            background: #f5f5f5;
+        }
+        
+        .search-result-item:last-child {
+            border-bottom: none;
+        }
+        
         .control-buttons {
             display: flex;
             gap: 8px;
@@ -184,6 +230,10 @@
             <i class="fas fa-music"></i>
         </div>
 
+        <!-- Search input -->
+        <input id="searchInput" placeholder="Search YouTube videos..." />
+        <div id="searchResults"></div>
+        
         <input id="urlInput" placeholder="Paste YouTube URL here" />
         <div class="control-buttons">
             <button id="prevBtn" title="Back 10 seconds">
@@ -260,6 +310,9 @@
                 // Setup Firebase listener
                 this.setupFirebaseListener();
                 
+                // Setup search functionality
+                this.setupSearch();
+                
                 // Check if YouTube API is already loaded
                 if (typeof YT !== 'undefined' && YT.loaded) {
                     this.onYouTubeIframeAPIReady();
@@ -289,7 +342,7 @@
                         fullPlayer.style.display = 'none';
                     } else {
                         fullPlayer.style.display = 'flex';
-                        setTimeout(() => urlInput.focus(), 100);
+                        setTimeout(() => document.getElementById('searchInput').focus(), 100);
                     }
                 });
                 
@@ -309,6 +362,47 @@
                 urlInput.addEventListener('keypress', (e) => {
                     if (e.key === 'Enter') {
                         playPauseBtn.click();
+                    }
+                });
+            },
+            
+            setupSearch: function() {
+                const searchInput = document.getElementById('searchInput');
+                const searchResults = document.getElementById('searchResults');
+                
+                searchInput.addEventListener('keypress', async (e) => {
+                    if(e.key === 'Enter'){
+                        const query = encodeURIComponent(e.target.value);
+                        searchResults.innerHTML = 'Searching...';
+
+                        try {
+                            // Fetch YouTube search page
+                            const response = await fetch(`https://www.youtube.com/results?search_query=${query}`);
+                            const text = await response.text();
+
+                            // Extract video IDs using regex
+                            const videoIds = [...text.matchAll(/"videoId":"([a-zA-Z0-9_-]{11})"/g)]
+                                             .map(m => m[1])
+                                             .slice(0, 5); // top 5 results
+
+                            // Show results
+                            searchResults.innerHTML = '';
+                            videoIds.forEach(id => {
+                                const div = document.createElement('div');
+                                div.className = 'search-result-item';
+                                div.textContent = `https://youtu.be/${id}`;
+                                div.addEventListener('click', () => {
+                                    document.getElementById('urlInput').value = `https://youtu.be/${id}`;
+                                    document.getElementById('playPauseBtn').click(); // auto-play
+                                    searchResults.innerHTML = ''; // Clear results
+                                    searchInput.value = ''; // Clear search input
+                                });
+                                searchResults.appendChild(div);
+                            });
+                        } catch(err) {
+                            searchResults.innerHTML = 'Error fetching results';
+                            console.error(err);
+                        }
                     }
                 });
             },
