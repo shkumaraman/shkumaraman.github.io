@@ -14,7 +14,7 @@
       width: 45px;
       height: 45px;
       background: #ff5252;
-      border-radius: 50%;
+      border-radius: 10px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -35,7 +35,7 @@
     #fullPlayer {
       position: fixed;
       top:0; left:0; right:0; bottom:0;
-      background: #fff;
+      background: rgba(255, 255, 255, 0.95);
       z-index: 999;
       display: none;
       flex-direction: column;
@@ -48,31 +48,39 @@
     #fullPlayer h3 { 
       margin-bottom:20px; 
       color: #333;
+      font-family: 'Arial', sans-serif;
     }
-    #fullPlayer input[type="text"] { 
+    #urlInput { 
       width: 80%; 
-      padding:12px; 
-      margin-bottom:15px; 
-      border: 1px solid #ddd;
-      border-radius: 4px;
+      max-width: 500px;
+      padding:12px 15px; 
+      margin-bottom:20px; 
+      border: 2px solid #ddd;
+      border-radius: 8px;
       font-size: 16px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+      transition: border-color 0.3s;
+    }
+    #urlInput:focus {
+      outline: none;
+      border-color: #ff5252;
     }
     .control-buttons {
       display: flex;
-      gap: 10px;
-      margin-bottom: 15px;
+      gap: 8px;
+      margin-bottom: 20px;
     }
     .control-buttons button {
-      width: 45px;
-      height: 45px;
-      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
       border: none;
       background: #f0f0f0;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      transition: background 0.2s;
+      transition: all 0.2s;
     }
     .control-buttons button:hover {
       background: #e0e0e0;
@@ -81,7 +89,7 @@
       transform: scale(0.95);
     }
     .control-buttons button i {
-      font-size: 18px;
+      font-size: 16px;
       color: #333;
     }
     #playPauseBtn {
@@ -92,39 +100,34 @@
     }
     .slider { 
       width: 80%; 
-      margin-top: 10px; 
-      height: 5px;
+      max-width: 500px;
+      margin: 15px 0; 
+      height: 6px;
       -webkit-appearance: none;
       appearance: none;
       background: #ddd;
       outline: none;
-      border-radius: 5px;
+      border-radius: 3px;
     }
     .slider::-webkit-slider-thumb {
       -webkit-appearance: none;
       appearance: none;
-      width: 15px;
-      height: 15px;
+      width: 16px;
+      height: 16px;
       border-radius: 50%;
       background: #ff5252;
       cursor: pointer;
+      transition: background 0.2s;
+    }
+    .slider::-webkit-slider-thumb:hover {
+      background: #ff0000;
     }
 
-    #fullPlayer .closeBtn {
-      position: absolute;
-      top: 20px;
-      right: 20px;
-      font-size: 28px;
-      cursor: pointer;
-      color: #333;
-      background: none;
-      border: none;
-    }
-
-    #fullPlayer .time-display {
+    .time-display {
       margin-top: 10px;
       color: #666;
       font-size: 14px;
+      font-family: monospace;
     }
 
     #player { 
@@ -134,26 +137,47 @@
       left:-9999px; 
       opacity:0; 
     }
+    
+    .player-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      width: 80%;
+      max-width: 500px;
+      margin-bottom: 15px;
+    }
+    
+    .now-playing {
+      font-size: 14px;
+      color: #666;
+      font-style: italic;
+      max-width: 300px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
   </style>
 </head>
 <body>
-  <!-- Mini draggable player -->
-  <div id="miniPlayer" title="Open Player"><i class="fas fa-music"></i></div>
+  <!-- Mini player (no longer draggable) -->
+  <div id="miniPlayer" title="Open/Close Player"><i class="fas fa-music"></i></div>
 
   <!-- Fullscreen Player -->
   <div id="fullPlayer">
-    <button class="closeBtn">&times;</button>
-    <h3>YouTube Audio Player</h3>
+    <div class="player-header">
+      <h3>YouTube Audio Player</h3>
+      <div class="now-playing" id="nowPlaying">Not playing</div>
+    </div>
 
-    <input id="urlInput" placeholder="Paste YouTube URL" />
+    <input id="urlInput" placeholder="Paste YouTube URL here" />
     <div class="control-buttons">
-      <button id="prevBtn" title="Previous">
+      <button id="prevBtn" title="Back 10 seconds">
         <i class="fas fa-backward-step"></i>
       </button>
       <button id="playPauseBtn" title="Play/Pause">
         <i class="fas fa-play"></i>
       </button>
-      <button id="nextBtn" title="Next">
+      <button id="nextBtn" title="Forward 10 seconds">
         <i class="fas fa-forward-step"></i>
       </button>
     </div>
@@ -169,6 +193,7 @@
   <!-- YouTube IFrame API -->
   <script>
     function extractYouTubeID(url) {
+      if (!url) return null;
       if (/^[a-zA-Z0-9_-]{11}$/.test(url)) return url;
       try {
         const u = new URL(url);
@@ -179,32 +204,69 @@
       return m ? m[0] : null;
     }
 
-    let player, ytReady=false;
+    let player, ytReady = false;
     const tag = document.createElement("script");
     tag.src = "https://www.youtube.com/iframe_api";
     document.head.appendChild(tag);
 
     function onYouTubeIframeAPIReady() {
       player = new YT.Player("player", {
-        height:"1", width:"1", videoId:"",
-        playerVars: { controls:0, modestbranding:1, rel:0, playsinline:1 },
+        height: "1", 
+        width: "1", 
+        videoId: "",
+        playerVars: { 
+          controls: 0, 
+          modestbranding: 1, 
+          rel: 0, 
+          playsinline: 1 
+        },
         events: { 
-          onReady: ()=>{ 
-            ytReady=true; 
+          onReady: () => { 
+            ytReady = true; 
             console.log("YouTube player ready");
+            // Check if there's a saved state
+            checkSavedState();
           },
-          onStateChange: (e)=>{
-            if(e.data === YT.PlayerState.PLAYING){
-              try{
+          onStateChange: (e) => {
+            if (e.data === YT.PlayerState.PLAYING) {
+              try {
                 player.setPlaybackQuality("tiny");
-              }catch(e){}
+              } catch(e) {}
               // Update play/pause button icon
               playPauseBtn.innerHTML = '<i class="fas fa-pause"></i>';
-            } else if(e.data === YT.PlayerState.PAUSED || e.data === YT.PlayerState.ENDED){
+              isPlaying = true;
+            } else if (e.data === YT.PlayerState.PAUSED || e.data === YT.PlayerState.ENDED) {
               // Update play/pause button icon
               playPauseBtn.innerHTML = '<i class="fas fa-play"></i>';
+              isPlaying = false;
+              
+              // If ended, reset to beginning
+              if (e.data === YT.PlayerState.ENDED) {
+                player.seekTo(0);
+                updateState({ status: "paused", timestamp: 0, currentSong: currentSongUrl });
+              }
+            }
+            
+            // Update Firebase with current state
+            if (!localChange && currentSongUrl) {
+              const t = Math.floor(player.getCurrentTime());
+              updateState({ 
+                status: e.data === YT.PlayerState.PLAYING ? "playing" : "paused", 
+                timestamp: t, 
+                currentSong: currentSongUrl 
+              });
             }
           }
+        }
+      });
+    }
+    
+    function checkSavedState() {
+      // Check if there's a saved state in Firebase
+      stateRef.once("value").then((snapshot) => {
+        const data = snapshot.val();
+        if (data && data.currentSong) {
+          processNewSong(data.currentSong, data.status, data.timestamp);
         }
       });
     }
@@ -231,64 +293,53 @@
     const seekBar = document.getElementById("seekBar");
     const curTimeEl = document.getElementById("curTime");
     const durEl = document.getElementById("duration");
-    const closeBtn = document.querySelector(".closeBtn");
+    const nowPlayingEl = document.getElementById("nowPlaying");
 
     let localChange = false;
     let isPlaying = false;
+    let currentSongUrl = "";
+    let playerInterval;
 
-    // Draggable mini player
-    let isDragging = false, offsetX, offsetY;
-    miniPlayer.addEventListener("mousedown", e => {
-      isDragging = true;
-      offsetX = e.clientX - miniPlayer.offsetLeft;
-      offsetY = e.clientY - miniPlayer.offsetTop;
-      miniPlayer.style.cursor = "grabbing";
-    });
-    document.addEventListener("mousemove", e => {
-      if(!isDragging) return;
-      miniPlayer.style.left = (e.clientX - offsetX) + "px";
-      miniPlayer.style.top = (e.clientY - offsetY) + "px";
-      miniPlayer.style.right = "auto";
-      miniPlayer.style.bottom = "auto";
-    });
-    document.addEventListener("mouseup", () => { 
-      isDragging = false;
-      miniPlayer.style.cursor = "pointer";
-    });
-
-    // Open full player
+    // Toggle full player with mini player click
     miniPlayer.addEventListener("click", () => {
-      fullPlayer.style.display = "flex";
-    });
-
-    // Close full player
-    closeBtn.addEventListener("click", () => {
-      fullPlayer.style.display = "none";
+      if (fullPlayer.style.display === "flex") {
+        fullPlayer.style.display = "none";
+      } else {
+        fullPlayer.style.display = "flex";
+        // Focus the input when opening
+        setTimeout(() => urlInput.focus(), 100);
+      }
     });
 
     // Firebase listener
     stateRef.on("value", (snapshot) => {
       const data = snapshot.val();
-      if(!data || !ytReady) return;
-      if(localChange){ localChange = false; return; }
+      if (!data || !ytReady) return;
+      if (localChange) { 
+        localChange = false; 
+        return; 
+      }
 
       const { currentSong, status, timestamp } = data;
+      
+      // Update the URL input field with the current song
+      if (currentSong && currentSong !== urlInput.value) {
+        urlInput.value = currentSong;
+      }
+      
       const vid = extractYouTubeID(currentSong || "");
-      if(!vid) return;
+      if (!vid) return;
       
       const currentVid = player.getVideoData().video_id;
-      if(currentVid !== vid){
-        player.loadVideoById({videoId: vid, startSeconds: timestamp || 0});
-        if(status === "playing") {
-          player.playVideo();
-          isPlaying = true;
-        } else {
-          player.pauseVideo();
-          isPlaying = false;
-        }
+      
+      // If it's a new video or we don't have a video loaded
+      if (currentVid !== vid) {
+        processNewSong(currentSong, status, timestamp);
       } else {
+        // Same video, just update position and state
         player.seekTo(timestamp || 0, true);
-        if(status === "playing") {
+        
+        if (status === "playing") {
           player.playVideo();
           isPlaying = true;
         } else {
@@ -298,7 +349,29 @@
       }
     });
 
-    function updateState(obj){
+    function processNewSong(url, status, timestamp) {
+      const vid = extractYouTubeID(url || "");
+      if (!vid) return;
+      
+      currentSongUrl = url;
+      urlInput.value = url;
+      nowPlayingEl.textContent = "Playing: " + url;
+      
+      player.loadVideoById({
+        videoId: vid, 
+        startSeconds: timestamp || 0
+      });
+      
+      if (status === "playing") {
+        player.playVideo();
+        isPlaying = true;
+      } else {
+        player.pauseVideo();
+        isPlaying = false;
+      }
+    }
+
+    function updateState(obj) {
       localChange = true;
       stateRef.set(obj);
     }
@@ -308,88 +381,101 @@
       const url = urlInput.value.trim();
       const vid = extractYouTubeID(url);
       
-      if(!vid) return alert("Please enter a valid YouTube URL");
-      if(!ytReady) return alert("Player not ready yet!");
+      if (!vid) return alert("Please enter a valid YouTube URL");
+      if (!ytReady) return alert("Player not ready yet!");
       
       const currentVid = player.getVideoData().video_id;
-      let startTime = 0;
+      let startTime = Math.floor(player.getCurrentTime() || 0);
       
-      if(currentVid === vid) {
-        startTime = Math.floor(player.getCurrentTime() || 0);
-      }
-      
-      if(!isPlaying) {
-        player.loadVideoById({videoId: vid, startSeconds: startTime});
+      // If it's a new video
+      if (currentVid !== vid) {
+        currentSongUrl = url;
+        nowPlayingEl.textContent = "Playing: " + url;
+        player.loadVideoById({videoId: vid, startSeconds: 0});
         player.unMute();
         player.playVideo();
         isPlaying = true;
-        updateState({ currentSong: url, status: "playing", timestamp: startTime });
+        updateState({ currentSong: url, status: "playing", timestamp: 0 });
       } else {
-        const t = Math.floor(player.getCurrentTime());
-        player.pauseVideo();
-        isPlaying = false;
-        updateState({ status: "paused", timestamp: t, currentSong: url });
+        // Toggle play/pause for current video
+        if (!isPlaying) {
+          player.playVideo();
+          isPlaying = true;
+          updateState({ currentSong: url, status: "playing", timestamp: startTime });
+        } else {
+          player.pauseVideo();
+          isPlaying = false;
+          updateState({ status: "paused", timestamp: startTime, currentSong: url });
+        }
       }
     });
 
     // Skip backward 10 seconds
     prevBtn.addEventListener("click", () => {
-      if(!player || !player.getCurrentTime) return;
+      if (!player || !player.getCurrentTime) return;
       const currentTime = player.getCurrentTime();
       const newTime = Math.max(0, currentTime - 10);
       player.seekTo(newTime, true);
       
-      const state = player.getPlayerState();
-      const playing = (state === YT.PlayerState.PLAYING);
       updateState({ 
-        status: playing ? "playing" : "paused", 
+        status: isPlaying ? "playing" : "paused", 
         timestamp: newTime, 
-        currentSong: urlInput.value.trim() 
+        currentSong: currentSongUrl 
       });
     });
 
     // Skip forward 10 seconds
     nextBtn.addEventListener("click", () => {
-      if(!player || !player.getCurrentTime) return;
+      if (!player || !player.getCurrentTime) return;
       const currentTime = player.getCurrentTime();
       const duration = player.getDuration();
       const newTime = Math.min(duration, currentTime + 10);
       player.seekTo(newTime, true);
       
-      const state = player.getPlayerState();
-      const playing = (state === YT.PlayerState.PLAYING);
       updateState({ 
-        status: playing ? "playing" : "paused", 
+        status: isPlaying ? "playing" : "paused", 
         timestamp: newTime, 
-        currentSong: urlInput.value.trim() 
+        currentSong: currentSongUrl 
       });
     });
 
     // Seek
     seekBar.addEventListener("input", () => {
-      if(!player) return;
+      if (!player) return;
       const sec = parseInt(seekBar.value, 10);
       player.seekTo(sec, true);
       
-      const state = player.getPlayerState();
-      const playing = (state === YT.PlayerState.PLAYING);
       updateState({ 
-        status: playing ? "playing" : "paused", 
+        status: isPlaying ? "playing" : "paused", 
         timestamp: sec, 
-        currentSong: urlInput.value.trim() 
+        currentSong: currentSongUrl 
       });
     });
 
     // Update slider and time display
-    setInterval(() => {
-      if(!player || !player.getCurrentTime) return;
+    function updatePlayerUI() {
+      if (!player || !player.getCurrentTime) return;
       const t = Math.floor(player.getCurrentTime() || 0);
       const d = Math.floor(player.getDuration() || 0);
       curTimeEl.textContent = t;
       durEl.textContent = d;
-      seekBar.max = d;
-      seekBar.value = t;
-    }, 1000);
+      
+      // Only update seekbar if not being dragged
+      if (!seekBar.matches(':active')) {
+        seekBar.max = d;
+        seekBar.value = t;
+      }
+    }
+    
+    // Start UI update interval
+    playerInterval = setInterval(updatePlayerUI, 1000);
+    
+    // Also update when user enters a URL manually
+    urlInput.addEventListener("keypress", (e) => {
+      if (e.key === "Enter") {
+        playPauseBtn.click();
+      }
+    });
   </script>
 </body>
-  </html>
+</html>
