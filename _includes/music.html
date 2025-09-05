@@ -1,171 +1,225 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>YouTube Firebase Sync Demo</title>
-  <style>
-    body { font-family: Arial, sans-serif; padding: 18px; }
-    #player { width:1px; height:1px; position:absolute; left:-9999px; opacity:0; }
-    input[type="text"] { width:60%; padding:6px; }
-    button { padding:6px 10px; margin:4px; }
-    .slider { width: 80%; margin-top: 10px; }
-  </style>
-</head>
-<body>
-  <h3>YouTube Audio-like Player (Firebase Sync Demo)</h3>
+<style>
+  /* Mini floating player */
+  #miniPlayer {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 60px;
+    height: 60px;
+    background: #ff5252;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 1000;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  }
+  #miniPlayer i { color: white; font-size: 24px; }
 
+  /* Fullscreen player overlay */
+  #fullPlayer {
+    position: fixed;
+    top:0; left:0; right:0; bottom:0;
+    background: #fff;
+    z-index: 999;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    box-sizing: border-box;
+  }
+
+  #fullPlayer h3 { margin-bottom:20px; }
+  #fullPlayer input[type="text"] { width: 80%; padding:8px; margin-bottom:10px; }
+  #fullPlayer button { padding:8px 12px; margin:4px; cursor:pointer; }
+  .slider { width: 80%; margin-top: 10px; }
+
+  #fullPlayer .closeBtn {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    font-size: 28px;
+    cursor: pointer;
+  }
+
+  #player { width:1px; height:1px; position:absolute; left:-9999px; opacity:0; }
+</style>
+  
+<!-- Mini draggable player -->
+<div id="miniPlayer" title="Open Player"><i class="fas fa-music"></i></div>
+
+<!-- Fullscreen Player -->
+<div id="fullPlayer">
+  <span class="closeBtn">&times;</span>
+  <h3>YouTube Audio Player</h3>
+
+  <input id="urlInput" placeholder="Paste YouTube URL" />
   <div>
-    <input id="urlInput" placeholder="Paste YouTube URL" />
-    <button id="playBtn">Play</button>
-    <button id="pauseBtn">Pause</button>
+    <button id="playBtn"><i class="fas fa-play"></i> Play</button>
+    <button id="pauseBtn"><i class="fas fa-pause"></i> Pause</button>
   </div>
-
   <input type="range" id="seekBar" class="slider" min="0" max="0" value="0" step="1">
   <div>
     <span id="curTime">0</span>s / <span id="duration">0</span>s
   </div>
+</div>
 
-  <!-- Hidden player -->
-  <div id="player"></div>
+<!-- Hidden YouTube player -->
+<div id="player"></div>
 
-  <!-- YouTube IFrame API -->
-  <script>
-    function extractYouTubeID(url) {
-      if (/^[a-zA-Z0-9_-]{11}$/.test(url)) return url;
-      try {
-        const u = new URL(url);
-        if (u.hostname.includes("youtu.be")) return u.pathname.slice(1);
-        if (u.searchParams.get("v")) return u.searchParams.get("v");
-      } catch {}
-      const m = url.match(/[a-zA-Z0-9_-]{11}/);
-      return m ? m[0] : null;
-    }
+<!-- YouTube IFrame API -->
+<script>
+  function extractYouTubeID(url) {
+    if (/^[a-zA-Z0-9_-]{11}$/.test(url)) return url;
+    try {
+      const u = new URL(url);
+      if (u.hostname.includes("youtu.be")) return u.pathname.slice(1);
+      if (u.searchParams.get("v")) return u.searchParams.get("v");
+    } catch {}
+    const m = url.match(/[a-zA-Z0-9_-]{11}/);
+    return m ? m[0] : null;
+  }
 
-    let player, ytReady = false;
-    const tag = document.createElement("script");
-    tag.src = "https://www.youtube.com/iframe_api";
-    document.head.appendChild(tag);
+  let player, ytReady=false;
+  const tag = document.createElement("script");
+  tag.src = "https://www.youtube.com/iframe_api";
+  document.head.appendChild(tag);
 
-    function onYouTubeIframeAPIReady() {
-      player = new YT.Player("player", {
-        height: "1",
-        width: "1",
-        videoId: "",
-        playerVars: { controls: 0, modestbranding: 1, rel: 0, playsinline: 1 },
-        events: {
-          onReady: () => { ytReady = true; },
-          onStateChange: (e) => {
-            if (e.data === YT.PlayerState.PLAYING) {
-              try { player.setPlaybackQuality("tiny"); } catch {}
-            }
-          }
+  function onYouTubeIframeAPIReady() {
+    player = new YT.Player("player", {
+      height:"1", width:"1", videoId:"",
+      playerVars: { controls:0, modestbranding:1, rel:0, playsinline:1 },
+      events: { 
+        onReady: ()=>{ ytReady=true; },
+        onStateChange: (e)=>{
+          if(e.data===YT.PlayerState.PLAYING){ try{player.setPlaybackQuality("tiny");}catch{} }
         }
-      });
-    }
-  </script>
-
-  <!-- Firebase v12.1.0 (compat) -->
-  <script src="https://www.gstatic.com/firebasejs/12.1.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/12.1.0/firebase-database-compat.js"></script>
-  <script>
-    // Firebase config
-    const firebaseConfig = {
-      databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
-    };
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.database();
-    const stateRef = db.ref("music");  // ✅ updated node name
-
-    // UI elements
-    const urlInput = document.getElementById("urlInput");
-    const playBtn = document.getElementById("playBtn");
-    const pauseBtn = document.getElementById("pauseBtn");
-    const seekBar = document.getElementById("seekBar");
-    const curTimeEl = document.getElementById("curTime");
-    const durEl = document.getElementById("duration");
-
-    let localChange = false;
-
-    // Firebase listener (server → client sync)
-    stateRef.on("value", (snapshot) => {
-      const data = snapshot.val();
-      if (!data || !ytReady) return;
-      if (localChange) { localChange = false; return; }
-
-      const { currentSong, status, timestamp } = data;
-      const vid = extractYouTubeID(currentSong || "");
-      if (!vid) return;
-
-      const currentVid = player.getVideoData().video_id;
-      if (currentVid !== vid) {
-        player.loadVideoById({ videoId: vid, startSeconds: timestamp || 0 });
-        if (status === "playing") player.playVideo();
-        else player.pauseVideo();
-      } else {
-        player.seekTo(timestamp || 0, true);
-        if (status === "playing") player.playVideo();
-        else player.pauseVideo();
       }
     });
+  }
+</script>
 
-    // Write state to Firebase
-    function updateState(obj) {
-      localChange = true;
-      stateRef.set(obj);
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/12.1.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.1.0/firebase-database-compat.js"></script>
+<script>
+  const firebaseConfig = {
+    databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
+  const stateRef = db.ref("music");
+
+  // UI
+  const miniPlayer = document.getElementById("miniPlayer");
+  const fullPlayer = document.getElementById("fullPlayer");
+  const urlInput = document.getElementById("urlInput");
+  const playBtn = document.getElementById("playBtn");
+  const pauseBtn = document.getElementById("pauseBtn");
+  const seekBar = document.getElementById("seekBar");
+  const curTimeEl = document.getElementById("curTime");
+  const durEl = document.getElementById("duration");
+  const closeBtn = document.querySelector(".closeBtn");
+
+  let localChange=false;
+
+  // Draggable mini player
+  let isDragging=false, offsetX, offsetY;
+  miniPlayer.addEventListener("mousedown", e=>{
+    isDragging=true;
+    offsetX = e.clientX - miniPlayer.offsetLeft;
+    offsetY = e.clientY - miniPlayer.offsetTop;
+  });
+  document.addEventListener("mousemove", e=>{
+    if(!isDragging) return;
+    miniPlayer.style.left = (e.clientX - offsetX)+"px";
+    miniPlayer.style.top = (e.clientY - offsetY)+"px";
+    miniPlayer.style.right = "auto";
+    miniPlayer.style.bottom = "auto";
+  });
+  document.addEventListener("mouseup", ()=>{ isDragging=false; });
+
+  // Open full player
+  miniPlayer.addEventListener("click", ()=>{
+    fullPlayer.style.display="flex";
+  });
+
+  // Close full player
+  closeBtn.addEventListener("click", ()=>{
+    fullPlayer.style.display="none";
+  });
+
+  // Firebase listener
+  stateRef.on("value",(snapshot)=>{
+    const data = snapshot.val();
+    if(!data || !ytReady) return;
+    if(localChange){ localChange=false; return; }
+
+    const { currentSong, status, timestamp } = data;
+    const vid = extractYouTubeID(currentSong||"");
+    if(!vid) return;
+    const currentVid = player.getVideoData().video_id;
+    if(currentVid !== vid){
+      player.loadVideoById({videoId:vid, startSeconds:timestamp||0});
+      if(status==="playing") player.playVideo();
+      else player.pauseVideo();
+    } else {
+      player.seekTo(timestamp||0,true);
+      if(status==="playing") player.playVideo();
+      else player.pauseVideo();
     }
+  });
 
-    // Play button
-    playBtn.addEventListener("click", () => {
-      const url = urlInput.value.trim();
-      const vid = extractYouTubeID(url);
-      if (!vid) return alert("Invalid YouTube URL");
-      if (!ytReady) return alert("Player not ready yet!");
+  function updateState(obj){
+    localChange=true;
+    stateRef.set(obj);
+  }
 
-      const currentVid = player.getVideoData().video_id;
-      let startTime = 0;
-      if (currentVid === vid) {
-        startTime = Math.floor(player.getCurrentTime() || 0);
-      }
+  // Play
+  playBtn.addEventListener("click", ()=>{
+    const url = urlInput.value.trim();
+    const vid = extractYouTubeID(url);
+    if(!vid) return alert("Invalid YouTube URL");
+    if(!ytReady) return alert("Player not ready!");
 
-      player.loadVideoById({ videoId: vid, startSeconds: startTime });
-      player.unMute();
-      player.playVideo();
+    const currentVid = player.getVideoData().video_id;
+    let startTime = 0;
+    if(currentVid===vid) startTime = Math.floor(player.getCurrentTime()||0);
 
-      updateState({ currentSong: url, status: "playing", timestamp: startTime });
-    });
+    player.loadVideoById({videoId:vid, startSeconds:startTime});
+    player.unMute();
+    player.playVideo();
+    updateState({ currentSong:url, status:"playing", timestamp:startTime });
+  });
 
-    // Pause button
-    pauseBtn.addEventListener("click", () => {
-      if (!player) return;
-      const t = Math.floor(player.getCurrentTime());
-      player.pauseVideo();
+  // Pause
+  pauseBtn.addEventListener("click", ()=>{
+    if(!player) return;
+    const t = Math.floor(player.getCurrentTime());
+    player.pauseVideo();
+    updateState({ status:"paused", timestamp:t, currentSong:urlInput.value.trim() });
+  });
 
-      updateState({ status: "paused", timestamp: t, currentSong: urlInput.value.trim() });
-    });
+  // Seek
+  seekBar.addEventListener("input", ()=>{
+    if(!player) return;
+    const sec = parseInt(seekBar.value,10);
+    player.seekTo(sec,true);
+    const state = player.getPlayerState();
+    const playing = (state===YT.PlayerState.PLAYING);
+    updateState({ status:playing?"playing":"paused", timestamp:sec, currentSong:urlInput.value.trim() });
+  });
 
-    // Seek
-    seekBar.addEventListener("input", () => {
-      if (!player) return;
-      const sec = parseInt(seekBar.value, 10);
-      player.seekTo(sec, true);
-
-      const state = player.getPlayerState();
-      const playing = (state === YT.PlayerState.PLAYING);
-
-      updateState({ status: playing ? "playing" : "paused", timestamp: sec, currentSong: urlInput.value.trim() });
-    });
-
-    // Update slider
-    setInterval(() => {
-      if (!player || !player.getCurrentTime) return;
-      const t = Math.floor(player.getCurrentTime() || 0);
-      const d = Math.floor(player.getDuration() || 0);
-      curTimeEl.textContent = t;
-      durEl.textContent = d;
-      seekBar.max = d;
-      seekBar.value = t;
-    }, 1000);
-  </script>
-</body>
-</html>
+  // Update slider
+  setInterval(()=>{
+    if(!player || !player.getCurrentTime) return;
+    const t = Math.floor(player.getCurrentTime()||0);
+    const d = Math.floor(player.getDuration()||0);
+    curTimeEl.textContent = t;
+    durEl.textContent = d;
+    seekBar.max=d;
+    seekBar.value=t;
+  },1000);
+</script>
