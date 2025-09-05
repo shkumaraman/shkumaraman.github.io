@@ -1,559 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YouTube Audio Player</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    }
-    
-    /* Mini player */
-    #audioPlayerBtn {
+    /* Mini floating player */
+    #miniPlayer {
       position: fixed;
-      bottom: 100px;
+      bottom: 75px;
       left: 20px;
-      width: 30px;
-      height: 30px;
-      background: #E57373; 
-      border-radius: 10px;
+      width: 45px;
+      height: 45px;
+      background: #ff5252;
+      border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
       cursor: pointer;
       z-index: 1000;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-      transition: all 0.3s ease;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      transition: transform 0.2s;
     }
-    
-    #audioPlayerBtn:hover {
+    #miniPlayer:hover {
       transform: scale(1.1);
     }
-    
-    #audioPlayerBtn i { 
+    #miniPlayer i { 
       color: white; 
-      font-size: 20px; 
+      font-size: 18px; 
     }
-    
+
     /* Fullscreen player overlay */
-    #audioPlayerModal {
+    #fullPlayer {
       position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: linear-gradient(135deg, #121212 0%, #2a2a2a 100%);
+      top:0; left:0; right:0; bottom:0;
+      background: #fff;
       z-index: 999;
       display: none;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       padding: 20px;
+      box-sizing: border-box;
     }
-    
-    .player-container {
-      width: 100%;
-      max-width: 500px;
-      background: #181818;
-      border-radius: 12px;
-      padding: 25px;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+
+    #fullPlayer h3 { 
+      margin-bottom:20px; 
+      color: #333;
     }
-    
-    .player-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 20px;
-    }
-    
-    .player-header h2 {
-      font-size: 24px;
-      font-weight: 600;
-      color: #1DB954;
-    }
-    
-    .close-btn {
-      background: none;
-      border: none;
-      color: #b3b3b3;
-      font-size: 28px;
-      cursor: pointer;
-      transition: color 0.2s;
-    }
-    
-    .close-btn:hover {
-      color: #fff;
-    }
-    
-    .url-input-container {
-      position: relative;
-      margin-bottom: 20px;
-    }
-    
-    #youtubeUrl {
-      width: 100%;
-      padding: 12px 15px;
-      background: #2a2a2a;
-      border: 1px solid #3e3e3e;
+    #fullPlayer input[type="text"] { 
+      width: 80%; 
+      padding:12px; 
+      margin-bottom:15px; 
+      border: 1px solid #ddd;
       border-radius: 4px;
-      color: #fff;
       font-size: 16px;
     }
-    
-    #youtubeUrl:focus {
-      outline: none;
-      border-color: #1DB954;
-    }
-    
-    .controls {
+    .control-buttons {
       display: flex;
-      justify-content: center;
-      gap: 15px;
-      margin-bottom: 20px;
+      gap: 10px;
+      margin-bottom: 15px;
     }
-    
-    .control-btn {
-      width: 50px;
-      height: 50px;
+    .control-buttons button {
+      width: 45px;
+      height: 45px;
       border-radius: 50%;
       border: none;
-      background: #1DB954;
-      color: white;
-      font-size: 18px;
+      background: #f0f0f0;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      transition: all 0.2s;
+      transition: background 0.2s;
     }
-    
-    .control-btn:hover {
-      background: #1ed760;
-      transform: scale(1.05);
+    .control-buttons button:hover {
+      background: #e0e0e0;
     }
-    
-    .control-btn:disabled {
-      background: #535353;
-      cursor: not-allowed;
-      transform: scale(1);
+    .control-buttons button:active {
+      transform: scale(0.95);
     }
-    
-    .progress-container {
-      margin-bottom: 10px;
+    .control-buttons button i {
+      font-size: 18px;
+      color: #333;
     }
-    
-    .progress-info {
-      display: flex;
-      justify-content: space-between;
-      margin-bottom: 5px;
-      font-size: 14px;
-      color: #b3b3b3;
+    #playPauseBtn {
+      background: #ff5252;
     }
-    
-    .progress-bar {
-      width: 100%;
+    #playPauseBtn i {
+      color: white;
+    }
+    .slider { 
+      width: 80%; 
+      margin-top: 10px; 
       height: 5px;
-      background: #4d4d4d;
+      -webkit-appearance: none;
+      appearance: none;
+      background: #ddd;
+      outline: none;
       border-radius: 5px;
-      overflow: hidden;
+    }
+    .slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 15px;
+      height: 15px;
+      border-radius: 50%;
+      background: #ff5252;
       cursor: pointer;
     }
-    
-    .progress {
-      height: 100%;
-      background: #1DB954;
-      border-radius: 5px;
-      width: 0%;
-      transition: width 0.3s;
-    }
-    
-    .now-playing {
-      margin-top: 20px;
-      padding: 15px;
-      background: #2a2a2a;
-      border-radius: 8px;
-      display: none;
-    }
-    
-    .now-playing h4 {
-      color: #1DB954;
-      margin-bottom: 10px;
-    }
-    
-    .current-track {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-    
-    .thumbnail {
-      width: 60px;
-      height: 60px;
-      border-radius: 4px;
-      object-fit: cover;
-    }
-    
-    .track-info {
-      flex: 1;
-    }
-    
-    .track-title {
-      font-weight: 600;
-      margin-bottom: 5px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    
-    .track-channel {
-      font-size: 14px;
-      color: #b3b3b3;
-    }
-    
-    #player {
-      width: 1px;
-      height: 1px;
+
+    #fullPlayer .closeBtn {
       position: absolute;
-      left: -9999px;
-      opacity: 0;
+      top: 20px;
+      right: 20px;
+      font-size: 28px;
+      cursor: pointer;
+      color: #333;
+      background: none;
+      border: none;
+    }
+
+    #fullPlayer .time-display {
+      margin-top: 10px;
+      color: #666;
+      font-size: 14px;
+    }
+
+    #player { 
+      width:1px; 
+      height:1px; 
+      position:absolute; 
+      left:-9999px; 
+      opacity:0; 
     }
   </style>
-
-  <!-- Mini player button -->
-  <div id="audioPlayerBtn" title="Open Player">
-    <i class="fas fa-music"></i>
-  </div>
+</head>
+<body>
+  <!-- Mini draggable player -->
+  <div id="miniPlayer" title="Open Player"><i class="fas fa-music"></i></div>
 
   <!-- Fullscreen Player -->
-  <div id="audioPlayerModal">
-    <div class="player-container">
-      <div class="player-header">
-        <h2>YouTube Audio Player</h2>
-        <button class="close-btn">&times;</button>
-      </div>
-      
-      <div class="url-input-container">
-        <input type="text" id="youtubeUrl" placeholder="Paste YouTube URL or ID here" />
-      </div>
-      
-      <div class="controls">
-        <button id="playBtn" class="control-btn" disabled>
-          <i class="fas fa-play"></i>
-        </button>
-        <button id="pauseBtn" class="control-btn" disabled>
-          <i class="fas fa-pause"></i>
-        </button>
-      </div>
-      
-      <div class="progress-container">
-        <div class="progress-info">
-          <span id="currentTime">0:00</span>
-          <span id="totalTime">0:00</span>
-        </div>
-        <div class="progress-bar" id="progressBar">
-          <div class="progress" id="progress"></div>
-        </div>
-      </div>
-      
-      <div class="now-playing" id="nowPlaying">
-        <h4>Now Playing</h4>
-        <div class="current-track">
-          <img id="thumbnail" class="thumbnail" src="" alt="Video thumbnail">
-          <div class="track-info">
-            <div id="videoTitle" class="track-title"></div>
-            <div id="channelTitle" class="track-channel"></div>
-          </div>
-        </div>
-      </div>
+  <div id="fullPlayer">
+    <button class="closeBtn">&times;</button>
+    <h3>YouTube Audio Player</h3>
+
+    <input id="urlInput" placeholder="Paste YouTube URL" />
+    <div class="control-buttons">
+      <button id="prevBtn" title="Previous">
+        <i class="fas fa-backward-step"></i>
+      </button>
+      <button id="playPauseBtn" title="Play/Pause">
+        <i class="fas fa-play"></i>
+      </button>
+      <button id="nextBtn" title="Next">
+        <i class="fas fa-forward-step"></i>
+      </button>
+    </div>
+    <input type="range" id="seekBar" class="slider" min="0" max="0" value="0" step="1">
+    <div class="time-display">
+      <span id="curTime">0</span>s / <span id="duration">0</span>s
     </div>
   </div>
 
   <!-- Hidden YouTube player -->
   <div id="player"></div>
 
-  <!-- Firebase -->
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
-  
+  <!-- YouTube IFrame API -->
   <script>
-    // Firebase configuration
-    const firebaseConfig = {
-      databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
-    };
-    
-    // Initialize Firebase
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.database();
-    const stateRef = db.ref("music");
-
-    // Extract YouTube ID from URL
     function extractYouTubeID(url) {
-      if (!url) return null;
-      
-      // If it's already an ID
       if (/^[a-zA-Z0-9_-]{11}$/.test(url)) return url;
-      
       try {
         const u = new URL(url);
         if (u.hostname.includes("youtu.be")) return u.pathname.slice(1);
         if (u.searchParams.get("v")) return u.searchParams.get("v");
-      } catch {
-        // If it's not a valid URL, try to extract ID with regex
-        const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
-        const match = url.match(regExp);
-        return (match && match[2].length === 11) ? match[2] : null;
-      }
-      
-      return null;
+      } catch {}
+      const m = url.match(/[a-zA-Z0-9_-]{11}/);
+      return m ? m[0] : null;
     }
 
-    // Format time in MM:SS
-    function formatTime(seconds) {
-      const mins = Math.floor(seconds / 60);
-      const secs = Math.floor(seconds % 60);
-      return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
-    }
-
-    // UI Elements
-    const audioPlayerBtn = document.getElementById('audioPlayerBtn');
-    const audioPlayerModal = document.getElementById('audioPlayerModal');
-    const youtubeUrlInput = document.getElementById('youtubeUrl');
-    const playBtn = document.getElementById('playBtn');
-    const pauseBtn = document.getElementById('pauseBtn');
-    const progressBar = document.getElementById('progressBar');
-    const progress = document.getElementById('progress');
-    const currentTimeEl = document.getElementById('currentTime');
-    const totalTimeEl = document.getElementById('totalTime');
-    const closeBtn = document.querySelector('.close-btn');
-    const nowPlaying = document.getElementById('nowPlaying');
-    const thumbnail = document.getElementById('thumbnail');
-    const videoTitle = document.getElementById('videoTitle');
-    const channelTitle = document.getElementById('channelTitle');
-
-    let player, ytReady = false;
-    let localChange = false;
-    let currentVideoId = '';
-    let updateInterval;
-
-    // YouTube IFrame API
-    const tag = document.createElement('script');
+    let player, ytReady=false;
+    const tag = document.createElement("script");
     tag.src = "https://www.youtube.com/iframe_api";
     document.head.appendChild(tag);
 
-    // Initialize YouTube player
     function onYouTubeIframeAPIReady() {
-      player = new YT.Player('player', {
-        height: '1',
-        width: '1',
-        videoId: '',
-        playerVars: {
-          controls: 0,
-          modestbranding: 1,
-          rel: 0,
-          playsinline: 1
-        },
-        events: {
-          onReady: () => {
-            ytReady = true;
-            console.log('YouTube player is ready');
+      player = new YT.Player("player", {
+        height:"1", width:"1", videoId:"",
+        playerVars: { controls:0, modestbranding:1, rel:0, playsinline:1 },
+        events: { 
+          onReady: ()=>{ 
+            ytReady=true; 
+            console.log("YouTube player ready");
           },
-          onStateChange: (event) => {
-            if (event.data === YT.PlayerState.PLAYING) {
-              // Start updating progress
-              clearInterval(updateInterval);
-              updateInterval = setInterval(updateProgress, 1000);
-            } else if (event.data === YT.PlayerState.PAUSED || 
-                       event.data === YT.PlayerState.ENDED) {
-              // Stop updating progress
-              clearInterval(updateInterval);
+          onStateChange: (e)=>{
+            if(e.data === YT.PlayerState.PLAYING){
+              try{
+                player.setPlaybackQuality("tiny");
+              }catch(e){}
+              // Update play/pause button icon
+              playPauseBtn.innerHTML = '<i class="fas fa-pause"></i>';
+            } else if(e.data === YT.PlayerState.PAUSED || e.data === YT.PlayerState.ENDED){
+              // Update play/pause button icon
+              playPauseBtn.innerHTML = '<i class="fas fa-play"></i>';
             }
           }
         }
       });
     }
+  </script>
 
-    // Update progress bar and time
-    function updateProgress() {
-      if (!player || !ytReady) return;
-      
-      const currentTime = player.getCurrentTime();
-      const duration = player.getDuration();
-      
-      // Update progress bar
-      const progressPercent = (currentTime / duration) * 100;
-      progress.style.width = `${progressPercent}%`;
-      
-      // Update time displays
-      currentTimeEl.textContent = formatTime(currentTime);
-      totalTimeEl.textContent = formatTime(duration);
-    }
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/12.1.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.1.0/firebase-database-compat.js"></script>
+  <script>
+    const firebaseConfig = {
+      databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+    const stateRef = db.ref("music");
 
-    // Open player modal
-    audioPlayerBtn.addEventListener('click', () => {
-      audioPlayerModal.style.display = 'flex';
+    // UI Elements
+    const miniPlayer = document.getElementById("miniPlayer");
+    const fullPlayer = document.getElementById("fullPlayer");
+    const urlInput = document.getElementById("urlInput");
+    const playPauseBtn = document.getElementById("playPauseBtn");
+    const prevBtn = document.getElementById("prevBtn");
+    const nextBtn = document.getElementById("nextBtn");
+    const seekBar = document.getElementById("seekBar");
+    const curTimeEl = document.getElementById("curTime");
+    const durEl = document.getElementById("duration");
+    const closeBtn = document.querySelector(".closeBtn");
+
+    let localChange = false;
+    let isPlaying = false;
+
+    // Draggable mini player
+    let isDragging = false, offsetX, offsetY;
+    miniPlayer.addEventListener("mousedown", e => {
+      isDragging = true;
+      offsetX = e.clientX - miniPlayer.offsetLeft;
+      offsetY = e.clientY - miniPlayer.offsetTop;
+      miniPlayer.style.cursor = "grabbing";
+    });
+    document.addEventListener("mousemove", e => {
+      if(!isDragging) return;
+      miniPlayer.style.left = (e.clientX - offsetX) + "px";
+      miniPlayer.style.top = (e.clientY - offsetY) + "px";
+      miniPlayer.style.right = "auto";
+      miniPlayer.style.bottom = "auto";
+    });
+    document.addEventListener("mouseup", () => { 
+      isDragging = false;
+      miniPlayer.style.cursor = "pointer";
     });
 
-    // Close player modal
-    closeBtn.addEventListener('click', () => {
-      audioPlayerModal.style.display = 'none';
+    // Open full player
+    miniPlayer.addEventListener("click", () => {
+      fullPlayer.style.display = "flex";
     });
 
-    // Play button click
-    playBtn.addEventListener('click', () => {
-      const url = youtubeUrlInput.value.trim();
-      const videoId = extractYouTubeID(url);
+    // Close full player
+    closeBtn.addEventListener("click", () => {
+      fullPlayer.style.display = "none";
+    });
+
+    // Firebase listener
+    stateRef.on("value", (snapshot) => {
+      const data = snapshot.val();
+      if(!data || !ytReady) return;
+      if(localChange){ localChange = false; return; }
+
+      const { currentSong, status, timestamp } = data;
+      const vid = extractYouTubeID(currentSong || "");
+      if(!vid) return;
       
-      if (!videoId) {
-        alert('Please enter a valid YouTube URL or video ID');
-        return;
+      const currentVid = player.getVideoData().video_id;
+      if(currentVid !== vid){
+        player.loadVideoById({videoId: vid, startSeconds: timestamp || 0});
+        if(status === "playing") {
+          player.playVideo();
+          isPlaying = true;
+        } else {
+          player.pauseVideo();
+          isPlaying = false;
+        }
+      } else {
+        player.seekTo(timestamp || 0, true);
+        if(status === "playing") {
+          player.playVideo();
+          isPlaying = true;
+        } else {
+          player.pauseVideo();
+          isPlaying = false;
+        }
       }
-      
-      if (!ytReady) {
-        alert('Player is not ready yet. Please try again in a moment.');
-        return;
-      }
-      
-      // Get video info
-      fetchVideoInfo(videoId);
-      
-      // If it's the same video, just play it
-      if (currentVideoId === videoId) {
-        player.playVideo();
-        updateState({
-          currentSong: youtubeUrlInput.value.trim(),
-          status: 'playing',
-          timestamp: player.getCurrentTime()
-        });
-        return;
-      }
-      
-      // Load new video
-      player.loadVideoById(videoId);
-      player.playVideo();
-      
-      updateState({
-        currentSong: youtubeUrlInput.value.trim(),
-        status: 'playing',
-        timestamp: 0
-      });
-      
-      currentVideoId = videoId;
     });
 
-    // Pause button click
-    pauseBtn.addEventListener('click', () => {
-      if (!player || !ytReady) return;
-      
-      player.pauseVideo();
-      updateState({
-        status: 'paused',
-        timestamp: player.getCurrentTime(),
-        currentSong: youtubeUrlInput.value.trim()
-      });
-    });
-
-    // Seek on progress bar click
-    progressBar.addEventListener('click', (e) => {
-      if (!player || !ytReady) return;
-      
-      const bounds = progressBar.getBoundingClientRect();
-      const percent = (e.clientX - bounds.left) / bounds.width;
-      const newTime = percent * player.getDuration();
-      
-      player.seekTo(newTime, true);
-      
-      const state = player.getPlayerState();
-      const playing = (state === YT.PlayerState.PLAYING);
-      
-      updateState({
-        status: playing ? 'playing' : 'paused',
-        timestamp: newTime,
-        currentSong: youtubeUrlInput.value.trim()
-      });
-    });
-
-    // Update state in Firebase
-    function updateState(obj) {
+    function updateState(obj){
       localChange = true;
       stateRef.set(obj);
     }
 
-    // Fetch video info (title, thumbnail, etc.)
-    function fetchVideoInfo(videoId) {
-      const apiUrl = `https://www.googleapis.com/youtube/v3/videos?id=${videoId}&part=snippet&key=AIzaSyDqjKJtLa6tO0JcE1h8o7plcW2N_5yFZkE`;
+    // Play/Pause toggle
+    playPauseBtn.addEventListener("click", () => {
+      const url = urlInput.value.trim();
+      const vid = extractYouTubeID(url);
       
-      fetch(apiUrl)
-        .then(response => response.json())
-        .then(data => {
-          if (data.items && data.items.length > 0) {
-            const snippet = data.items[0].snippet;
-            
-            // Update now playing info
-            thumbnail.src = snippet.thumbnails.default.url;
-            videoTitle.textContent = snippet.title;
-            channelTitle.textContent = snippet.channelTitle;
-            
-            // Show now playing section
-            nowPlaying.style.display = 'block';
-          }
-        })
-        .catch(error => {
-          console.error('Error fetching video info:', error);
-        });
-    }
-
-    // Listen for Firebase changes
-    stateRef.on('value', (snapshot) => {
-      const data = snapshot.val();
-      if (!data || !ytReady) return;
-      
-      if (localChange) {
-        localChange = false;
-        return;
-      }
-      
-      const { currentSong, status, timestamp } = data;
-      const videoId = extractYouTubeID(currentSong || '');
-      
-      if (!videoId) return;
+      if(!vid) return alert("Please enter a valid YouTube URL");
+      if(!ytReady) return alert("Player not ready yet!");
       
       const currentVid = player.getVideoData().video_id;
+      let startTime = 0;
       
-      // Update URL input for all users
-      youtubeUrlInput.value = currentSong;
-      
-      if (currentVid !== videoId) {
-        // New video
-        player.loadVideoById({ videoId: videoId, startSeconds: timestamp || 0 });
-        fetchVideoInfo(videoId);
-        currentVideoId = videoId;
-        
-        if (status === 'playing') {
-          player.playVideo();
-        } else {
-          player.pauseVideo();
-        }
-      } else {
-        // Same video, just update position and state
-        player.seekTo(timestamp || 0, true);
-        
-        if (status === 'playing') {
-          player.playVideo();
-        } else {
-          player.pauseVideo();
-        }
+      if(currentVid === vid) {
+        startTime = Math.floor(player.getCurrentTime() || 0);
       }
       
-      // Enable buttons
-      playBtn.disabled = false;
-      pauseBtn.disabled = false;
+      if(!isPlaying) {
+        player.loadVideoById({videoId: vid, startSeconds: startTime});
+        player.unMute();
+        player.playVideo();
+        isPlaying = true;
+        updateState({ currentSong: url, status: "playing", timestamp: startTime });
+      } else {
+        const t = Math.floor(player.getCurrentTime());
+        player.pauseVideo();
+        isPlaying = false;
+        updateState({ status: "paused", timestamp: t, currentSong: url });
+      }
     });
 
-    // Enable buttons when URL is entered
-    youtubeUrlInput.addEventListener('input', () => {
-      const videoId = extractYouTubeID(youtubeUrlInput.value.trim());
-      const buttonsDisabled = !videoId;
+    // Skip backward 10 seconds
+    prevBtn.addEventListener("click", () => {
+      if(!player || !player.getCurrentTime) return;
+      const currentTime = player.getCurrentTime();
+      const newTime = Math.max(0, currentTime - 10);
+      player.seekTo(newTime, true);
       
-      playBtn.disabled = buttonsDisabled;
-      pauseBtn.disabled = buttonsDisabled;
+      const state = player.getPlayerState();
+      const playing = (state === YT.PlayerState.PLAYING);
+      updateState({ 
+        status: playing ? "playing" : "paused", 
+        timestamp: newTime, 
+        currentSong: urlInput.value.trim() 
+      });
     });
+
+    // Skip forward 10 seconds
+    nextBtn.addEventListener("click", () => {
+      if(!player || !player.getCurrentTime) return;
+      const currentTime = player.getCurrentTime();
+      const duration = player.getDuration();
+      const newTime = Math.min(duration, currentTime + 10);
+      player.seekTo(newTime, true);
+      
+      const state = player.getPlayerState();
+      const playing = (state === YT.PlayerState.PLAYING);
+      updateState({ 
+        status: playing ? "playing" : "paused", 
+        timestamp: newTime, 
+        currentSong: urlInput.value.trim() 
+      });
+    });
+
+    // Seek
+    seekBar.addEventListener("input", () => {
+      if(!player) return;
+      const sec = parseInt(seekBar.value, 10);
+      player.seekTo(sec, true);
+      
+      const state = player.getPlayerState();
+      const playing = (state === YT.PlayerState.PLAYING);
+      updateState({ 
+        status: playing ? "playing" : "paused", 
+        timestamp: sec, 
+        currentSong: urlInput.value.trim() 
+      });
+    });
+
+    // Update slider and time display
+    setInterval(() => {
+      if(!player || !player.getCurrentTime) return;
+      const t = Math.floor(player.getCurrentTime() || 0);
+      const d = Math.floor(player.getDuration() || 0);
+      curTimeEl.textContent = t;
+      durEl.textContent = d;
+      seekBar.max = d;
+      seekBar.value = t;
+    }, 1000);
   </script>
+</body>
+  </html>
