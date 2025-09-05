@@ -207,15 +207,6 @@
 
 <!-- YouTube IFrame API -->
 <script>
-    // Function to format seconds to mm:ss
-    function formatTime(seconds) {
-        if (isNaN(seconds) || seconds < 0) return "0:00";
-        
-        const mins = Math.floor(seconds / 60);
-        const secs = Math.floor(seconds % 60);
-        return `${mins}:${secs.toString().padStart(2, '0')}`;
-    }
-
     // Make sure YouTube API is loaded only once
     if (typeof YT === 'undefined') {
         var tag = document.createElement('script');
@@ -234,6 +225,15 @@
         } catch {}
         const m = url.match(/[a-zA-Z0-9_-]{11}/);
         return m ? m[0] : null;
+    }
+
+    // Format seconds to MM:SS
+    function formatTime(seconds) {
+        if (isNaN(seconds) || seconds < 0) return "0:00";
+        
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
     }
 
     // Use a unique namespace to avoid conflicts
@@ -414,6 +414,11 @@
                 } catch(e) {}
                 document.getElementById('playPauseBtn').innerHTML = '<i class="fas fa-pause"></i>';
                 this.isPlaying = true;
+                
+                // Start UI update interval when playing
+                if (!this.playerInterval) {
+                    this.playerInterval = setInterval(this.updatePlayerUI.bind(this), 1000);
+                }
             } else if (e.data === YT.PlayerState.PAUSED || e.data === YT.PlayerState.ENDED) {
                 document.getElementById('playPauseBtn').innerHTML = '<i class="fas fa-play"></i>';
                 this.isPlaying = false;
@@ -560,7 +565,7 @@
             const t = Math.floor(this.player.getCurrentTime() || 0);
             const d = Math.floor(this.player.getDuration() || 0);
             
-            // Format time to mm:ss
+            // Update time display with formatted time
             document.getElementById('curTime').textContent = formatTime(t);
             document.getElementById('duration').textContent = formatTime(d);
             
