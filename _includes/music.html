@@ -212,6 +212,8 @@
     isPlaying: false,
     currentSongUrl: "",
     playerInterval: null,
+    lastUpdateTime: 0,
+    firebaseListener: null,
     
     init: function() {
       // Wait for both the DOM and YouTube API to be ready
@@ -231,6 +233,9 @@
       
       // Setup UI event listeners
       this.setupEventListeners();
+      
+      // Setup Firebase listener
+      this.setupFirebaseListener();
       
       // Check if YouTube API is already loaded
       if (typeof YT !== 'undefined' && YT.loaded) {
@@ -285,6 +290,67 @@
       });
     },
     
+    setupFirebaseListener: function() {
+      if (!this.firebaseInitialized()) return;
+      
+      // Remove existing listener if any
+      if (this.firebaseListener) {
+        this.firebaseListener();
+      }
+      
+      const stateRef = firebase.database().ref('music');
+      this.firebaseListener = stateRef.on('value', (snapshot) => {
+        const data = snapshot.val();
+        if (!data || !this.ytReady) return;
+        
+        // Ignore updates that we just sent (within last 500ms)
+        const now = Date.now();
+        if (this.localChange && now - this.lastUpdateTime < 500) {
+          this.localChange = false;
+          return;
+        }
+        
+        // If this is our own update, ignore it
+        if (this.localChange) {
+          this.localChange = false;
+          return;
+        }
+
+        const { currentSong, status, timestamp } = data;
+        
+        // Update the URL input field with the current song
+        if (currentSong && currentSong !== document.getElementById('urlInput').value) {
+          document.getElementById('urlInput').value = currentSong;
+        }
+        
+        const vid = extractYouTubeID(currentSong || '');
+        if (!vid) return;
+        
+        const currentVid = this.player ? this.player.getVideoData().video_id : '';
+        
+        // If it's a new video or we don't have a video loaded
+        if (!currentVid || currentVid !== vid) {
+          this.processNewSong(currentSong, status, timestamp);
+        } else {
+          // Same video, just update position and state
+          const currentTime = this.player.getCurrentTime();
+          
+          // Only update if the difference is significant (> 1 second)
+          if (Math.abs(currentTime - timestamp) > 1) {
+            this.player.seekTo(timestamp, true);
+          }
+          
+          if (status === 'playing' && this.player.getPlayerState() !== YT.PlayerState.PLAYING) {
+            this.player.playVideo();
+            this.isPlaying = true;
+          } else if (status === 'paused' && this.player.getPlayerState() !== YT.PlayerState.PAUSED) {
+            this.player.pauseVideo();
+            this.isPlaying = false;
+          }
+        }
+      });
+    },
+    
     onYouTubeIframeAPIReady: function() {
       if (this.player) return; // Already initialized
       
@@ -326,7 +392,7 @@
         }
       }
       
-      // Update Firebase with current state
+      // Update Firebase with current state (but only if not from a Firebase update)
       if (!this.localChange && this.currentSongUrl) {
         const t = Math.floor(this.player.getCurrentTime());
         this.updateState({ 
@@ -378,6 +444,7 @@
       if (!this.firebaseInitialized()) return;
       
       this.localChange = true;
+      this.lastUpdateTime = Date.now();
       const stateRef = firebase.database().ref('music');
       stateRef.set(obj).catch(error => {
         console.error('Firebase update error:', error);
@@ -485,45 +552,4 @@
       musicPlayer.updatePlayerUI();
     }
   }, 1000);
-
-  // Setup Firebase listener
-  if (typeof firebase !== 'undefined') {
-    const stateRef = firebase.database().ref('music');
-    stateRef.on('value', (snapshot) => {
-      const data = snapshot.val();
-      if (!data || !musicPlayer.ytReady) return;
-      if (musicPlayer.localChange) { 
-        musicPlayer.localChange = false; 
-        return; 
-      }
-
-      const { currentSong, status, timestamp } = data;
-      
-      // Update the URL input field with the current song
-      if (currentSong && currentSong !== document.getElementById('urlInput').value) {
-        document.getElementById('urlInput').value = currentSong;
-      }
-      
-      const vid = extractYouTubeID(currentSong || '');
-      if (!vid) return;
-      
-      const currentVid = musicPlayer.player.getVideoData().video_id;
-      
-      // If it's a new video or we don't have a video loaded
-      if (currentVid !== vid) {
-        musicPlayer.processNewSong(currentSong, status, timestamp);
-      } else {
-        // Same video, just update position and state
-        musicPlayer.player.seekTo(timestamp || 0, true);
-        
-        if (status === 'playing') {
-          musicPlayer.player.playVideo();
-          musicPlayer.isPlaying = true;
-        } else {
-          musicPlayer.player.pauseVideo();
-          musicPlayer.isPlaying = false;
-        }
-      }
-    });
-  }
 </script>
