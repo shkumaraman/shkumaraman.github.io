@@ -1,555 +1,582 @@
-<style>
-  /* Mini floating player */
-  #miniPlayer {
-    position: fixed;
-    bottom: 60px;
-    left: 12px;
-    width: 35px;
-    height: 35px;
-    background: #ff5252;
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    z-index: 1000;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-    transition: transform 0.2s;
-  }
-  #miniPlayer:hover {
-    transform: scale(1.1);
-  }
-  #miniPlayer i { 
-    color: white; 
-    font-size: 18px; 
-  }
-
-  /* Fullscreen player overlay */
-  #fullPlayer {
-    position: fixed;
-    top:0; left:0; right:0; bottom:0;
-    background: rgba(255, 255, 255, 0.95);
-    z-index: 999;
-    display: none;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-    box-sizing: border-box;
-  }
-
-  #fullPlayer h3 { 
-    margin-bottom:20px; 
-    color: #333;
-    font-family: 'Arial', sans-serif;
-  }
-  #urlInput { 
-    width: 80%; 
-    max-width: 500px;
-    padding:12px 15px; 
-    margin-bottom:20px; 
-    border: 2px solid #ddd;
-    border-radius: 8px;
-    font-size: 16px;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-    transition: border-color 0.3s;
-  }
-  #urlInput:focus {
-    outline: none;
-    border-color: #ff5252;
-  }
-  .control-buttons {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 20px;
-  }
-  .control-buttons button {
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    border: none;
-    background: #f0f0f0;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s;
-  }
-  .control-buttons button:hover {
-    background: #e0e0e0;
-  }
-  .control-buttons button:active {
-    transform: scale(0.95);
-  }
-  .control-buttons button i {
-    font-size: 16px;
-    color: #333;
-  }
-  #playPauseBtn {
-    background: #ff5252;
-  }
-  #playPauseBtn i {
-    color: white;
-  }
-  .slider { 
-    width: 80%; 
-    max-width: 500px;
-    margin: 15px 0; 
-    height: 6px;
-    -webkit-appearance: none;
-    appearance: none;
-    background: #ddd;
-    outline: none;
-    border-radius: 3px;
-  }
-  .slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: #ff5252;
-    cursor: pointer;
-    transition: background 0.2s;
-  }
-  .slider::-webkit-slider-thumb:hover {
-    background: #ff0000;
-  }
-
-  .time-display {
-    margin-top: 10px;
-    color: #666;
-    font-size: 14px;
-    font-family: monospace;
-  }
-
-  #player { 
-    width:1px; 
-    height:1px; 
-    position:absolute; 
-    left:-9999px; 
-    opacity:0; 
-  }
-  
-  .player-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    width: 80%;
-    max-width: 500px;
-    margin-bottom: 15px;
-  }
-  
-  .now-playing {
-    font-size: 14px;
-    color: #666;
-    font-style: italic;
-    max-width: 300px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-</style>
-
-<!-- Mini player (no longer draggable) -->
-<div id="miniPlayer" title="Open/Close Player"><i class="fas fa-music"></i></div>
-
-<!-- Fullscreen Player -->
-<div id="fullPlayer">
-  <div class="player-header">
-    <h3>MusicPlay</h3>
-    <div class="now-playing" id="nowPlaying">Not playing</div>
-  </div>
-
-  <input id="urlInput" placeholder="Paste YouTube URL here" />
-  <div class="control-buttons">
-    <button id="prevBtn" title="Back 10 seconds">
-      <i class="fas fa-backward-step"></i>
-    </button>
-    <button id="playPauseBtn" title="Play/Pause">
-      <i class="fas fa-play"></i>
-    </button>
-    <button id="nextBtn" title="Forward 10 seconds">
-      <i class="fas fa-forward-step"></i>
-    </button>
-  </div>
-  <input type="range" id="seekBar" class="slider" min="0" max="0" value="0" step="1">
-  <div class="time-display">
-    <span id="curTime">0</span>s / <span id="duration">0</span>s
-  </div>
-</div>
-
-<!-- Hidden YouTube player -->
-<div id="player"></div>
-
-<!-- YouTube IFrame API -->
-<script>
-  // Make sure YouTube API is loaded only once
-  if (typeof YT === 'undefined') {
-    var tag = document.createElement('script');
-    tag.src = "https://www.youtube.com/iframe_api";
-    var firstScriptTag = document.getElementsByTagName('script')[0];
-    firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
-  }
-
-  function extractYouTubeID(url) {
-    if (!url) return null;
-    if (/^[a-zA-Z0-9_-]{11}$/.test(url)) return url;
-    try {
-      const u = new URL(url);
-      if (u.hostname.includes("youtu.be")) return u.pathname.slice(1);
-      if (u.searchParams.get("v")) return u.searchParams.get("v");
-    } catch {}
-    const m = url.match(/[a-zA-Z0-9_-]{11}/);
-    return m ? m[0] : null;
-  }
-
-  // Use a unique namespace to avoid conflicts
-  var musicPlayer = {
-    player: null,
-    ytReady: false,
-    localChange: false,
-    isPlaying: false,
-    currentSongUrl: "",
-    playerInterval: null,
-    lastUpdateTime: 0,
-    firebaseListener: null,
-    
-    init: function() {
-      // Wait for both the DOM and YouTube API to be ready
-      if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', this.setupPlayer.bind(this));
-      } else {
-        this.setupPlayer();
-      }
-    },
-    
-    setupPlayer: function() {
-      // Initialize Firebase if not already initialized
-      if (typeof firebase === 'undefined') {
-        console.error("Firebase not loaded");
-        return;
-      }
-      
-      // Setup UI event listeners
-      this.setupEventListeners();
-      
-      // Setup Firebase listener
-      this.setupFirebaseListener();
-      
-      // Check if YouTube API is already loaded
-      if (typeof YT !== 'undefined' && YT.loaded) {
-        this.onYouTubeIframeAPIReady();
-      } else {
-        // Set up callback for when YouTube API is ready
-        window.onYouTubeIframeAPIReady = this.onYouTubeIframeAPIReady.bind(this);
-      }
-    },
-    
-    setupEventListeners: function() {
-      const miniPlayer = document.getElementById('miniPlayer');
-      const fullPlayer = document.getElementById('fullPlayer');
-      const urlInput = document.getElementById('urlInput');
-      const playPauseBtn = document.getElementById('playPauseBtn');
-      const prevBtn = document.getElementById('prevBtn');
-      const nextBtn = document.getElementById('nextBtn');
-      const seekBar = document.getElementById('seekBar');
-      
-      if (!miniPlayer || !fullPlayer) {
-        console.error("Player elements not found");
-        return;
-      }
-      
-      // Toggle full player with mini player click
-      miniPlayer.addEventListener('click', () => {
-        if (fullPlayer.style.display === 'flex') {
-          fullPlayer.style.display = 'none';
-        } else {
-          fullPlayer.style.display = 'flex';
-          setTimeout(() => urlInput.focus(), 100);
+  <style>
+        /* Mini floating player */
+        #miniPlayer {
+            position: fixed;
+            bottom: 60px;
+            left: 12px;
+            width: 35px;
+            height: 35px;
+            background: #ff5252;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 1000;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            transition: transform 0.2s;
         }
-      });
-      
-      // Play/Pause toggle
-      playPauseBtn.addEventListener('click', this.handlePlayPause.bind(this));
-      
-      // Skip backward 10 seconds
-      prevBtn.addEventListener('click', this.handlePrev.bind(this));
-      
-      // Skip forward 10 seconds
-      nextBtn.addEventListener('click', this.handleNext.bind(this));
-      
-      // Seek
-      seekBar.addEventListener('input', this.handleSeek.bind(this));
-      
-      // Also update when user enters a URL manually
-      urlInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-          playPauseBtn.click();
+        #miniPlayer:hover {
+            transform: scale(1.1);
         }
-      });
-    },
-    
-    setupFirebaseListener: function() {
-      if (!this.firebaseInitialized()) return;
-      
-      // Remove existing listener if any
-      if (this.firebaseListener) {
-        this.firebaseListener();
-      }
-      
-      const stateRef = firebase.database().ref('music');
-      this.firebaseListener = stateRef.on('value', (snapshot) => {
-        const data = snapshot.val();
-        if (!data || !this.ytReady) return;
-        
-        // Ignore updates that we just sent (within last 500ms)
-        const now = Date.now();
-        if (this.localChange && now - this.lastUpdateTime < 500) {
-          this.localChange = false;
-          return;
+        #miniPlayer i { 
+            color: white; 
+            font-size: 18px; 
+        }
+
+        /* New square div with border radius */
+        .square-icon {
+            width: 120px;
+            height: 120px;
+            background: #ff5252;
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 25px;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.2);
+            transition: all 0.3s ease;
+        }
+        .square-icon:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.25);
+        }
+        .square-icon i {
+            color: white;
+            font-size: 50px;
+        }
+
+        /* Fullscreen player overlay */
+        #fullPlayer {
+            position: fixed;
+            top:0; left:0; right:0; bottom:0;
+            background: rgba(255, 255, 255, 0.95);
+            z-index: 999;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        #fullPlayer h3 { 
+            margin-bottom:20px; 
+            color: #333;
+            font-family: 'Arial', sans-serif;
+        }
+        #urlInput { 
+            width: 80%; 
+            max-width: 500px;
+            padding:12px 15px; 
+            margin-bottom:20px; 
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            transition: border-color 0.3s;
+        }
+        #urlInput:focus {
+            outline: none;
+            border-color: #ff5252;
+        }
+        .control-buttons {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 20px;
+        }
+        .control-buttons button {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            border: none;
+            background: #f0f0f0;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+        .control-buttons button:hover {
+            background: #e0e0e0;
+        }
+        .control-buttons button:active {
+            transform: scale(0.95);
+        }
+        .control-buttons button i {
+            font-size: 16px;
+            color: #333;
+        }
+        #playPauseBtn {
+            background: #ff5252;
+        }
+        #playPauseBtn i {
+            color: white;
+        }
+        .slider { 
+            width: 80%; 
+            max-width: 500px;
+            margin: 15px 0; 
+            height: 6px;
+            -webkit-appearance: none;
+            appearance: none;
+            background: #ddd;
+            outline: none;
+            border-radius: 3px;
+        }
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #ff5252;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .slider::-webkit-slider-thumb:hover {
+            background: #ff0000;
+        }
+
+        .time-display {
+            margin-top: 10px;
+            color: #666;
+            font-size: 14px;
+            font-family: monospace;
+        }
+
+        #player { 
+            width:1px; 
+            height:1px; 
+            position:absolute; 
+            left:-9999px; 
+            opacity:0; 
         }
         
-        // If this is our own update, ignore it
-        if (this.localChange) {
-          this.localChange = false;
-          return;
+        .player-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 80%;
+            max-width: 500px;
+            margin-bottom: 15px;
+        }
+        
+        .now-playing {
+            font-size: 14px;
+            color: #666;
+            font-style: italic;
+            max-width: 300px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+    </style>
+
+    <!-- Mini player (no longer draggable) -->
+    <div id="miniPlayer" title="Open/Close Player"><i class="fas fa-music"></i></div>
+
+    <!-- Fullscreen Player -->
+    <div id="fullPlayer">
+        <!-- New square div with border radius -->
+        <div class="square-icon">
+            <i class="fas fa-music"></i>
+        </div>
+        
+        <div class="player-header">
+            <h3>MusicPlay</h3>
+            <div class="now-playing" id="nowPlaying">Not playing</div>
+        </div>
+
+        <input id="urlInput" placeholder="Paste YouTube URL here" />
+        <div class="control-buttons">
+            <button id="prevBtn" title="Back 10 seconds">
+                <i class="fas fa-backward-step"></i>
+            </button>
+            <button id="playPauseBtn" title="Play/Pause">
+                <i class="fas fa-play"></i>
+            </button>
+            <button id="nextBtn" title="Forward 10 seconds">
+                <i class="fas fa-forward-step"></i>
+            </button>
+        </div>
+        <input type="range" id="seekBar" class="slider" min="0" max="0" value="0" step="1">
+        <div class="time-display">
+            <span id="curTime">0</span>s / <span id="duration">0</span>s
+        </div>
+    </div>
+
+    <!-- Hidden YouTube player -->
+    <div id="player"></div>
+
+    <!-- YouTube IFrame API -->
+    <script>
+        // Make sure YouTube API is loaded only once
+        if (typeof YT === 'undefined') {
+            var tag = document.createElement('script');
+            tag.src = "https://www.youtube.com/iframe_api";
+            var firstScriptTag = document.getElementsByTagName('script')[0];
+            firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
         }
 
-        const { currentSong, status, timestamp } = data;
-        
-        // Update the URL input field with the current song
-        if (currentSong && currentSong !== document.getElementById('urlInput').value) {
-          document.getElementById('urlInput').value = currentSong;
+        function extractYouTubeID(url) {
+            if (!url) return null;
+            if (/^[a-zA-Z0-9_-]{11}$/.test(url)) return url;
+            try {
+                const u = new URL(url);
+                if (u.hostname.includes("youtu.be")) return u.pathname.slice(1);
+                if (u.searchParams.get("v")) return u.searchParams.get("v");
+            } catch {}
+            const m = url.match(/[a-zA-Z0-9_-]{11}/);
+            return m ? m[0] : null;
         }
-        
-        const vid = extractYouTubeID(currentSong || '');
-        if (!vid) return;
-        
-        const currentVid = this.player ? this.player.getVideoData().video_id : '';
-        
-        // If it's a new video or we don't have a video loaded
-        if (!currentVid || currentVid !== vid) {
-          this.processNewSong(currentSong, status, timestamp);
-        } else {
-          // Same video, just update position and state
-          const currentTime = this.player.getCurrentTime();
-          
-          // Only update if the difference is significant (> 1 second)
-          if (Math.abs(currentTime - timestamp) > 1) {
-            this.player.seekTo(timestamp, true);
-          }
-          
-          if (status === 'playing' && this.player.getPlayerState() !== YT.PlayerState.PLAYING) {
-            this.player.playVideo();
-            this.isPlaying = true;
-          } else if (status === 'paused' && this.player.getPlayerState() !== YT.PlayerState.PAUSED) {
-            this.player.pauseVideo();
-            this.isPlaying = false;
-          }
-        }
-      });
-    },
-    
-    onYouTubeIframeAPIReady: function() {
-      if (this.player) return; // Already initialized
-      
-      this.player = new YT.Player('player', {
-        height: '1', 
-        width: '1', 
-        videoId: '',
-        playerVars: { 
-          controls: 0, 
-          modestbranding: 1, 
-          rel: 0, 
-          playsinline: 1 
-        },
-        events: { 
-          onReady: () => { 
-            this.ytReady = true; 
-            console.log('YouTube player ready');
-            this.checkSavedState();
-          },
-          onStateChange: this.onPlayerStateChange.bind(this)
-        }
-      });
-    },
-    
-    onPlayerStateChange: function(e) {
-      if (e.data === YT.PlayerState.PLAYING) {
-        try {
-          this.player.setPlaybackQuality('tiny');
-        } catch(e) {}
-        document.getElementById('playPauseBtn').innerHTML = '<i class="fas fa-pause"></i>';
-        this.isPlaying = true;
-      } else if (e.data === YT.PlayerState.PAUSED || e.data === YT.PlayerState.ENDED) {
-        document.getElementById('playPauseBtn').innerHTML = '<i class="fas fa-play"></i>';
-        this.isPlaying = false;
-        
-        if (e.data === YT.PlayerState.ENDED) {
-          this.player.seekTo(0);
-          this.updateState({ status: 'paused', timestamp: 0, currentSong: this.currentSongUrl });
-        }
-      }
-      
-      // Update Firebase with current state (but only if not from a Firebase update)
-      if (!this.localChange && this.currentSongUrl) {
-        const t = Math.floor(this.player.getCurrentTime());
-        this.updateState({ 
-          status: e.data === YT.PlayerState.PLAYING ? 'playing' : 'paused', 
-          timestamp: t, 
-          currentSong: this.currentSongUrl 
-        });
-      }
-    },
-    
-    checkSavedState: function() {
-      if (!this.firebaseInitialized()) return;
-      
-      // Check if there's a saved state in Firebase
-      const stateRef = firebase.database().ref('music');
-      stateRef.once('value').then((snapshot) => {
-        const data = snapshot.val();
-        if (data && data.currentSong) {
-          this.processNewSong(data.currentSong, data.status, data.timestamp);
-        }
-      }).catch(error => {
-        console.error('Firebase error:', error);
-      });
-    },
-    
-    processNewSong: function(url, status, timestamp) {
-      const vid = extractYouTubeID(url || '');
-      if (!vid) return;
-      
-      this.currentSongUrl = url;
-      document.getElementById('urlInput').value = url;
-      document.getElementById('nowPlaying').textContent = 'Playing: ' + url;
-      
-      this.player.loadVideoById({
-        videoId: vid, 
-        startSeconds: timestamp || 0
-      });
-      
-      if (status === 'playing') {
-        this.player.playVideo();
-        this.isPlaying = true;
-      } else {
-        this.player.pauseVideo();
-        this.isPlaying = false;
-      }
-    },
-    
-    updateState: function(obj) {
-      if (!this.firebaseInitialized()) return;
-      
-      this.localChange = true;
-      this.lastUpdateTime = Date.now();
-      const stateRef = firebase.database().ref('music');
-      stateRef.set(obj).catch(error => {
-        console.error('Firebase update error:', error);
-      });
-    },
-    
-    handlePlayPause: function() {
-      const url = document.getElementById('urlInput').value.trim();
-      const vid = extractYouTubeID(url);
-      
-      if (!vid) return alert('Please enter a valid YouTube URL');
-      if (!this.ytReady) return alert('Player not ready yet!');
-      
-      const currentVid = this.player.getVideoData().video_id;
-      let startTime = Math.floor(this.player.getCurrentTime() || 0);
-      
-      // If it's a new video
-      if (currentVid !== vid) {
-        this.currentSongUrl = url;
-        document.getElementById('nowPlaying').textContent = 'Playing: ' + url;
-        this.player.loadVideoById({videoId: vid, startSeconds: 0});
-        this.player.unMute();
-        this.player.playVideo();
-        this.isPlaying = true;
-        this.updateState({ currentSong: url, status: 'playing', timestamp: 0 });
-      } else {
-        // Toggle play/pause for current video
-        if (!this.isPlaying) {
-          this.player.playVideo();
-          this.isPlaying = true;
-          this.updateState({ currentSong: url, status: 'playing', timestamp: startTime });
-        } else {
-          this.player.pauseVideo();
-          this.isPlaying = false;
-          this.updateState({ status: 'paused', timestamp: startTime, currentSong: url });
-        }
-      }
-    },
-    
-    handlePrev: function() {
-      if (!this.player || !this.player.getCurrentTime) return;
-      const currentTime = this.player.getCurrentTime();
-      const newTime = Math.max(0, currentTime - 10);
-      this.player.seekTo(newTime, true);
-      
-      this.updateState({ 
-        status: this.isPlaying ? 'playing' : 'paused', 
-        timestamp: newTime, 
-        currentSong: this.currentSongUrl 
-      });
-    },
-    
-    handleNext: function() {
-      if (!this.player || !this.player.getCurrentTime) return;
-      const currentTime = this.player.getCurrentTime();
-      const duration = this.player.getDuration();
-      const newTime = Math.min(duration, currentTime + 10);
-      this.player.seekTo(newTime, true);
-      
-      this.updateState({ 
-        status: this.isPlaying ? 'playing' : 'paused', 
-        timestamp: newTime, 
-        currentSong: this.currentSongUrl 
-      });
-    },
-    
-    handleSeek: function() {
-      if (!this.player) return;
-      const sec = parseInt(document.getElementById('seekBar').value, 10);
-      this.player.seekTo(sec, true);
-      
-      this.updateState({ 
-        status: this.isPlaying ? 'playing' : 'paused', 
-        timestamp: sec, 
-        currentSong: this.currentSongUrl 
-      });
-    },
-    
-    updatePlayerUI: function() {
-      if (!this.player || !this.player.getCurrentTime) return;
-      const t = Math.floor(this.player.getCurrentTime() || 0);
-      const d = Math.floor(this.player.getDuration() || 0);
-      document.getElementById('curTime').textContent = t;
-      document.getElementById('duration').textContent = d;
-      
-      // Only update seekbar if not being dragged
-      const seekBar = document.getElementById('seekBar');
-      if (!seekBar.matches(':active')) {
-        seekBar.max = d;
-        seekBar.value = t;
-      }
-    },
-    
-    firebaseInitialized: function() {
-      return typeof firebase !== 'undefined' && firebase.apps.length > 0;
-    }
-  };
 
-  // Initialize the player when the page loads
-  musicPlayer.init();
+        // Use a unique namespace to avoid conflicts
+        var musicPlayer = {
+            player: null,
+            ytReady: false,
+            localChange: false,
+            isPlaying: false,
+            currentSongUrl: "",
+            playerInterval: null,
+            lastUpdateTime: 0,
+            firebaseListener: null,
+            
+            init: function() {
+                // Wait for both the DOM and YouTube API to be ready
+                if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', this.setupPlayer.bind(this));
+                } else {
+                    this.setupPlayer();
+                }
+            },
+            
+            setupPlayer: function() {
+                // Initialize Firebase if not already initialized
+                if (typeof firebase === 'undefined') {
+                    console.error("Firebase not loaded");
+                    return;
+                }
+                
+                // Setup UI event listeners
+                this.setupEventListeners();
+                
+                // Setup Firebase listener
+                this.setupFirebaseListener();
+                
+                // Check if YouTube API is already loaded
+                if (typeof YT !== 'undefined' && YT.loaded) {
+                    this.onYouTubeIframeAPIReady();
+                } else {
+                    // Set up callback for when YouTube API is ready
+                    window.onYouTubeIframeAPIReady = this.onYouTubeIframeAPIReady.bind(this);
+                }
+            },
+            
+            setupEventListeners: function() {
+                const miniPlayer = document.getElementById('miniPlayer');
+                const fullPlayer = document.getElementById('fullPlayer');
+                const urlInput = document.getElementById('urlInput');
+                const playPauseBtn = document.getElementById('playPauseBtn');
+                const prevBtn = document.getElementById('prevBtn');
+                const nextBtn = document.getElementById('nextBtn');
+                const seekBar = document.getElementById('seekBar');
+                
+                if (!miniPlayer || !fullPlayer) {
+                    console.error("Player elements not found");
+                    return;
+                }
+                
+                // Toggle full player with mini player click
+                miniPlayer.addEventListener('click', () => {
+                    if (fullPlayer.style.display === 'flex') {
+                        fullPlayer.style.display = 'none';
+                    } else {
+                        fullPlayer.style.display = 'flex';
+                        setTimeout(() => urlInput.focus(), 100);
+                    }
+                });
+                
+                // Play/Pause toggle
+                playPauseBtn.addEventListener('click', this.handlePlayPause.bind(this));
+                
+                // Skip backward 10 seconds
+                prevBtn.addEventListener('click', this.handlePrev.bind(this));
+                
+                // Skip forward 10 seconds
+                nextBtn.addEventListener('click', this.handleNext.bind(this));
+                
+                // Seek
+                seekBar.addEventListener('input', this.handleSeek.bind(this));
+                
+                // Also update when user enters a URL manually
+                urlInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        playPauseBtn.click();
+                    }
+                });
+            },
+            
+            setupFirebaseListener: function() {
+                if (!this.firebaseInitialized()) return;
+                
+                // Remove existing listener if any
+                if (this.firebaseListener) {
+                    this.firebaseListener();
+                }
+                
+                const stateRef = firebase.database().ref('music');
+                this.firebaseListener = stateRef.on('value', (snapshot) => {
+                    const data = snapshot.val();
+                    if (!data || !this.ytReady) return;
+                    
+                    // Ignore updates that we just sent (within last 500ms)
+                    const now = Date.now();
+                    if (this.localChange && now - this.lastUpdateTime < 500) {
+                        this.localChange = false;
+                        return;
+                    }
+                    
+                    // If this is our own update, ignore it
+                    if (this.localChange) {
+                        this.localChange = false;
+                        return;
+                    }
 
-  // Start UI update interval
-  setInterval(() => {
-    if (musicPlayer.player) {
-      musicPlayer.updatePlayerUI();
-    }
-  }, 1000);
-</script>
+                    const { currentSong, status, timestamp } = data;
+                    
+                    // Update the URL input field with the current song
+                    if (currentSong && currentSong !== document.getElementById('urlInput').value) {
+                        document.getElementById('urlInput').value = currentSong;
+                    }
+                    
+                    const vid = extractYouTubeID(currentSong || '');
+                    if (!vid) return;
+                    
+                    const currentVid = this.player ? this.player.getVideoData().video_id : '';
+                    
+                    // If it's a new video or we don't have a video loaded
+                    if (!currentVid || currentVid !== vid) {
+                        this.processNewSong(currentSong, status, timestamp);
+                    } else {
+                        // Same video, just update position and state
+                        const currentTime = this.player.getCurrentTime();
+                        
+                        // Only update if the difference is significant (> 1 second)
+                        if (Math.abs(currentTime - timestamp) > 1) {
+                            this.player.seekTo(timestamp, true);
+                        }
+                        
+                        if (status === 'playing' && this.player.getPlayerState() !== YT.PlayerState.PLAYING) {
+                            this.player.playVideo();
+                            this.isPlaying = true;
+                        } else if (status === 'paused' && this.player.getPlayerState() !== YT.PlayerState.PAUSED) {
+                            this.player.pauseVideo();
+                            this.isPlaying = false;
+                        }
+                    }
+                });
+            },
+            
+            onYouTubeIframeAPIReady: function() {
+                if (this.player) return; // Already initialized
+                
+                this.player = new YT.Player('player', {
+                    height: '1', 
+                    width: '1', 
+                    videoId: '',
+                    playerVars: { 
+                        controls: 0, 
+                        modestbranding: 1, 
+                        rel: 0, 
+                        playsinline: 1 
+                    },
+                    events: { 
+                        onReady: () => { 
+                            this.ytReady = true; 
+                            console.log('YouTube player ready');
+                            this.checkSavedState();
+                        },
+                        onStateChange: this.onPlayerStateChange.bind(this)
+                    }
+                });
+            },
+            
+            onPlayerStateChange: function(e) {
+                if (e.data === YT.PlayerState.PLAYING) {
+                    try {
+                        this.player.setPlaybackQuality('tiny');
+                    } catch(e) {}
+                    document.getElementById('playPauseBtn').innerHTML = '<i class="fas fa-pause"></i>';
+                    this.isPlaying = true;
+                } else if (e.data === YT.PlayerState.PAUSED || e.data === YT.PlayerState.ENDED) {
+                    document.getElementById('playPauseBtn').innerHTML = '<i class="fas fa-play"></i>';
+                    this.isPlaying = false;
+                    
+                    if (e.data === YT.PlayerState.ENDED) {
+                        this.player.seekTo(0);
+                        this.updateState({ status: 'paused', timestamp: 0, currentSong: this.currentSongUrl });
+                    }
+                }
+                
+                // Update Firebase with current state (but only if not from a Firebase update)
+                if (!this.localChange && this.currentSongUrl) {
+                    const t = Math.floor(this.player.getCurrentTime());
+                    this.updateState({ 
+                        status: e.data === YT.PlayerState.PLAYING ? 'playing' : 'paused', 
+                        timestamp: t, 
+                        currentSong: this.currentSongUrl 
+                    });
+                }
+            },
+            
+            checkSavedState: function() {
+                if (!this.firebaseInitialized()) return;
+                
+                // Check if there's a saved state in Firebase
+                const stateRef = firebase.database().ref('music');
+                stateRef.once('value').then((snapshot) => {
+                    const data = snapshot.val();
+                    if (data && data.currentSong) {
+                        this.processNewSong(data.currentSong, data.status, data.timestamp);
+                    }
+                }).catch(error => {
+                    console.error('Firebase error:', error);
+                });
+            },
+            
+            processNewSong: function(url, status, timestamp) {
+                const vid = extractYouTubeID(url || '');
+                if (!vid) return;
+                
+                this.currentSongUrl = url;
+                document.getElementById('urlInput').value = url;
+                document.getElementById('nowPlaying').textContent = 'Playing: ' + url;
+                
+                this.player.loadVideoById({
+                    videoId: vid, 
+                    startSeconds: timestamp || 0
+                });
+                
+                if (status === 'playing') {
+                    this.player.playVideo();
+                    this.isPlaying = true;
+                } else {
+                    this.player.pauseVideo();
+                    this.isPlaying = false;
+                }
+            },
+            
+            updateState: function(obj) {
+                if (!this.firebaseInitialized()) return;
+                
+                this.localChange = true;
+                this.lastUpdateTime = Date.now();
+                const stateRef = firebase.database().ref('music');
+                stateRef.set(obj).catch(error => {
+                    console.error('Firebase update error:', error);
+                });
+            },
+            
+            handlePlayPause: function() {
+                const url = document.getElementById('urlInput').value.trim();
+                const vid = extractYouTubeID(url);
+                
+                if (!vid) return alert('Please enter a valid YouTube URL');
+                if (!this.ytReady) return alert('Player not ready yet!');
+                
+                const currentVid = this.player.getVideoData().video_id;
+                let startTime = Math.floor(this.player.getCurrentTime() || 0);
+                
+                // If it's a new video
+                if (currentVid !== vid) {
+                    this.currentSongUrl = url;
+                    document.getElementById('nowPlaying').textContent = 'Playing: ' + url;
+                    this.player.loadVideoById({videoId: vid, startSeconds: 0});
+                    this.player.unMute();
+                    this.player.playVideo();
+                    this.isPlaying = true;
+                    this.updateState({ currentSong: url, status: 'playing', timestamp: 0 });
+                } else {
+                    // Toggle play/pause for current video
+                    if (!this.isPlaying) {
+                        this.player.playVideo();
+                        this.isPlaying = true;
+                        this.updateState({ currentSong: url, status: 'playing', timestamp: startTime });
+                    } else {
+                        this.player.pauseVideo();
+                        this.isPlaying = false;
+                        this.updateState({ status: 'paused', timestamp: startTime, currentSong: url });
+                    }
+                }
+            },
+            
+            handlePrev: function() {
+                if (!this.player || !this.player.getCurrentTime) return;
+                const currentTime = this.player.getCurrentTime();
+                const newTime = Math.max(0, currentTime - 10);
+                this.player.seekTo(newTime, true);
+                
+                this.updateState({ 
+                    status: this.isPlaying ? 'playing' : 'paused', 
+                    timestamp: newTime, 
+                    currentSong: this.currentSongUrl 
+                });
+            },
+            
+            handleNext: function() {
+                if (!this.player || !this.player.getCurrentTime) return;
+                const currentTime = this.player.getCurrentTime();
+                const duration = this.player.getDuration();
+                const newTime = Math.min(duration, currentTime + 10);
+                this.player.seekTo(newTime, true);
+                
+                this.updateState({ 
+                    status: this.isPlaying ? 'playing' : 'paused', 
+                    timestamp: newTime, 
+                    currentSong: this.currentSongUrl 
+                });
+            },
+            
+            handleSeek: function() {
+                if (!this.player) return;
+                const sec = parseInt(document.getElementById('seekBar').value, 10);
+                this.player.seekTo(sec, true);
+                
+                this.updateState({ 
+                    status: this.isPlaying ? 'playing' : 'paused', 
+                    timestamp: sec, 
+                    currentSong: this.currentSongUrl 
+                });
+            },
+            
+            updatePlayerUI: function() {
+                if (!this.player || !this.player.getCurrentTime) return;
+                const t = Math.floor(this.player.getCurrentTime() || 0);
+                const d = Math.floor(this.player.getDuration() || 0);
+                document.getElementById('curTime').textContent = t;
+                document.getElementById('duration').textContent = d;
+                
+                // Only update seekbar if not being dragged
+                const seekBar = document.getElementById('seekBar');
+                if (!seekBar.matches(':active')) {
+                    seekBar.max = d;
+                    seekBar.value = t;
+                }
+            },
+            
+            firebaseInitialized: function() {
+                return typeof firebase !== 'undefined' && firebase.apps.length > 0;
+            }
+        };
+
+        // Initialize the player when the page loads
+        musicPlayer.init();
+
+        // Start UI update interval
+        setInterval(() => {
+            if (musicPlayer.player) {
+                musicPlayer.updatePlayerUI();
+            }
+        }, 1000);
+    </script>
