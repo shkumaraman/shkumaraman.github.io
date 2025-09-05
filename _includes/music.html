@@ -207,7 +207,6 @@
 
 <!-- YouTube IFrame API -->
 <script>
-    // Make sure YouTube API is loaded only once
     if (typeof YT === 'undefined') {
         var tag = document.createElement('script');
         tag.src = "https://www.youtube.com/iframe_api";
@@ -227,7 +226,6 @@
         return m ? m[0] : null;
     }
 
-    // Format seconds to MM:SS
     function formatTime(seconds) {
         if (isNaN(seconds) || seconds < 0) return "0:00";
         const mins = Math.floor(seconds / 60);
@@ -235,7 +233,6 @@
         return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
     }
 
-    // Use a unique namespace to avoid conflicts
     var musicPlayer = {
         player: null,
         ytReady: false,
@@ -245,7 +242,7 @@
         playerInterval: null,
         lastUpdateTime: 0,
         firebaseListener: null,
-        ignorePause: false, // 🔥 नया flag
+        ignorePause: false, // 🔥 tab close/switch ignore ke liye
 
         init: function() {
             if (document.readyState === 'loading') {
@@ -270,7 +267,12 @@
                 window.onYouTubeIframeAPIReady = this.onYouTubeIframeAPIReady.bind(this);
             }
 
-            // 🔥 Tab switch/close detect
+            // 🔥 Tab close/reload me pause ignore
+            window.addEventListener("beforeunload", () => {
+                this.ignorePause = true;
+            });
+
+            // 🔥 Tab switch bhi ignore
             document.addEventListener("visibilitychange", () => {
                 if (document.hidden) {
                     this.ignorePause = true;
@@ -288,11 +290,6 @@
             const prevBtn = document.getElementById('prevBtn');
             const nextBtn = document.getElementById('nextBtn');
             const seekBar = document.getElementById('seekBar');
-            
-            if (!miniPlayer || !fullPlayer) {
-                console.error("Player elements not found");
-                return;
-            }
             
             miniPlayer.addEventListener('click', () => {
                 if (fullPlayer.style.display === 'flex') {
@@ -317,10 +314,7 @@
         
         setupFirebaseListener: function() {
             if (!this.firebaseInitialized()) return;
-            
-            if (this.firebaseListener) {
-                this.firebaseListener();
-            }
+            if (this.firebaseListener) this.firebaseListener();
             
             const stateRef = firebase.database().ref('music');
             this.firebaseListener = stateRef.on('value', (snapshot) => {
@@ -339,7 +333,6 @@
                 }
 
                 const { currentSong, status, timestamp } = data;
-                
                 if (currentSong && currentSong !== document.getElementById('urlInput').value) {
                     document.getElementById('urlInput').value = currentSong;
                 }
@@ -379,7 +372,6 @@
                 events: { 
                     onReady: () => { 
                         this.ytReady = true; 
-                        console.log('YouTube player ready');
                         this.checkSavedState();
                     },
                     onStateChange: this.onPlayerStateChange.bind(this)
@@ -388,7 +380,7 @@
         },
         
         onPlayerStateChange: function(e) {
-            // 🔥 Background pause ignore
+            // 🔥 Tab close/switch par pause ignore
             if (this.ignorePause && e.data === YT.PlayerState.PAUSED) {
                 return;
             }
@@ -427,9 +419,7 @@
                 if (data && data.currentSong) {
                     this.processNewSong(data.currentSong, data.status, data.timestamp);
                 }
-            }).catch(error => {
-                console.error('Firebase error:', error);
-            });
+            }).catch(error => console.error('Firebase error:', error));
         },
         
         processNewSong: function(url, status, timestamp) {
@@ -440,11 +430,7 @@
             document.getElementById('urlInput').value = url;
             document.getElementById('nowPlaying').textContent = 'Playing: ' + url;
             
-            this.player.loadVideoById({
-                videoId: vid, 
-                startSeconds: timestamp || 0
-            });
-            
+            this.player.loadVideoById({ videoId: vid, startSeconds: timestamp || 0 });
             if (status === 'playing') {
                 this.player.playVideo();
                 this.isPlaying = true;
@@ -456,11 +442,9 @@
         
         updateState: function(obj) {
             if (!this.firebaseInitialized()) return;
-            
             this.localChange = true;
             this.lastUpdateTime = Date.now();
-            const stateRef = firebase.database().ref('music');
-            stateRef.set(obj).catch(error => {
+            firebase.database().ref('music').set(obj).catch(error => {
                 console.error('Firebase update error:', error);
             });
         },
@@ -468,7 +452,6 @@
         handlePlayPause: function() {
             const url = document.getElementById('urlInput').value.trim();
             const vid = extractYouTubeID(url);
-            
             if (!vid) return alert('Please enter a valid YouTube URL');
             if (!this.ytReady) return alert('Player not ready yet!');
             
@@ -497,49 +480,34 @@
         },
         
         handlePrev: function() {
-            if (!this.player || !this.player.getCurrentTime) return;
-            const currentTime = this.player.getCurrentTime();
-            const newTime = Math.max(0, currentTime - 10);
+            if (!this.player) return;
+            const newTime = Math.max(0, this.player.getCurrentTime() - 10);
             this.player.seekTo(newTime, true);
-            this.updateState({ 
-                status: this.isPlaying ? 'playing' : 'paused', 
-                timestamp: newTime, 
-                currentSong: this.currentSongUrl 
-            });
+            this.updateState({ status: this.isPlaying ? 'playing' : 'paused', timestamp: newTime, currentSong: this.currentSongUrl });
         },
         
         handleNext: function() {
-            if (!this.player || !this.player.getCurrentTime) return;
+            if (!this.player) return;
             const currentTime = this.player.getCurrentTime();
             const duration = this.player.getDuration();
             const newTime = Math.min(duration, currentTime + 10);
             this.player.seekTo(newTime, true);
-            this.updateState({ 
-                status: this.isPlaying ? 'playing' : 'paused', 
-                timestamp: newTime, 
-                currentSong: this.currentSongUrl 
-            });
+            this.updateState({ status: this.isPlaying ? 'playing' : 'paused', timestamp: newTime, currentSong: this.currentSongUrl });
         },
         
         handleSeek: function() {
             if (!this.player) return;
             const sec = parseInt(document.getElementById('seekBar').value, 10);
             this.player.seekTo(sec, true);
-            this.updateState({ 
-                status: this.isPlaying ? 'playing' : 'paused', 
-                timestamp: sec, 
-                currentSong: this.currentSongUrl 
-            });
+            this.updateState({ status: this.isPlaying ? 'playing' : 'paused', timestamp: sec, currentSong: this.currentSongUrl });
         },
         
         updatePlayerUI: function() {
-            if (!this.player || !this.player.getCurrentTime) return;
+            if (!this.player) return;
             const t = Math.floor(this.player.getCurrentTime() || 0);
             const d = Math.floor(this.player.getDuration() || 0);
-            
             document.getElementById('curTime').textContent = formatTime(t);
             document.getElementById('duration').textContent = formatTime(d);
-            
             const seekBar = document.getElementById('seekBar');
             if (!seekBar.matches(':active')) {
                 seekBar.max = d;
