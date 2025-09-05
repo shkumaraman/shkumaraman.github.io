@@ -242,7 +242,7 @@
         playerInterval: null,
         lastUpdateTime: 0,
         firebaseListener: null,
-        ignorePause: false, // 🔥 tab close/switch ignore ke liye
+        ignorePause: false,
 
         init: function() {
             if (document.readyState === 'loading') {
@@ -253,32 +253,21 @@
         },
         
         setupPlayer: function() {
-            if (typeof firebase === 'undefined') {
-                console.error("Firebase not loaded");
-                return;
-            }
-            
             this.setupEventListeners();
-            this.setupFirebaseListener();
-            
+
+            // ✅ Firebase optional
+            if (this.firebaseInitialized()) {
+                this.setupFirebaseListener();
+            }
+
             if (typeof YT !== 'undefined' && YT.loaded) {
                 this.onYouTubeIframeAPIReady();
             } else {
                 window.onYouTubeIframeAPIReady = this.onYouTubeIframeAPIReady.bind(this);
             }
 
-            // 🔥 Tab close/reload me pause ignore
             window.addEventListener("beforeunload", () => {
                 this.ignorePause = true;
-            });
-
-            // 🔥 Tab switch bhi ignore
-            document.addEventListener("visibilitychange", () => {
-                if (document.hidden) {
-                    this.ignorePause = true;
-                } else {
-                    this.ignorePause = false;
-                }
             });
         },
         
@@ -380,7 +369,6 @@
         },
         
         onPlayerStateChange: function(e) {
-            // 🔥 Tab close/switch par pause ignore
             if (this.ignorePause && e.data === YT.PlayerState.PAUSED) {
                 return;
             }
@@ -389,9 +377,18 @@
                 try { this.player.setPlaybackQuality('tiny'); } catch(e) {}
                 document.getElementById('playPauseBtn').innerHTML = '<i class="fas fa-pause"></i>';
                 this.isPlaying = true;
+
+                // ✅ Only one interval
                 if (!this.playerInterval) {
                     this.playerInterval = setInterval(this.updatePlayerUI.bind(this), 1000);
                 }
+
+                // ✅ Show title
+                const videoData = this.player.getVideoData();
+                if (videoData && videoData.title) {
+                    document.getElementById('nowPlaying').textContent = "🎵 " + videoData.title;
+                }
+
             } else if (e.data === YT.PlayerState.PAUSED || e.data === YT.PlayerState.ENDED) {
                 document.getElementById('playPauseBtn').innerHTML = '<i class="fas fa-play"></i>';
                 this.isPlaying = false;
@@ -411,26 +408,25 @@
             }
         },
         
-        checkSavedState: function() {
-            if (!this.firebaseInitialized()) return;
-            const stateRef = firebase.database().ref('music');
-            stateRef.once('value').then((snapshot) => {
-                const data = snapshot.val();
-                if (data && data.currentSong) {
-                    this.processNewSong(data.currentSong, data.status, data.timestamp);
-                }
-            }).catch(error => console.error('Firebase error:', error));
-        },
-        
         processNewSong: function(url, status, timestamp) {
             const vid = extractYouTubeID(url || '');
             if (!vid) return;
             
             this.currentSongUrl = url;
             document.getElementById('urlInput').value = url;
-            document.getElementById('nowPlaying').textContent = 'Playing: ' + url;
-            
+            document.getElementById('nowPlaying').textContent = 'Loading...';
+
             this.player.loadVideoById({ videoId: vid, startSeconds: timestamp || 0 });
+
+            // ✅ Embed restriction check
+            setTimeout(() => {
+                if (this.player.getDuration() <= 0) {
+                    document.getElementById('nowPlaying').textContent = "⚠️ Cannot play (embed restricted)";
+                    alert("Ye video embed restricted hai. YouTube par hi chalega.");
+                    return;
+                }
+            }, 2000);
+
             if (status === 'playing') {
                 this.player.playVideo();
                 this.isPlaying = true;
@@ -460,7 +456,7 @@
             
             if (currentVid !== vid) {
                 this.currentSongUrl = url;
-                document.getElementById('nowPlaying').textContent = 'Playing: ' + url;
+                document.getElementById('nowPlaying').textContent = 'Loading...';
                 this.player.loadVideoById({videoId: vid, startSeconds: 0});
                 this.player.unMute();
                 this.player.playVideo();
@@ -521,10 +517,4 @@
     };
 
     musicPlayer.init();
-
-    setInterval(() => {
-        if (musicPlayer.player) {
-            musicPlayer.updatePlayerUI();
-        }
-    }, 1000);
 </script>
