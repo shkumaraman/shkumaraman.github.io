@@ -168,6 +168,20 @@
         text-overflow: ellipsis;
         white-space: nowrap;
     }
+    
+    .error-message {
+        color: #ff5252;
+        font-size: 14px;
+        margin-top: 10px;
+        text-align: center;
+        display: none;
+    }
+    
+    .loading {
+        display: none;
+        margin-top: 10px;
+        color: #666;
+    }
 </style>
 
 <!-- Mini player (no longer draggable) -->
@@ -185,6 +199,9 @@
     </div>
 
     <input id="urlInput" placeholder="Paste YouTube URL here" />
+    <div class="loading" id="loadingIndicator">Loading...</div>
+    <div class="error-message" id="errorMessage"></div>
+    
     <div class="control-buttons">
         <button id="prevBtn" title="Back 10 seconds">
             <i class="fas fa-backward-step"></i>
@@ -243,6 +260,7 @@
         lastUpdateTime: 0,
         firebaseListener: null,
         ignorePause: false,
+        currentVideoTitle: "",
 
         init: function() {
             if (document.readyState === 'loading') {
@@ -253,13 +271,14 @@
         },
         
         setupPlayer: function() {
-            this.setupEventListeners();
-
-            // ✅ Firebase optional
-            if (this.firebaseInitialized()) {
-                this.setupFirebaseListener();
+            if (typeof firebase === 'undefined') {
+                console.error("Firebase not loaded");
+                return;
             }
-
+            
+            this.setupEventListeners();
+            this.setupFirebaseListener();
+            
             if (typeof YT !== 'undefined' && YT.loaded) {
                 this.onYouTubeIframeAPIReady();
             } else {
@@ -268,6 +287,14 @@
 
             window.addEventListener("beforeunload", () => {
                 this.ignorePause = true;
+            });
+
+            document.addEventListener("visibilitychange", () => {
+                if (document.hidden) {
+                    this.ignorePause = true;
+                } else {
+                    this.ignorePause = false;
+                }
             });
         },
         
@@ -363,7 +390,8 @@
                         this.ytReady = true; 
                         this.checkSavedState();
                     },
-                    onStateChange: this.onPlayerStateChange.bind(this)
+                    onStateChange: this.onPlayerStateChange.bind(this),
+                    onError: this.onPlayerError.bind(this)
                 }
             });
         },
@@ -377,18 +405,9 @@
                 try { this.player.setPlaybackQuality('tiny'); } catch(e) {}
                 document.getElementById('playPauseBtn').innerHTML = '<i class="fas fa-pause"></i>';
                 this.isPlaying = true;
-
-                // ✅ Only one interval
                 if (!this.playerInterval) {
                     this.playerInterval = setInterval(this.updatePlayerUI.bind(this), 1000);
                 }
-
-                // ✅ Show title
-                const videoData = this.player.getVideoData();
-                if (videoData && videoData.title) {
-                    document.getElementById('nowPlaying').textContent = "🎵 " + videoData.title;
-                }
-
             } else if (e.data === YT.PlayerState.PAUSED || e.data === YT.PlayerState.ENDED) {
                 document.getElementById('playPauseBtn').innerHTML = '<i class="fas fa-play"></i>';
                 this.isPlaying = false;
@@ -408,25 +427,63 @@
             }
         },
         
+        onPlayerError: function(e) {
+            const errorMessage = document.getElementById('errorMessage');
+            switch(e.data) {
+                case 2:
+                    errorMessage.textContent = "Invalid video ID. Please check the URL.";
+                    break;
+                case 5:
+                    errorMessage.textContent = "HTML5 player error. Please try again.";
+                    break;
+                case 100:
+                    errorMessage.textContent = "Video not found or removed.";
+                    break;
+                case 101:
+                case 150:
+                    errorMessage.textContent = "This video cannot be played in embedded players.";
+                    break;
+                default:
+                    errorMessage.textContent = "An error occurred while playing the video.";
+            }
+            errorMessage.style.display = 'block';
+            document.getElementById('loadingIndicator').style.display = 'none';
+            
+            // Update UI to show error state
+            document.getElementById('playPauseBtn').innerHTML = '<i class="fas fa-play"></i>';
+            this.isPlaying = false;
+            document.getElementById('nowPlaying').textContent = 'Error: ' + this.currentVideoTitle;
+        },
+        
+        checkSavedState: function() {
+            if (!this.firebaseInitialized()) return;
+            const stateRef = firebase.database().ref('music');
+            stateRef.once('value').then((snapshot) => {
+                const data = snapshot.val();
+                if (data && data.currentSong) {
+                    this.processNewSong(data.currentSong, data.status, data.timestamp);
+                }
+            }).catch(error => console.error('Firebase error:', error));
+        },
+        
         processNewSong: function(url, status, timestamp) {
             const vid = extractYouTubeID(url || '');
             if (!vid) return;
             
             this.currentSongUrl = url;
             document.getElementById('urlInput').value = url;
-            document.getElementById('nowPlaying').textContent = 'Loading...';
-
+            
+            // Fetch video title
+            this.fetchVideoTitle(vid).then(title => {
+                this.currentVideoTitle = title;
+                document.getElementById('nowPlaying').textContent = 'Playing: ' + title;
+            }).catch(error => {
+                console.error('Error fetching title:', error);
+                this.currentVideoTitle = "Unknown Title";
+                document.getElementById('nowPlaying').textContent = 'Playing: ' + url;
+            });
+            
             this.player.loadVideoById({ videoId: vid, startSeconds: timestamp || 0 });
-
-            // ✅ Embed restriction check
-            setTimeout(() => {
-                if (this.player.getDuration() <= 0) {
-                    document.getElementById('nowPlaying').textContent = "⚠️ Cannot play (embed restricted)";
-                    alert("Ye video embed restricted hai. YouTube par hi chalega.");
-                    return;
-                }
-            }, 2000);
-
             if (status === 'playing') {
                 this.player.playVideo();
                 this.isPlaying = true;
@@ -434,6 +491,21 @@
                 this.player.pauseVideo();
                 this.isPlaying = false;
             }
+        },
+        
+        fetchVideoTitle: function(videoId) {
+            return new Promise((resolve, reject) => {
+                // Using YouTube oEmbed API to get video title
+                fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`)
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Failed to fetch video title');
+                        }
+                        return response.json();
+                    })
+                    .then(data => resolve(data.title))
+                    .catch(error => reject(error));
+            });
         },
         
         updateState: function(obj) {
@@ -451,12 +523,28 @@
             if (!vid) return alert('Please enter a valid YouTube URL');
             if (!this.ytReady) return alert('Player not ready yet!');
             
+            // Hide any previous error
+            document.getElementById('errorMessage').style.display = 'none';
+            document.getElementById('loadingIndicator').style.display = 'block';
+            
             const currentVid = this.player.getVideoData().video_id;
             let startTime = Math.floor(this.player.getCurrentTime() || 0);
             
             if (currentVid !== vid) {
                 this.currentSongUrl = url;
-                document.getElementById('nowPlaying').textContent = 'Loading...';
+                
+                // Fetch video title
+                this.fetchVideoTitle(vid).then(title => {
+                    this.currentVideoTitle = title;
+                    document.getElementById('nowPlaying').textContent = 'Playing: ' + title;
+                    document.getElementById('loadingIndicator').style.display = 'none';
+                }).catch(error => {
+                    console.error('Error fetching title:', error);
+                    this.currentVideoTitle = "Unknown Title";
+                    document.getElementById('nowPlaying').textContent = 'Playing: ' + url;
+                    document.getElementById('loadingIndicator').style.display = 'none';
+                });
+                
                 this.player.loadVideoById({videoId: vid, startSeconds: 0});
                 this.player.unMute();
                 this.player.playVideo();
@@ -467,10 +555,12 @@
                     this.player.playVideo();
                     this.isPlaying = true;
                     this.updateState({ currentSong: url, status: 'playing', timestamp: startTime });
+                    document.getElementById('loadingIndicator').style.display = 'none';
                 } else {
                     this.player.pauseVideo();
                     this.isPlaying = false;
                     this.updateState({ status: 'paused', timestamp: startTime, currentSong: url });
+                    document.getElementById('loadingIndicator').style.display = 'none';
                 }
             }
         },
@@ -517,4 +607,10 @@
     };
 
     musicPlayer.init();
+
+    setInterval(() => {
+        if (musicPlayer.player) {
+            musicPlayer.updatePlayerUI();
+        }
+    }, 1000);
 </script>
