@@ -1,5 +1,6 @@
 const express = require("express");
 const YTMusic = require("ytmusic-api");
+const ytdl = require("ytdl-core");
 const cors = require("cors");
 
 const app = express();
@@ -24,8 +25,17 @@ app.get("/search", async (req, res) => {
 
 app.get("/song/:id", async (req, res) => {
   try {
-    const track = await api.getSong(req.params.id);
-    res.json(track);
+    const videoId = req.params.id;
+    const info = await ytdl.getInfo(videoId);
+
+    // केवल audio formats filter करें
+    const format = ytdl.chooseFormat(info.formats, { filter: "audioonly" });
+
+    res.json({
+      title: info.videoDetails.title,
+      artist: info.videoDetails.author.name,
+      url: format.url
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -34,3 +44,4 @@ app.get("/song/:id", async (req, res) => {
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
+        
