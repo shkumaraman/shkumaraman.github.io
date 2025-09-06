@@ -333,10 +333,6 @@ body.light-mode {
     border-radius: 50%;
 }
 
-.new-chat-btn {
-    display: none; /* Removed from UI */
-}
-
 .icon-btn:hover { 
     color: var(--dark-icon-hover);
     background: var(--dark-icon-hover-bg);
@@ -503,10 +499,6 @@ body.light-mode {
 .light-mode .modal-content {
     background-color: var(--light-modal-content);
     color: var(--light-text); /* Added to ensure text color */
-}
-
-.close {
-   display: none; /* Removed from UI */
 }
 
 .modal-title {
@@ -825,11 +817,9 @@ body.light-mode {
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
-    let peer, myConn, myId, waitingRef;
+    let peer, myConn, myId;
     let currentSystemMessage = null;
     let isConnected = false;
-    let escPressedOnce = false;
-    let escTimer = null;
     let currentRoomCode = null;
     let isRoomCreator = false;
 
@@ -852,7 +842,6 @@ body.light-mode {
 
     // Initialize when page loads
     window.addEventListener('load', () => {
-        // Show room modal on load
         roomModal.style.display = "block";
         startPeer();
     });
@@ -863,28 +852,6 @@ body.light-mode {
             e.preventDefault();
             e.returnValue = 'Are you sure you want to leave? Your chat will be disconnected.';
             return e.returnValue;
-        }
-    });
-
-    // Escape key functionality
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') {
-            if (!escPressedOnce) {
-                escPressedOnce = true;
-                logSystem("Press Esc again to skip this chat and find someone new");
-                escTimer = setTimeout(() => {
-                    escPressedOnce = false;
-                    clearSystemMessage();
-                }, 3000);
-            } else {
-                clearTimeout(escTimer);
-                escPressedOnce = false;
-                if (myConn) myConn.close();
-                cleanUpWaitingList();
-                isConnected = false;
-                document.getElementById("chatLog").innerHTML = "";
-                startPeer();
-            }
         }
     });
 
@@ -904,7 +871,7 @@ body.light-mode {
         return Math.floor(10000 + Math.random() * 90000).toString();
     }
 
-    // Create room functionality - FIXED: Now creates room in a single click
+    // Create room functionality
     createRoomBtn.onclick = () => {
         const code = generateRoomCode();
         roomCodeDisplay.textContent = code;
@@ -1008,17 +975,13 @@ body.light-mode {
             config: {
                 iceServers: [
                     { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' },
-                    { urls: 'stun:stun2.l.google.com:19302' },
-                    { urls: 'stun:stun3.l.google.com:19302' },
-                    { urls: 'stun:stun4.l.google.com:19302' }
+                    { urls: 'stun:stun1.l.google.com:19302' }
                 ]
             }
         });
 
         peer.on('open', (id) => {
             myId = id;
-            // If we're not in a room, show the modal
             if (!currentRoomCode) {
                 roomModal.style.display = "block";
             }
@@ -1028,7 +991,7 @@ body.light-mode {
 
         peer.on('error', (err) => {
             console.error('PeerJS error:', err);
-            logSystem("Connection error. Click the Room button to try again.");
+            logSystem("Connection error. Please try again.");
         });
     }
 
@@ -1101,15 +1064,6 @@ body.light-mode {
             // Remove myself from participants
             db.ref("rooms/" + currentRoomCode + "/participants/" + myId).remove();
             currentRoomCode = null;
-        }
-    }
-
-    function cleanUpWaitingList() {
-        if (waitingRef) {
-            waitingRef.off();
-            db.ref("waiting").orderByValue().equalTo(myId).once('value', (snap) => {
-                snap.forEach(child => child.ref.remove());
-            });
         }
     }
 
@@ -1232,7 +1186,6 @@ body.light-mode {
 
     document.getElementById("skipBtn").onclick = () => {
         if (myConn) myConn.close();
-        cleanUpWaitingList();
         isConnected = false;
         
         // Clean up room if we were the creator
@@ -1246,7 +1199,7 @@ body.light-mode {
             currentRoomCode = null;
         }
         
-        logSystem("Chat ended. Click the Room button to start a new chat.");
+        logSystem("Chat ended. Use the Room button to create or join a new room.");
     };
 
     // ----------------- GIF Search -----------------
