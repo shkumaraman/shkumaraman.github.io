@@ -199,6 +199,7 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
       display: flex;
       align-items: center;
       flex: 1;
+      cursor: pointer;
     }
     
     .now-playing img {
@@ -337,6 +338,137 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
       animation: spin 1s linear infinite;
     }
     
+    /* Fullscreen player styles */
+    .fullscreen-player {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.9);
+      z-index: 2000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.3s ease;
+    }
+    
+    .fullscreen-player.active {
+      opacity: 1;
+      visibility: visible;
+    }
+    
+    .fullscreen-close {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      background: none;
+      border: none;
+      color: white;
+      font-size: 24px;
+      cursor: pointer;
+      z-index: 2001;
+    }
+    
+    .fullscreen-thumbnail {
+      width: 80%;
+      max-width: 400px;
+      border-radius: 10px;
+      margin-bottom: 30px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    }
+    
+    .fullscreen-track-info {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    
+    .fullscreen-track-name {
+      font-size: 24px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    
+    .fullscreen-channel-name {
+      font-size: 16px;
+      color: var(--text-secondary);
+    }
+    
+    .fullscreen-controls {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 30px;
+    }
+    
+    .fullscreen-control-btn {
+      background: none;
+      border: none;
+      color: var(--text-primary);
+      font-size: 20px;
+      margin: 0 15px;
+      cursor: pointer;
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.3s;
+    }
+    
+    .fullscreen-control-btn:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+    
+    .fullscreen-play-pause {
+      background: var(--accent-color);
+      width: 60px;
+      height: 60px;
+      font-size: 20px;
+    }
+    
+    .fullscreen-play-pause:hover {
+      background: #1ed760;
+    }
+    
+    .fullscreen-progress-container {
+      width: 80%;
+      max-width: 500px;
+      height: 6px;
+      background: #333;
+      border-radius: 3px;
+      margin-bottom: 10px;
+      cursor: pointer;
+    }
+    
+    .fullscreen-progress-bar {
+      height: 100%;
+      background: var(--accent-color);
+      border-radius: 3px;
+      width: 0%;
+    }
+    
+    .fullscreen-time-display {
+      display: flex;
+      justify-content: space-between;
+      width: 80%;
+      max-width: 500px;
+      font-size: 14px;
+      color: var(--text-secondary);
+    }
+    
+    .mute-btn.active {
+      color: var(--accent-color);
+    }
+    
+    .auto-play-btn.active {
+      color: var(--accent-color);
+    }
+    
     @keyframes spin {
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
@@ -360,6 +492,14 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
       .brand {
         font-size: 1.3rem;
       }
+      
+      .fullscreen-thumbnail {
+        width: 90%;
+      }
+      
+      .fullscreen-control-btn {
+        margin: 0 10px;
+      }
     }
   </style>
 
@@ -377,7 +517,7 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
     </div>
 
     <div class="section-title" id="trending-title">
-      <i class="fas fa-music"></i> Suggested Songs
+      <i class="fas fa-music"></i> Trending Hindi Songs
     </div>
     <div id="trending-results"></div>
 
@@ -391,7 +531,7 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
   <div class="player-section">
     <div class="player-bg-thumbnail" id="bg-thumbnail"></div>
     <div class="player-container">
-      <div class="now-playing">
+      <div class="now-playing" id="open-fullscreen">
         <img id="current-thumbnail" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Now playing">
         <div class="track-details">
           <div id="current-title" class="track-name">Nothing playing</div>
@@ -418,7 +558,12 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
       </div>
 
       <div class="player-options">
-        <!-- Volume controls removed as requested -->
+        <button class="control-btn auto-play-btn" id="auto-play-btn" onclick="toggleAutoPlay()" title="Auto Play">
+          <i class="fas fa-infinity"></i>
+        </button>
+        <button class="control-btn mute-btn" id="mute-btn" onclick="toggleMute()" title="Mute">
+          <i class="fas fa-volume-up"></i>
+        </button>
       </div>
     </div>
 
@@ -428,6 +573,50 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
     <div class="time-display">
       <span id="current-time">0:00</span>
       <span id="duration">0:00</span>
+    </div>
+  </div>
+
+  <!-- Fullscreen Player -->
+  <div class="fullscreen-player" id="fullscreen-player">
+    <button class="fullscreen-close" onclick="closeFullscreen()">
+      <i class="fas fa-times"></i>
+    </button>
+    <img class="fullscreen-thumbnail" id="fullscreen-thumbnail" src="" alt="Track thumbnail">
+    <div class="fullscreen-track-info">
+      <div class="fullscreen-track-name" id="fullscreen-track-name"></div>
+      <div class="fullscreen-channel-name" id="fullscreen-channel-name"></div>
+    </div>
+    <div class="fullscreen-controls">
+      <button class="fullscreen-control-btn" onclick="shuffleTracks()" title="Shuffle">
+        <i class="fas fa-random"></i>
+      </button>
+      <button class="fullscreen-control-btn" onclick="previousTrack()" title="Previous">
+        <i class="fas fa-step-backward"></i>
+      </button>
+      <button class="fullscreen-control-btn fullscreen-play-pause" onclick="togglePlay()" title="Play/Pause" id="fullscreen-play-pause-btn">
+        <i class="fas fa-play"></i>
+      </button>
+      <button class="fullscreen-control-btn" onclick="nextTrack()" title="Next">
+        <i class="fas fa-step-forward"></i>
+      </button>
+      <button class="fullscreen-control-btn" onclick="toggleLoop()" title="Loop" id="fullscreen-loop-btn">
+        <i class="fas fa-redo"></i>
+      </button>
+    </div>
+    <div class="fullscreen-progress-container" id="fullscreen-progress-container">
+      <div class="fullscreen-progress-bar" id="fullscreen-progress-bar"></div>
+    </div>
+    <div class="fullscreen-time-display">
+      <span id="fullscreen-current-time">0:00</span>
+      <span id="fullscreen-duration">0:00</span>
+    </div>
+    <div class="fullscreen-options">
+      <button class="fullscreen-control-btn auto-play-btn" id="fullscreen-auto-play-btn" onclick="toggleAutoPlay()" title="Auto Play">
+        <i class="fas fa-infinity"></i>
+      </button>
+      <button class="fullscreen-control-btn mute-btn" id="fullscreen-mute-btn" onclick="toggleMute()" title="Mute">
+        <i class="fas fa-volume-up"></i>
+      </button>
     </div>
   </div>
 
@@ -445,6 +634,8 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
     var tracks = [];
     var isShuffled = false;
     var isLooping = false;
+    var isAutoPlay = true;
+    var isMuted = false;
     var isPlaying = false;
     var originalTracksOrder = [];
     var trendingSongs = [];
@@ -480,6 +671,21 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
           }
         }, 500);
       });
+      
+      // Add click event to open fullscreen player
+      document.getElementById("open-fullscreen").addEventListener("click", openFullscreen);
+      
+      // Add click event to fullscreen progress bar
+      document.getElementById("fullscreen-progress-container").addEventListener('click', function(e) {
+        if (!player.getDuration) return;
+        
+        const rect = this.getBoundingClientRect();
+        const clickX = e.clientX - rect.left;
+        const width = rect.width;
+        const seekTime = (clickX / width) * player.getDuration();
+        
+        player.seekTo(seekTime, true);
+      });
     }
 
     function onPlayerReady(event) {
@@ -492,7 +698,7 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
       if (event.data == YT.PlayerState.ENDED) {
         if (isLooping) {
           player.playVideo();
-        } else {
+        } else if (isAutoPlay) {
           nextTrack();
         }
       }
@@ -500,9 +706,11 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
       if (event.data == YT.PlayerState.PLAYING) {
         isPlaying = true;
         document.getElementById('play-pause-btn').innerHTML = '<i class="fas fa-pause"></i>';
+        document.getElementById('fullscreen-play-pause-btn').innerHTML = '<i class="fas fa-pause"></i>';
       } else if (event.data == YT.PlayerState.PAUSED || event.data == YT.PlayerState.ENDED) {
         isPlaying = false;
         document.getElementById('play-pause-btn').innerHTML = '<i class="fas fa-play"></i>';
+        document.getElementById('fullscreen-play-pause-btn').innerHTML = '<i class="fas fa-play"></i>';
       }
       
       updateProgressBar();
@@ -559,7 +767,7 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
 
     // Load trending songs
     async function loadTrendingSongs() {
-      const cacheKey = 'trending_songs';
+      const cacheKey = 'trending_hindi_songs';
       const cachedData = getCache(cacheKey);
       
       if (cachedData) {
@@ -570,7 +778,8 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
       try {
         document.getElementById("trending-results").innerHTML = '<div class="loading"><div class="loading-spinner"></div></div>';
         
-        const query = "popular music songs 2023";
+        // Changed query to Hindi songs
+        const query = "trending hindi songs";
         const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&q=${encodeURIComponent(query)}&key=${API_KEY}&maxResults=7`;
         
         const data = await fetchWithRetry(url);
@@ -623,14 +832,17 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
         track.appendChild(trackInfo);
 
         track.onclick = () => {
-          // Hide trending section when a song is selected
-          document.getElementById("trending-title").style.display = "none";
-          document.getElementById("trending-results").style.display = "none";
-          
           // Add to tracks array and play
           tracks = trendingSongs;
           originalTracksOrder = [...tracks];
           playTrack(index);
+          
+          // Don't hide trending section when a song is selected
+          // Only hide search results if they are visible
+          if (document.getElementById("results-title").style.display === "flex") {
+            document.getElementById("results-title").style.display = "none";
+            document.getElementById("results").style.display = "none";
+          }
         };
 
         trendingDiv.appendChild(track);
@@ -642,12 +854,9 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
       const query = document.getElementById("search").value;
       if (!query) return;
 
-      // Hide trending section when searching
-      document.getElementById("trending-title").style.display = "none";
-      document.getElementById("trending-results").style.display = "none";
-      
       // Show results title
       document.getElementById("results-title").style.display = "flex";
+      document.getElementById("results").style.display = "block";
       
       // Check cache first
       const cacheKey = `search_${query}`;
@@ -774,10 +983,16 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
       document.getElementById('current-channel').textContent = channel;
       document.getElementById('current-thumbnail').src = thumbnail;
       
+      // Update fullscreen player
+      document.getElementById('fullscreen-track-name').textContent = title;
+      document.getElementById('fullscreen-channel-name').textContent = channel;
+      document.getElementById('fullscreen-thumbnail').src = thumbnail;
+      
       // Set background thumbnail with blur effect
       document.getElementById('bg-thumbnail').style.backgroundImage = `url(${thumbnail})`;
       
       document.getElementById('play-pause-btn').innerHTML = '<i class="fas fa-pause"></i>';
+      document.getElementById('fullscreen-play-pause-btn').innerHTML = '<i class="fas fa-pause"></i>';
       isPlaying = true;
     }
 
@@ -825,10 +1040,50 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
     function toggleLoop() {
       isLooping = !isLooping;
       const loopBtn = document.getElementById('loop-btn');
+      const fullscreenLoopBtn = document.getElementById('fullscreen-loop-btn');
+      
       if (isLooping) {
         loopBtn.style.color = 'var(--accent-color)';
+        fullscreenLoopBtn.style.color = 'var(--accent-color)';
       } else {
         loopBtn.style.color = '';
+        fullscreenLoopBtn.style.color = '';
+      }
+    }
+
+    // Toggle autoplay
+    function toggleAutoPlay() {
+      isAutoPlay = !isAutoPlay;
+      const autoPlayBtn = document.getElementById('auto-play-btn');
+      const fullscreenAutoPlayBtn = document.getElementById('fullscreen-auto-play-btn');
+      
+      if (isAutoPlay) {
+        autoPlayBtn.classList.add('active');
+        fullscreenAutoPlayBtn.classList.add('active');
+      } else {
+        autoPlayBtn.classList.remove('active');
+        fullscreenAutoPlayBtn.classList.remove('active');
+      }
+    }
+
+    // Toggle mute
+    function toggleMute() {
+      isMuted = !isMuted;
+      const muteBtn = document.getElementById('mute-btn');
+      const fullscreenMuteBtn = document.getElementById('fullscreen-mute-btn');
+      
+      if (isMuted) {
+        player.mute();
+        muteBtn.innerHTML = '<i class="fas fa-volume-mute"></i>';
+        fullscreenMuteBtn.innerHTML = '<i class="fas fa-volume-mute"></i>';
+        muteBtn.classList.add('active');
+        fullscreenMuteBtn.classList.add('active');
+      } else {
+        player.unMute();
+        muteBtn.innerHTML = '<i class="fas fa-volume-up"></i>';
+        fullscreenMuteBtn.innerHTML = '<i class="fas fa-volume-up"></i>';
+        muteBtn.classList.remove('active');
+        fullscreenMuteBtn.classList.remove('active');
       }
     }
 
@@ -851,8 +1106,21 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
       
       // Update the UI to reflect new order
       const resultsDiv = document.getElementById("results");
-      resultsDiv.innerHTML = "";
+      const trendingDiv = document.getElementById("trending-results");
       
+      // Clear and rebuild both result lists
+      if (resultsDiv.innerHTML !== "") {
+        resultsDiv.innerHTML = "";
+        rebuildTrackList(resultsDiv);
+      }
+      
+      if (trendingDiv.innerHTML !== "") {
+        trendingDiv.innerHTML = "";
+        rebuildTrackList(trendingDiv);
+      }
+    }
+
+    function rebuildTrackList(container) {
       tracks.forEach((item, index) => {
         const videoId = item.id.videoId;
         const title = item.snippet.title;
@@ -890,7 +1158,7 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
           playTrack(index);
         };
 
-        resultsDiv.appendChild(track);
+        container.appendChild(track);
       });
     }
 
@@ -899,18 +1167,24 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
       if (!player.getDuration) return;
       
       const progressBar = document.getElementById('progress-bar');
+      const fullscreenProgressBar = document.getElementById('fullscreen-progress-bar');
       const currentTimeElement = document.getElementById('current-time');
       const durationElement = document.getElementById('duration');
+      const fullscreenCurrentTimeElement = document.getElementById('fullscreen-current-time');
+      const fullscreenDurationElement = document.getElementById('fullscreen-duration');
       
       const duration = player.getDuration();
       const currentTime = player.getCurrentTime();
       
       const progressPercent = (currentTime / duration) * 100;
       progressBar.style.width = `${progressPercent}%`;
+      fullscreenProgressBar.style.width = `${progressPercent}%`;
       
       // Format time displays
       currentTimeElement.textContent = formatTime(currentTime);
       durationElement.textContent = formatTime(duration);
+      fullscreenCurrentTimeElement.textContent = formatTime(currentTime);
+      fullscreenDurationElement.textContent = formatTime(duration);
       
       if (isPlaying) {
         setTimeout(updateProgressBar, 1000);
@@ -934,5 +1208,25 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
       const seekTime = (clickX / width) * player.getDuration();
       
       player.seekTo(seekTime, true);
+    });
+
+    // Fullscreen player functions
+    function openFullscreen() {
+      if (!player.getVideoUrl()) return;
+      
+      document.getElementById('fullscreen-player').classList.add('active');
+      document.body.style.overflow = 'hidden';
+    }
+
+    function closeFullscreen() {
+      document.getElementById('fullscreen-player').classList.remove('active');
+      document.body.style.overflow = 'auto';
+    }
+
+    // Close fullscreen when pressing Escape key
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') {
+        closeFullscreen();
+      }
     });
   </script>
