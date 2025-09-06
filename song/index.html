@@ -665,12 +665,7 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
 
   <div id="player"></div>
 
-  <script>
-    // Load YouTube iFrame API
-    var tag = document.createElement('script');
-    tag.src = "https://www.youtube.com/iframe_api";
-    document.body.appendChild(tag);
-
+<script>
     // Global variables
     var player;
     var currentTrackIndex = 0;
@@ -683,7 +678,55 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
     var originalTracksOrder = [];
     var trendingSongs = [];
     var searchTimeout = null;
-    var API_KEY = "AIzaSyCOJR4ZUYMLnq1Q43MnP1ssfYQICv79fLA";
+    var currentApiKeyIndex = 0;
+    var apiKeys = [];
+    var appConfig = {};
+
+    // Load configuration from manage.json
+    async function loadConfig() {
+        try {
+            const response = await fetch('manage.json');
+            appConfig = await response.json();
+            
+            // Set API keys
+            apiKeys = appConfig.youtubeConfig.apiKeys;
+            
+            // Set default API key if none provided
+            if (apiKeys.length === 0) {
+                console.error("No API keys found in configuration");
+                showError("Configuration error. Please contact administrator.");
+            }
+            
+            // Set default volume
+            if (appConfig.youtubeConfig.playerOptions && appConfig.youtubeConfig.playerOptions.volume) {
+                setTimeout(() => {
+                    if (player && player.setVolume) {
+                        player.setVolume(appConfig.youtubeConfig.playerOptions.volume);
+                    }
+                }, 2000);
+            }
+        } catch (error) {
+            console.error("Error loading configuration:", error);
+            showError("Configuration error. Please try again later.");
+        }
+    }
+
+    // Get current API key with rotation
+    function getApiKey() {
+        if (apiKeys.length === 0) return null;
+        
+        const key = apiKeys[currentApiKeyIndex];
+        
+        // Rotate to next key for next request
+        currentApiKeyIndex = (currentApiKeyIndex + 1) % apiKeys.length;
+        
+        return key;
+    }
+
+    // Load YouTube iFrame API
+    var tag = document.createElement('script');
+    tag.src = "https://www.youtube.com/iframe_api";
+    document.body.appendChild(tag);
 
     // Tab switching functionality
     function setupTabs() {
@@ -739,42 +782,47 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
         }
       });
       
-      // Setup tabs
-      setupTabs();
-      
-      // Load trending songs when player is ready
-      loadTrendingSongs();
-      
-      // Add debounce to search input
-      document.getElementById("search").addEventListener("input", function() {
-        clearTimeout(searchTimeout);
-        searchTimeout = setTimeout(function() {
-          if (document.getElementById("search").value.trim() !== "") {
-            searchVideos();
-          }
-        }, 500);
-      });
-      
-      // Add click event to open fullscreen player
-      document.getElementById("open-fullscreen").addEventListener("click", openFullscreen);
-      
-      // Add click event to fullscreen progress bar
-      document.getElementById("fullscreen-progress-container").addEventListener('click', function(e) {
-        if (!player.getDuration) return;
+      // Load configuration
+      loadConfig().then(() => {
+        // Setup tabs
+        setupTabs();
         
-        const rect = this.getBoundingClientRect();
-        const clickX = e.clientX - rect.left;
-        const width = rect.width;
-        const seekTime = (clickX / width) * player.getDuration();
+        // Load trending songs when player is ready
+        loadTrendingSongs();
         
-        player.seekTo(seekTime, true);
+        // Add debounce to search input
+        document.getElementById("search").addEventListener("input", function() {
+          clearTimeout(searchTimeout);
+          searchTimeout = setTimeout(function() {
+            if (document.getElementById("search").value.trim() !== "") {
+              searchVideos();
+            }
+          }, 500);
+        });
+        
+        // Add click event to open fullscreen player
+        document.getElementById("open-fullscreen").addEventListener("click", openFullscreen);
+        
+        // Add click event to fullscreen progress bar
+        document.getElementById("fullscreen-progress-container").addEventListener('click', function(e) {
+          if (!player.getDuration) return;
+          
+          const rect = this.getBoundingClientRect();
+          const clickX = e.clientX - rect.left;
+          const width = rect.width;
+          const seekTime = (clickX / width) * player.getDuration();
+          
+          player.seekTo(seekTime, true);
+        });
       });
     }
 
     function onPlayerReady(event) {
       updateProgressBar();
-      // Set initial volume to 80%
-      player.setVolume(80);
+      
+      // Set initial volume from config or default to 80%
+      const volume = appConfig.youtubeConfig?.playerOptions?.volume || 80;
+      player.setVolume(volume);
     }
 
     function onPlayerStateChange(event) {
@@ -823,10 +871,19 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
       return item.value;
     }
 
-    // API call with retry logic
+    // API call with retry logic and API key rotation
     async function fetchWithRetry(url, retries = 3, backoff = 300) {
       try {
-        const response = await fetch(url);
+        // Get API key for this request
+        const apiKey = getApiKey();
+        if (!apiKey) {
+          throw new Error("No API keys available");
+        }
+        
+        // Add API key to URL
+        const finalUrl = url.includes('?') ? `${url}&key=${apiKey}` : `${url}?key=${apiKey}`;
+        
+        const response = await fetch(finalUrl);
         const data = await response.json();
         
         if (data.error && data.error.code === 403) {
@@ -850,7 +907,7 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
 
     // Load trending songs
     async function loadTrendingSongs() {
-      const cacheKey = 'trending_hindi_songs';
+      const cacheKey = 'trending_songs';
       const cachedData = getCache(cacheKey);
       
       if (cachedData) {
@@ -861,9 +918,22 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
       try {
         document.getElementById("trending-results").innerHTML = '<div class="loading"><div class="loading-spinner"></div></div>';
         
-        // Changed query to Hindi songs
-        const query = "trending hindi songs";
-        const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&q=${encodeURIComponent(query)}&key=${API_KEY}&maxResults=7`;
+        // Get query from config or use default
+        const query = appConfig.youtubeConfig?.settings?.trendingSearchQuery || "trending hindi songs";
+        
+        // Get result count from config or use default
+        const maxResults = appConfig.youtubeConfig?.settings?.trendingSongsCount || 7;
+        
+        // Build URL with region code if specified
+        let url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&q=${encodeURIComponent(query)}&maxResults=${maxResults}`;
+        
+        if (appConfig.youtubeConfig?.settings?.regionCode) {
+          url += `&regionCode=${appConfig.youtubeConfig.settings.regionCode}`;
+        }
+        
+        if (appConfig.youtubeConfig?.settings?.hl) {
+          url += `&hl=${appConfig.youtubeConfig.settings.hl}`;
+        }
         
         const data = await fetchWithRetry(url);
         
@@ -946,7 +1016,19 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
         document.getElementById("results").innerHTML = '<div class="loading"><div class="loading-spinner"></div></div>';
         hideError();
         
-        const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&q=${encodeURIComponent(query + " music")}&key=${API_KEY}&maxResults=7`;
+        // Get result count from config or use default
+        const maxResults = appConfig.youtubeConfig?.settings?.searchResultsCount || 7;
+        
+        // Build URL
+        let url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&q=${encodeURIComponent(query + " music")}&maxResults=${maxResults}`;
+        
+        if (appConfig.youtubeConfig?.settings?.regionCode) {
+          url += `&regionCode=${appConfig.youtubeConfig.settings.regionCode}`;
+        }
+        
+        if (appConfig.youtubeConfig?.settings?.hl) {
+          url += `&hl=${appConfig.youtubeConfig.settings.hl}`;
+        }
         
         const data = await fetchWithRetry(url);
         
