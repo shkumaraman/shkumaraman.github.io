@@ -3,7 +3,8 @@ layout: default
 title: "MusicPlay"
 description: "MusicPlay – Listen to your favorite songs online. Search, play, shuffle, loop, and enjoy trending tracks with a fast and responsive music player."
 ---
-<style>
+
+  <style>
     :root {
       --bg-primary: #121212;
       --bg-secondary: #1e1e1e;
@@ -12,6 +13,7 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
       --text-secondary: #bbbbbb;
       --track-height: 50px;
       --header-height: 60px;
+      --tab-height: 50px;
     }
     
     * {
@@ -25,7 +27,7 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
       background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
       color: var(--text-primary);
       min-height: 100vh;
-      padding-top: calc(var(--header-height) + 5px);
+      padding-top: calc(var(--header-height) + var(--tab-height) + 5px);
       padding-bottom: 180px;
       line-height: 1.6;
       position: relative;
@@ -53,9 +55,48 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
       color: var(--accent-color);
     }
     
+    /* Tabs */
+    .tabs {
+      position: fixed;
+      top: var(--header-height);
+      left: 0;
+      right: 0;
+      height: var(--tab-height);
+      display: flex;
+      background: rgba(18, 18, 18, 0.9);
+      z-index: 999;
+      backdrop-filter: blur(5px);
+    }
+    
+    .tab {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.3s;
+      border-bottom: 3px solid transparent;
+    }
+    
+    .tab.active {
+      border-bottom: 3px solid var(--accent-color);
+      color: var(--accent-color);
+    }
+    
+    .tab-content {
+      display: none;
+      padding: 15px 0;
+    }
+    
+    .tab-content.active {
+      display: block;
+    }
+    
     .container {
       max-width: 800px;
       margin: 0 auto;
+      padding: 0 20px;
     }
     
     #search-container {
@@ -101,9 +142,9 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
       background: #1ed760;
     }
     
-    #results {
+    #results, #trending-results {
       margin-top: 15px;
-      max-height: calc(100vh - 300px);
+      max-height: calc(100vh - 350px);
       overflow-y: auto;
     }
     
@@ -479,7 +520,7 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
 
     .inactive {
      opacity: 0.5;
-     pointer-events: none; /* Click disable */
+     pointer-events: none;
     }
     
     @keyframes spin {
@@ -521,23 +562,36 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
     <div class="brand">MusicPlay</div>
   </div>
 
+  <!-- Tabs -->
+  <div class="tabs">
+    <div class="tab active" data-tab="trending">Trending</div>
+    <div class="tab" data-tab="search">Search</div>
+  </div>
+
   <div class="container">
-    <div id="search-container">
-      <input type="text" id="search" placeholder="Search for a song or artist...">
-      <button id="search-btn" onclick="searchVideos()">
-        <i class="fas fa-search"></i>
-      </button>
+    <!-- Trending Tab Content -->
+    <div class="tab-content active" id="trending-tab">
+      <div class="section-title">
+        <i class="fas fa-music"></i> Trending Hindi Songs
+      </div>
+      <div id="trending-results"></div>
     </div>
 
-    <div class="section-title" id="trending-title">
-      <i class="fas fa-music"></i> Trending Hindi Songs
-    </div>
-    <div id="trending-results"></div>
+    <!-- Search Tab Content -->
+    <div class="tab-content" id="search-tab">
+      <div id="search-container">
+        <input type="text" id="search" placeholder="Search for a song or artist...">
+        <button id="search-btn" onclick="searchVideos()">
+          <i class="fas fa-search"></i>
+        </button>
+      </div>
 
-    <div class="section-title" id="results-title" style="display: none;">
-      <i class="fas fa-search"></i> Search Results
+      <div class="section-title">
+        <i class="fas fa-search"></i> Search Results
+      </div>
+      <div id="results"></div>
     </div>
-    <div id="results"></div>
+
     <div id="error-message" class="error-message" style="display: none;"></div>
   </div>
 
@@ -655,6 +709,43 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
     var searchTimeout = null;
     var API_KEY = "AIzaSyCOJR4ZUYMLnq1Q43MnP1ssfYQICv79fLA";
 
+    // Tab switching functionality
+    function setupTabs() {
+      const tabs = document.querySelectorAll('.tab');
+      tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+          const tabName = tab.getAttribute('data-tab');
+          
+          // Update active tab
+          tabs.forEach(t => t.classList.remove('active'));
+          tab.classList.add('active');
+          
+          // Show corresponding content
+          document.querySelectorAll('.tab-content').forEach(content => {
+            content.classList.remove('active');
+          });
+          document.getElementById(`${tabName}-tab`).classList.add('active');
+        });
+      });
+    }
+
+    // Switch to search tab
+    function switchToSearchTab() {
+      document.querySelectorAll('.tab').forEach(tab => {
+        tab.classList.remove('active');
+        if (tab.getAttribute('data-tab') === 'search') {
+          tab.classList.add('active');
+        }
+      });
+      
+      document.querySelectorAll('.tab-content').forEach(content => {
+        content.classList.remove('active');
+        if (content.id === 'search-tab') {
+          content.classList.add('active');
+        }
+      });
+    }
+
     // Initialize player
     function onYouTubeIframeAPIReady() {
       player = new YT.Player('player', {
@@ -671,6 +762,9 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
           'onReady': onPlayerReady
         }
       });
+      
+      // Setup tabs
+      setupTabs();
       
       // Load trending songs when player is ready
       loadTrendingSongs();
@@ -849,13 +943,6 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
           tracks = trendingSongs;
           originalTracksOrder = [...tracks];
           playTrack(index);
-          
-          // Don't hide trending section when a song is selected
-          // Only hide search results if they are visible
-          if (document.getElementById("results-title").style.display === "flex") {
-            document.getElementById("results-title").style.display = "none";
-            document.getElementById("results").style.display = "none";
-          }
         };
 
         trendingDiv.appendChild(track);
@@ -867,9 +954,8 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
       const query = document.getElementById("search").value;
       if (!query) return;
 
-      // Show results title
-      document.getElementById("results-title").style.display = "flex";
-      document.getElementById("results").style.display = "block";
+      // Switch to search tab
+      switchToSearchTab();
       
       // Check cache first
       const cacheKey = `search_${query}`;
@@ -1050,60 +1136,60 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
     }
 
     // Toggle loop
-function toggleLoop() {
-  isLooping = !isLooping;
-  const loopBtn = document.getElementById('loop-btn');
-  const fullscreenLoopBtn = document.getElementById('fullscreen-loop-btn');
-  const autoPlayBtn = document.getElementById('auto-play-btn');
-  const fullscreenAutoPlayBtn = document.getElementById('fullscreen-auto-play-btn');
+    function toggleLoop() {
+      isLooping = !isLooping;
+      const loopBtn = document.getElementById('loop-btn');
+      const fullscreenLoopBtn = document.getElementById('fullscreen-loop-btn');
+      const autoPlayBtn = document.getElementById('auto-play-btn');
+      const fullscreenAutoPlayBtn = document.getElementById('fullscreen-auto-play-btn');
 
-  if (isLooping) {
-    loopBtn.style.color = 'var(--accent-color)';
-    fullscreenLoopBtn.style.color = 'var(--accent-color)';
+      if (isLooping) {
+        loopBtn.style.color = 'var(--accent-color)';
+        fullscreenLoopBtn.style.color = 'var(--accent-color)';
 
-    // Disable autoplay
-    isAutoPlay = false;
-    autoPlayBtn.classList.remove('active');
-    fullscreenAutoPlayBtn.classList.remove('active');
-    autoPlayBtn.classList.add('inactive');
-    fullscreenAutoPlayBtn.classList.add('inactive');
-  } else {
-    loopBtn.style.color = '';
-    fullscreenLoopBtn.style.color = '';
+        // Disable autoplay
+        isAutoPlay = false;
+        autoPlayBtn.classList.remove('active');
+        fullscreenAutoPlayBtn.classList.remove('active');
+        autoPlayBtn.classList.add('inactive');
+        fullscreenAutoPlayBtn.classList.add('inactive');
+      } else {
+        loopBtn.style.color = '';
+        fullscreenLoopBtn.style.color = '';
 
-    // Enable autoplay button again
-    autoPlayBtn.classList.remove('inactive');
-    fullscreenAutoPlayBtn.classList.remove('inactive');
-  }
-}
+        // Enable autoplay button again
+        autoPlayBtn.classList.remove('inactive');
+        fullscreenAutoPlayBtn.classList.remove('inactive');
+      }
+    }
 
     // Toggle autoplay
-function toggleAutoPlay() {
-  isAutoPlay = !isAutoPlay;
-  const autoPlayBtn = document.getElementById('auto-play-btn');
-  const fullscreenAutoPlayBtn = document.getElementById('fullscreen-auto-play-btn');
-  const loopBtn = document.getElementById('loop-btn');
-  const fullscreenLoopBtn = document.getElementById('fullscreen-loop-btn');
+    function toggleAutoPlay() {
+      isAutoPlay = !isAutoPlay;
+      const autoPlayBtn = document.getElementById('auto-play-btn');
+      const fullscreenAutoPlayBtn = document.getElementById('fullscreen-auto-play-btn');
+      const loopBtn = document.getElementById('loop-btn');
+      const fullscreenLoopBtn = document.getElementById('fullscreen-loop-btn');
 
-  if (isAutoPlay) {
-    autoPlayBtn.classList.add('active');
-    fullscreenAutoPlayBtn.classList.add('active');
+      if (isAutoPlay) {
+        autoPlayBtn.classList.add('active');
+        fullscreenAutoPlayBtn.classList.add('active');
 
-    // Disable loop
-    isLooping = false;
-    loopBtn.style.color = '';
-    fullscreenLoopBtn.style.color = '';
-    loopBtn.classList.add('inactive');
-    fullscreenLoopBtn.classList.add('inactive');
-  } else {
-    autoPlayBtn.classList.remove('active');
-    fullscreenAutoPlayBtn.classList.remove('active');
+        // Disable loop
+        isLooping = false;
+        loopBtn.style.color = '';
+        fullscreenLoopBtn.style.color = '';
+        loopBtn.classList.add('inactive');
+        fullscreenLoopBtn.classList.add('inactive');
+      } else {
+        autoPlayBtn.classList.remove('active');
+        fullscreenAutoPlayBtn.classList.remove('active');
 
-    // Enable loop button again
-    loopBtn.classList.remove('inactive');
-    fullscreenLoopBtn.classList.remove('inactive');
-  }
-}
+        // Enable loop button again
+        loopBtn.classList.remove('inactive');
+        fullscreenLoopBtn.classList.remove('inactive');
+      }
+    }
 
     // Toggle mute
     function toggleMute() {
