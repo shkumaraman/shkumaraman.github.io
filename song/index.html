@@ -137,7 +137,28 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
       margin: 2px;
     }
     
-    #results, #trending-results {
+    .search-filters {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 15px;
+    }
+    
+    .filter-btn {
+      padding: 6px 12px;
+      border-radius: 15px;
+      border: none;
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    
+    .filter-btn.active {
+      background: var(--accent-color);
+    }
+    
+    #results, #trending-results, #played-results, #playlist-results {
       margin-top: 10px;
       max-height: calc(100vh - 350px);
       overflow-y: auto;
@@ -194,6 +215,20 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+    }
+    
+    .playlist-dropdown {
+      margin: 15px 0;
+      display: none;
+    }
+    
+    .playlist-select {
+      width: 100%;
+      padding: 10px;
+      border-radius: 5px;
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+      border: 1px solid #333;
     }
     
     .player-section {
@@ -537,6 +572,11 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
       .fullscreen-control-btn {
         margin: 0 10px;
       }
+      
+      .search-filters {
+        overflow-x: auto;
+        padding-bottom: 5px;
+      }
     }
   </style>
 
@@ -549,6 +589,7 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
   <div class="tabs">
     <div class="tab active" data-tab="trending">Trending</div>
     <div class="tab" data-tab="search">Search</div>
+    <div class="tab" data-tab="played">Played</div>
   </div>
 
   <div class="container">
@@ -565,7 +606,25 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
           <i class="fas fa-search"></i>
         </button>
       </div>
+      
+      <div class="search-filters">
+        <button class="filter-btn active" data-filter="all">All</button>
+        <button class="filter-btn" data-filter="songs">Songs</button>
+        <button class="filter-btn" data-filter="playlists">Playlists</button>
+      </div>
+      
+      <div class="playlist-dropdown" id="playlist-dropdown">
+        <select class="playlist-select" id="playlist-select">
+          <option value="">Select a playlist</option>
+        </select>
+      </div>
+      
       <div id="results"></div>
+    </div>
+
+    <!-- Played Tab Content -->
+    <div class="tab-content" id="played-tab">
+      <div id="played-results"></div>
     </div>
 
     <div id="error-message" class="error-message" style="display: none;"></div>
@@ -681,6 +740,9 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
     var currentApiKeyIndex = 0;
     var apiKeys = [];
     var appConfig = {};
+    var playedSongs = [];
+    var currentFilter = 'all';
+    var playlists = {};
 
     // Load configuration from manage.json
     async function loadConfig() {
@@ -744,6 +806,29 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
             content.classList.remove('active');
           });
           document.getElementById(`${tabName}-tab`).classList.add('active');
+          
+          // If played tab is clicked, load played songs
+          if (tabName === 'played') {
+            loadPlayedSongs();
+          }
+        });
+      });
+      
+      // Setup filter buttons
+      document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+          document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+          this.classList.add('active');
+          currentFilter = this.getAttribute('data-filter');
+          
+          // Show/hide playlist dropdown based on filter
+          const playlistDropdown = document.getElementById('playlist-dropdown');
+          if (currentFilter === 'playlists') {
+            playlistDropdown.style.display = 'block';
+            loadPlaylists();
+          } else {
+            playlistDropdown.style.display = 'none';
+          }
         });
       });
     }
@@ -814,6 +899,9 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
           
           player.seekTo(seekTime, true);
         });
+        
+        // Load played songs from localStorage
+        loadPlayedSongsFromStorage();
       });
     }
 
@@ -838,6 +926,11 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
         isPlaying = true;
         document.getElementById('play-pause-btn').innerHTML = '<i class="fas fa-pause"></i>';
         document.getElementById('fullscreen-play-pause-btn').innerHTML = '<i class="fas fa-pause"></i>';
+        
+        // Add to played songs when starting to play
+        if (tracks.length > 0 && currentTrackIndex >= 0) {
+          addToPlayedSongs(tracks[currentTrackIndex]);
+        }
       } else if (event.data == YT.PlayerState.PAUSED || event.data == YT.PlayerState.ENDED) {
         isPlaying = false;
         document.getElementById('play-pause-btn').innerHTML = '<i class="fas fa-play"></i>';
@@ -869,6 +962,167 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
         return null;
       }
       return item.value;
+    }
+
+    // Played songs management
+    function loadPlayedSongsFromStorage() {
+      const playedStr = localStorage.getItem('played_songs');
+      if (playedStr) {
+        playedSongs = JSON.parse(playedStr);
+      }
+    }
+
+    function savePlayedSongsToStorage() {
+      localStorage.setItem('played_songs', JSON.stringify(playedSongs));
+    }
+
+    function addToPlayedSongs(song) {
+      // Check if song already exists in played list
+      const existingIndex = playedSongs.findIndex(s => s.id.videoId === song.id.videoId);
+      
+      if (existingIndex !== -1) {
+        // Remove existing entry to add it again at the top
+        playedSongs.splice(existingIndex, 1);
+      }
+      
+      // Add to beginning of array
+      playedSongs.unshift(song);
+      
+      // Keep only the last 50 played songs
+      if (playedSongs.length > 50) {
+        playedSongs = playedSongs.slice(0, 50);
+      }
+      
+      // Save to localStorage
+      savePlayedSongsToStorage();
+    }
+
+    function loadPlayedSongs() {
+      const playedDiv = document.getElementById("played-results");
+      playedDiv.innerHTML = "";
+      
+      if (playedSongs.length === 0) {
+        playedDiv.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--text-secondary)">No recently played songs</div>';
+        return;
+      }
+      
+      playedSongs.forEach((item, index) => {
+        const videoId = item.id.videoId;
+        const title = item.snippet.title;
+        const channel = item.snippet.channelTitle;
+        const thumbnail = item.snippet.thumbnails.default.url;
+
+        const track = document.createElement("div");
+        track.className = "track";
+        track.dataset.index = index;
+
+        const img = document.createElement("img");
+        img.src = thumbnail;
+
+        const trackInfo = document.createElement("div");
+        trackInfo.className = "track-info";
+
+        const titleDiv = document.createElement("div");
+        titleDiv.className = "track-title";
+        titleDiv.textContent = title;
+
+        const channelDiv = document.createElement("div");
+        channelDiv.className = "track-channel";
+        channelDiv.textContent = channel;
+
+        trackInfo.appendChild(titleDiv);
+        trackInfo.appendChild(channelDiv);
+
+        track.appendChild(img);
+        track.appendChild(trackInfo);
+
+        track.onclick = () => {
+          // Set tracks to played songs and play
+          tracks = playedSongs;
+          originalTracksOrder = [...tracks];
+          playTrack(index);
+        };
+
+        playedDiv.appendChild(track);
+      });
+    }
+
+    // Playlist management
+    function loadPlaylists() {
+      // For now, we'll use some mock playlists
+      // In a real implementation, you would fetch these from an API
+      playlists = {
+        "Top Hits": [
+          { id: { videoId: "dQw4w9WgXcQ" }, snippet: { title: "Never Gonna Give You Up", channelTitle: "Rick Astley", thumbnails: { default: { url: "https://i.ytimg.com/vi/dQw4w9WgXcQ/default.jpg" } } } },
+          { id: { videoId: "ZbZSe6N_BXs" }, snippet: { title: "The Final Countdown", channelTitle: "Europe", thumbnails: { default: { url: "https://i.ytimg.com/vi/ZbZSe6N_BXs/default.jpg" } } } }
+        ],
+        "Chill Vibes": [
+          { id: { videoId: "JGwWNGJdvx8" }, snippet: { title: "Shape of You", channelTitle: "Ed Sheeran", thumbnails: { default: { url: "https://i.ytimg.com/vi/JGwWNGJdvx8/default.jpg" } } } },
+          { id: { videoId: "kJQP7kiw5Fk" }, snippet: { title: "Despacito", channelTitle: "Luis Fonsi", thumbnails: { default: { url: "https://i.ytimg.com/vi/kJQP7kiw5Fk/default.jpg" } } } }
+        ]
+      };
+      
+      const playlistSelect = document.getElementById('playlist-select');
+      playlistSelect.innerHTML = '<option value="">Select a playlist</option>';
+      
+      Object.keys(playlists).forEach(playlistName => {
+        const option = document.createElement('option');
+        option.value = playlistName;
+        option.textContent = playlistName;
+        playlistSelect.appendChild(option);
+      });
+      
+      playlistSelect.onchange = function() {
+        const selectedPlaylist = this.value;
+        if (selectedPlaylist && playlists[selectedPlaylist]) {
+          displayPlaylist(playlists[selectedPlaylist]);
+        }
+      };
+    }
+
+    function displayPlaylist(playlist) {
+      const resultsDiv = document.getElementById("results");
+      resultsDiv.innerHTML = "";
+
+      tracks = playlist;
+      originalTracksOrder = [...tracks];
+
+      playlist.forEach((item, index) => {
+        const videoId = item.id.videoId;
+        const title = item.snippet.title;
+        const channel = item.snippet.channelTitle;
+        const thumbnail = item.snippet.thumbnails.default.url;
+
+        const track = document.createElement("div");
+        track.className = "track";
+        track.dataset.index = index;
+
+        const img = document.createElement("img");
+        img.src = thumbnail;
+
+        const trackInfo = document.createElement("div");
+        trackInfo.className = "track-info";
+
+        const titleDiv = document.createElement("div");
+        titleDiv.className = "track-title";
+        titleDiv.textContent = title;
+
+        const channelDiv = document.createElement("div");
+        channelDiv.className = "track-channel";
+        channelDiv.textContent = channel;
+
+        trackInfo.appendChild(titleDiv);
+        trackInfo.appendChild(channelDiv);
+
+        track.appendChild(img);
+        track.appendChild(trackInfo);
+
+        track.onclick = () => {
+          playTrack(index);
+        };
+
+        resultsDiv.appendChild(track);
+      });
     }
 
     // API call with retry logic and API key rotation
@@ -1019,8 +1273,12 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
         // Get result count from config or use default
         const maxResults = appConfig.youtubeConfig?.settings?.searchResultsCount || 7;
         
-        // Build URL
+        // Build URL based on filter
         let url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&q=${encodeURIComponent(query + " music")}&maxResults=${maxResults}`;
+        
+        if (currentFilter === 'playlists') {
+          url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=playlist&q=${encodeURIComponent(query + " music")}&maxResults=${maxResults}`;
+        }
         
         if (appConfig.youtubeConfig?.settings?.regionCode) {
           url += `&regionCode=${appConfig.youtubeConfig.settings.regionCode}`;
@@ -1057,7 +1315,7 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
       originalTracksOrder = [...tracks];
 
       data.items.forEach((item, index) => {
-        const videoId = item.id.videoId;
+        const videoId = item.id.videoId || item.id.playlistId;
         const title = item.snippet.title;
         const channel = item.snippet.channelTitle;
         const thumbnail = item.snippet.thumbnails.default.url;
@@ -1087,7 +1345,13 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
         track.appendChild(trackInfo);
 
         track.onclick = () => {
-          playTrack(index);
+          if (currentFilter === 'playlists') {
+            // For playlists, we would need to fetch the playlist items
+            // This is a placeholder for playlist functionality
+            showError("Playlist functionality is not fully implemented yet");
+          } else {
+            playTrack(index);
+          }
         };
 
         resultsDiv.appendChild(track);
@@ -1290,8 +1554,9 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
       // Update the UI to reflect new order
       const resultsDiv = document.getElementById("results");
       const trendingDiv = document.getElementById("trending-results");
+      const playedDiv = document.getElementById("played-results");
       
-      // Clear and rebuild both result lists
+      // Clear and rebuild all result lists
       if (resultsDiv.innerHTML !== "") {
         resultsDiv.innerHTML = "";
         rebuildTrackList(resultsDiv);
@@ -1300,6 +1565,11 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
       if (trendingDiv.innerHTML !== "") {
         trendingDiv.innerHTML = "";
         rebuildTrackList(trendingDiv);
+      }
+      
+      if (playedDiv.innerHTML !== "") {
+        playedDiv.innerHTML = "";
+        rebuildTrackList(playedDiv);
       }
     }
 
