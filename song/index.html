@@ -313,6 +313,7 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
     
     .track-details {
       flex: 1;
+      overflow: hidden;
     }
     
     .track-name {
@@ -767,6 +768,92 @@ var currentPlaylistId = null;
 var playlistItems = [];
 var currentTrackSource = null; // 'trending', 'search', 'playlist', 'played'
 
+// Track info extraction utility
+function extractTrackInfo(track, source) {
+  let videoId, title, channel, thumbnail;
+  
+  if (source === 'playlist') {
+    videoId = track.snippet.resourceId.videoId;
+    title = track.snippet.title;
+    channel = track.snippet.channelTitle;
+    thumbnail = track.snippet.thumbnails.default.url;
+  } else if (source === 'played') {
+    if (track.id && track.id.videoId) {
+      videoId = track.id.videoId;
+      title = track.snippet.title;
+      channel = track.snippet.channelTitle;
+      thumbnail = track.snippet.thumbnails.default.url;
+    } else if (track.snippet && track.snippet.resourceId && track.snippet.resourceId.videoId) {
+      videoId = track.snippet.resourceId.videoId;
+      title = track.snippet.title;
+      channel = track.snippet.channelTitle;
+      thumbnail = track.snippet.thumbnails.default.url;
+    } else {
+      console.error("Invalid track format in played history");
+      return null;
+    }
+  } else {
+    videoId = track.id.videoId;
+    title = track.snippet.title;
+    channel = track.snippet.channelTitle;
+    thumbnail = track.snippet.thumbnails.default.url;
+  }
+  
+  return { videoId, title, channel, thumbnail };
+}
+
+// Track creation utility
+function createTrackElement(track, index, source, isPlaylistItem = false) {
+  const trackInfo = extractTrackInfo(track, source);
+  if (!trackInfo) return null;
+  
+  const { title, channel, thumbnail } = trackInfo;
+  
+  const trackElement = document.createElement("div");
+  trackElement.className = isPlaylistItem ? "playlist-track" : "track";
+  trackElement.dataset.index = index;
+  
+  if (isPlaylistItem && currentPlaylistId) {
+    trackElement.dataset.playlistId = currentPlaylistId;
+  }
+  
+  const img = document.createElement("img");
+  img.src = thumbnail;
+  
+  if (isPlaylistItem) {
+    img.style.width = "30px";
+    img.style.height = "30px";
+    img.style.marginRight = "10px";
+  }
+  
+  const trackInfoDiv = document.createElement("div");
+  trackInfoDiv.className = "track-info";
+  
+  const titleDiv = document.createElement("div");
+  titleDiv.className = "track-title";
+  titleDiv.textContent = title;
+  
+  if (isPlaylistItem) {
+    titleDiv.style.fontSize = "13px";
+  }
+  
+  const channelDiv = document.createElement("div");
+  channelDiv.className = "track-channel";
+  channelDiv.textContent = channel;
+  
+  if (isPlaylistItem) {
+    channelDiv.style.fontSize = "11px";
+  }
+  
+  trackInfoDiv.appendChild(titleDiv);
+  trackInfoDiv.appendChild(channelDiv);
+  
+  trackElement.appendChild(img);
+  trackElement.appendChild(trackInfoDiv);
+  
+  return trackElement;
+}
+
 // Load configuration from manage.json
 async function loadConfig() {
     try {
@@ -911,7 +998,56 @@ function onYouTubeIframeAPIReady() {
       
       player.seekTo(seekTime, true);
     });
+
+    // Setup Media Session API
+    setupMediaSession();
   });
+}
+
+// Setup Media Session API
+function setupMediaSession() {
+  if ('mediaSession' in navigator) {
+    navigator.mediaSession.setActionHandler('play', function() {
+      player.playVideo();
+    });
+    
+    navigator.mediaSession.setActionHandler('pause', function() {
+      player.pauseVideo();
+    });
+    
+    navigator.mediaSession.setActionHandler('previoustrack', function() {
+      previousTrack();
+    });
+    
+    navigator.mediaSession.setActionHandler('nexttrack', function() {
+      nextTrack();
+    });
+    
+    navigator.mediaSession.setActionHandler('seekbackward', function(details) {
+      const skipTime = details.seekOffset || 10;
+      player.seekTo(Math.max(player.getCurrentTime() - skipTime, 0), true);
+    });
+    
+    navigator.mediaSession.setActionHandler('seekforward', function(details) {
+      const skipTime = details.seekOffset || 10;
+      player.seekTo(Math.min(player.getCurrentTime() + skipTime, player.getDuration()), true);
+    });
+  }
+}
+
+// Update Media Session metadata
+function updateMediaSessionMetadata(trackInfo) {
+  if ('mediaSession' in navigator) {
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: trackInfo.title,
+      artist: trackInfo.channel,
+      artwork: [
+        { src: trackInfo.thumbnail, sizes: '96x96', type: 'image/jpeg' },
+        { src: trackInfo.thumbnail.replace('default', 'mqdefault'), sizes: '320x180', type: 'image/jpeg' },
+        { src: trackInfo.thumbnail.replace('default', 'hqdefault'), sizes: '480x360', type: 'image/jpeg' },
+      ]
+    });
+  }
 }
 
 // Setup search filter buttons
@@ -955,10 +1091,20 @@ function onPlayerStateChange(event) {
     isPlaying = true;
     document.getElementById('play-pause-btn').innerHTML = '<i class="fas fa-pause"></i>';
     document.getElementById('fullscreen-play-pause-btn').innerHTML = '<i class="fas fa-pause"></i>';
+    
+    // Update media session playback state
+    if ('mediaSession' in navigator) {
+      navigator.mediaSession.playbackState = 'playing';
+    }
   } else if (event.data == YT.PlayerState.PAUSED || event.data == YT.PlayerState.ENDED) {
     isPlaying = false;
     document.getElementById('play-pause-btn').innerHTML = '<i class="fas fa-play"></i>';
     document.getElementById('fullscreen-play-pause-btn').innerHTML = '<i class="fas fa-play"></i>';
+    
+    // Update media session playback state
+    if ('mediaSession' in navigator) {
+      navigator.mediaSession.playbackState = 'paused';
+    }
   }
   
   updateProgressBar();
@@ -1038,48 +1184,10 @@ function loadPlayedSongs() {
   }
   
   playedSongs.forEach((item, index) => {
-    let videoId, title, channel, thumbnail;
+    const trackElement = createTrackElement(item, index, 'played');
+    if (!trackElement) return;
     
-    // Handle different track formats (regular vs playlist items)
-    if (item.id && item.id.videoId) {
-      videoId = item.id.videoId;
-      title = item.snippet.title;
-      channel = item.snippet.channelTitle;
-      thumbnail = item.snippet.thumbnails.default.url;
-    } else if (item.snippet && item.snippet.resourceId && item.snippet.resourceId.videoId) {
-      videoId = item.snippet.resourceId.videoId;
-      title = item.snippet.title;
-      channel = item.snippet.channelTitle;
-      thumbnail = item.snippet.thumbnails.default.url;
-    } else {
-      return; // Skip invalid items
-    }
-
-    const track = document.createElement("div");
-    track.className = "track";
-    track.dataset.index = index;
-
-    const img = document.createElement("img");
-    img.src = thumbnail;
-
-    const trackInfo = document.createElement("div");
-    trackInfo.className = "track-info";
-
-    const titleDiv = document.createElement("div");
-    titleDiv.className = "track-title";
-    titleDiv.textContent = title;
-
-    const channelDiv = document.createElement("div");
-    channelDiv.className = "track-channel";
-    channelDiv.textContent = channel;
-
-    trackInfo.appendChild(titleDiv);
-    trackInfo.appendChild(channelDiv);
-
-    track.appendChild(img);
-    track.appendChild(trackInfo);
-
-    track.onclick = () => {
+    trackElement.onclick = () => {
       // Set the tracks array to played songs
       tracks = playedSongs;
       originalTracksOrder = [...tracks];
@@ -1087,7 +1195,7 @@ function loadPlayedSongs() {
       playTrack(index);
     };
 
-    playedDiv.appendChild(track);
+    playedDiv.appendChild(trackElement);
   });
 }
 
@@ -1175,36 +1283,10 @@ function displayTrendingSongs(data) {
   trendingSongs = data.items;
   
   data.items.forEach((item, index) => {
-    const videoId = item.id.videoId;
-    const title = item.snippet.title;
-    const channel = item.snippet.channelTitle;
-    const thumbnail = item.snippet.thumbnails.default.url;
-
-    const track = document.createElement("div");
-    track.className = "track";
-    track.dataset.index = index;
-
-    const img = document.createElement("img");
-    img.src = thumbnail;
-
-    const trackInfo = document.createElement("div");
-    trackInfo.className = "track-info";
-
-    const titleDiv = document.createElement("div");
-    titleDiv.className = "track-title";
-    titleDiv.textContent = title;
-
-    const channelDiv = document.createElement("div");
-    channelDiv.className = "track-channel";
-    channelDiv.textContent = channel;
-
-    trackInfo.appendChild(titleDiv);
-    trackInfo.appendChild(channelDiv);
-
-    track.appendChild(img);
-    track.appendChild(trackInfo);
-
-    track.onclick = () => {
+    const trackElement = createTrackElement(item, index, 'trending');
+    if (!trackElement) return;
+    
+    trackElement.onclick = () => {
       // Set the tracks array to trending songs
       tracks = trendingSongs;
       originalTracksOrder = [...tracks];
@@ -1212,7 +1294,7 @@ function displayTrendingSongs(data) {
       playTrack(index);
     };
 
-    trendingDiv.appendChild(track);
+    trendingDiv.appendChild(trackElement);
   });
 }
 
@@ -1287,40 +1369,16 @@ function displaySearchResults(data) {
     // Display playlists
     data.items.forEach((item, index) => {
       const playlistId = item.id.playlistId;
-      const title = item.snippet.title;
-      const channel = item.snippet.channelTitle;
-      const thumbnail = item.snippet.thumbnails.default.url;
-
-      const track = document.createElement("div");
-      track.className = "track";
-      track.dataset.index = index;
-      track.dataset.playlistId = playlistId;
-
-      const img = document.createElement("img");
-      img.src = thumbnail;
-
-      const trackInfo = document.createElement("div");
-      trackInfo.className = "track-info";
-
-      const titleDiv = document.createElement("div");
-      titleDiv.className = "track-title";
-      titleDiv.textContent = title;
-
-      const channelDiv = document.createElement("div");
-      channelDiv.className = "track-channel";
-      channelDiv.textContent = channel;
-
-      trackInfo.appendChild(titleDiv);
-      trackInfo.appendChild(channelDiv);
-
-      track.appendChild(img);
-      track.appendChild(trackInfo);
-
-      track.onclick = () => {
+      const trackElement = createTrackElement(item, index, 'search');
+      if (!trackElement) return;
+      
+      trackElement.dataset.playlistId = playlistId;
+      
+      trackElement.onclick = () => {
         loadPlaylistItems(playlistId);
       };
 
-      resultsDiv.appendChild(track);
+      resultsDiv.appendChild(trackElement);
     });
   } else {
     // Display videos
@@ -1329,40 +1387,14 @@ function displaySearchResults(data) {
     currentTrackSource = 'search';
 
     data.items.forEach((item, index) => {
-      const videoId = item.id.videoId;
-      const title = item.snippet.title;
-      const channel = item.snippet.channelTitle;
-      const thumbnail = item.snippet.thumbnails.default.url;
-
-      const track = document.createElement("div");
-      track.className = "track";
-      track.dataset.index = index;
-
-      const img = document.createElement("img");
-      img.src = thumbnail;
-
-      const trackInfo = document.createElement("div");
-      trackInfo.className = "track-info";
-
-      const titleDiv = document.createElement("div");
-      titleDiv.className = "track-title";
-      titleDiv.textContent = title;
-
-      const channelDiv = document.createElement("div");
-      channelDiv.className = "track-channel";
-      channelDiv.textContent = channel;
-
-      trackInfo.appendChild(titleDiv);
-      trackInfo.appendChild(channelDiv);
-
-      track.appendChild(img);
-      track.appendChild(trackInfo);
-
-      track.onclick = () => {
+      const trackElement = createTrackElement(item, index, 'search');
+      if (!trackElement) return;
+      
+      trackElement.onclick = () => {
         playTrack(index);
       };
 
-      resultsDiv.appendChild(track);
+      resultsDiv.appendChild(trackElement);
     });
   }
 }
@@ -1424,41 +1456,10 @@ function displayPlaylistItems(data, playlistId) {
   
   // Add playlist items
   data.items.forEach((item, index) => {
-    const videoId = item.snippet.resourceId.videoId;
-    const title = item.snippet.title;
-    const channel = item.snippet.channelTitle;
-    const thumbnail = item.snippet.thumbnails.default.url;
-
-    const track = document.createElement("div");
-    track.className = "playlist-track";
-    track.dataset.index = index;
-
-    const img = document.createElement("img");
-    img.src = thumbnail;
-    img.style.width = "30px";
-    img.style.height = "30px";
-    img.style.marginRight = "10px";
-
-    const trackInfo = document.createElement("div");
-    trackInfo.className = "track-info";
-
-    const titleDiv = document.createElement("div");
-    titleDiv.className = "track-title";
-    titleDiv.textContent = title;
-    titleDiv.style.fontSize = "13px";
-
-    const channelDiv = document.createElement("div");
-    channelDiv.className = "track-channel";
-    channelDiv.textContent = channel;
-    channelDiv.style.fontSize = "11px";
-
-    trackInfo.appendChild(titleDiv);
-    trackInfo.appendChild(channelDiv);
-
-    track.appendChild(img);
-    track.appendChild(trackInfo);
-
-    track.onclick = () => {
+    const trackElement = createTrackElement(item, index, 'playlist', true);
+    if (!trackElement) return;
+    
+    trackElement.onclick = () => {
       // Set tracks to playlist items and play
       tracks = playlistItems;
       originalTracksOrder = [...tracks];
@@ -1470,7 +1471,7 @@ function displayPlaylistItems(data, playlistId) {
       playlistDropdown.classList.remove('active');
     };
 
-    playlistDropdown.appendChild(track);
+    playlistDropdown.appendChild(trackElement);
   });
   
   currentPlaylistId = playlistId;
@@ -1512,37 +1513,10 @@ function playTrack(index) {
   
   currentTrackIndex = index;
   
-  let videoId, title, channel, thumbnail;
+  const trackInfo = extractTrackInfo(tracks[index], currentTrackSource);
+  if (!trackInfo) return;
   
-  if (currentTrackSource === 'playlist') {
-    // For playlist items
-    videoId = tracks[index].snippet.resourceId.videoId;
-    title = tracks[index].snippet.title;
-    channel = tracks[index].snippet.channelTitle;
-    thumbnail = tracks[index].snippet.thumbnails.medium.url;
-  } else if (currentTrackSource === 'played') {
-    // For played history items - handle different data structures
-    if (tracks[index].id && tracks[index].id.videoId) {
-      videoId = tracks[index].id.videoId;
-      title = tracks[index].snippet.title;
-      channel = tracks[index].snippet.channelTitle;
-      thumbnail = tracks[index].snippet.thumbnails.medium.url;
-    } else if (tracks[index].snippet && tracks[index].snippet.resourceId && tracks[index].snippet.resourceId.videoId) {
-      videoId = tracks[index].snippet.resourceId.videoId;
-      title = tracks[index].snippet.title;
-      channel = tracks[index].snippet.channelTitle;
-      thumbnail = tracks[index].snippet.thumbnails.medium.url;
-    } else {
-      console.error("Invalid track format in played history");
-      return;
-    }
-  } else {
-    // For regular videos
-    videoId = tracks[index].id.videoId;
-    title = tracks[index].snippet.title;
-    channel = tracks[index].snippet.channelTitle;
-    thumbnail = tracks[index].snippet.thumbnails.medium.url;
-  }
+  const { videoId, title, channel, thumbnail } = trackInfo;
   
   player.loadVideoById(videoId);
   
@@ -1562,6 +1536,9 @@ function playTrack(index) {
   document.getElementById('play-pause-btn').innerHTML = '<i class="fas fa-pause"></i>';
   document.getElementById('fullscreen-play-pause-btn').innerHTML = '<i class="fas fa-pause"></i>';
   isPlaying = true;
+  
+  // Update Media Session metadata
+  updateMediaSessionMetadata({ title, channel, thumbnail });
   
   // Save to played history
   savePlayedSong(tracks[index], currentTrackSource);
@@ -1725,69 +1702,18 @@ function shuffleTracks() {
 
 function rebuildTrackList(container) {
   tracks.forEach((item, index) => {
-    let videoId, title, channel, thumbnail;
+    const trackElement = createTrackElement(item, index, currentTrackSource);
+    if (!trackElement) return;
     
-    if (currentTrackSource === 'playlist') {
-      // For playlist items
-      videoId = item.snippet.resourceId.videoId;
-      title = item.snippet.title;
-      channel = item.snippet.channelTitle;
-      thumbnail = item.snippet.thumbnails.default.url;
-    } else if (currentTrackSource === 'played') {
-      // For played history items
-      if (item.id && item.id.videoId) {
-        videoId = item.id.videoId;
-        title = item.snippet.title;
-        channel = item.snippet.channelTitle;
-        thumbnail = item.snippet.thumbnails.default.url;
-      } else if (item.snippet && item.snippet.resourceId && item.snippet.resourceId.videoId) {
-        videoId = item.snippet.resourceId.videoId;
-        title = item.snippet.title;
-        channel = item.snippet.channelTitle;
-        thumbnail = item.snippet.thumbnails.default.url;
-      } else {
-        return; // Skip invalid items
-      }
-    } else {
-      // For regular videos
-      videoId = item.id.videoId;
-      title = item.snippet.title;
-      channel = item.snippet.channelTitle;
-      thumbnail = item.snippet.thumbnails.default.url;
-    }
-
-    const track = document.createElement("div");
-    track.className = "track";
     if (index === currentTrackIndex) {
-      track.classList.add("playing");
+      trackElement.classList.add("playing");
     }
-    track.dataset.index = index;
-
-    const img = document.createElement("img");
-    img.src = thumbnail;
-
-    const trackInfo = document.createElement("div");
-    trackInfo.className = "track-info";
-
-    const titleDiv = document.createElement("div");
-    titleDiv.className = "track-title";
-    titleDiv.textContent = title;
-
-    const channelDiv = document.createElement("div");
-    channelDiv.className = "track-channel";
-    channelDiv.textContent = channel;
-
-    trackInfo.appendChild(titleDiv);
-    trackInfo.appendChild(channelDiv);
-
-    track.appendChild(img);
-    track.appendChild(trackInfo);
-
-    track.onclick = () => {
+    
+    trackElement.onclick = () => {
       playTrack(index);
     };
 
-    container.appendChild(track);
+    container.appendChild(trackElement);
   });
 }
 
