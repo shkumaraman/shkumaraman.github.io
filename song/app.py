@@ -1,53 +1,36 @@
-from flask import Flask, request, jsonify, Response
-from ytmusicapi import YTMusic
-from flask_cors import CORS
-from pytube import YouTube
+from flask import Flask, jsonify, request
+from pytube import YouTube, Search
 
 app = Flask(__name__)
-CORS(app)
-
-ytmusic = YTMusic()
 
 @app.route('/')
 def home():
-    return {"message": "YouTube Music API running on Render!"}
+    return "YouTube Audio Backend Running!"
 
 @app.route('/search')
-def search():
+def search_videos():
     query = request.args.get('q')
     if not query:
-        return jsonify({"error": "Missing query parameter ?q="}), 400
-    
-    results = ytmusic.search(query, filter="songs")
-    songs = []
-    for song in results[:10]:
-        songs.append({
-            "title": song['title'],
-            "artist": song['artists'][0]['name'] if song['artists'] else "Unknown",
-            "videoId": song['videoId'],
-            "audioUrl": f"/audio/{song['videoId']}"
+        return jsonify({"error": "Query parameter 'q' required"}), 400
+    s = Search(query)
+    results = []
+    for video in s.results[:10]:
+        results.append({
+            "video_id": video.video_id,
+            "title": video.title,
+            "thumbnail": video.thumbnail_url
         })
-    return jsonify(songs)
+    return jsonify(results)
 
 @app.route('/audio/<video_id>')
-def stream_audio(video_id):
-    url = f'https://www.youtube.com/watch?v={video_id}'
-    yt = YouTube(url)
-    audio_stream = yt.streams.filter(only_audio=True).first()
-    
-    # Stream chunks to browser
-    def generate():
-        buffer = audio_stream.stream_to_buffer()
-        while True:
-            chunk = buffer.read(1024*32)
-            if not chunk:
-                break
-            yield chunk
-    
-    return Response(generate(), mimetype="audio/mp4")
-
-if __name__ == "__main__":
-    import os
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+def get_audio(video_id):
+    try:
+        yt = YouTube(f'https://www.youtube.com/watch?v={video_id}')
+        audio_stream = yt.streams.filter(only_audio=True, file_extension="mp4").first()
+        return jsonify({
+            "title": yt.title,
+            "audio_url": audio_stream.url
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)})
     
