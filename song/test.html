@@ -1,4 +1,4 @@
-<input type="text" id="searchQuery" placeholder="Search for songs..." />
+<input type="text" id="searchQuery" placeholder="Search songs..." />
 <button onclick="searchSongs()">Search</button>
 
 <ul id="searchResults"></ul>
@@ -8,29 +8,38 @@ async function searchSongs() {
   const query = document.getElementById('searchQuery').value;
   if (!query) return;
 
+  // 1️⃣ Search
   const response = await fetch(`https://jiosaavn-ygm1.onrender.com/result/?query=${encodeURIComponent(query)}`);
   const data = await response.json();
 
-  // Correct key check
-  const results = data.songs || data.results || []; // fallback
-
+  const results = data.songs || [];
   const list = document.getElementById('searchResults');
   list.innerHTML = '';
 
   results.forEach(song => {
     const listItem = document.createElement('li');
-    listItem.textContent = song.title || song.song; // depending on key
-    listItem.onclick = () => playSong(song);
+    listItem.textContent = song.song;
+    listItem.style.cursor = "pointer";
+    listItem.onclick = () => playSong(song.id); // song ID se play karenge
     list.appendChild(listItem);
   });
 }
 
-function playSong(song) {
-  const url = song.media_url || song.more_info?.encrypted_media_url; // depending on API response
-  if (!url) { alert("No media URL found"); return; }
+async function playSong(songId) {
+  // 2️⃣ Get song details for playable URL
+  const res = await fetch(`https://jiosaavn-ygm1.onrender.com/song/?query=${songId}`);
+  const data = await res.json();
 
-  const audio = new Audio(url);
+  // 'songId' key in returned JSON might be nested, check structure
+  const mediaUrl = data[songId]?.media_url || data[songId]?.320kbps || data[songId]?.more_info?.encrypted_media_url;
+
+  if (!mediaUrl) {
+    alert("Playable media URL not found for this song.");
+    return;
+  }
+
+  const audio = new Audio(mediaUrl);
   audio.play();
-  alert(`Now playing: ${song.title || song.song} by ${song.primary_artists || song.more_info?.singers}`);
+  alert(`Now playing: ${data[songId]?.song || "Unknown"}`);
 }
 </script>
