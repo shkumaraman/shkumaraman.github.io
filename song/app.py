@@ -5,6 +5,12 @@ app = Flask(__name__)
 
 BASE_URL = "https://www.jiosaavn.com/api.php"
 
+def call_api(params):
+    try:
+        r = requests.get(BASE_URL, params=params)
+        return r.json()
+    except Exception as e:
+        return {"error": str(e)}
 
 @app.route("/")
 def home():
@@ -23,8 +29,7 @@ def search():
         "_format": "json",
         "_marker": "0"
     }
-    r = requests.get(BASE_URL, params=params)
-    return jsonify(r.json())
+    return jsonify(call_api(params))
 
 
 @app.route("/song/")
@@ -33,14 +38,14 @@ def song_details():
     if not query:
         return jsonify({"error": "Please provide song id or link"}), 400
 
+    song_id = query.split("/")[-1]
     params = {
         "__call": "song.getDetails",
-        "pids": query.split("/")[-1],  # Extract ID if link provided
+        "pids": song_id,
         "_format": "json",
         "_marker": "0"
     }
-    r = requests.get(BASE_URL, params=params)
-    return jsonify(r.json())
+    return jsonify(call_api(params))
 
 
 @app.route("/lyrics/")
@@ -55,8 +60,75 @@ def lyrics():
         "_format": "json",
         "_marker": "0"
     }
-    r = requests.get(BASE_URL, params=params)
-    return jsonify(r.json())
+    return jsonify(call_api(params))
+
+
+@app.route("/album/")
+def album_details():
+    query = request.args.get("query")
+    if not query:
+        return jsonify({"error": "Please provide album id or link"}), 400
+
+    album_id = query.split("/")[-1]
+    params = {
+        "__call": "album.getAlbumDetails",
+        "albumid": album_id,
+        "_format": "json",
+        "_marker": "0"
+    }
+    return jsonify(call_api(params))
+
+
+@app.route("/playlist/")
+def playlist_details():
+    query = request.args.get("query")
+    if not query:
+        return jsonify({"error": "Please provide playlist id or link"}), 400
+
+    playlist_id = query.split("/")[-1]
+    params = {
+        "__call": "playlist.getDetails",
+        "playlistid": playlist_id,
+        "_format": "json",
+        "_marker": "0"
+    }
+    return jsonify(call_api(params))
+
+
+@app.route("/artist/")
+def artist_details():
+    query = request.args.get("query")
+    if not query:
+        return jsonify({"error": "Please provide artist id or link"}), 400
+
+    artist_id = query.split("/")[-1]
+    params = {
+        "__call": "artist.getArtistDetails",
+        "artistid": artist_id,
+        "_format": "json",
+        "_marker": "0"
+    }
+    return jsonify(call_api(params))
+
+
+@app.route("/topcharts/")
+def top_charts():
+    params = {
+        "__call": "charts.getCharts",
+        "_format": "json",
+        "_marker": "0"
+    }
+    return jsonify(call_api(params))
+
+
+@app.route("/newreleases/")
+def new_releases():
+    params = {
+        "__call": "newreleases.get",
+        "_format": "json",
+        "_marker": "0"
+    }
+    return jsonify(call_api(params))
 
 
 if __name__ == "__main__":
