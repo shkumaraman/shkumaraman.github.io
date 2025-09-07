@@ -1,7 +1,10 @@
 from flask import Flask, request, jsonify
 from ytmusicapi import YTMusic
+from flask_cors import CORS  # Import CORS
 
 app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes
+
 ytmusic = YTMusic()
 
 @app.route('/')
@@ -26,3 +29,4 @@ def search():
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5000)
+    
