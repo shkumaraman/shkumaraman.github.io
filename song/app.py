@@ -2,10 +2,11 @@ from flask import Flask, request, jsonify, send_file
 from ytmusicapi import YTMusic
 from flask_cors import CORS
 from pytube import YouTube
+from moviepy.editor import AudioFileClip
 import os
 
 app = Flask(__name__)
-CORS(app)  # Allow frontend requests
+CORS(app)
 
 ytmusic = YTMusic()
 
@@ -21,12 +22,12 @@ def search():
     
     results = ytmusic.search(query, filter="songs")
     songs = []
-    for song in results[:10]:  # Top 10 songs
+    for song in results[:10]:
         songs.append({
             "title": song['title'],
             "artist": song['artists'][0]['name'] if song['artists'] else "Unknown",
             "videoId": song['videoId'],
-            "audioUrl": f"/audio/{song['videoId']}"  # frontend use karega
+            "audioUrl": f"/audio/{song['videoId']}"
         })
     return jsonify(songs)
 
@@ -35,17 +36,26 @@ def get_audio(video_id):
     url = f'https://www.youtube.com/watch?v={video_id}'
     yt = YouTube(url)
     audio_stream = yt.streams.filter(only_audio=True).first()
-    file_path = f"{video_id}.mp4"
-    audio_stream.download(filename=file_path)
-    
-    # Serve audio for <audio> tag
-    response = send_file(file_path, mimetype="audio/mp4", as_attachment=False)
-    
-    # Delete file after streaming complete
+    mp4_file = f"{video_id}.mp4"
+    mp3_file = f"{video_id}.mp3"
+
+    # Download audio
+    audio_stream.download(filename=mp4_file)
+
+    # Convert to mp3
+    clip = AudioFileClip(mp4_file)
+    clip.write_audiofile(mp3_file)
+    clip.close()
+    os.remove(mp4_file)  # remove mp4
+
+    # Serve mp3
+    response = send_file(mp3_file, mimetype="audio/mpeg", as_attachment=False)
+
+    # Delete mp3 after streaming
     @response.call_on_close
     def remove_file():
-        os.remove(file_path)
-    
+        os.remove(mp3_file)
+
     return response
 
 if __name__ == "__main__":
