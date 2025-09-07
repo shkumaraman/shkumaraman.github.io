@@ -4,28 +4,33 @@
 <ul id="searchResults"></ul>
 
 <script>
-  async function searchSongs() {
-    const query = document.getElementById('searchQuery').value;
-    if (!query) return;
+async function searchSongs() {
+  const query = document.getElementById('searchQuery').value;
+  if (!query) return;
 
-    const response = await fetch(`https://jiosaavn-ygm1.onrender.com/result/?query=${encodeURIComponent(query)}`);
-    const data = await response.json();
+  const response = await fetch(`https://jiosaavn-ygm1.onrender.com/result/?query=${encodeURIComponent(query)}`);
+  const data = await response.json();
 
-    const results = data.songs || [];
-    const list = document.getElementById('searchResults');
-    list.innerHTML = '';
+  // Correct key check
+  const results = data.songs || data.results || []; // fallback
 
-    results.forEach(song => {
-      const listItem = document.createElement('li');
-      listItem.textContent = song.song;
-      listItem.onclick = () => playSong(song);
-      list.appendChild(listItem);
-    });
-  }
+  const list = document.getElementById('searchResults');
+  list.innerHTML = '';
 
-  function playSong(song) {
-    const audio = new Audio(song.media_url);
-    audio.play();
-    alert(`Now playing: ${song.song} by ${song.primary_artists}`);
-  }
+  results.forEach(song => {
+    const listItem = document.createElement('li');
+    listItem.textContent = song.title || song.song; // depending on key
+    listItem.onclick = () => playSong(song);
+    list.appendChild(listItem);
+  });
+}
+
+function playSong(song) {
+  const url = song.media_url || song.more_info?.encrypted_media_url; // depending on API response
+  if (!url) { alert("No media URL found"); return; }
+
+  const audio = new Audio(url);
+  audio.play();
+  alert(`Now playing: ${song.title || song.song} by ${song.primary_artists || song.more_info?.singers}`);
+}
 </script>
