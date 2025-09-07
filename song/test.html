@@ -1,79 +1,79 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>YT Music Player</title>
+  <meta charset="utf-8">
+  <title>YouTube Music Player</title>
+  <style>
+    body { font-family:sans-serif; background:#111; color:#eee; margin:0; padding:20px; }
+    h1 { margin-bottom:20px; }
+    .search { margin-bottom:20px; }
+    input { padding:8px; border-radius:4px; border:none; width:200px; }
+    button { padding:8px 12px; border:none; border-radius:4px; margin-left:6px; cursor:pointer; background:#0af; color:#000; font-weight:bold; }
+    iframe { width:100%; max-width:640px; height:360px; border:0; margin-bottom:20px; background:#000; }
+    ul { list-style:none; padding:0; max-width:640px; }
+    li { margin:8px 0; padding:8px; background:#222; border-radius:6px; cursor:pointer; }
+    li:hover { background:#333; }
+    .title { font-weight:bold; }
+    .artist { font-size:0.9em; color:#bbb; }
+  </style>
 </head>
 <body>
-  <h2>My Music Player</h2>
+  <h1>YouTube Music Player</h1>
 
-  <input type="text" id="searchBox" placeholder="Search songs...">
-  <button onclick="searchSongs()">Search</button>
+  <div class="search">
+    <input id="query" placeholder="Search songs..." />
+    <button id="searchBtn">Search</button>
+  </div>
 
-  <ul id="results"></ul>
+  <iframe id="ytplayer" src="" allowfullscreen allow="autoplay; encrypted-media"></iframe>
 
-  <!-- Hidden YouTube Player -->
-  <div id="player"></div>
+  <ul id="playlist"></ul>
 
-  <script src="https://www.youtube.com/iframe_api"></script>
   <script>
-    let player;
+    const searchBtn = document.getElementById('searchBtn');
+    const queryInput = document.getElementById('query');
+    const playlist = document.getElementById('playlist');
+    const player = document.getElementById('ytplayer');
 
-    // YouTube API ready callback
-    function onYouTubeIframeAPIReady() {
-      player = new YT.Player('player', {
-        height: '0',  // hidden
-        width: '0',
-        videoId: '',
-        playerVars: {
-          autoplay: 0,
-          controls: 0,
-          modestbranding: 1,
-          rel: 0
-        }
-      });
-    }
+    // Replace with your Render URL
+    const BACKEND_URL = 'https://ytmusic-app-n55k.onrender.com';
 
-    // Search songs from Render backend
-    async function searchSongs() {
-      const query = document.getElementById('searchBox').value;
-      if (!query) return alert("Enter a search query!");
-
-      try {
-        const res = await fetch(`https://ytmusic-app-n55k.onrender.com/search?q=${encodeURIComponent(query)}`);
-        const data = await res.json();
-
-        const resultsDiv = document.getElementById('results');
-        resultsDiv.innerHTML = '';
-
-        // Agar empty result aaya
-        if (!data || data.length === 0) {
-          resultsDiv.innerHTML = "<li>No results found</li>";
-          return;
-        }
-
-        // Har song list karo
-        data.forEach(song => {
-          const li = document.createElement('li');
-          li.textContent = `${song.title} - ${song.artist}`;
-          li.style.cursor = "pointer";
-          li.onclick = () => playSong(song.videoId);
-          resultsDiv.appendChild(li);
+    function search(query) {
+      playlist.innerHTML = "<li>Loading...</li>";
+      fetch(`${BACKEND_URL}/search?q=${encodeURIComponent(query)}`)
+        .then(res => res.json())
+        .then(tracks => {
+          playlist.innerHTML = "";
+          if (!tracks.length) {
+            playlist.innerHTML = "<li>No results found</li>";
+            return;
+          }
+          tracks.forEach(track => {
+            const li = document.createElement('li');
+            li.innerHTML = `<div class="title">${track.title}</div><div class="artist">${track.artist}</div>`;
+            li.addEventListener('click', () => {
+              player.src = `https://www.youtube.com/embed/${track.videoId}?autoplay=1`;
+            });
+            playlist.appendChild(li);
+          });
+        })
+        .catch(err => {
+          console.error(err);
+          playlist.innerHTML = "<li>Error fetching results</li>";
         });
-
-      } catch (err) {
-        console.error("Search error:", err);
-        alert("Error fetching songs. Check console.");
-      }
     }
 
-    // Play selected song
-    function playSong(videoId) {
-      if (player && videoId) {
-        player.loadVideoById(videoId);
-        player.playVideo();
-      }
-    }
+    searchBtn.addEventListener('click', () => {
+      const q = queryInput.value.trim();
+      if (q) search(q);
+    });
+
+    queryInput.addEventListener('keypress', e => {
+      if (e.key === 'Enter') searchBtn.click();
+    });
+
+    // Optional: default search on page load
+    search('pardeshiya');
   </script>
 </body>
 </html>
