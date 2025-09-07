@@ -5,49 +5,74 @@
   <title>YT Music Player</title>
 </head>
 <body>
+  <h2>My Music Player</h2>
+
   <input type="text" id="searchBox" placeholder="Search songs...">
   <button onclick="searchSongs()">Search</button>
 
   <ul id="results"></ul>
-  <div id="player" style="display:none;"></div> <!-- Hidden player -->
+
+  <!-- Hidden YouTube Player -->
+  <div id="player"></div>
 
   <script src="https://www.youtube.com/iframe_api"></script>
   <script>
     let player;
 
+    // YouTube API ready callback
     function onYouTubeIframeAPIReady() {
       player = new YT.Player('player', {
-        height: '1',
-        width: '1',
+        height: '0',  // hidden
+        width: '0',
         videoId: '',
         playerVars: {
           autoplay: 0,
           controls: 0,
-          modestbranding: 1
+          modestbranding: 1,
+          rel: 0
         }
       });
     }
 
+    // Search songs from Render backend
     async function searchSongs() {
       const query = document.getElementById('searchBox').value;
-      const res = await fetch(`https://ytmusic-app-n55k.onrender.com/search?q=${query}`);
-      const data = await res.json();
+      if (!query) return alert("Enter a search query!");
 
-      const resultsDiv = document.getElementById('results');
-      resultsDiv.innerHTML = '';
+      try {
+        const res = await fetch(`https://ytmusic-app-n55k.onrender.com/search?q=${encodeURIComponent(query)}`);
+        const data = await res.json();
 
-      data.forEach(song => {
-        const li = document.createElement('li');
-        li.textContent = `${song.title} - ${song.artist}`;
-        li.style.cursor = "pointer";
-        li.onclick = () => playSong(song.videoId);
-        resultsDiv.appendChild(li);
-      });
+        const resultsDiv = document.getElementById('results');
+        resultsDiv.innerHTML = '';
+
+        // Agar empty result aaya
+        if (!data || data.length === 0) {
+          resultsDiv.innerHTML = "<li>No results found</li>";
+          return;
+        }
+
+        // Har song list karo
+        data.forEach(song => {
+          const li = document.createElement('li');
+          li.textContent = `${song.title} - ${song.artist}`;
+          li.style.cursor = "pointer";
+          li.onclick = () => playSong(song.videoId);
+          resultsDiv.appendChild(li);
+        });
+
+      } catch (err) {
+        console.error("Search error:", err);
+        alert("Error fetching songs. Check console.");
+      }
     }
 
+    // Play selected song
     function playSong(videoId) {
-      player.loadVideoById(videoId);
-      player.playVideo();
+      if (player && videoId) {
+        player.loadVideoById(videoId);
+        player.playVideo();
+      }
     }
   </script>
 </body>
