@@ -1,9 +1,11 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from ytmusicapi import YTMusic
-from flask_cors import CORS  # Import CORS
+from flask_cors import CORS
+from pytube import YouTube
+import os
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
+CORS(app)
 
 ytmusic = YTMusic()
 
@@ -23,9 +25,22 @@ def search():
         songs.append({
             "title": song['title'],
             "artist": song['artists'][0]['name'] if song['artists'] else "Unknown",
-            "videoId": song['videoId']
+            "videoId": song['videoId'],
+            "audioUrl": f"/audio/{song['videoId']}"  # <-- add audio endpoint
         })
     return jsonify(songs)
+
+@app.route('/audio/<video_id>')
+def get_audio(video_id):
+    url = f'https://www.youtube.com/watch?v={video_id}'
+    yt = YouTube(url)
+    audio_stream = yt.streams.filter(only_audio=True).first()
+    file_path = f"{video_id}.mp4"
+    audio_stream.download(filename=file_path)
+    response = send_file(file_path, mimetype='audio/mp4')
+    # optional: remove file after sending
+    os.remove(file_path)
+    return response
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5000)
