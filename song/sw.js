@@ -2,7 +2,7 @@ const cacheName = 'musicplay-cache-v1';
 const filesToCache = [
   'index.html',
   'manage.json',
-  'logo.png'
+  'play.png'
 ];
 
 // Install event – cache files
