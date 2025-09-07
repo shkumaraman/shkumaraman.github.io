@@ -1,7 +1,9 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import requests
 
 app = Flask(__name__)
+CORS(app)  # Allow all cross-origin requests
 
 BASE_URL = "https://www.jiosaavn.com/api.php"
 
@@ -11,6 +13,7 @@ def call_api(params):
         return r.json()
     except Exception as e:
         return {"error": str(e)}
+
 
 @app.route("/")
 def home():
@@ -22,7 +25,6 @@ def search():
     query = request.args.get("query")
     if not query:
         return jsonify({"error": "Please provide query param"}), 400
-
     params = {
         "__call": "autocomplete.get",
         "query": query,
@@ -37,7 +39,6 @@ def song_details():
     query = request.args.get("query")
     if not query:
         return jsonify({"error": "Please provide song id or link"}), 400
-
     song_id = query.split("/")[-1]
     params = {
         "__call": "song.getDetails",
@@ -53,7 +54,6 @@ def lyrics():
     query = request.args.get("query")
     if not query:
         return jsonify({"error": "Please provide song id"}), 400
-
     params = {
         "__call": "lyrics.getLyrics",
         "lyrics_id": query,
@@ -68,7 +68,6 @@ def album_details():
     query = request.args.get("query")
     if not query:
         return jsonify({"error": "Please provide album id or link"}), 400
-
     album_id = query.split("/")[-1]
     params = {
         "__call": "album.getAlbumDetails",
@@ -84,7 +83,6 @@ def playlist_details():
     query = request.args.get("query")
     if not query:
         return jsonify({"error": "Please provide playlist id or link"}), 400
-
     playlist_id = query.split("/")[-1]
     params = {
         "__call": "playlist.getDetails",
@@ -100,7 +98,6 @@ def artist_details():
     query = request.args.get("query")
     if not query:
         return jsonify({"error": "Please provide artist id or link"}), 400
-
     artist_id = query.split("/")[-1]
     params = {
         "__call": "artist.getArtistDetails",
