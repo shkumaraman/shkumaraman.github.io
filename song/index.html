@@ -141,24 +141,28 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
       display: flex;
       gap: 10px;
       margin-bottom: 15px;
+      overflow-x: auto;
+      padding-bottom: 5px;
     }
     
     .filter-btn {
       padding: 6px 12px;
       border-radius: 15px;
-      border: none;
       background: var(--bg-secondary);
+      border: 1px solid #333;
       color: var(--text-primary);
       font-size: 12px;
       cursor: pointer;
+      white-space: nowrap;
       transition: all 0.3s;
     }
     
     .filter-btn.active {
       background: var(--accent-color);
+      border-color: var(--accent-color);
     }
     
-    #results, #trending-results, #played-results, #playlist-results {
+    #results, #trending-results, #played-results {
       margin-top: 10px;
       max-height: calc(100vh - 350px);
       overflow-y: auto;
@@ -218,17 +222,45 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
     }
     
     .playlist-dropdown {
-      margin: 15px 0;
+      margin: 10px 0;
+      padding: 10px;
+      background: var(--bg-secondary);
+      border-radius: 8px;
       display: none;
     }
     
-    .playlist-select {
-      width: 100%;
-      padding: 10px;
+    .playlist-dropdown.active {
+      display: block;
+    }
+    
+    .playlist-track {
+      display: flex;
+      align-items: center;
+      padding: 8px;
       border-radius: 5px;
-      background: var(--bg-secondary);
-      color: var(--text-primary);
-      border: 1px solid #333;
+      margin: 5px 0;
+      cursor: pointer;
+    }
+    
+    .playlist-track:hover {
+      background: #2a2a2a;
+    }
+    
+    .playlist-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      padding-bottom: 5px;
+      border-bottom: 1px solid #333;
+    }
+    
+    .close-playlist {
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      font-size: 16px;
     }
     
     .player-section {
@@ -572,11 +604,6 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
       .fullscreen-control-btn {
         margin: 0 10px;
       }
-      
-      .search-filters {
-        overflow-x: auto;
-        padding-bottom: 5px;
-      }
     }
   </style>
 
@@ -606,19 +633,12 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
           <i class="fas fa-search"></i>
         </button>
       </div>
-      
       <div class="search-filters">
         <button class="filter-btn active" data-filter="all">All</button>
         <button class="filter-btn" data-filter="songs">Songs</button>
         <button class="filter-btn" data-filter="playlists">Playlists</button>
       </div>
-      
-      <div class="playlist-dropdown" id="playlist-dropdown">
-        <select class="playlist-select" id="playlist-select">
-          <option value="">Select a playlist</option>
-        </select>
-      </div>
-      
+      <div id="playlist-dropdown" class="playlist-dropdown"></div>
       <div id="results"></div>
     </div>
 
@@ -742,7 +762,8 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
     var appConfig = {};
     var playedSongs = [];
     var currentFilter = 'all';
-    var playlists = {};
+    var currentPlaylistId = null;
+    var playlistItems = [];
 
     // Load configuration from manage.json
     async function loadConfig() {
@@ -807,27 +828,9 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
           });
           document.getElementById(`${tabName}-tab`).classList.add('active');
           
-          // If played tab is clicked, load played songs
+          // Load played songs if on played tab
           if (tabName === 'played') {
             loadPlayedSongs();
-          }
-        });
-      });
-      
-      // Setup filter buttons
-      document.querySelectorAll('.filter-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-          document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-          this.classList.add('active');
-          currentFilter = this.getAttribute('data-filter');
-          
-          // Show/hide playlist dropdown based on filter
-          const playlistDropdown = document.getElementById('playlist-dropdown');
-          if (currentFilter === 'playlists') {
-            playlistDropdown.style.display = 'block';
-            loadPlaylists();
-          } else {
-            playlistDropdown.style.display = 'none';
           }
         });
       });
@@ -872,6 +875,9 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
         // Setup tabs
         setupTabs();
         
+        // Setup search filters
+        setupSearchFilters();
+        
         // Load trending songs when player is ready
         loadTrendingSongs();
         
@@ -899,9 +905,26 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
           
           player.seekTo(seekTime, true);
         });
-        
-        // Load played songs from localStorage
-        loadPlayedSongsFromStorage();
+      });
+    }
+
+    // Setup search filter buttons
+    function setupSearchFilters() {
+      const filterButtons = document.querySelectorAll('.filter-btn');
+      filterButtons.forEach(button => {
+        button.addEventListener('click', function() {
+          // Update active filter
+          filterButtons.forEach(btn => btn.classList.remove('active'));
+          this.classList.add('active');
+          
+          currentFilter = this.getAttribute('data-filter');
+          
+          // If we have a search query, perform search with new filter
+          const query = document.getElementById("search").value;
+          if (query) {
+            searchVideos();
+          }
+        });
       });
     }
 
@@ -926,11 +949,6 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
         isPlaying = true;
         document.getElementById('play-pause-btn').innerHTML = '<i class="fas fa-pause"></i>';
         document.getElementById('fullscreen-play-pause-btn').innerHTML = '<i class="fas fa-pause"></i>';
-        
-        // Add to played songs when starting to play
-        if (tracks.length > 0 && currentTrackIndex >= 0) {
-          addToPlayedSongs(tracks[currentTrackIndex]);
-        }
       } else if (event.data == YT.PlayerState.PAUSED || event.data == YT.PlayerState.ENDED) {
         isPlaying = false;
         document.getElementById('play-pause-btn').innerHTML = '<i class="fas fa-play"></i>';
@@ -964,45 +982,42 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
       return item.value;
     }
 
-    // Played songs management
-    function loadPlayedSongsFromStorage() {
-      const playedStr = localStorage.getItem('played_songs');
-      if (playedStr) {
-        playedSongs = JSON.parse(playedStr);
-      }
-    }
-
-    function savePlayedSongsToStorage() {
-      localStorage.setItem('played_songs', JSON.stringify(playedSongs));
-    }
-
-    function addToPlayedSongs(song) {
-      // Check if song already exists in played list
-      const existingIndex = playedSongs.findIndex(s => s.id.videoId === song.id.videoId);
+    // Save played song to history
+    function savePlayedSong(track) {
+      // Get existing played songs
+      const playedSongsStr = localStorage.getItem('playedSongs');
+      let playedSongs = playedSongsStr ? JSON.parse(playedSongsStr) : [];
       
+      // Check if song already exists in history
+      const existingIndex = playedSongs.findIndex(song => song.id.videoId === track.id.videoId);
+      
+      // If exists, remove it so we can add it to the top
       if (existingIndex !== -1) {
-        // Remove existing entry to add it again at the top
         playedSongs.splice(existingIndex, 1);
       }
       
       // Add to beginning of array
-      playedSongs.unshift(song);
+      playedSongs.unshift(track);
       
-      // Keep only the last 50 played songs
+      // Limit to 50 songs
       if (playedSongs.length > 50) {
         playedSongs = playedSongs.slice(0, 50);
       }
       
-      // Save to localStorage
-      savePlayedSongsToStorage();
+      // Save back to localStorage
+      localStorage.setItem('playedSongs', JSON.stringify(playedSongs));
     }
 
+    // Load played songs from history
     function loadPlayedSongs() {
+      const playedSongsStr = localStorage.getItem('playedSongs');
+      const playedSongs = playedSongsStr ? JSON.parse(playedSongsStr) : [];
+      
       const playedDiv = document.getElementById("played-results");
       playedDiv.innerHTML = "";
       
       if (playedSongs.length === 0) {
-        playedDiv.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--text-secondary)">No recently played songs</div>';
+        playedDiv.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--text-secondary);">No recently played songs</div>';
         return;
       }
       
@@ -1037,91 +1052,13 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
         track.appendChild(trackInfo);
 
         track.onclick = () => {
-          // Set tracks to played songs and play
+          // Add to tracks array and play
           tracks = playedSongs;
           originalTracksOrder = [...tracks];
           playTrack(index);
         };
 
         playedDiv.appendChild(track);
-      });
-    }
-
-    // Playlist management
-    function loadPlaylists() {
-      // For now, we'll use some mock playlists
-      // In a real implementation, you would fetch these from an API
-      playlists = {
-        "Top Hits": [
-          { id: { videoId: "dQw4w9WgXcQ" }, snippet: { title: "Never Gonna Give You Up", channelTitle: "Rick Astley", thumbnails: { default: { url: "https://i.ytimg.com/vi/dQw4w9WgXcQ/default.jpg" } } } },
-          { id: { videoId: "ZbZSe6N_BXs" }, snippet: { title: "The Final Countdown", channelTitle: "Europe", thumbnails: { default: { url: "https://i.ytimg.com/vi/ZbZSe6N_BXs/default.jpg" } } } }
-        ],
-        "Chill Vibes": [
-          { id: { videoId: "JGwWNGJdvx8" }, snippet: { title: "Shape of You", channelTitle: "Ed Sheeran", thumbnails: { default: { url: "https://i.ytimg.com/vi/JGwWNGJdvx8/default.jpg" } } } },
-          { id: { videoId: "kJQP7kiw5Fk" }, snippet: { title: "Despacito", channelTitle: "Luis Fonsi", thumbnails: { default: { url: "https://i.ytimg.com/vi/kJQP7kiw5Fk/default.jpg" } } } }
-        ]
-      };
-      
-      const playlistSelect = document.getElementById('playlist-select');
-      playlistSelect.innerHTML = '<option value="">Select a playlist</option>';
-      
-      Object.keys(playlists).forEach(playlistName => {
-        const option = document.createElement('option');
-        option.value = playlistName;
-        option.textContent = playlistName;
-        playlistSelect.appendChild(option);
-      });
-      
-      playlistSelect.onchange = function() {
-        const selectedPlaylist = this.value;
-        if (selectedPlaylist && playlists[selectedPlaylist]) {
-          displayPlaylist(playlists[selectedPlaylist]);
-        }
-      };
-    }
-
-    function displayPlaylist(playlist) {
-      const resultsDiv = document.getElementById("results");
-      resultsDiv.innerHTML = "";
-
-      tracks = playlist;
-      originalTracksOrder = [...tracks];
-
-      playlist.forEach((item, index) => {
-        const videoId = item.id.videoId;
-        const title = item.snippet.title;
-        const channel = item.snippet.channelTitle;
-        const thumbnail = item.snippet.thumbnails.default.url;
-
-        const track = document.createElement("div");
-        track.className = "track";
-        track.dataset.index = index;
-
-        const img = document.createElement("img");
-        img.src = thumbnail;
-
-        const trackInfo = document.createElement("div");
-        trackInfo.className = "track-info";
-
-        const titleDiv = document.createElement("div");
-        titleDiv.className = "track-title";
-        titleDiv.textContent = title;
-
-        const channelDiv = document.createElement("div");
-        channelDiv.className = "track-channel";
-        channelDiv.textContent = channel;
-
-        trackInfo.appendChild(titleDiv);
-        trackInfo.appendChild(channelDiv);
-
-        track.appendChild(img);
-        track.appendChild(trackInfo);
-
-        track.onclick = () => {
-          playTrack(index);
-        };
-
-        resultsDiv.appendChild(track);
       });
     }
 
@@ -1258,7 +1195,7 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
       switchToSearchTab();
       
       // Check cache first
-      const cacheKey = `search_${query}`;
+      const cacheKey = `search_${query}_${currentFilter}`;
       const cachedData = getCache(cacheKey);
       
       if (cachedData) {
@@ -1274,10 +1211,11 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
         const maxResults = appConfig.youtubeConfig?.settings?.searchResultsCount || 7;
         
         // Build URL based on filter
-        let url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&q=${encodeURIComponent(query + " music")}&maxResults=${maxResults}`;
-        
+        let url;
         if (currentFilter === 'playlists') {
           url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=playlist&q=${encodeURIComponent(query + " music")}&maxResults=${maxResults}`;
+        } else {
+          url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&q=${encodeURIComponent(query + " music")}&maxResults=${maxResults}`;
         }
         
         if (appConfig.youtubeConfig?.settings?.regionCode) {
@@ -1311,21 +1249,164 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
       const resultsDiv = document.getElementById("results");
       resultsDiv.innerHTML = "";
 
-      tracks = data.items;
-      originalTracksOrder = [...tracks];
+      // Hide playlist dropdown
+      document.getElementById('playlist-dropdown').classList.remove('active');
+      currentPlaylistId = null;
 
+      if (currentFilter === 'playlists') {
+        // Display playlists
+        data.items.forEach((item, index) => {
+          const playlistId = item.id.playlistId;
+          const title = item.snippet.title;
+          const channel = item.snippet.channelTitle;
+          const thumbnail = item.snippet.thumbnails.default.url;
+
+          const track = document.createElement("div");
+          track.className = "track";
+          track.dataset.index = index;
+          track.dataset.playlistId = playlistId;
+
+          const img = document.createElement("img");
+          img.src = thumbnail;
+
+          const trackInfo = document.createElement("div");
+          trackInfo.className = "track-info";
+
+          const titleDiv = document.createElement("div");
+          titleDiv.className = "track-title";
+          titleDiv.textContent = title;
+
+          const channelDiv = document.createElement("div");
+          channelDiv.className = "track-channel";
+          channelDiv.textContent = channel;
+
+          trackInfo.appendChild(titleDiv);
+          trackInfo.appendChild(channelDiv);
+
+          track.appendChild(img);
+          track.appendChild(trackInfo);
+
+          track.onclick = () => {
+            loadPlaylistItems(playlistId);
+          };
+
+          resultsDiv.appendChild(track);
+        });
+      } else {
+        // Display videos
+        tracks = data.items;
+        originalTracksOrder = [...tracks];
+
+        data.items.forEach((item, index) => {
+          const videoId = item.id.videoId;
+          const title = item.snippet.title;
+          const channel = item.snippet.channelTitle;
+          const thumbnail = item.snippet.thumbnails.default.url;
+
+          const track = document.createElement("div");
+          track.className = "track";
+          track.dataset.index = index;
+
+          const img = document.createElement("img");
+          img.src = thumbnail;
+
+          const trackInfo = document.createElement("div");
+          trackInfo.className = "track-info";
+
+          const titleDiv = document.createElement("div");
+          titleDiv.className = "track-title";
+          titleDiv.textContent = title;
+
+          const channelDiv = document.createElement("div");
+          channelDiv.className = "track-channel";
+          channelDiv.textContent = channel;
+
+          trackInfo.appendChild(titleDiv);
+          trackInfo.appendChild(channelDiv);
+
+          track.appendChild(img);
+          track.appendChild(trackInfo);
+
+          track.onclick = () => {
+            playTrack(index);
+          };
+
+          resultsDiv.appendChild(track);
+        });
+      }
+    }
+
+    // Load playlist items
+    async function loadPlaylistItems(playlistId) {
+      try {
+        document.getElementById("playlist-dropdown").innerHTML = '<div class="loading"><div class="loading-spinner"></div></div>';
+        document.getElementById("playlist-dropdown").classList.add('active');
+        
+        const cacheKey = `playlist_${playlistId}`;
+        const cachedData = getCache(cacheKey);
+        
+        if (cachedData) {
+          displayPlaylistItems(cachedData, playlistId);
+          return;
+        }
+        
+        const url = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=${playlistId}&maxResults=20`;
+        
+        const data = await fetchWithRetry(url);
+        
+        if (data.items && data.items.length > 0) {
+          setCache(cacheKey, data);
+          displayPlaylistItems(data, playlistId);
+        }
+      } catch (error) {
+        console.error("Error loading playlist items:", error);
+        showError("Unable to load playlist. Please try again later.");
+      }
+    }
+
+    function displayPlaylistItems(data, playlistId) {
+      const playlistDropdown = document.getElementById("playlist-dropdown");
+      playlistDropdown.innerHTML = "";
+      
+      playlistItems = data.items;
+      
+      // Create header with playlist title and close button
+      const header = document.createElement("div");
+      header.className = "playlist-header";
+      
+      const title = document.createElement("h3");
+      title.textContent = "Playlist Tracks";
+      title.style.margin = "0";
+      title.style.fontSize = "14px";
+      
+      const closeBtn = document.createElement("button");
+      closeBtn.className = "close-playlist";
+      closeBtn.innerHTML = '<i class="fas fa-times"></i>';
+      closeBtn.onclick = () => {
+        playlistDropdown.classList.remove('active');
+        currentPlaylistId = null;
+      };
+      
+      header.appendChild(title);
+      header.appendChild(closeBtn);
+      playlistDropdown.appendChild(header);
+      
+      // Add playlist items
       data.items.forEach((item, index) => {
-        const videoId = item.id.videoId || item.id.playlistId;
+        const videoId = item.snippet.resourceId.videoId;
         const title = item.snippet.title;
         const channel = item.snippet.channelTitle;
         const thumbnail = item.snippet.thumbnails.default.url;
 
         const track = document.createElement("div");
-        track.className = "track";
+        track.className = "playlist-track";
         track.dataset.index = index;
 
         const img = document.createElement("img");
         img.src = thumbnail;
+        img.style.width = "30px";
+        img.style.height = "30px";
+        img.style.marginRight = "10px";
 
         const trackInfo = document.createElement("div");
         trackInfo.className = "track-info";
@@ -1333,10 +1414,12 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
         const titleDiv = document.createElement("div");
         titleDiv.className = "track-title";
         titleDiv.textContent = title;
+        titleDiv.style.fontSize = "13px";
 
         const channelDiv = document.createElement("div");
         channelDiv.className = "track-channel";
         channelDiv.textContent = channel;
+        channelDiv.style.fontSize = "11px";
 
         trackInfo.appendChild(titleDiv);
         trackInfo.appendChild(channelDiv);
@@ -1345,17 +1428,19 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
         track.appendChild(trackInfo);
 
         track.onclick = () => {
-          if (currentFilter === 'playlists') {
-            // For playlists, we would need to fetch the playlist items
-            // This is a placeholder for playlist functionality
-            showError("Playlist functionality is not fully implemented yet");
-          } else {
-            playTrack(index);
-          }
+          // Set tracks to playlist items and play
+          tracks = playlistItems;
+          originalTracksOrder = [...tracks];
+          playTrack(index);
+          
+          // Close playlist dropdown
+          playlistDropdown.classList.remove('active');
         };
 
-        resultsDiv.appendChild(track);
+        playlistDropdown.appendChild(track);
       });
+      
+      currentPlaylistId = playlistId;
     }
 
     // Error handling functions
@@ -1392,10 +1477,22 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
       }
       
       currentTrackIndex = index;
-      const videoId = tracks[index].id.videoId;
-      const title = tracks[index].snippet.title;
-      const channel = tracks[index].snippet.channelTitle;
-      const thumbnail = tracks[index].snippet.thumbnails.medium.url;
+      
+      let videoId, title, channel, thumbnail;
+      
+      if (currentPlaylistId) {
+        // For playlist items
+        videoId = tracks[index].snippet.resourceId.videoId;
+        title = tracks[index].snippet.title;
+        channel = tracks[index].snippet.channelTitle;
+        thumbnail = tracks[index].snippet.thumbnails.medium.url;
+      } else {
+        // For regular videos
+        videoId = tracks[index].id.videoId;
+        title = tracks[index].snippet.title;
+        channel = tracks[index].snippet.channelTitle;
+        thumbnail = tracks[index].snippet.thumbnails.medium.url;
+      }
       
       player.loadVideoById(videoId);
       
@@ -1415,6 +1512,9 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
       document.getElementById('play-pause-btn').innerHTML = '<i class="fas fa-pause"></i>';
       document.getElementById('fullscreen-play-pause-btn').innerHTML = '<i class="fas fa-pause"></i>';
       isPlaying = true;
+      
+      // Save to played history
+      savePlayedSong(tracks[index]);
     }
 
     // Toggle play/pause
@@ -1556,7 +1656,7 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
       const trendingDiv = document.getElementById("trending-results");
       const playedDiv = document.getElementById("played-results");
       
-      // Clear and rebuild all result lists
+      // Clear and rebuild result lists
       if (resultsDiv.innerHTML !== "") {
         resultsDiv.innerHTML = "";
         rebuildTrackList(resultsDiv);
@@ -1575,10 +1675,21 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
 
     function rebuildTrackList(container) {
       tracks.forEach((item, index) => {
-        const videoId = item.id.videoId;
-        const title = item.snippet.title;
-        const channel = item.snippet.channelTitle;
-        const thumbnail = item.snippet.thumbnails.default.url;
+        let videoId, title, channel, thumbnail;
+        
+        if (currentPlaylistId) {
+          // For playlist items
+          videoId = item.snippet.resourceId.videoId;
+          title = item.snippet.title;
+          channel = item.snippet.channelTitle;
+          thumbnail = item.snippet.thumbnails.default.url;
+        } else {
+          // For regular videos
+          videoId = item.id.videoId;
+          title = item.snippet.title;
+          channel = item.snippet.channelTitle;
+          thumbnail = item.snippet.thumbnails.default.url;
+        }
 
         const track = document.createElement("div");
         track.className = "track";
