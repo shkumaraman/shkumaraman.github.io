@@ -810,6 +810,7 @@ description: "Join TalkRush public group chats — anonymous, fast, and fun. Sha
 
 {% include music.html %}
 {% include scripts.html %}
+
 <script>
 // Firebase config
 const firebaseConfig = {
@@ -832,26 +833,39 @@ const GIPHY_API_KEY = 'EKvv5S1CcXqYuHgxPNVKiNuiuNHRTzFk';
 
 // Bad word filter system
 let bannedWords = [];
+let bannedWordsLoaded = false;
 
 // Load the banned words from filter.txt
 async function loadBannedWords() {
   try {
     const response = await fetch('filter.txt');
     const text = await response.text();
-    bannedWords = text.split('\n').map(word => word.trim().toLowerCase());
-    console.log("Banned words loaded successfully");
+    bannedWords = text.split('\n')
+      .map(word => word.trim().toLowerCase())
+      .filter(word => word.length > 0); // Remove empty lines
+    bannedWordsLoaded = true;
+    console.log("Banned words loaded successfully:", bannedWords.length);
   } catch (err) {
     console.error("Error loading banned words:", err);
+    // Fallback to a basic list if the file can't be loaded
+    bannedWords = ['badword1', 'badword2', 'swearword']; // Add some default bad words
+    bannedWordsLoaded = true;
   }
 }
 
 // Enhanced check for banned words with case insensitivity and word boundaries
 function containsBannedWords(message) {
+  if (!bannedWordsLoaded || !message || typeof message !== 'string') return false;
+  
   const lowerMsg = message.toLowerCase();
   return bannedWords.some(word => {
-    if (!word) return false;
-    // Create regex pattern that matches word with any case variation
-    const pattern = new RegExp(`\\b${word}\\b`, 'i');
+    if (!word || word.length < 2) return false;
+    
+    // Escape special regex characters in the word
+    const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    
+    // Create regex pattern that matches word with word boundaries
+    const pattern = new RegExp(`\\b${escapedWord}\\b`, 'i');
     return pattern.test(message);
   });
 }
@@ -964,6 +978,13 @@ function joinGroupChat() {
 
 function sendMessageToGroup(text) {
   if (!text.trim() || isSendingMessage) return;
+  
+  // Check for banned words before sending
+  if (containsBannedWords(text)) {
+    logSystem("Your message contains inappropriate content and cannot be sent.");
+    return;
+  }
+  
   isSendingMessage = true;
   
   const timestamp = Date.now();
@@ -1133,7 +1154,16 @@ function displayMessage(msg) {
     img.src = msg.url;
     div.appendChild(img);
   } else {
-    div.appendChild(document.createTextNode(msg.text));
+    // Check if message contains banned words before displaying
+    if (containsBannedWords(msg.text)) {
+      const filteredMsg = document.createElement("div");
+      filteredMsg.textContent = "This message was blocked due to inappropriate content";
+      filteredMsg.style.color = "#ff6b6b";
+      filteredMsg.style.fontStyle = "italic";
+      div.appendChild(filteredMsg);
+    } else {
+      div.appendChild(document.createTextNode(msg.text));
+    }
   }
   
   const time = document.createElement("div");
