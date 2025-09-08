@@ -860,58 +860,74 @@ function containsBannedWords(message) {
 function initializeChat() {
   myId = 'user_' + Math.random().toString(36).substr(2, 9);
   loadBannedWords();
-  
+
   // Check if nickname exists in localStorage
   const savedNickname = localStorage.getItem('talkrush_nickname');
+  const nicknameInput = document.getElementById('nicknameInput');
+
   if (savedNickname) {
     myNickname = savedNickname;
     nicknameSet = true;
     document.getElementById('currentNickname').textContent = myNickname;
+
+    // Set input field value so it persists after reload
+    if (nicknameInput) nicknameInput.value = myNickname;
+
     updateNicknameInDB();
   }
-  
+
   // Show nickname modal if not set
   if (!nicknameSet) {
     showNicknameModal();
   }
-  
+
   logSystem("🙏 Namaste GC Lovers!");
   joinGroupChat();
 }
 
 function showNicknameModal() {
-  document.getElementById('nicknameModal').style.display = 'flex';
-  document.getElementById('nicknameInput').focus();
+  const modal = document.getElementById('nicknameModal');
+  const nicknameInput = document.getElementById('nicknameInput');
+
+  modal.style.display = 'flex';
+  nicknameInput.focus();
+
+  // If nickname already exists, pre-fill it
+  const savedNickname = localStorage.getItem('talkrush_nickname');
+  if (savedNickname) {
+    nicknameInput.value = savedNickname;
+  }
 }
 
 function saveNickname() {
   const nicknameInput = document.getElementById('nicknameInput');
   const newNickname = nicknameInput.value.trim();
-  
+
   if (!newNickname) {
     alert("Please enter a nickname");
     return;
   }
-  
+
   if (containsBannedWords(newNickname)) {
     alert("Nickname contains inappropriate words");
     return;
   }
-  
+
   myNickname = newNickname.substring(0, 20);
   nicknameSet = true;
   document.getElementById('currentNickname').textContent = myNickname;
   document.getElementById('nicknameModal').style.display = 'none';
-  
-  // Save to localStorage
+
+  // Save to localStorage (persistent)
   localStorage.setItem('talkrush_nickname', myNickname);
-  
+
   // Update in Firebase
   updateNicknameInDB();
 }
 
+// Update nickname in Firebase globally
 function updateNicknameInDB() {
-  db.ref(`group/nicknames/${myId}`).set({
+  db.ref(`nicknames/${myId}`).set({
     nickname: myNickname,
     lastActive: Date.now()
   });
