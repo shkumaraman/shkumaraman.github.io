@@ -764,7 +764,7 @@ description: "TalkRush - Video talk to strangers like on Ome TV & Omegle. No sig
 
 {% include scripts.html %}
 
-<script>    
+<script>
 // Firebase config
 const firebaseConfig = {
   databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
@@ -779,32 +779,46 @@ let escPressedOnce = false;
 let escTimer = null;
 let dataChannel;
 
-// Load localStorage preferences
 let myNickname = localStorage.getItem("talkrush_nickname") || "Guest";
 let myGenderInterest = localStorage.getItem("talkrush_gender_interest") || "everyone";
 let myTags = JSON.parse(localStorage.getItem("talkrush_tags") || "[]");
 
-// Initialize when page loads - DON'T auto-connect
-window.addEventListener('load', () => {
+// DOM elements
+const remoteVideo = document.getElementById('remoteVideo');
+const localVideo = document.getElementById('localVideo');
+const remotePlaceholder = document.getElementById('remotePlaceholder');
+const localPlaceholder = document.getElementById('localPlaceholder');
+const systemMsg = document.getElementById('systemMsg');
+const newChatBtn = document.getElementById('newChatBtn');
+
+// Chat DOM
+const chatToggle = document.getElementById('chatToggle');
+const chatContainer = document.getElementById('chatContainer');
+const chatMessages = document.getElementById('chatMessages');
+const chatInput = document.getElementById('chatInput');
+const chatSendBtn = document.getElementById('chatSendBtn');
+let chatVisible = false;
+
+window.addEventListener("load", () => {
   showNewChatButton();
-  showSystemMessage("Click 'Start New Talk' to begin video chatting with a stranger!");
+  showSystemMessage("Click 'Start New Talk' to begin chatting!");
+  setupChatEvents();
 });
 
-// Handle page refresh/close
-window.addEventListener('beforeunload', (e) => {
-  if (isConnected) {
-    e.preventDefault();
-    e.returnValue = 'Are you sure you want to leave? Your video talk will be disconnected.';
-    return e.returnValue;
-  }
+// Clean up on leave
+window.addEventListener("beforeunload", () => {
+  if (peer) peer.destroy();
+  if (localStream) localStream.getTracks().forEach(t => t.stop());
+  if (remoteStream) remoteStream.getTracks().forEach(t => t.stop());
+  cleanUpWaitingList();
 });
 
-// Escape key functionality
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') {
+// ESC skip
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
     if (!escPressedOnce) {
       escPressedOnce = true;
-      showSystemMessage("Press Esc again to skip this talk and find someone new");
+      showSystemMessage("Press Esc again to skip this talk");
       escTimer = setTimeout(() => {
         escPressedOnce = false;
         hideSystemMessage();
@@ -815,27 +829,59 @@ document.addEventListener('keydown', (e) => {
       if (myConn) myConn.close();
       cleanUpWaitingList();
       isConnected = false;
-      showNewChatButton();
-      showSystemMessage("Talk ended. Click 'Start New Talk' to find someone new.");
+      hideNewChatButton();
+      clearChat();
+      startPeer();
     }
   }
 });
 
-// ----------------- PeerJS + Video Chat -----------------
+// Chat setup
+function setupChatEvents() {
+  chatToggle.addEventListener("click", () => {
+    chatVisible = !chatVisible;
+    chatContainer.style.display = chatVisible ? "flex" : "none";
+    if (chatVisible) chatInput.focus();
+  });
+  chatSendBtn.addEventListener("click", sendMessage);
+  chatInput.addEventListener("keypress", e => {
+    if (e.key === "Enter") sendMessage();
+  });
+}
+
+function sendMessage() {
+  const message = chatInput.value.trim();
+  if (message && dataChannel && dataChannel.open) {
+    addMessage(message, "me");
+    dataChannel.send(JSON.stringify({ type: "message", text: message, timestamp: Date.now() }));
+    chatInput.value = "";
+  }
+}
+
+function addMessage(text, sender) {
+  const msg = document.createElement("div");
+  msg.classList.add("chat-message", sender === "me" ? "message-me" : sender === "system" ? "message-system" : "message-them");
+  msg.textContent = text;
+  chatMessages.appendChild(msg);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function clearChat() {
+  chatMessages.innerHTML = "";
+}
+
+// Init video
 async function initVideoChat() {
   try {
     hideNewChatButton();
     showSystemMessage("Setting up your camera...");
-    
     localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-    document.getElementById('localVideo').srcObject = localStream;
-    document.getElementById('localPlaceholder').style.display = 'none';
-    
+    localVideo.srcObject = localStream;
+    localPlaceholder.style.display = "none";
     startPeer();
-  } catch (error) {
-    console.error('Error accessing media devices:', error);
-    showSystemMessage("Could not access your camera/microphone. Please check permissions.");
-    document.getElementById('localPlaceholder').textContent = "Camera access denied";
+  } catch (err) {
+    console.error(err);
+    showSystemMessage("Camera/mic error, please allow permissions.");
     showNewChatButton();
   }
 }
@@ -843,265 +889,169 @@ async function initVideoChat() {
 function startPeer() {
   hideSystemMessage();
   isConnected = false;
-  document.getElementById('remoteVideo').srcObject = null;
-  document.getElementById('remotePlaceholder').style.display = 'flex';
-  document.getElementById('remotePlaceholder').textContent = "Waiting for stranger to connect...";
-  
+  remoteVideo.srcObject = null;
+  remotePlaceholder.style.display = "flex";
+  remotePlaceholder.textContent = "Waiting for stranger...";
+  clearChat();
   if (peer) peer.destroy();
   showSystemMessage("🔍 Looking for a stranger...");
-  
+
   peer = new Peer({
-    config: {
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
-        { urls: 'stun:stun3.l.google.com:19302' },
-        { urls: 'stun:stun4.l.google.com:19302' }
-      ]
-    }
+    config: { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] }
   });
 
-  peer.on('open', (id) => {
+  peer.on("open", id => {
     myId = id;
     tryToFindMatch();
   });
 
-  peer.on('connection', handleDataConnection);
-
-  peer.on('error', (err) => {
-    console.error('PeerJS error:', err);
-    showSystemMessage("Connection error. Click 'Start New Talk' to try again.");
+  peer.on("error", err => {
+    console.error(err);
+    showSystemMessage("Connection error. Try again.");
     showNewChatButton();
+  });
+
+  peer.on("connection", conn => {
+    dataChannel = conn;
+    conn.on("data", d => {
+      try {
+        const parsed = JSON.parse(d);
+        if (parsed.type === "message") addMessage(parsed.text, "them");
+      } catch {}
+    });
+    conn.on("open", () => addMessage("Chat connected", "system"));
+    conn.on("close", () => addMessage("Chat disconnected", "system"));
+  });
+
+  peer.on("call", call => {
+    if (!isConnected && localStream) {
+      call.answer(localStream);
+      setupCall(call);
+      cleanUpWaitingList();
+    }
   });
 }
 
-// ----------------- Matching Logic -----------------
+// --- Matchmaking with tags + gender ---
 function tryToFindMatch() {
   waitingRef = db.ref("videoWaiting");
+  waitingRef.once("value", snap => {
+    const all = snap.val();
+    let foundKey = null, foundData = null;
 
-  waitingRef.once('value', (snapshot) => {
-    const list = snapshot.val();
-    let bestMatch = null;
+    if (all) {
+      for (let [key, data] of Object.entries(all)) {
+        if (data.id !== myId) {
+          // First: check tags + gender
+          const theirTags = data.tags || [];
+          const theirInterest = data.interest || "everyone";
+          const genderOk = (myGenderInterest === "everyone" || theirInterest === "everyone" || myGenderInterest === theirInterest);
+          const tagsOk = myTags.some(t => theirTags.includes(t));
 
-    if (list) {
-      for (let [key, entry] of Object.entries(list)) {
-        if (entry.id !== myId && !isConnected) {
-          if (isGenderCompatible(myGenderInterest, entry.interest)) {
-            const sharedTags = myTags.filter(tag => entry.tags && entry.tags.includes(tag));
-            if (sharedTags.length > 0) {
-              bestMatch = { key, otherId: entry.id, sharedTags };
-              break; // immediate match
-            } else if (!bestMatch) {
-              bestMatch = { key, otherId: entry.id, sharedTags: [] };
-            }
+          if (genderOk && tagsOk) {
+            foundKey = key; foundData = data; break;
           }
         }
       }
     }
 
-    if (bestMatch) {
-      db.ref("videoWaiting/" + bestMatch.key).remove();
-      connectToPeer(bestMatch.otherId, bestMatch.sharedTags);
+    if (foundData) {
+      db.ref("videoWaiting/" + foundKey).remove();
+      connectToPeer(foundData.id);
       return;
     }
 
-    // No immediate match → add self
+    // If no exact match, add self to waiting list
     const newRef = waitingRef.push();
-    newRef.set({
-      id: myId,
-      interest: myGenderInterest,
-      tags: myTags
-    });
+    newRef.set({ id: myId, interest: myGenderInterest, tags: myTags });
 
-    // Wait 5s, fallback to any gender-compatible user
+    // After 5s, try again but only gender
     setTimeout(() => {
-      if (!isConnected) {
-        waitingRef.once('value', (snap) => {
-          snap.forEach(child => {
-            const entry = child.val();
-            if (entry.id !== myId && isGenderCompatible(myGenderInterest, entry.interest)) {
-              child.ref.remove();
-              connectToPeer(entry.id, []);
-              return true;
+      if (isConnected) return;
+      waitingRef.once("value", snap2 => {
+        const all2 = snap2.val();
+        if (all2) {
+          for (let [key, data] of Object.entries(all2)) {
+            if (data.id !== myId) {
+              const genderOk = (myGenderInterest === "everyone" || data.interest === "everyone" || myGenderInterest === data.interest);
+              if (genderOk) {
+                db.ref("videoWaiting/" + key).remove();
+                db.ref("videoWaiting").orderByChild("id").equalTo(myId).once("value", s => s.forEach(c => c.ref.remove()));
+                connectToPeer(data.id);
+                return;
+              }
             }
-          });
-        });
-      }
+          }
+        }
+      });
     }, 5000);
   });
 }
 
-function connectToPeer(otherId, sharedTags = []) {
-  if (isConnected) return;
+function connectToPeer(otherId) {
+  if (isConnected || !localStream) return;
   showSystemMessage("😍 Connecting to stranger...");
-  
-  // Create video call
   const call = peer.call(otherId, localStream);
-  setupCall(call, sharedTags);
-  
-  // Create data channel for chat
+  setupCall(call);
+
   const conn = peer.connect(otherId);
-  handleDataConnection(conn);
+  conn.on("open", () => { dataChannel = conn; addMessage("Chat connected", "system"); });
+  conn.on("data", d => {
+    try { const p = JSON.parse(d); if (p.type === "message") addMessage(p.text, "them"); } catch {}
+  });
 }
 
-function setupCall(call, sharedTags = []) {
-  if (myConn) {
-    myConn.close();
-    document.getElementById('remoteVideo').srcObject = null;
-  }
-  
+function setupCall(call) {
+  if (myConn) myConn.close();
   myConn = call;
   isConnected = true;
   hideNewChatButton();
 
-  call.on("stream", (stream) => {
-    remoteStream = stream;
-    document.getElementById('remoteVideo').srcObject = stream;
-    document.getElementById('remotePlaceholder').style.display = 'none';
+  call.on("stream", s => {
+    remoteStream = s;
+    remoteVideo.srcObject = s;
+    remotePlaceholder.style.display = "none";
     hideSystemMessage();
-    
-    if (sharedTags.length > 0) {
-      addMessage("🎯 You both like: " + sharedTags.join(", "), 'system');
-    }
   });
-
-  call.on("close", () => {
-    endConnection("Stranger disconnected! 💔");
-  });
-
-  call.on("error", (err) => {
-    console.error("Call error:", err);
-    endConnection("Connection error");
-  });
+  call.on("close", () => endConnection("Stranger disconnected 💔"));
+  call.on("error", () => endConnection("Connection error"));
 }
 
-function handleDataConnection(conn) {
-  dataChannel = conn;
-  
-  conn.on("data", (data) => {
-    try {
-      const parsed = JSON.parse(data);
-      if (parsed.type === "message") addMessage(parsed.text, "them");
-    } catch (e) {
-      console.error("Error parsing data:", e);
-    }
-  });
-  
-  conn.on("open", () => {
-    addMessage("Chat connected", 'system');
-  });
-  
-  conn.on("close", () => {
-    addMessage("Chat disconnected", 'system');
-  });
-}
-
-function isGenderCompatible(me, other) {
-  if (me === "everyone" || other === "everyone") return true;
-  return (me === "male" && other === "female") || (me === "female" && other === "male");
-}
-
-// ----------------- UI functions -----------------
-function addMessage(text, sender) {
-  const messageDiv = document.createElement('div');
-  messageDiv.classList.add('chat-message', sender === 'me' ? 'message-me' : sender === 'system' ? 'message-system' : 'message-them');
-  messageDiv.textContent = text;
-  document.getElementById('chatMessages').appendChild(messageDiv);
-  document.getElementById('chatMessages').scrollTop = document.getElementById('chatMessages').scrollHeight;
-}
-
-function showSystemMessage(msg) {
-  const systemMsg = document.getElementById('systemMsg');
-  systemMsg.textContent = msg;
-  systemMsg.style.display = 'block';
-}
-
-function hideSystemMessage() {
-  document.getElementById('systemMsg').style.display = 'none';
-}
-
-function showNewChatButton() {
-  document.getElementById('newChatBtn').style.display = 'block';
-}
-
-function hideNewChatButton() {
-  document.getElementById('newChatBtn').style.display = 'none';
-}
-
-function endConnection(message) {
-  showSystemMessage(message);
-  document.getElementById('remoteVideo').srcObject = null;
-  document.getElementById('remotePlaceholder').style.display = 'flex';
-  document.getElementById('remotePlaceholder').textContent = message;
+function endConnection(msg) {
+  showSystemMessage(msg);
+  remoteVideo.srcObject = null;
+  remotePlaceholder.style.display = "flex";
+  remotePlaceholder.textContent = msg;
   myConn = null;
   isConnected = false;
   dataChannel = null;
   showNewChatButton();
-  addMessage("Connection ended", 'system');
+  addMessage("Connection ended", "system");
 }
 
 function cleanUpWaitingList() {
-  if (waitingRef) {
-    waitingRef.off();
-    db.ref("videoWaiting").orderByChild("id").equalTo(myId).once('value', (snap) => {
-      snap.forEach(child => child.ref.remove());
-    });
-  }
+  if (!myId) return;
+  db.ref("videoWaiting").orderByChild("id").equalTo(myId).once("value", snap => {
+    snap.forEach(c => c.ref.remove());
+  });
 }
 
-// ----------------- Event Listeners -----------------
+// UI helpers
+function showSystemMessage(msg) { systemMsg.textContent = msg; systemMsg.style.display = "block"; }
+function hideSystemMessage() { systemMsg.style.display = "none"; }
+function showNewChatButton() { newChatBtn.style.display = "block"; }
+function hideNewChatButton() { newChatBtn.style.display = "none"; }
+
+// Buttons
 document.getElementById("skipBtn").onclick = () => {
   if (myConn) myConn.close();
   cleanUpWaitingList();
   isConnected = false;
-  showSystemMessage("Talk ended. Click 'Start New Talk' to find someone new.");
+  showSystemMessage("Talk ended. Click 'Start New Talk'.");
   showNewChatButton();
 };
-
 document.getElementById("newChatBtn").onclick = () => {
+  hideNewChatButton();
   initVideoChat();
 };
-
-// Chat functionality
-document.getElementById("chatSendBtn").onclick = sendMessage;
-document.getElementById("chatInput").addEventListener("keypress", (e) => {
-  if (e.key === "Enter") sendMessage();
-});
-
-function sendMessage() {
-  const input = document.getElementById("chatInput");
-  const msg = input.value.trim();
-  if (msg && dataChannel && dataChannel.open) {
-    addMessage(msg, 'me');
-    dataChannel.send(JSON.stringify({
-      type: 'message',
-      text: msg,
-      timestamp: Date.now()
-    }));
-    input.value = '';
-  }
-}
-
-// Theme toggle
-const themeToggle = document.getElementById('themeToggle');
-const body = document.body;
-const savedTheme = localStorage.getItem('theme') || 
-                 (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
-if (savedTheme === 'light') {
-  body.classList.add('light-mode');
-  themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
-} else {
-  themeToggle.innerHTML = '<i class="fas fa-moon"></i>';
-}
-themeToggle.addEventListener('click', () => {
-  body.classList.toggle('light-mode');
-  if (body.classList.contains('light-mode')) {
-    localStorage.setItem('theme', 'light');
-    themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
-  } else {
-    localStorage.setItem('theme', 'dark');
-    themeToggle.innerHTML = '<i class="fas fa-moon"></i>';
-  }
-});
 </script>
