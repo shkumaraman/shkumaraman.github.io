@@ -777,7 +777,7 @@ let isConnected = false;
 let localStream, remoteStream;
 let escPressedOnce = false;
 let escTimer = null;
-let dataChannel; // PeerJS data channel for chat
+let dataChannel;
 
 // DOM elements
 const remoteVideo = document.getElementById('remoteVideo');
@@ -787,52 +787,60 @@ const localPlaceholder = document.getElementById('localPlaceholder');
 const systemMsg = document.getElementById('systemMsg');
 const newChatBtn = document.getElementById('newChatBtn');
 
-// Chat DOM elements
+// Chat
 const chatToggle = document.getElementById('chatToggle');
 const chatContainer = document.getElementById('chatContainer');
 const chatMessages = document.getElementById('chatMessages');
 const chatInput = document.getElementById('chatInput');
 const chatSendBtn = document.getElementById('chatSendBtn');
-
 let chatVisible = false;
 
-// Initialize when page loads - DON'T auto-connect
-window.addEventListener('load', function() {
-  // Show the new chat button immediately
+// Get user preferences
+function getUserPreferences() {
+  return {
+    interest: localStorage.getItem("interest") || "everyone",
+    tags: JSON.parse(localStorage.getItem("tags") || "[]")
+  };
+}
+function isGenderCompatible(myInterest, otherInterest) {
+  if (myInterest === "everyone" || otherInterest === "everyone") return true;
+  return (myInterest === "male" && otherInterest === "female") ||
+         (myInterest === "female" && otherInterest === "male");
+}
+function getMatchedTags(myTags, otherTags) {
+  return myTags.filter(tag => otherTags.includes(tag));
+}
+
+// Init
+window.addEventListener('load', () => {
   showNewChatButton();
   showSystemMessage("Click 'Start New Talk' to begin chatting with a stranger!");
-  
-  // Set up event listeners
   setupChatEvents();
 });
 
-// Handle page refresh/close
-window.addEventListener('beforeunload', function(e) {
+// Close
+window.addEventListener('beforeunload', (e) => {
   if (isConnected) {
     e.preventDefault();
-    e.returnValue = 'Are you sure you want to leave? Your video talk will be disconnected.';
+    e.returnValue = 'Leaving will disconnect your talk.';
     return e.returnValue;
   }
-  
-  // Clean up resources
   if (peer) peer.destroy();
   if (localStream) localStream.getTracks().forEach(track => track.stop());
   if (remoteStream) remoteStream.getTracks().forEach(track => track.stop());
-  
-  // Remove from waiting list
   if (myId) {
-    db.ref("videoWaiting").orderByValue().equalTo(myId).once('value', (snap) => {
+    db.ref("videoWaiting").orderByChild("id").equalTo(myId).once('value', (snap) => {
       snap.forEach(child => child.ref.remove());
     });
   }
 });
 
-// Escape key skip chat
+// Escape skip
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (!escPressedOnce) {
       escPressedOnce = true;
-      showSystemMessage("Press Esc again to skip this talk and find someone new");
+      showSystemMessage("Press Esc again to skip this talk");
       escTimer = setTimeout(() => {
         escPressedOnce = false;
         hideSystemMessage();
@@ -850,157 +858,151 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// Chat setup
+// Chat
 function setupChatEvents() {
   chatToggle.addEventListener('click', () => {
     chatVisible = !chatVisible;
     chatContainer.style.display = chatVisible ? 'flex' : 'none';
     if (chatVisible) chatInput.focus();
   });
-
   chatSendBtn.addEventListener('click', sendMessage);
   chatInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') sendMessage();
   });
 }
-
-// Send message
 function sendMessage() {
   const message = chatInput.value.trim();
   if (message && dataChannel && dataChannel.open) {
     addMessage(message, 'me');
-    dataChannel.send(JSON.stringify({
-      type: 'message',
-      text: message,
-      timestamp: Date.now()
-    }));
+    dataChannel.send(JSON.stringify({ type: 'message', text: message }));
     chatInput.value = '';
   }
 }
-
-// Add message to chat
 function addMessage(text, sender) {
-  const messageDiv = document.createElement('div');
-  messageDiv.classList.add('chat-message', sender === 'me' ? 'message-me' : sender === 'system' ? 'message-system' : 'message-them');
-  messageDiv.textContent = text;
-  chatMessages.appendChild(messageDiv);
+  const div = document.createElement('div');
+  div.classList.add('chat-message',
+    sender === 'me' ? 'message-me' :
+    sender === 'system' ? 'message-system' : 'message-them');
+  div.textContent = text;
+  chatMessages.appendChild(div);
   chatMessages.scrollTop = chatMessages.scrollHeight;
 }
+function clearChat() { chatMessages.innerHTML = ''; }
 
-// Clear chat
-function clearChat() {
-  chatMessages.innerHTML = '';
-}
-
-// Init video talk when user clicks "Start New Talk"
+// Video init
 async function initVideoChat() {
   try {
     hideNewChatButton();
-    showSystemMessage("Setting up your camera...");
-    
+    showSystemMessage("Setting up camera...");
     localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
     localVideo.srcObject = localStream;
     localPlaceholder.style.display = 'none';
     startPeer();
-  } catch (error) {
-    console.error('Error accessing media devices:', error);
-    showSystemMessage("Could not access your camera/microphone. Please check permissions.");
-    localPlaceholder.textContent = "Camera access denied";
+  } catch (err) {
+    console.error('Media error:', err);
+    showSystemMessage("Camera/Mic access denied.");
+    localPlaceholder.textContent = "Camera blocked";
     showNewChatButton();
   }
 }
 
-// Start peer
+// PeerJS
 function startPeer() {
   hideSystemMessage();
   isConnected = false;
   remoteVideo.srcObject = null;
   remotePlaceholder.style.display = 'flex';
-  remotePlaceholder.textContent = "Waiting for stranger to connect...";
+  remotePlaceholder.textContent = "Waiting for stranger...";
   clearChat();
   if (peer) peer.destroy();
   showSystemMessage("🔍 Looking for a stranger...");
-
   peer = new Peer({
-    config: {
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
-        { urls: 'stun:stun3.l.google.com:19302' },
-        { urls: 'stun:stun4.l.google.com:19302' }
-      ]
-    }
+    config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }
   });
-
-  peer.on('open', (id) => {
-    myId = id;
-    tryToFindMatch();
-  });
-
+  peer.on('open', (id) => { myId = id; tryToFindMatch(); });
   peer.on('error', (err) => {
-    console.error('PeerJS error:', err);
-    showSystemMessage("Connection error. Click 'Start New Talk' to try again.");
+    console.error('Peer error:', err);
+    showSystemMessage("Error. Try again.");
     showNewChatButton();
   });
-
-  // Incoming data connections
   peer.on('connection', (conn) => {
     dataChannel = conn;
     conn.on('data', (data) => {
       try {
         const parsed = JSON.parse(data);
         if (parsed.type === 'message') addMessage(parsed.text, 'them');
-      } catch (e) {
-        console.error("Error parsing incoming data:", e);
-      }
+      } catch {}
     });
-    conn.on('open', () => {
-      addMessage("Chat connected", 'system');
-    });
-    conn.on('close', () => {
-      addMessage("Chat disconnected", 'system');
-    });
+    conn.on('open', () => addMessage("Chat connected", 'system'));
+    conn.on('close', () => addMessage("Chat disconnected", 'system'));
   });
 }
 
 // Matchmaking
 function tryToFindMatch() {
+  const { interest, tags } = getUserPreferences();
   waitingRef = db.ref("videoWaiting");
   waitingRef.once('value', (snapshot) => {
     const list = snapshot.val();
+    let candidate = null;
+    let matchedTags = [];
     if (list) {
-      for (let [key, otherId] of Object.entries(list)) {
-        if (otherId !== myId && !isConnected) {
-          db.ref("videoWaiting/" + key).remove();
-          connectToPeer(otherId);
-          return;
+      for (let [key, user] of Object.entries(list)) {
+        if (user.id !== myId && !isConnected) {
+          if (isGenderCompatible(interest, user.interest)) {
+            const common = getMatchedTags(tags, user.tags || []);
+            if (common.length > 0) {
+              candidate = { id: user.id, key, common };
+              break;
+            }
+          }
         }
       }
     }
-    if (!isConnected) {
-      const newRef = waitingRef.push();
-      newRef.set(myId);
-      waitingRef.on('child_added', (childSnapshot) => {
-        const otherId = childSnapshot.val();
-        if (otherId !== myId && !isConnected) {
+    if (candidate) {
+      db.ref("videoWaiting/" + candidate.key).remove();
+      connectToPeer(candidate.id, candidate.common);
+      return;
+    }
+    // No match → join waiting
+    const newRef = waitingRef.push();
+    newRef.set({ id: myId, interest, tags });
+    let fallbackTimer = setTimeout(() => {
+      if (!isConnected) {
+        waitingRef.once("value", (snap2) => {
+          snap2.forEach(child => {
+            const user = child.val();
+            if (user.id !== myId && !isConnected &&
+                isGenderCompatible(interest, user.interest)) {
+              child.ref.remove();
+              connectToPeer(user.id, []);
+            }
+          });
+        });
+      }
+    }, 5000);
+    waitingRef.on("child_added", (childSnapshot) => {
+      const other = childSnapshot.val();
+      if (other.id !== myId && !isConnected) {
+        if (isGenderCompatible(interest, other.interest)) {
+          const common = getMatchedTags(tags, other.tags || []);
           waitingRef.off();
+          clearTimeout(fallbackTimer);
           childSnapshot.ref.remove();
-          db.ref("videoWaiting").orderByValue().equalTo(myId).once('value', (snap) => {
+          db.ref("videoWaiting").orderByChild("id").equalTo(myId).once("value", (snap) => {
             snap.forEach(child => child.ref.remove());
           });
-          connectToPeer(otherId);
+          connectToPeer(other.id, common);
         }
-      });
-    }
+      }
+    });
   });
-
   peer.on("call", (call) => {
     if (!isConnected && localStream) {
       hideSystemMessage();
       call.answer(localStream);
-      setupCall(call);
-      db.ref("videoWaiting").orderByValue().equalTo(myId).once('value', (snap) => {
+      setupCall(call, []);
+      db.ref("videoWaiting").orderByChild("id").equalTo(myId).once("value", (snap) => {
         snap.forEach(child => child.ref.remove());
       });
     }
@@ -1008,60 +1010,48 @@ function tryToFindMatch() {
 }
 
 // Connect to peer
-function connectToPeer(otherId) {
+function connectToPeer(otherId, commonTags=[]) {
   if (isConnected || !localStream) return;
-  showSystemMessage("😍 Connecting to stranger...");
+  showSystemMessage("😍 Connecting...");
   const call = peer.call(otherId, localStream);
-  setupCall(call);
-
-  // ✅ Create PeerJS data channel
+  setupCall(call, commonTags);
   const conn = peer.connect(otherId);
   conn.on("open", () => {
     dataChannel = conn;
-    addMessage("Chat connected", 'system');
+    addMessage("Chat connected", "system");
+    if (commonTags.length > 0) addMessage("🎯 Matched tags: " + commonTags.join(", "), "system");
   });
   conn.on("data", (data) => {
     try {
       const parsed = JSON.parse(data);
       if (parsed.type === "message") addMessage(parsed.text, "them");
-    } catch (e) {
-      console.error("Error parsing data:", e);
-    }
+    } catch {}
   });
 }
 
 // Setup call
-function setupCall(call) {
-  if (myConn) {
-    myConn.close();
-    remoteVideo.srcObject = null;
-  }
+function setupCall(call, commonTags=[]) {
+  if (myConn) { myConn.close(); remoteVideo.srcObject = null; }
   myConn = call;
   isConnected = true;
   hideNewChatButton();
-
   call.on("stream", (stream) => {
     remoteStream = stream;
     remoteVideo.srcObject = stream;
-    remotePlaceholder.style.display = 'none';
+    remotePlaceholder.style.display = "none";
     hideSystemMessage();
+    if (commonTags.length > 0) addMessage("🎯 You both like: " + commonTags.join(", "), "system");
   });
-
-  call.on("close", () => {
-    endConnection("Stranger disconnected! 💔");
-  });
-  call.on("error", (err) => {
-    console.error("Call error:", err);
-    endConnection("Connection error");
-  });
+  call.on("close", () => endConnection("Disconnected 💔"));
+  call.on("error", () => endConnection("Error"));
 }
 
 // End connection
-function endConnection(message) {
-  showSystemMessage(message);
+function endConnection(msg) {
+  showSystemMessage(msg);
   remoteVideo.srcObject = null;
   remotePlaceholder.style.display = 'flex';
-  remotePlaceholder.textContent = message;
+  remotePlaceholder.textContent = msg;
   myConn = null;
   isConnected = false;
   dataChannel = null;
@@ -1069,65 +1059,48 @@ function endConnection(message) {
   addMessage("Connection ended", 'system');
 }
 
-// Clean waiting list
+// Clean waiting
 function cleanUpWaitingList() {
   if (waitingRef) {
     waitingRef.off();
-    db.ref("videoWaiting").orderByValue().equalTo(myId).once('value', (snap) => {
+    db.ref("videoWaiting").orderByChild("id").equalTo(myId).once('value', (snap) => {
       snap.forEach(child => child.ref.remove());
     });
   }
 }
 
 // UI helpers
-function showSystemMessage(msg) {
-  systemMsg.textContent = msg;
-  systemMsg.style.display = 'block';
-}
-function hideSystemMessage() {
-  systemMsg.style.display = 'none';
-}
-function showNewChatButton() {
-  newChatBtn.style.display = 'block';
-}
-function hideNewChatButton() {
-  newChatBtn.style.display = 'none';
-}
+function showSystemMessage(msg) { systemMsg.textContent = msg; systemMsg.style.display = 'block'; }
+function hideSystemMessage() { systemMsg.style.display = 'none'; }
+function showNewChatButton() { newChatBtn.style.display = 'block'; }
+function hideNewChatButton() { newChatBtn.style.display = 'none'; }
 
 // Buttons
 document.getElementById("skipBtn").onclick = () => {
   if (myConn) myConn.close();
   cleanUpWaitingList();
   isConnected = false;
-  showSystemMessage("Talk ended. Click 'Start New Talk' to find someone new.");
+  showSystemMessage("Talk ended.");
   showNewChatButton();
 };
-
-// NEW: Start video talk when "Start New Talk" button is clicked
 document.getElementById("newChatBtn").onclick = () => {
   hideNewChatButton();
   initVideoChat();
 };
 
-// Theme toggle
+// Theme
 const themeToggle = document.getElementById('themeToggle');
 const body = document.body;
 const savedTheme = localStorage.getItem('theme') || 
                  (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
-if (savedTheme === 'light') {
-  body.classList.add('light-mode');
-  themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
-} else {
-  themeToggle.innerHTML = '<i class="fas fa-moon"></i>';
-}
+if (savedTheme === 'light') { body.classList.add('light-mode'); themeToggle.innerHTML = '<i class="fas fa-sun"></i>'; }
+else { themeToggle.innerHTML = '<i class="fas fa-moon"></i>'; }
 themeToggle.addEventListener('click', () => {
   body.classList.toggle('light-mode');
   if (body.classList.contains('light-mode')) {
-    localStorage.setItem('theme', 'light');
-    themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
+    localStorage.setItem('theme', 'light'); themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
   } else {
-    localStorage.setItem('theme', 'dark');
-    themeToggle.innerHTML = '<i class="fas fa-moon"></i>';
+    localStorage.setItem('theme', 'dark'); themeToggle.innerHTML = '<i class="fas fa-moon"></i>';
   }
 });
 </script>
