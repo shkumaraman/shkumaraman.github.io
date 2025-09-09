@@ -941,7 +941,9 @@ function saveNickname() {
 
 // Update nickname in Firebase globally
 function updateNicknameInDB() {
-  db.ref(`nicknames/${myId}`).set({
+  // Store in both locations for compatibility
+  db.ref(`users/${myId}/nickname`).set(myNickname);
+  db.ref(`group/nicknames/${myId}`).set({
     nickname: myNickname,
     lastActive: Date.now()
   });
@@ -1137,9 +1139,9 @@ function displayMessage(msg) {
     nicknameEl.textContent = msg.nickname;
   } else {
     // Fallback to check nicknames in database
-    db.ref(`group/nicknames/${msg.sender}`).once('value').then(snapshot => {
+    db.ref(`users/${msg.sender}/nickname`).once('value').then(snapshot => {
       const userData = snapshot.val();
-      nicknameEl.textContent = userData?.nickname || 'Guest';
+      nicknameEl.textContent = userData || 'Guest';
     });
   }
   
@@ -1418,6 +1420,23 @@ themeToggle.addEventListener('click', () => {
 function closeModal() {
   document.getElementById('chatModal').style.display = 'none';
 }
+
+// Add this event listener to close nickname modal when clicking outside
+document.addEventListener('click', function(e) {
+  const modal = document.getElementById('nicknameModal');
+  if (e.target === modal) {
+    modal.style.display = 'none';
+    
+    // If no nickname is set and user tries to close modal, set a default
+    if (!nicknameSet) {
+      myNickname = 'Guest_' + Math.random().toString(36).substr(2, 5);
+      nicknameSet = true;
+      document.getElementById('currentNickname').textContent = myNickname;
+      localStorage.setItem('talkrush_nickname', myNickname);
+      updateNicknameInDB();
+    }
+  }
+});
 
 window.addEventListener('load', initializeChat);
 </script>
