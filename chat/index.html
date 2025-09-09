@@ -510,6 +510,38 @@ body.light-mode {
   display: none;
   pointer-events: none;
 }
+
+ #intrest {
+  position: fixed;
+  bottom: 120px;
+  right: 12px;
+  background: var(--dark-msg-bg);
+  color: var(--dark-text);
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 0.85em;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  z-index: 1000;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+  transition: background 0.3s, color 0.3s;
+}
+
+#intrest:hover {
+  background: var(--dark-icon-hover-bg);
+}
+
+.light-mode #intrest {
+  background: var(--light-msg-bg);
+  color: var(--light-text);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+}
+
+.light-mode #intrest:hover {
+  background: var(--light-icon-hover-bg);
+}
   
 /* Responsive adjustments */
 @media (max-width: 600px) {
@@ -615,6 +647,11 @@ body.light-mode {
   <div id="chatLog"></div>
   <div id="typingIndicator">Stranger is typing...</div>
   
+  <div id="intrest" onclick="window.location.href='/'">
+  <span id="intrestText">Intrest</span>
+  <i class="fas fa-pencil-alt" style="font-size: 0.7em;"></i>
+  </div>
+
   <button id="newChatBtn" class="new-chat-btn">Start New Chat</button>
   
   <div class="chat-controls">
@@ -898,6 +935,8 @@ let currentSystemMessage = null;
 let isConnected = false;
 let escPressedOnce = false;
 let escTimer = null;
+let myTags = [];
+let myGenderInterest = "everyone";
 
 // GIPHY API Key
 const GIPHY_API_KEY = 'EKvv5S1CcXqYuHgxPNVKiNuiuNHRTzFk';
@@ -908,10 +947,25 @@ let typingTimeout;
 
 // Initialize when page loads - DON'T auto-connect
 window.addEventListener('load', () => {
+  // Load user preferences
+  loadUserPreferences();
   // Show the new chat button immediately
   showNewChatButton();
   logSystem("Click 'Start New Chat' to begin chatting with a stranger!");
 });
+
+// Load user preferences from localStorage
+function loadUserPreferences() {
+  const savedTags = localStorage.getItem("talkrush_tags");
+  if (savedTags) {
+    myTags = JSON.parse(savedTags);
+  }
+  
+  const savedGenderInterest = localStorage.getItem("talkrush_gender_interest");
+  if (savedGenderInterest) {
+    myGenderInterest = savedGenderInterest;
+  }
+}
 
 // Handle page refresh/close
 window.addEventListener('beforeunload', (e) => {
@@ -966,6 +1020,8 @@ function startPeer() {
 
   peer.on('open', (id) => {
     myId = id;
+    // Save user info to Firebase with tags and preferences
+    saveUserInfo();
     tryToFindMatch();
   });
 
@@ -978,43 +1034,181 @@ function startPeer() {
   });
 }
 
+// Save user info to Firebase
+function saveUserInfo() {
+  if (!myId) return;
+  
+  const userRef = db.ref("users/" + myId);
+  userRef.set({
+    id: myId,
+    tags: myTags,
+    genderInterest: myGenderInterest,
+    timestamp: firebase.database.ServerValue.TIMESTAMP
+  });
+}
+
 function tryToFindMatch() {
   waitingRef = db.ref("waiting");
-  waitingRef.once('value', (snapshot) => {
-    const list = snapshot.val();
-    if (list) {
-      for (let [key, otherId] of Object.entries(list)) {
-        if (otherId !== myId && !isConnected) {
-          db.ref("waiting/" + key).remove();
-          connectToPeer(otherId);
-          return;
-        }
+  
+  // First try to find a match based on tags
+  tryToFindTagMatch();
+  
+  // Set a timeout to connect with anyone if no tag match found in 5 seconds
+  setTimeout(() => {
+    if (!isConnected) {
+      logSystem("No tag match found. Connecting with any available user...");
+      tryToFindAnyMatch();
+    }
+  }, 5000);
+}
+
+function tryToFindTagMatch() {
+  if (isConnected) return;
+  
+  // Get all waiting users
+  db.ref("users").orderByChild("timestamp").once('value', (snapshot) => {
+    const users = snapshot.val();
+    if (!users) {
+      addToWaitingList();
+      return;
+    }
+    
+    let foundMatch = false;
+    
+    // Check each user for tag matches
+    for (let [userId, userData] of Object.entries(users)) {
+      if (userId === myId || !userData.tags) continue;
+      
+      // Check if users match based on gender preferences
+      if (!checkGenderCompatibility(userData.genderInterest, myGenderInterest)) {
+        continue;
+      }
+      
+      // Check for tag matches
+      const commonTags = findCommonTags(userData.tags, myTags);
+      
+      if (commonTags.length > 0) {
+        // Found a match!
+        foundMatch = true;
+        connectToPeer(userId, commonTags);
+        break;
       }
     }
-    if (!isConnected) {
-      const newRef = waitingRef.push();
-      newRef.set(myId);
-      waitingRef.on('child_added', (childSnapshot) => {
-        const otherId = childSnapshot.val();
-        if (otherId !== myId && !isConnected) {
-          waitingRef.off();
-          childSnapshot.ref.remove();
-          db.ref("waiting").orderByValue().equalTo(myId).once('value', (snap) => {
-            snap.forEach(child => child.ref.remove());
-          });
-          connectToPeer(otherId);
-        }
+    
+    if (!foundMatch) {
+      addToWaitingList();
+    }
+  });
+}
+
+function tryToFindAnyMatch() {
+  if (isConnected) return;
+  
+  // Get any waiting user (no tag matching)
+  db.ref("users").orderByChild("timestamp").once('value', (snapshot) => {
+    const users = snapshot.val();
+    if (!users) {
+      addToWaitingList();
+      return;
+    }
+    
+    for (let [userId, userData] of Object.entries(users)) {
+      if (userId === myId) continue;
+      
+      // Check if users match based on gender preferences
+      if (!checkGenderCompatibility(userData.genderInterest, myGenderInterest)) {
+        continue;
+      }
+      
+      // Connect with this user regardless of tags
+      connectToPeer(userId, []);
+      return;
+    }
+    
+    // If no users found, add to waiting list
+    addToWaitingList();
+  });
+}
+
+function addToWaitingList() {
+  if (isConnected) return;
+  
+  const newRef = waitingRef.push();
+  newRef.set(myId);
+  
+  // Listen for new users who might match
+  db.ref("users").orderByChild("timestamp").startAt(Date.now()).on('child_added', (snapshot) => {
+    if (isConnected) return;
+    
+    const userData = snapshot.val();
+    if (userData.id === myId) return;
+    
+    // Check if users match based on gender preferences
+    if (!checkGenderCompatibility(userData.genderInterest, myGenderInterest)) {
+      return;
+    }
+    
+    // Check for tag matches
+    const commonTags = findCommonTags(userData.tags || [], myTags);
+    
+    if (commonTags.length > 0 || Date.now() - userData.timestamp > 5000) {
+      // Found a match or user has been waiting for more than 5 seconds
+      connectToPeer(userData.id, commonTags);
+      // Remove from waiting list
+      waitingRef.once('value', (waitingSnapshot) => {
+        waitingSnapshot.forEach((child) => {
+          if (child.val() === myId) {
+            child.ref.remove();
+          }
+        });
       });
     }
   });
 }
 
-function connectToPeer(otherId) {
+function checkGenderCompatibility(otherGenderInterest, myGenderInterest) {
+  // If either user has "everyone" preference, they're compatible
+  if (otherGenderInterest === "everyone" || myGenderInterest === "everyone") {
+    return true;
+  }
+  
+  // Male ↔ Female compatibility
+  if ((otherGenderInterest === "male" && myGenderInterest === "female") ||
+      (otherGenderInterest === "female" && myGenderInterest === "male")) {
+    return true;
+  }
+  
+  // Same gender compatibility only if both want same gender
+  if (otherGenderInterest === myGenderInterest) {
+    return true;
+  }
+  
+  return false;
+}
+
+function findCommonTags(tags1, tags2) {
+  if (!tags1 || !tags2) return [];
+  
+  // Convert all tags to uppercase for case-insensitive comparison
+  const upperTags1 = tags1.map(tag => tag.toUpperCase());
+  const upperTags2 = tags2.map(tag => tag.toUpperCase());
+  
+  return upperTags1.filter(tag => upperTags2.includes(tag));
+}
+
+function connectToPeer(otherId, commonTags) {
   if (isConnected) return;
   clearSystemMessage();
-  logSystem("😍 Connecting to stranger...");
+  
+  if (commonTags.length > 0) {
+    const tagsString = commonTags.join(", ");
+    logSystem(`😍 Found match! Common interests: ${tagsString}. Connecting...`);
+  } else {
+    logSystem("😍 Connecting to stranger...");
+  }
+  
   const conn = peer.connect(otherId);
-  conn.on("open", () => handleNewConnection(conn));
+  conn.on("open", () => handleNewConnection(conn, commonTags));
   conn.on("error", (err) => {
     console.error("Connection error:", err);
     if (!isConnected) {
@@ -1025,13 +1219,20 @@ function connectToPeer(otherId) {
 }
 
 // Unified connection handler
-function handleNewConnection(conn) {
+function handleNewConnection(conn, commonTags) {
   if (isConnected) {
     conn.close(); // Already connected, reject new connection
     return;
   }
   clearSystemMessage();
-  logSystem("Stranger Connected! Say Hi 👋");
+  
+  if (commonTags.length > 0) {
+    const tagsString = commonTags.join(", ");
+    logSystem(`Stranger Connected! You both like: ${tagsString} 👋`);
+  } else {
+    logSystem("Stranger Connected! Say Hi 👋");
+  }
+  
   setupConnection(conn);
 
   if (waitingRef) {
@@ -1039,6 +1240,9 @@ function handleNewConnection(conn) {
       snap.forEach(child => child.ref.remove());
     });
   }
+  
+  // Remove user info from Firebase after connection
+  db.ref("users/" + myId).remove();
 }
 
 function setupConnection(conn) {
@@ -1083,6 +1287,9 @@ function cleanUpWaitingList() {
       snap.forEach(child => child.ref.remove());
     });
   }
+  
+  // Remove user info from Firebase
+  db.ref("users/" + myId).remove();
 }
 
 // ----------------- UI functions -----------------
