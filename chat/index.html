@@ -894,11 +894,12 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
-let peer, myConn, myId, waitingRef;
+let peer, myConn, myId, waitingRef, waitingEntryRef;
 let currentSystemMessage = null;
 let isConnected = false;
 let escPressedOnce = false;
 let escTimer = null;
+let heartbeatInterval;
 
 // GIPHY API Key
 const GIPHY_API_KEY = 'EKvv5S1CcXqYuHgxPNVKiNuiuNHRTzFk';
@@ -918,26 +919,22 @@ window.addEventListener('load', () => {
   logSystem("Click 'Start New Chat' to begin chatting with a stranger!");
 });
 
-// Handle page refresh/close - FIXED: Now properly cleans up
+// Handle page refresh/close - Improved cleanup
 window.addEventListener('beforeunload', (e) => {
   if (isConnected) {
-    // Send disconnect notification to peer if connected
-    if (myConn) {
-      try {
-        myConn.send({ type: "disconnect" });
-      } catch (err) {
-        console.log("Could not send disconnect message");
-      }
-    }
-    
-    // Clean up waiting list
+    e.preventDefault();
+    e.returnValue = 'Are you sure you want to leave? Your chat will be disconnected.';
+    return e.returnValue;
+  } else {
+    // Clean up waiting list entry when leaving page
     cleanUpWaitingList();
-    
-    // Close peer connection
-    if (peer) {
-      peer.destroy();
-    }
   }
+});
+
+// Additional event for better cleanup
+window.addEventListener('pagehide', () => {
+  cleanUpWaitingList();
+  if (heartbeatInterval) clearInterval(heartbeatInterval);
 });
 
 // Escape key functionality
@@ -1005,6 +1002,12 @@ function tryToFindMatch() {
 
     if (list) {
       for (let [key, entry] of Object.entries(list)) {
+        // Clean up stale entries (older than 30 seconds)
+        if (entry.timestamp && (Date.now() - entry.timestamp) > 30000) {
+          db.ref("waiting/" + key).remove();
+          continue;
+        }
+        
         if (entry.id !== myId && !isConnected) {
           if (isGenderCompatible(myGenderInterest, entry.interest)) {
             const sharedTags = myTags.filter(tag => entry.tags && entry.tags.includes(tag));
@@ -1027,11 +1030,21 @@ function tryToFindMatch() {
 
     // No immediate match → add self
     const newRef = waitingRef.push();
+    waitingEntryRef = newRef; // Store reference for cleanup
     newRef.set({
       id: myId,
       interest: myGenderInterest,
-      tags: myTags
+      tags: myTags,
+      timestamp: Date.now() // Add timestamp for stale entry cleanup
     });
+
+    // Start heartbeat to keep entry fresh
+    if (heartbeatInterval) clearInterval(heartbeatInterval);
+    heartbeatInterval = setInterval(() => {
+      if (waitingEntryRef) {
+        waitingEntryRef.update({ timestamp: Date.now() });
+      }
+    }, 10000);
 
     // Wait 5s, fallback to any gender-compatible user
     setTimeout(() => {
@@ -1080,10 +1093,11 @@ function handleNewConnection(conn, sharedTags = []) {
 
   setupConnection(conn);
 
-  if (waitingRef) {
-    db.ref("waiting").orderByChild("id").equalTo(myId).once('value', (snap) => {
-      snap.forEach(child => child.ref.remove());
-    });
+  // Clean up waiting list and heartbeat
+  cleanUpWaitingList();
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval);
+    heartbeatInterval = null;
   }
 }
 
@@ -1102,8 +1116,6 @@ function setupConnection(conn) {
       appendGif("stranger", data.url);
     } else if (data.type === "typing") {
       showTypingIndicator();
-    } else if (data.type === "disconnect") {
-      endConnection("Stranger left the chat 💔");
     }
   });
 
@@ -1124,14 +1136,14 @@ function endConnection(message) {
   showNewChatButton();
 }
 
-// FIXED: Enhanced cleanup function
 function cleanUpWaitingList() {
-  if (myId) {
-    db.ref("waiting").orderByChild("id").equalTo(myId).once('value', (snap) => {
-      snap.forEach(child => {
-        child.ref.remove();
-      });
-    });
+  if (waitingEntryRef) {
+    waitingEntryRef.remove();
+    waitingEntryRef = null;
+  }
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval);
+    heartbeatInterval = null;
   }
 }
 
