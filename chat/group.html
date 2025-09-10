@@ -772,6 +772,7 @@ description: "Join TalkRush public group chats — anonymous, fast, and fun. Sha
 {% include music.html %}
 {% include scripts.html %}
 {% include users-count.html %}
+            
 <script>
 // Firebase config
 const firebaseConfig = {
@@ -795,6 +796,9 @@ const GIPHY_API_KEY = 'EKvv5S1CcXqYuHgxPNVKiNuiuNHRTzFk';
 // Bad word filter system
 let bannedWords = [];
 let bannedWordsLoaded = false;
+
+// Message cleanup interval
+let cleanupInterval;
 
 // Load the banned words from filter.txt
 async function loadBannedWords() {
@@ -858,6 +862,27 @@ function initializeChat() {
 
   logSystem("🙏 Namaste GC Lovers!");
   joinGroupChat();
+  
+  // Start the cleanup interval (runs every 5 minutes)
+  cleanupInterval = setInterval(cleanupOldMessages, 5 * 60 * 1000);
+}
+
+// Clean up messages older than 1 hour
+function cleanupOldMessages() {
+  const oneHourAgo = Date.now() - (60 * 60 * 1000);
+  
+  db.ref("group/messages").orderByChild("timestamp").endAt(oneHourAgo).once("value", snapshot => {
+    if (snapshot.exists()) {
+      const updates = {};
+      snapshot.forEach(child => {
+        updates[child.key] = null;
+      });
+      
+      db.ref("group/messages").update(updates)
+        .then(() => console.log("Cleaned up old messages"))
+        .catch(err => console.error("Error cleaning up messages:", err));
+    }
+  });
 }
 
 function showNicknameModal() {
@@ -911,13 +936,19 @@ function updateNicknameInDB() {
 }
 
 function joinGroupChat() {
-  const messagesRef = db.ref("group/messages").limitToLast(messageLimit);
+  const messagesRef = db.ref("group/messages").orderByChild("timestamp").limitToLast(messageLimit);
   
   if (!initialMessagesLoaded) {
     messagesRef.once('value', (snapshot) => {
       const messages = snapshot.val();
       if (messages) {
-        Object.values(messages).forEach(msg => {
+        // Clear chat log before loading initial messages
+        document.getElementById("chatLog").innerHTML = "";
+        
+        // Convert to array and sort by timestamp
+        const messagesArray = Object.values(messages).sort((a, b) => a.timestamp - b.timestamp);
+        
+        messagesArray.forEach(msg => {
           if (msg.timestamp > lastMessageTimestamp) {
             displayMessage(msg);
             lastMessageTimestamp = msg.timestamp;
@@ -929,6 +960,7 @@ function joinGroupChat() {
     });
   }
   
+  // Listen for new messages
   messagesRef.on('child_added', (snapshot) => {
     const msg = snapshot.val();
     if (msg.timestamp > lastMessageTimestamp && msg.sender !== myId) {
@@ -965,6 +997,21 @@ function sendMessageToGroup(text) {
     .then(() => {
       isSendingMessage = false;
       updateNicknameInDB();
+      
+      // Remove oldest messages if we exceed the limit
+      db.ref("group/messages").orderByChild("timestamp").once("value", snapshot => {
+        if (snapshot.numChildren() > messageLimit) {
+          let count = 0;
+          const updates = {};
+          snapshot.forEach(child => {
+            if (count < snapshot.numChildren() - messageLimit) {
+              updates[child.key] = null;
+              count++;
+            }
+          });
+          db.ref("group/messages").update(updates);
+        }
+      });
     })
     .catch(err => {
       console.error("Error sending message:", err);
@@ -1396,6 +1443,13 @@ document.addEventListener('click', function(e) {
       localStorage.setItem('talkrush_nickname', myNickname);
       updateNicknameInDB();
     }
+  }
+});
+
+// Clean up on page unload
+window.addEventListener('beforeunload', function() {
+  if (cleanupInterval) {
+    clearInterval(cleanupInterval);
   }
 });
 
