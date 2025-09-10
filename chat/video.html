@@ -767,6 +767,7 @@ description: "TalkRush - Video talk to strangers like on Ome TV & Omegle. No sig
 
 {% include scripts.html %}
 {% include users-count.html %}
+
 <script>
 // ----------------- Firebase config -----------------
 const firebaseConfig = {
@@ -776,12 +777,13 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
 // ----------------- Globals -----------------
-let peer, myConn, myId, waitingRef;
+let peer, myConn, myId, waitingRef, waitingEntryRef;
 let isConnected = false;
 let localStream, remoteStream;
 let escPressedOnce = false;
 let escTimer = null;
 let dataChannel;
+let heartbeatInterval;
 
 // ----------------- Load preferences -----------------
 let myNickname = localStorage.getItem("talkrush_nickname") || "Guest";
@@ -811,17 +813,33 @@ window.addEventListener('load', function() {
   setupChatEvents();
 });
 
+// Improved cleanup on page exit
 window.addEventListener('beforeunload', function(e) {
   if (isConnected) {
     e.preventDefault();
     e.returnValue = 'Are you sure you want to leave? Your video talk will be disconnected.';
     return e.returnValue;
   }
-  if (peer) peer.destroy();
-  if (localStream) localStream.getTracks().forEach(track => track.stop());
-  if (remoteStream) remoteStream.getTracks().forEach(track => track.stop());
-  cleanUpWaitingList();
+  // Clean up even if not connected
+  cleanUpAllResources();
 });
+
+// Additional cleanup for better reliability
+window.addEventListener('pagehide', function() {
+  cleanUpAllResources();
+});
+
+function cleanUpAllResources() {
+  if (peer) peer.destroy();
+  if (localStream) {
+    localStream.getTracks().forEach(track => track.stop());
+  }
+  if (remoteStream) {
+    remoteStream.getTracks().forEach(track => track.stop());
+  }
+  cleanUpWaitingList();
+  if (heartbeatInterval) clearInterval(heartbeatInterval);
+}
 
 // ----------------- Escape skip -----------------
 document.addEventListener('keydown', (e) => {
@@ -955,6 +973,12 @@ function tryToFindMatch() {
 
     if (list) {
       for (let [key, entry] of Object.entries(list)) {
+        // Clean up stale entries (older than 30 seconds)
+        if (entry.timestamp && (Date.now() - entry.timestamp) > 30000) {
+          db.ref("videoWaiting/" + key).remove();
+          continue;
+        }
+        
         if (entry.id !== myId && !isConnected) {
           if (isGenderCompatible(myGenderInterest, entry.interest)) {
             const sharedTags = myTags.filter(tag => entry.tags && entry.tags.includes(tag));
@@ -977,11 +1001,21 @@ function tryToFindMatch() {
 
     // No immediate match → add self
     const newRef = waitingRef.push();
+    waitingEntryRef = newRef; // Store reference for cleanup
     newRef.set({
       id: myId,
       interest: myGenderInterest,
-      tags: myTags
+      tags: myTags,
+      timestamp: Date.now() // Add timestamp for stale entry cleanup
     });
+
+    // Start heartbeat to keep entry fresh
+    if (heartbeatInterval) clearInterval(heartbeatInterval);
+    heartbeatInterval = setInterval(() => {
+      if (waitingEntryRef) {
+        waitingEntryRef.update({ timestamp: Date.now() });
+      }
+    }, 10000);
 
     // Fallback after 5s → gender-only
     setTimeout(() => {
@@ -1006,9 +1040,12 @@ function tryToFindMatch() {
       hideSystemMessage();
       call.answer(localStream);
       setupCall(call);
-      db.ref("videoWaiting").orderByChild("id").equalTo(myId).once('value', (snap) => {
-        snap.forEach(child => child.ref.remove());
-      });
+      // Clean up waiting list and heartbeat
+      cleanUpWaitingList();
+      if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+        heartbeatInterval = null;
+      }
     }
   });
 }
@@ -1071,11 +1108,13 @@ function endConnection(message) {
 }
 
 function cleanUpWaitingList() {
-  if (waitingRef) {
-    waitingRef.off();
-    db.ref("videoWaiting").orderByChild("id").equalTo(myId).once('value', (snap) => {
-      snap.forEach(child => child.ref.remove());
-    });
+  if (waitingEntryRef) {
+    waitingEntryRef.remove();
+    waitingEntryRef = null;
+  }
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval);
+    heartbeatInterval = null;
   }
 }
 
