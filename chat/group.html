@@ -772,7 +772,7 @@ description: "Join TalkRush public group chats — anonymous, fast, and fun. Sha
 {% include music.html %}
 {% include scripts.html %}
 {% include users-count.html %}
-            
+
 <script>
 // Firebase config
 const firebaseConfig = {
@@ -786,9 +786,11 @@ let myNickname = 'Guest';
 let nicknameSet = false;
 let lastMessageTimestamp = 0;
 const messageLimit = 25;
+const messageExpiryHours = 1; // Messages older than 1 hour will be deleted
 let isSendingGif = false;
 let isSendingMessage = false;
 let initialMessagesLoaded = false;
+let messagesRef;
 
 // GIPHY API Key
 const GIPHY_API_KEY = 'EKvv5S1CcXqYuHgxPNVKiNuiuNHRTzFk';
@@ -796,9 +798,6 @@ const GIPHY_API_KEY = 'EKvv5S1CcXqYuHgxPNVKiNuiuNHRTzFk';
 // Bad word filter system
 let bannedWords = [];
 let bannedWordsLoaded = false;
-
-// Message cleanup interval
-let cleanupInterval;
 
 // Load the banned words from filter.txt
 async function loadBannedWords() {
@@ -863,26 +862,9 @@ function initializeChat() {
   logSystem("🙏 Namaste GC Lovers!");
   joinGroupChat();
   
-  // Start the cleanup interval (runs every 5 minutes)
-  cleanupInterval = setInterval(cleanupOldMessages, 5 * 60 * 1000);
-}
-
-// Clean up messages older than 1 hour
-function cleanupOldMessages() {
-  const oneHourAgo = Date.now() - (60 * 60 * 1000);
-  
-  db.ref("group/messages").orderByChild("timestamp").endAt(oneHourAgo).once("value", snapshot => {
-    if (snapshot.exists()) {
-      const updates = {};
-      snapshot.forEach(child => {
-        updates[child.key] = null;
-      });
-      
-      db.ref("group/messages").update(updates)
-        .then(() => console.log("Cleaned up old messages"))
-        .catch(err => console.error("Error cleaning up messages:", err));
-    }
-  });
+  // Start the cleanup process for old messages
+  setInterval(cleanupOldMessages, 60 * 60 * 1000); // Run every hour
+  cleanupOldMessages(); // Run once on startup
 }
 
 function showNicknameModal() {
@@ -936,19 +918,13 @@ function updateNicknameInDB() {
 }
 
 function joinGroupChat() {
-  const messagesRef = db.ref("group/messages").orderByChild("timestamp").limitToLast(messageLimit);
+  messagesRef = db.ref("group/messages").orderByChild("timestamp").limitToLast(messageLimit);
   
   if (!initialMessagesLoaded) {
     messagesRef.once('value', (snapshot) => {
       const messages = snapshot.val();
       if (messages) {
-        // Clear chat log before loading initial messages
-        document.getElementById("chatLog").innerHTML = "";
-        
-        // Convert to array and sort by timestamp
-        const messagesArray = Object.values(messages).sort((a, b) => a.timestamp - b.timestamp);
-        
-        messagesArray.forEach(msg => {
+        Object.values(messages).forEach(msg => {
           if (msg.timestamp > lastMessageTimestamp) {
             displayMessage(msg);
             lastMessageTimestamp = msg.timestamp;
@@ -967,6 +943,28 @@ function joinGroupChat() {
       displayMessage(msg);
       lastMessageTimestamp = msg.timestamp;
       scrollToBottom();
+    }
+  });
+}
+
+// Clean up messages older than 1 hour
+function cleanupOldMessages() {
+  const oneHourAgo = Date.now() - (messageExpiryHours * 60 * 60 * 1000);
+  
+  db.ref("group/messages").orderByChild("timestamp").endAt(oneHourAgo).once('value', (snapshot) => {
+    if (snapshot.exists()) {
+      const updates = {};
+      snapshot.forEach((childSnapshot) => {
+        updates[childSnapshot.key] = null;
+      });
+      
+      db.ref("group/messages").update(updates)
+        .then(() => {
+          console.log("Cleaned up old messages");
+        })
+        .catch((error) => {
+          console.error("Error cleaning up old messages:", error);
+        });
     }
   });
 }
@@ -992,31 +990,48 @@ function sendMessageToGroup(text) {
   
   appendMessage("me", text, timestamp);
   
+  // Use push() to generate a unique key for the message
   const newMsgRef = db.ref("group/messages").push();
   newMsgRef.set(message)
     .then(() => {
       isSendingMessage = false;
       updateNicknameInDB();
       
-      // Remove oldest messages if we exceed the limit
-      db.ref("group/messages").orderByChild("timestamp").once("value", snapshot => {
-        if (snapshot.numChildren() > messageLimit) {
-          let count = 0;
-          const updates = {};
-          snapshot.forEach(child => {
-            if (count < snapshot.numChildren() - messageLimit) {
-              updates[child.key] = null;
-              count++;
-            }
-          });
-          db.ref("group/messages").update(updates);
-        }
-      });
+      // After sending, check if we need to remove the oldest message
+      maintainMessageLimit();
     })
     .catch(err => {
       console.error("Error sending message:", err);
       isSendingMessage = false;
     });
+}
+
+// Ensure we only keep the latest messageLimit messages
+function maintainMessageLimit() {
+  db.ref("group/messages").orderByChild("timestamp").once('value', (snapshot) => {
+    if (snapshot.numChildren() > messageLimit) {
+      // Get all messages sorted by timestamp
+      const messages = [];
+      snapshot.forEach((childSnapshot) => {
+        messages.push({
+          key: childSnapshot.key,
+          timestamp: childSnapshot.val().timestamp
+        });
+      });
+      
+      // Sort by timestamp (oldest first)
+      messages.sort((a, b) => a.timestamp - b.timestamp);
+      
+      // Remove the oldest messages until we're at the limit
+      const messagesToRemove = messages.slice(0, messages.length - messageLimit);
+      const updates = {};
+      messagesToRemove.forEach(msg => {
+        updates[msg.key] = null;
+      });
+      
+      db.ref("group/messages").update(updates);
+    }
+  });
 }
 
 function compressImage(file, callback) {
@@ -1092,6 +1107,7 @@ function sendImageToGroup(blob) {
   newMsgRef.set(message)
     .then(() => {
       isSendingMessage = false;
+      maintainMessageLimit(); // Check message limit after sending
     })
     .catch(err => {
       console.error("Error sending image:", err);
@@ -1120,6 +1136,7 @@ function sendGifToGroup(url) {
     .then(() => {
       isSendingGif = false;
       isSendingMessage = false;
+      maintainMessageLimit(); // Check message limit after sending
     })
     .catch(err => {
       console.error("Error sending GIF:", err);
@@ -1443,13 +1460,6 @@ document.addEventListener('click', function(e) {
       localStorage.setItem('talkrush_nickname', myNickname);
       updateNicknameInDB();
     }
-  }
-});
-
-// Clean up on page unload
-window.addEventListener('beforeunload', function() {
-  if (cleanupInterval) {
-    clearInterval(cleanupInterval);
   }
 });
 
