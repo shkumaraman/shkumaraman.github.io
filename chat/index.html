@@ -885,6 +885,7 @@ body.light-mode {
 
 {% include scripts.html %}
 {% include users-count.html %}
+
 <script>
 // Firebase config
 const firebaseConfig = {
@@ -917,12 +918,25 @@ window.addEventListener('load', () => {
   logSystem("Click 'Start New Chat' to begin chatting with a stranger!");
 });
 
-// Handle page refresh/close
+// Handle page refresh/close - FIXED: Now properly cleans up
 window.addEventListener('beforeunload', (e) => {
   if (isConnected) {
-    e.preventDefault();
-    e.returnValue = 'Are you sure you want to leave? Your chat will be disconnected.';
-    return e.returnValue;
+    // Send disconnect notification to peer if connected
+    if (myConn) {
+      try {
+        myConn.send({ type: "disconnect" });
+      } catch (err) {
+        console.log("Could not send disconnect message");
+      }
+    }
+    
+    // Clean up waiting list
+    cleanUpWaitingList();
+    
+    // Close peer connection
+    if (peer) {
+      peer.destroy();
+    }
   }
 });
 
@@ -1088,6 +1102,8 @@ function setupConnection(conn) {
       appendGif("stranger", data.url);
     } else if (data.type === "typing") {
       showTypingIndicator();
+    } else if (data.type === "disconnect") {
+      endConnection("Stranger left the chat 💔");
     }
   });
 
@@ -1108,11 +1124,13 @@ function endConnection(message) {
   showNewChatButton();
 }
 
+// FIXED: Enhanced cleanup function
 function cleanUpWaitingList() {
-  if (waitingRef) {
-    waitingRef.off();
+  if (myId) {
     db.ref("waiting").orderByChild("id").equalTo(myId).once('value', (snap) => {
-      snap.forEach(child => child.ref.remove());
+      snap.forEach(child => {
+        child.ref.remove();
+      });
     });
   }
 }
