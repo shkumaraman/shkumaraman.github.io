@@ -182,6 +182,11 @@
         margin-top: 10px;
         color: #666;
     }
+    
+    /* Mute button styles */
+    #muteBtn.muted i {
+        color: #ff5252 !important;
+    }
 </style>
 
 <!-- Mini player (no longer draggable) -->
@@ -207,10 +212,13 @@
             <i class="fas fa-backward-step"></i>
         </button>
         <button id="playPauseBtn" title="Play/Pause">
-            <i class="fas fa-play"></i>
+            <i class="fas fa-play" id="playPauseIcon"></i>
         </button>
         <button id="nextBtn" title="Forward 10 seconds">
             <i class="fas fa-forward-step"></i>
+        </button>
+        <button id="muteBtn" title="Mute/Unmute">
+            <i class="fas fa-volume-up" id="muteIcon"></i>
         </button>
     </div>
     <input type="range" id="seekBar" class="slider" min="0" max="0" value="0" step="1">
@@ -254,6 +262,7 @@
         player: null,
         ytReady: false,
         isPlaying: false,
+        isMuted: false,
         currentSongUrl: "",
         firebaseListener: null,
         currentVideoTitle: "",
@@ -289,6 +298,7 @@
             const playPauseBtn = document.getElementById('playPauseBtn');
             const prevBtn = document.getElementById('prevBtn');
             const nextBtn = document.getElementById('nextBtn');
+            const muteBtn = document.getElementById('muteBtn');
             const seekBar = document.getElementById('seekBar');
             
             miniPlayer.addEventListener('click', () => {
@@ -303,6 +313,7 @@
             playPauseBtn.addEventListener('click', this.handlePlayPause.bind(this));
             prevBtn.addEventListener('click', this.handlePrev.bind(this));
             nextBtn.addEventListener('click', this.handleNext.bind(this));
+            muteBtn.addEventListener('click', this.handleMute.bind(this));
             seekBar.addEventListener('input', this.handleSeek.bind(this));
             
             urlInput.addEventListener('keypress', (e) => {
@@ -345,9 +356,11 @@
                     if (status === 'playing' && this.player.getPlayerState() !== YT.PlayerState.PLAYING) {
                         this.player.playVideo();
                         this.isPlaying = true;
+                        this.updatePlayPauseIcon();
                     } else if (status === 'paused' && this.player.getPlayerState() !== YT.PlayerState.PAUSED) {
                         this.player.pauseVideo();
                         this.isPlaying = false;
+                        this.updatePlayPauseIcon();
                     }
                 }
             });
@@ -362,10 +375,50 @@
                 videoId: '',
                 playerVars: { controls: 0, modestbranding: 1, rel: 0, playsinline: 1 },
                 events: { 
-                    onReady: () => { this.ytReady = true; this.checkSavedState(); },
-                    onError: this.onPlayerError.bind(this)
+                    onReady: () => { 
+                        this.ytReady = true; 
+                        this.checkSavedState(); 
+                        // Check initial mute status
+                        this.isMuted = this.player.isMuted();
+                        this.updateMuteIcon();
+                    },
+                    onError: this.onPlayerError.bind(this),
+                    onStateChange: this.onPlayerStateChange.bind(this)
                 }
             });
+        },
+        
+        onPlayerStateChange: function(event) {
+            // Update play/pause button when player state changes
+            if (event.data === YT.PlayerState.PLAYING) {
+                this.isPlaying = true;
+                this.updatePlayPauseIcon();
+            } else if (event.data === YT.PlayerState.PAUSED) {
+                this.isPlaying = false;
+                this.updatePlayPauseIcon();
+            }
+        },
+        
+        updatePlayPauseIcon: function() {
+            const icon = document.getElementById('playPauseIcon');
+            if (this.isPlaying) {
+                icon.className = 'fas fa-pause';
+            } else {
+                icon.className = 'fas fa-play';
+            }
+        },
+        
+        updateMuteIcon: function() {
+            const icon = document.getElementById('muteIcon');
+            const muteBtn = document.getElementById('muteBtn');
+            
+            if (this.isMuted) {
+                icon.className = 'fas fa-volume-mute';
+                muteBtn.classList.add('muted');
+            } else {
+                icon.className = 'fas fa-volume-up';
+                muteBtn.classList.remove('muted');
+            }
         },
         
         onPlayerError: function(e) {
@@ -421,6 +474,7 @@
                 this.player.pauseVideo();
                 this.isPlaying = false;
             }
+            this.updatePlayPauseIcon();
         },
         
         fetchVideoTitle: function(videoId) {
@@ -454,6 +508,7 @@
                 this.player.loadVideoById({ videoId: vid, startSeconds: 0 });
                 this.player.playVideo();
                 this.isPlaying = true;
+                this.updatePlayPauseIcon();
                 this.updateState({ currentSong: url, status: 'playing', timestamp: 0 });
                 document.getElementById('loadingIndicator').style.display = 'none';
             } else {
@@ -466,8 +521,23 @@
                     this.isPlaying = false;
                     this.updateState({ currentSong: url, status: 'paused', timestamp: startTime });
                 }
+                this.updatePlayPauseIcon();
                 document.getElementById('loadingIndicator').style.display = 'none';
             }
+        },
+        
+        handleMute: function() {
+            if (!this.player) return;
+            
+            if (this.player.isMuted()) {
+                this.player.unMute();
+                this.isMuted = false;
+            } else {
+                this.player.mute();
+                this.isMuted = true;
+            }
+            
+            this.updateMuteIcon();
         },
         
         handlePrev: function() {
