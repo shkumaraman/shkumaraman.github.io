@@ -253,13 +253,9 @@
     var musicPlayer = {
         player: null,
         ytReady: false,
-        localChange: false,
         isPlaying: false,
         currentSongUrl: "",
-        playerInterval: null,
-        lastUpdateTime: 0,
         firebaseListener: null,
-        ignorePause: false,
         currentVideoTitle: "",
 
         init: function() {
@@ -284,18 +280,6 @@
             } else {
                 window.onYouTubeIframeAPIReady = this.onYouTubeIframeAPIReady.bind(this);
             }
-
-            window.addEventListener("beforeunload", () => {
-                this.ignorePause = true;
-            });
-
-            document.addEventListener("visibilitychange", () => {
-                if (document.hidden) {
-                    this.ignorePause = true;
-                } else {
-                    this.ignorePause = false;
-                }
-            });
         },
         
         setupEventListeners: function() {
@@ -336,36 +320,28 @@
             this.firebaseListener = stateRef.on('value', (snapshot) => {
                 const data = snapshot.val();
                 if (!data || !this.ytReady) return;
-                
+
+                const { currentSong, status, timestamp, lastUpdate } = data;
+                if (!currentSong) return;
+
+                document.getElementById('urlInput').value = currentSong;
+                const vid = extractYouTubeID(currentSong);
+                if (!vid) return;
+
                 const now = Date.now();
-                if (this.localChange && now - this.lastUpdateTime < 500) {
-                    this.localChange = false;
-                    return;
-                }
-                
-                if (this.localChange) {
-                    this.localChange = false;
-                    return;
+                let effectiveTime = timestamp || 0;
+                if (status === 'playing' && lastUpdate) {
+                    effectiveTime += Math.floor((now - lastUpdate) / 1000);
                 }
 
-                const { currentSong, status, timestamp } = data;
-                if (currentSong && currentSong !== document.getElementById('urlInput').value) {
-                    document.getElementById('urlInput').value = currentSong;
-                }
-                
-                const vid = extractYouTubeID(currentSong || '');
-                if (!vid) return;
-                
                 const currentVid = this.player ? this.player.getVideoData().video_id : '';
-                
                 if (!currentVid || currentVid !== vid) {
-                    this.processNewSong(currentSong, status, timestamp);
+                    this.processNewSong(currentSong, status, effectiveTime);
                 } else {
                     const currentTime = this.player.getCurrentTime();
-                    if (Math.abs(currentTime - timestamp) > 1) {
-                        this.player.seekTo(timestamp, true);
+                    if (Math.abs(currentTime - effectiveTime) > 2) {
+                        this.player.seekTo(effectiveTime, true);
                     }
-                    
                     if (status === 'playing' && this.player.getPlayerState() !== YT.PlayerState.PLAYING) {
                         this.player.playVideo();
                         this.isPlaying = true;
@@ -386,73 +362,24 @@
                 videoId: '',
                 playerVars: { controls: 0, modestbranding: 1, rel: 0, playsinline: 1 },
                 events: { 
-                    onReady: () => { 
-                        this.ytReady = true; 
-                        this.checkSavedState();
-                    },
-                    onStateChange: this.onPlayerStateChange.bind(this),
+                    onReady: () => { this.ytReady = true; this.checkSavedState(); },
                     onError: this.onPlayerError.bind(this)
                 }
             });
         },
         
-        onPlayerStateChange: function(e) {
-            if (this.ignorePause && e.data === YT.PlayerState.PAUSED) {
-                return;
-            }
-
-            if (e.data === YT.PlayerState.PLAYING) {
-                try { this.player.setPlaybackQuality('tiny'); } catch(e) {}
-                document.getElementById('playPauseBtn').innerHTML = '<i class="fas fa-pause"></i>';
-                this.isPlaying = true;
-                if (!this.playerInterval) {
-                    this.playerInterval = setInterval(this.updatePlayerUI.bind(this), 1000);
-                }
-            } else if (e.data === YT.PlayerState.PAUSED || e.data === YT.PlayerState.ENDED) {
-                document.getElementById('playPauseBtn').innerHTML = '<i class="fas fa-play"></i>';
-                this.isPlaying = false;
-                if (e.data === YT.PlayerState.ENDED) {
-                    this.player.seekTo(0);
-                    this.updateState({ status: 'paused', timestamp: 0, currentSong: this.currentSongUrl });
-                }
-            }
-            
-            if (!this.localChange && this.currentSongUrl && !this.ignorePause) {
-                const t = Math.floor(this.player.getCurrentTime());
-                this.updateState({ 
-                    status: e.data === YT.PlayerState.PLAYING ? 'playing' : 'paused', 
-                    timestamp: t, 
-                    currentSong: this.currentSongUrl 
-                });
-            }
-        },
-        
         onPlayerError: function(e) {
             const errorMessage = document.getElementById('errorMessage');
             switch(e.data) {
-                case 2:
-                    errorMessage.textContent = "Invalid video ID. Please check the URL.";
-                    break;
-                case 5:
-                    errorMessage.textContent = "HTML5 player error. Please try again.";
-                    break;
-                case 100:
-                    errorMessage.textContent = "Video not found or removed.";
-                    break;
+                case 2: errorMessage.textContent = "Invalid video ID."; break;
+                case 5: errorMessage.textContent = "HTML5 player error."; break;
+                case 100: errorMessage.textContent = "Video not found."; break;
                 case 101:
-                case 150:
-                    errorMessage.textContent = "This video cannot be played in embedded players.";
-                    break;
-                default:
-                    errorMessage.textContent = "An error occurred while playing the video.";
+                case 150: errorMessage.textContent = "Video cannot be embedded."; break;
+                default: errorMessage.textContent = "Playback error.";
             }
             errorMessage.style.display = 'block';
             document.getElementById('loadingIndicator').style.display = 'none';
-            
-            // Update UI to show error state
-            document.getElementById('playPauseBtn').innerHTML = '<i class="fas fa-play"></i>';
-            this.isPlaying = false;
-            document.getElementById('nowPlaying').textContent = 'Error: ' + this.currentVideoTitle;
         },
         
         checkSavedState: function() {
@@ -461,9 +388,14 @@
             stateRef.once('value').then((snapshot) => {
                 const data = snapshot.val();
                 if (data && data.currentSong) {
-                    this.processNewSong(data.currentSong, data.status, data.timestamp);
+                    const now = Date.now();
+                    let effectiveTime = data.timestamp || 0;
+                    if (data.status === 'playing' && data.lastUpdate) {
+                        effectiveTime += Math.floor((now - data.lastUpdate) / 1000);
+                    }
+                    this.processNewSong(data.currentSong, data.status, effectiveTime);
                 }
-            }).catch(error => console.error('Firebase error:', error));
+            });
         },
         
         processNewSong: function(url, status, timestamp) {
@@ -473,12 +405,10 @@
             this.currentSongUrl = url;
             document.getElementById('urlInput').value = url;
             
-            // Fetch video title
             this.fetchVideoTitle(vid).then(title => {
                 this.currentVideoTitle = title;
                 document.getElementById('nowPlaying').textContent = 'Playing: ' + title;
-            }).catch(error => {
-                console.error('Error fetching title:', error);
+            }).catch(() => {
                 this.currentVideoTitle = "Unknown Title";
                 document.getElementById('nowPlaying').textContent = 'Playing: ' + url;
             });
@@ -494,24 +424,14 @@
         },
         
         fetchVideoTitle: function(videoId) {
-            return new Promise((resolve, reject) => {
-                // Using YouTube oEmbed API to get video title
-                fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`)
-                    .then(response => {
-                        if (!response.ok) {
-                            throw new Error('Failed to fetch video title');
-                        }
-                        return response.json();
-                    })
-                    .then(data => resolve(data.title))
-                    .catch(error => reject(error));
-            });
+            return fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`)
+                .then(response => response.json())
+                .then(data => data.title);
         },
         
         updateState: function(obj) {
             if (!this.firebaseInitialized()) return;
-            this.localChange = true;
-            this.lastUpdateTime = Date.now();
+            obj.lastUpdate = Date.now();
             firebase.database().ref('music').set(obj).catch(error => {
                 console.error('Firebase update error:', error);
             });
@@ -523,7 +443,6 @@
             if (!vid) return alert('Please enter a valid YouTube URL');
             if (!this.ytReady) return alert('Player not ready yet!');
             
-            // Hide any previous error
             document.getElementById('errorMessage').style.display = 'none';
             document.getElementById('loadingIndicator').style.display = 'block';
             
@@ -532,36 +451,22 @@
             
             if (currentVid !== vid) {
                 this.currentSongUrl = url;
-                
-                // Fetch video title
-                this.fetchVideoTitle(vid).then(title => {
-                    this.currentVideoTitle = title;
-                    document.getElementById('nowPlaying').textContent = 'Playing: ' + title;
-                    document.getElementById('loadingIndicator').style.display = 'none';
-                }).catch(error => {
-                    console.error('Error fetching title:', error);
-                    this.currentVideoTitle = "Unknown Title";
-                    document.getElementById('nowPlaying').textContent = 'Playing: ' + url;
-                    document.getElementById('loadingIndicator').style.display = 'none';
-                });
-                
-                this.player.loadVideoById({videoId: vid, startSeconds: 0});
-                this.player.unMute();
+                this.player.loadVideoById({ videoId: vid, startSeconds: 0 });
                 this.player.playVideo();
                 this.isPlaying = true;
                 this.updateState({ currentSong: url, status: 'playing', timestamp: 0 });
+                document.getElementById('loadingIndicator').style.display = 'none';
             } else {
                 if (!this.isPlaying) {
                     this.player.playVideo();
                     this.isPlaying = true;
                     this.updateState({ currentSong: url, status: 'playing', timestamp: startTime });
-                    document.getElementById('loadingIndicator').style.display = 'none';
                 } else {
                     this.player.pauseVideo();
                     this.isPlaying = false;
-                    this.updateState({ status: 'paused', timestamp: startTime, currentSong: url });
-                    document.getElementById('loadingIndicator').style.display = 'none';
+                    this.updateState({ currentSong: url, status: 'paused', timestamp: startTime });
                 }
+                document.getElementById('loadingIndicator').style.display = 'none';
             }
         },
         
