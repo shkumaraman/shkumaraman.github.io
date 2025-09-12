@@ -939,7 +939,7 @@ window.addEventListener('pagehide', () => {
   if (heartbeatInterval) clearInterval(heartbeatInterval);
 });
 
-// Escape key functionality
+// Escape key functionality - FIXED
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (!escPressedOnce) {
@@ -957,7 +957,9 @@ document.addEventListener('keydown', (e) => {
       isConnected = false;
       document.getElementById("chatLog").innerHTML = "";
       showNewChatButton();
-      logSystem("Chat ended. Click 'Start New Chat' to find someone new.");
+      logSystem("Chat ended. Starting new search...");
+      // FIX: Start a new connection after skipping
+      startPeer();
     }
   }
 });
@@ -990,8 +992,11 @@ function startPeer() {
 
   peer.on('error', (err) => {
     console.error('PeerJS error:', err);
-    showNewChatButton();
-    logSystem("Connection error. Click 'Start New Chat' to try again.");
+    // FIX: Only show button if not already connected
+    if (!isConnected) {
+      showNewChatButton();
+      logSystem("Connection error. Click 'Start New Chat' to try again.");
+    }
   });
 }
 
@@ -1043,7 +1048,7 @@ function tryToFindMatch() {
     // Start heartbeat to keep entry fresh
     if (heartbeatInterval) clearInterval(heartbeatInterval);
     heartbeatInterval = setInterval(() => {
-      if (waitingEntryRef) {
+      if (waitingEntryRef && !isConnected) {
         waitingEntryRef.update({ timestamp: Date.now() });
       }
     }, 10000);
@@ -1052,12 +1057,14 @@ function tryToFindMatch() {
     setTimeout(() => {
       if (!isConnected) {
         waitingRef.once('value', (snap) => {
+          if (isConnected) return; // Check again if connected
+          
           snap.forEach(child => {
             const entry = child.val();
             if (entry.id !== myId && isGenderCompatible(myGenderInterest, entry.interest)) {
               child.ref.remove();
               connectToPeer(entry.id, []);
-              return true;
+              return true; // Break the loop
             }
           });
         });
@@ -1273,8 +1280,10 @@ document.getElementById("skipBtn").onclick = () => {
   if (myConn) myConn.close();
   cleanUpWaitingList();
   isConnected = false;
-  logSystem("Chat ended. Click 'Start New Chat' to find someone new.");
+  logSystem("Chat ended. Starting new search...");
   showNewChatButton();
+  // FIX: Start a new connection after skipping
+  startPeer();
 };
 
 document.getElementById("newChatBtn").onclick = () => {
