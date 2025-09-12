@@ -749,7 +749,6 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
 
 <div id="player"></div>
 
-<script>
 // Global variables
 var player;
 var currentTrackIndex = 0;
@@ -770,6 +769,11 @@ var currentFilter = 'all';
 var currentPlaylistId = null;
 var playlistItems = [];
 var currentTrackSource = null; // 'trending', 'search', 'playlist', 'played'
+
+// Swipe functionality variables
+var touchStartX = 0;
+var touchEndX = 0;
+var minSwipeDistance = 50; // Minimum distance for a swipe to be detected
 
 // Track type constants
 const TRACK_TYPES = {
@@ -871,6 +875,47 @@ function switchToSearchTab() {
   });
 }
 
+// Add touch event listeners for swipe detection
+function setupSwipeListeners() {
+  const playerContainer = document.getElementById('player-container');
+  const fullscreenPlayer = document.getElementById('fullscreen-player');
+  
+  // For mini player
+  playerContainer.addEventListener('touchstart', handleTouchStart, false);
+  playerContainer.addEventListener('touchend', handleTouchEnd, false);
+  
+  // For fullscreen player
+  fullscreenPlayer.addEventListener('touchstart', handleTouchStart, false);
+  fullscreenPlayer.addEventListener('touchend', handleTouchEnd, false);
+}
+
+// Handle touch start event
+function handleTouchStart(event) {
+  touchStartX = event.changedTouches[0].screenX;
+}
+
+// Handle touch end event
+function handleTouchEnd(event) {
+  touchEndX = event.changedTouches[0].screenX;
+  handleSwipe();
+}
+
+// Process swipe gesture
+function handleSwipe() {
+  const distance = touchEndX - touchStartX;
+  
+  // Check if it's a valid swipe (minimum distance)
+  if (Math.abs(distance) < minSwipeDistance) return;
+  
+  if (distance > 0) {
+    // Swipe right - previous track
+    previousTrack();
+  } else {
+    // Swipe left - next track
+    nextTrack();
+  }
+}
+
 // Initialize player
 function onYouTubeIframeAPIReady() {
   player = new YT.Player('player', {
@@ -895,6 +940,9 @@ function onYouTubeIframeAPIReady() {
     
     // Setup search filters
     setupSearchFilters();
+    
+    // Setup swipe listeners
+    setupSwipeListeners();
     
     // Load trending songs when player is ready
     loadTrendingSongs();
