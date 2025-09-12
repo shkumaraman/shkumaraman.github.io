@@ -783,6 +783,7 @@ let escPressedOnce = false;
 let escTimer = null;
 let dataChannel;
 let heartbeatInterval;
+let cameraAvailable = true; // Track camera availability
 
 // ----------------- Load preferences -----------------
 let myNickname = localStorage.getItem("talkrush_nickname") || "Guest";
@@ -807,10 +808,31 @@ let chatVisible = false;
 
 // ----------------- Init -----------------
 window.addEventListener('load', function() {
+  // Check if camera is available
+  checkCameraAvailability();
   showNewChatButton();
   showSystemMessage("Click 'Start New Talk' to begin chatting with a stranger!");
   setupChatEvents();
 });
+
+// Check if camera is available
+async function checkCameraAvailability() {
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const videoDevices = devices.filter(device => device.kind === 'videoinput');
+    cameraAvailable = videoDevices.length > 0;
+    
+    if (!cameraAvailable) {
+      localPlaceholder.textContent = "No camera detected - audio only mode";
+      localPlaceholder.style.fontSize = "14px";
+    }
+  } catch (error) {
+    console.error('Error checking camera availability:', error);
+    cameraAvailable = false;
+    localPlaceholder.textContent = "Camera access error - audio only mode";
+    localPlaceholder.style.fontSize = "14px";
+  }
+}
 
 // Improved cleanup on page exit
 window.addEventListener('beforeunload', function(e) {
@@ -901,15 +923,45 @@ function clearChat() {
 async function initVideoChat() {
   try {
     hideNewChatButton();
-    showSystemMessage("Setting up your camera...");
-    localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    showSystemMessage("Setting up your media...");
+    
+    // Try to get media with video, but fall back to audio only if no camera
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia({ 
+        video: cameraAvailable, 
+        audio: true 
+      });
+    } catch (error) {
+      console.error('Error accessing camera, trying audio only:', error);
+      // If video fails, try audio only
+      localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      cameraAvailable = false;
+    }
+    
     localVideo.srcObject = localStream;
     localPlaceholder.style.display = 'none';
+    
+    // If no camera available, show a placeholder image
+    if (!cameraAvailable) {
+      localVideo.style.display = 'none';
+      const audioOnlyIndicator = document.createElement('div');
+      audioOnlyIndicator.id = 'audioOnlyIndicator';
+      audioOnlyIndicator.innerHTML = '<i class="fas fa-microphone"></i> Audio Only Mode';
+      audioOnlyIndicator.style.position = 'absolute';
+      audioOnlyIndicator.style.bottom = '10px';
+      audioOnlyIndicator.style.left = '10px';
+      audioOnlyIndicator.style.background = 'rgba(0,0,0,0.7)';
+      audioOnlyIndicator.style.padding = '5px 10px';
+      audioOnlyIndicator.style.borderRadius = '4px';
+      audioOnlyIndicator.style.fontSize = '12px';
+      document.querySelector('.local-video-container').appendChild(audioOnlyIndicator);
+    }
+    
     startPeer();
   } catch (error) {
     console.error('Error accessing media devices:', error);
-    showSystemMessage("Could not access your camera/microphone. Please check permissions.");
-    localPlaceholder.textContent = "Camera access denied";
+    showSystemMessage("Could not access your microphone. Please check permissions.");
+    localPlaceholder.textContent = "Microphone access denied";
     showNewChatButton();
   }
 }
@@ -1005,7 +1057,8 @@ function tryToFindMatch() {
       id: myId,
       interest: myGenderInterest,
       tags: myTags,
-      timestamp: Date.now() // Add timestamp for stale entry cleanup
+      timestamp: Date.now(), // Add timestamp for stale entry cleanup
+      hasCamera: cameraAvailable // Indicate if we have a camera
     });
 
     // Start heartbeat to keep entry fresh
