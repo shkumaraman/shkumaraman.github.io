@@ -769,6 +769,7 @@ var currentFilter = 'all';
 var currentPlaylistId = null;
 var playlistItems = [];
 var currentTrackSource = null; // 'trending', 'search', 'playlist', 'played'
+var isDragging = false; // Added for progress bar dragging
 
 // Track type constants
 const TRACK_TYPES = {
@@ -911,17 +912,74 @@ function onYouTubeIframeAPIReady() {
     // Add click event to open fullscreen player
     document.getElementById("open-fullscreen").addEventListener("click", openFullscreen);
     
-    // Add click event to fullscreen progress bar
-    document.getElementById("fullscreen-progress-container").addEventListener('click', function(e) {
-      if (!player.getDuration) return;
-      
-      const rect = this.getBoundingClientRect();
-      const clickX = e.clientX - rect.left;
-      const width = rect.width;
-      const seekTime = (clickX / width) * player.getDuration();
-      
-      player.seekTo(seekTime, true);
-    });
+    // Setup progress bar dragging
+    setupProgressBarDragging();
+  });
+}
+
+// Setup progress bar dragging functionality
+function setupProgressBarDragging() {
+  // Normal player progress bar
+  const progressContainer = document.getElementById('progress-container');
+  const progressBar = document.getElementById('progress-bar');
+
+  // Fullscreen player progress bar
+  const fullscreenProgressContainer = document.getElementById('fullscreen-progress-container');
+  const fullscreenProgressBar = document.getElementById('fullscreen-progress-bar');
+
+  // Function to update seek position while dragging
+  function updateSeek(e, container, bar) {
+    if (!player.getDuration) return;
+
+    const rect = container.getBoundingClientRect();
+    let offsetX = e.clientX - rect.left;
+    if (offsetX < 0) offsetX = 0;
+    if (offsetX > rect.width) offsetX = rect.width;
+
+    const seekTime = (offsetX / rect.width) * player.getDuration();
+    bar.style.width = `${(offsetX / rect.width) * 100}%`;
+
+    return seekTime;
+  }
+
+  // Add dragging for normal progress bar
+  progressContainer.addEventListener('mousedown', (e) => {
+    isDragging = true;
+    const seekTime = updateSeek(e, progressContainer, progressBar);
+    player.seekTo(seekTime, true);
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (isDragging) {
+      const seekTime = updateSeek(e, progressContainer, progressBar);
+      player.seekTo(seekTime, false); // Update position while dragging
+    }
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (isDragging) {
+      isDragging = false;
+    }
+  });
+
+  // Add dragging for fullscreen progress bar
+  fullscreenProgressContainer.addEventListener('mousedown', (e) => {
+    isDragging = true;
+    const seekTime = updateSeek(e, fullscreenProgressContainer, fullscreenProgressBar);
+    player.seekTo(seekTime, true);
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (isDragging) {
+      const seekTime = updateSeek(e, fullscreenProgressContainer, fullscreenProgressBar);
+      player.seekTo(seekTime, false);
+    }
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (isDragging) {
+      isDragging = false;
+    }
   });
 }
 
@@ -1648,7 +1706,7 @@ function rebuildTrackList(container) {
 
 // Update progress bar
 function updateProgressBar() {
-  if (!player.getDuration) return;
+  if (!player.getDuration || isDragging) return;
   
   const progressBar = document.getElementById('progress-bar');
   const fullscreenProgressBar = document.getElementById('fullscreen-progress-bar');
@@ -1681,18 +1739,6 @@ function formatTime(time) {
   const seconds = Math.floor(time % 60);
   return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
 }
-
-// Seek functionality
-document.getElementById('progress-container').addEventListener('click', function(e) {
-  if (!player.getDuration) return;
-  
-  const rect = this.getBoundingClientRect();
-  const clickX = e.clientX - rect.left;
-  const width = rect.width;
-  const seekTime = (clickX / width) * player.getDuration();
-  
-  player.seekTo(seekTime, true);
-});
 
 // Fullscreen player functions
 function openFullscreen() {
