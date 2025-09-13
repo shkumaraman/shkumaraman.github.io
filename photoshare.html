@@ -632,8 +632,8 @@ description: "PhotoShare - Share photos privately with a unique code. Upload pho
 
       <div class="share-buttons" id="shareButtons" style="display: none;">
         <button class="btn-secondary" id="copyBtn"><i class="fas fa-copy"></i> Copy Code</button>
-        <button class="btn-secondary" id="copyUrlBtn" onclick="copyUrl()"><i class="fas fa-link"></i> Copy URL</button>
-        <button class="btn-secondary" id="whatsappBtn"><i class="fab fa-whatsapp"></i> Share via WhatsApp</button>
+        <button class="btn-secondary" id="copyUrlBtn"><i class="fas fa-link"></i> Copy URL</button>
+        <button class="btn-secondary" id="shareBtn"><i class="fas fa-share-alt"></i> Share</button>
       </div>
     </div>
 
@@ -757,7 +757,8 @@ description: "PhotoShare - Share photos privately with a unique code. Upload pho
   const codeDisplay = document.getElementById('codeDisplay');
   const shareButtons = document.getElementById('shareButtons');
   const copyBtn = document.getElementById('copyBtn');
-  const whatsappBtn = document.getElementById('whatsappBtn');
+  const copyUrlBtn = document.getElementById('copyUrlBtn');
+  const shareBtn = document.getElementById('shareBtn');
   const codeInput = document.getElementById('codeInput');
   const viewBtn = document.getElementById('viewBtn');
   const viewerGallery = document.getElementById('viewerGallery');
@@ -781,7 +782,8 @@ description: "PhotoShare - Share photos privately with a unique code. Upload pho
   fileInput.addEventListener('change', handleFileSelect);
   generateBtn.addEventListener('click', generateShareCode);
   copyBtn.addEventListener('click', copyCode);
-  whatsappBtn.addEventListener('click', shareViaWhatsApp);
+  copyUrlBtn.addEventListener('click', copyUrl);
+  shareBtn.addEventListener('click', shareCodeViaAPI);
   viewBtn.addEventListener('click', viewPhotos);
   closeFullscreen.addEventListener('click', closeFullscreenViewer);
   prevBtn.addEventListener('click', showPrevImage);
@@ -985,11 +987,28 @@ description: "PhotoShare - Share photos privately with a unique code. Upload pho
       .catch(() => showSystemMessage('Failed to copy URL'));
   }
 
-  // Share via WhatsApp
-  function shareViaWhatsApp() {
+  // Share via Web Share API
+  function shareCodeViaAPI() {
     const url = `${window.location.href.split('?')[0]}?code=${shareCode}`;
     const text = `Check out my photos! Use this code on PhotoShare: ${shareCode} or click: ${url}`;
-    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+    
+    if (navigator.share) {
+      navigator.share({
+        title: 'PhotoShare Code',
+        text: text,
+        url: url
+      })
+      .then(() => console.log('Shared successfully'))
+      .catch((error) => {
+        console.log('Error sharing:', error);
+        // Fallback to copying URL if sharing fails
+        copyUrl();
+      });
+    } else {
+      // Fallback for browsers that don't support Web Share API
+      copyUrl();
+      showSystemMessage('URL copied to clipboard!');
+    }
   }
 
   // View photos
