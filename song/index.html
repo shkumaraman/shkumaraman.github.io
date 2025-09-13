@@ -749,7 +749,7 @@ description: "MusicPlay – Listen to your favorite songs online. Search, play, 
 <div id="player"></div>
 
 <script>
-// Global variables
+  // Global variables
 var player;
 var currentTrackIndex = 0;
 var tracks = [];
@@ -769,7 +769,7 @@ var currentFilter = 'all';
 var currentPlaylistId = null;
 var playlistItems = [];
 var currentTrackSource = null; // 'trending', 'search', 'playlist', 'played'
-var isDragging = false; // Added for progress bar dragging
+var isDragging = false;
 
 // Track type constants
 const TRACK_TYPES = {
@@ -911,72 +911,114 @@ function onYouTubeIframeAPIReady() {
     
     // Add click event to open fullscreen player
     document.getElementById("open-fullscreen").addEventListener("click", openFullscreen);
-    
-    // Setup progress bar dragging
-    setupProgressBarDragging();
   });
 }
 
 // Setup progress bar dragging functionality
 function setupProgressBarDragging() {
-  // Normal player progress bar
-  const progressContainer = document.getElementById('progress-container');
-  const progressBar = document.getElementById('progress-bar');
+  const progressBars = [
+    {
+      container: document.getElementById('progress-container'),
+      bar: document.getElementById('progress-bar')
+    },
+    {
+      container: document.getElementById('fullscreen-progress-container'),
+      bar: document.getElementById('fullscreen-progress-bar')
+    }
+  ];
 
-  // Fullscreen player progress bar
-  const fullscreenProgressContainer = document.getElementById('fullscreen-progress-container');
-  const fullscreenProgressBar = document.getElementById('fullscreen-progress-bar');
-
-  // Function to update seek position while dragging
-  function updateSeek(e, container, bar) {
-    if (!player.getDuration) return;
-
+  // Function to handle seek based on mouse/touch position
+  function handleSeek(event, container) {
+    if (!player.getDuration || !isDragging) return;
+    
     const rect = container.getBoundingClientRect();
-    let offsetX = e.clientX - rect.left;
-    if (offsetX < 0) offsetX = 0;
-    if (offsetX > rect.width) offsetX = rect.width;
-
-    const seekTime = (offsetX / rect.width) * player.getDuration();
-    bar.style.width = `${(offsetX / rect.width) * 100}%`;
-
+    let clientX;
+    
+    // Get X coordinate based on event type
+    if (event.type.includes('touch')) {
+      clientX = event.touches[0].clientX;
+    } else {
+      clientX = event.clientX;
+    }
+    
+    const clickX = Math.max(0, Math.min(clientX - rect.left, rect.width));
+    const seekPercent = clickX / rect.width;
+    const seekTime = seekPercent * player.getDuration();
+    
+    // Update progress bar visually
+    const progressPercent = seekPercent * 100;
+    document.getElementById('progress-bar').style.width = `${progressPercent}%`;
+    document.getElementById('fullscreen-progress-bar').style.width = `${progressPercent}%`;
+    
+    // Update time displays
+    const currentTimeElement = document.getElementById('current-time');
+    const fullscreenCurrentTimeElement = document.getElementById('fullscreen-current-time');
+    const formattedTime = formatTime(seekTime);
+    
+    if (currentTimeElement) currentTimeElement.textContent = formattedTime;
+    if (fullscreenCurrentTimeElement) fullscreenCurrentTimeElement.textContent = formattedTime;
+    
     return seekTime;
   }
 
-  // Add dragging for normal progress bar
-  progressContainer.addEventListener('mousedown', (e) => {
-    isDragging = true;
-    const seekTime = updateSeek(e, progressContainer, progressBar);
-    player.seekTo(seekTime, true);
+  // Add event listeners to each progress bar container
+  progressBars.forEach(({container, bar}) => {
+    if (!container) return;
+    
+    // Mouse events
+    container.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      const seekTime = handleSeek(e, container);
+      
+      // Seek immediately on click/drag start
+      if (seekTime !== undefined) {
+        player.seekTo(seekTime, true);
+      }
+    });
+    
+    container.addEventListener('mousemove', (e) => {
+      if (isDragging) {
+        handleSeek(e, container);
+      }
+    });
+    
+    // Touch events
+    container.addEventListener('touchstart', (e) => {
+      isDragging = true;
+      const seekTime = handleSeek(e, container);
+      
+      // Seek immediately on touch start
+      if (seekTime !== undefined) {
+        player.seekTo(seekTime, true);
+      }
+      
+      // Prevent default to avoid scrolling while dragging
+      e.preventDefault();
+    });
+    
+    container.addEventListener('touchmove', (e) => {
+      if (isDragging) {
+        handleSeek(e, container);
+        e.preventDefault(); // Prevent scrolling while dragging
+      }
+    });
   });
 
-  document.addEventListener('mousemove', (e) => {
+  // Global event listeners to end dragging
+  document.addEventListener('mouseup', () => {
     if (isDragging) {
-      const seekTime = updateSeek(e, progressContainer, progressBar);
-      player.seekTo(seekTime, false); // Update position while dragging
+      isDragging = false;
+      // Progress bar will auto-update through the normal updateProgressBar cycle
     }
   });
-
-  document.addEventListener('mouseup', () => {
+  
+  document.addEventListener('touchend', () => {
     if (isDragging) {
       isDragging = false;
     }
   });
-
-  // Add dragging for fullscreen progress bar
-  fullscreenProgressContainer.addEventListener('mousedown', (e) => {
-    isDragging = true;
-    const seekTime = updateSeek(e, fullscreenProgressContainer, fullscreenProgressBar);
-    player.seekTo(seekTime, true);
-  });
-
-  document.addEventListener('mousemove', (e) => {
-    if (isDragging) {
-      const seekTime = updateSeek(e, fullscreenProgressContainer, fullscreenProgressBar);
-      player.seekTo(seekTime, false);
-    }
-  });
-
-  document.addEventListener('mouseup', () => {
+  
+  document.addEventListener('mouseleave', () => {
     if (isDragging) {
       isDragging = false;
     }
@@ -1009,6 +1051,9 @@ function onPlayerReady(event) {
   // Set initial volume from config or default to 80%
   const volume = appConfig.youtubeConfig?.playerOptions?.volume || 80;
   player.setVolume(volume);
+  
+  // Setup progress bar dragging
+  setupProgressBarDragging();
 }
 
 function onPlayerStateChange(event) {
@@ -1024,13 +1069,16 @@ function onPlayerStateChange(event) {
     isPlaying = true;
     document.getElementById('play-pause-btn').innerHTML = '<i class="fas fa-pause"></i>';
     document.getElementById('fullscreen-play-pause-btn').innerHTML = '<i class="fas fa-pause"></i>';
+    
+    // Resume progress bar updates if not dragging
+    if (!isDragging) {
+      updateProgressBar();
+    }
   } else if (event.data == YT.PlayerState.PAUSED || event.data == YT.PlayerState.ENDED) {
     isPlaying = false;
     document.getElementById('play-pause-btn').innerHTML = '<i class="fas fa-play"></i>';
     document.getElementById('fullscreen-play-pause-btn').innerHTML = '<i class="fas fa-play"></i>';
   }
-  
-  updateProgressBar();
 }
 
 // Cache management functions
@@ -1728,7 +1776,7 @@ function updateProgressBar() {
   fullscreenCurrentTimeElement.textContent = formatTime(currentTime);
   fullscreenDurationElement.textContent = formatTime(duration);
   
-  if (isPlaying) {
+  if (isPlaying && !isDragging) {
     setTimeout(updateProgressBar, 1000);
   }
 }
