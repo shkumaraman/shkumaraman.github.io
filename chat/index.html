@@ -1000,6 +1000,16 @@ function startPeer() {
 }
 
 function tryToFindMatch() {
+  // Ensure Peer ID and localStorage values are ready
+  if (!myId) {
+    console.warn("Peer ID not ready yet, retrying...");
+    setTimeout(tryToFindMatch, 100); // Retry after 100ms
+    return;
+  }
+
+  if (!myGenderInterest) myGenderInterest = 'everyone';
+  if (!Array.isArray(myTags)) myTags = [];
+
   waitingRef = db.ref("waiting");
 
   waitingRef.once('value', (snapshot) => {
@@ -1013,7 +1023,7 @@ function tryToFindMatch() {
           db.ref("waiting/" + key).remove();
           continue;
         }
-        
+
         if (entry.id !== myId && !isConnected) {
           if (isGenderCompatible(myGenderInterest, entry.interest)) {
             const sharedTags = myTags.filter(tag => entry.tags && entry.tags.includes(tag));
@@ -1035,14 +1045,29 @@ function tryToFindMatch() {
     }
 
     // No immediate match → add self
-    const newRef = waitingRef.push();
-    waitingEntryRef = newRef; // Store reference for cleanup
-    newRef.set({
+    const userData = {
       id: myId,
       interest: myGenderInterest,
       tags: myTags,
-      timestamp: Date.now() // Add timestamp for stale entry cleanup
-    });
+      timestamp: Date.now()
+    };
+
+    // Double-check that all values are valid
+    if (!userData.id || !userData.interest || !userData.tags) {
+      console.error("Incomplete user data, retrying...", userData);
+      setTimeout(tryToFindMatch, 500); // Retry after a short delay
+      return;
+    }
+
+    const newRef = waitingRef.push();
+    waitingEntryRef = newRef; // Store reference for cleanup
+
+    newRef.set(userData)
+      .then(() => console.log("Added to waiting list:", userData))
+      .catch(err => {
+        console.error("Error adding to waiting list, retrying...", err);
+        setTimeout(tryToFindMatch, 500);
+      });
 
     // Start heartbeat to keep entry fresh
     if (heartbeatInterval) clearInterval(heartbeatInterval);
@@ -1051,6 +1076,8 @@ function tryToFindMatch() {
         waitingEntryRef.update({ timestamp: Date.now() });
       }
     }, 10000);
+  });
+}
 
     // Wait 5s, fallback to any gender-compatible user
     setTimeout(() => {
