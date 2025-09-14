@@ -1016,6 +1016,7 @@ function tryToFindMatch() {
     const list = snapshot.val();
     let bestMatch = null;
 
+    // Check for immediate matches
     if (list) {
       for (let [key, entry] of Object.entries(list)) {
         // Clean up stale entries (older than 30 seconds)
@@ -1038,13 +1039,14 @@ function tryToFindMatch() {
       }
     }
 
+    // If match found, connect immediately
     if (bestMatch) {
       db.ref("waiting/" + bestMatch.key).remove();
       connectToPeer(bestMatch.otherId, bestMatch.sharedTags);
       return;
     }
 
-    // No immediate match → add self
+    // No immediate match → add self to waiting list
     const userData = {
       id: myId,
       interest: myGenderInterest,
@@ -1052,7 +1054,7 @@ function tryToFindMatch() {
       timestamp: Date.now()
     };
 
-    // Double-check that all values are valid
+    // Double-check all values are valid
     if (!userData.id || !userData.interest || !userData.tags) {
       console.error("Incomplete user data, retrying...", userData);
       setTimeout(tryToFindMatch, 500); // Retry after a short delay
@@ -1060,7 +1062,7 @@ function tryToFindMatch() {
     }
 
     const newRef = waitingRef.push();
-    waitingEntryRef = newRef; // Store reference for cleanup
+    waitingEntryRef = newRef;
 
     newRef.set(userData)
       .then(() => console.log("Added to waiting list:", userData))
@@ -1076,6 +1078,24 @@ function tryToFindMatch() {
         waitingEntryRef.update({ timestamp: Date.now() });
       }
     }, 10000);
+
+    // Wait 5s, fallback to any gender-compatible user
+    setTimeout(() => {
+      if (!isConnected) {
+        waitingRef.once('value', (snap) => {
+          if (isConnected) return;
+
+          snap.forEach(child => {
+            const entry = child.val();
+            if (entry.id !== myId && isGenderCompatible(myGenderInterest, entry.interest)) {
+              child.ref.remove();
+              connectToPeer(entry.id, []);
+              return true; // break forEach
+            }
+          });
+        });
+      }
+    }, 5000);
   });
 }
 
