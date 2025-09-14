@@ -909,13 +909,33 @@ const GIPHY_API_KEY = 'EKvv5S1CcXqYuHgxPNVKiNuiuNHRTzFk';
 const typingIndicator = document.getElementById("typingIndicator");
 let typingTimeout;
 
-// Load localStorage preferences
-let myNickname = localStorage.getItem("talkrush_nickname") || "Guest";
-let myGenderInterest = localStorage.getItem("talkrush_gender_interest") || "everyone";
-let myTags = JSON.parse(localStorage.getItem("talkrush_tags") || "[]");
+// User preferences with defaults
+let myNickname = "Guest";
+let myGenderInterest = "everyone";
+let myTags = [];
+
+// Load user preferences safely
+function loadUserPreferences() {
+  try {
+    myNickname = localStorage.getItem("talkrush_nickname") || "Guest";
+    myGenderInterest = localStorage.getItem("talkrush_gender_interest") || "everyone";
+    
+    const tags = localStorage.getItem("talkrush_tags");
+    myTags = tags ? JSON.parse(tags) : [];
+    
+    console.log("Loaded preferences:", {myNickname, myGenderInterest, myTags});
+  } catch (e) {
+    console.error("Error loading preferences:", e);
+    // Ensure we have valid values even if loading fails
+    myNickname = "Guest";
+    myGenderInterest = "everyone";
+    myTags = [];
+  }
+}
 
 // Initialize when page loads - DON'T auto-connect
 window.addEventListener('load', () => {
+  loadUserPreferences();
   showNewChatButton();
   logSystem("Click 'Start New Chat' to begin chatting with a stranger!");
 });
@@ -984,6 +1004,7 @@ function startPeer() {
 
   peer.on('open', (id) => {
     myId = id;
+    console.log("PeerJS connected with ID:", myId);
     tryToFindMatch();
   });
 
@@ -1000,6 +1021,16 @@ function startPeer() {
 }
 
 function tryToFindMatch() {
+  // Ensure we have all required data before proceeding
+  if (!myId) {
+    console.error("myId is not available yet, retrying...");
+    setTimeout(tryToFindMatch, 100); // Retry after a short delay
+    return;
+  }
+  
+  // Reload preferences to ensure we have the latest values
+  loadUserPreferences();
+  
   waitingRef = db.ref("waiting");
 
   waitingRef.once('value', (snapshot) => {
@@ -1015,8 +1046,12 @@ function tryToFindMatch() {
         }
         
         if (entry.id !== myId && !isConnected) {
-          if (isGenderCompatible(myGenderInterest, entry.interest)) {
-            const sharedTags = myTags.filter(tag => entry.tags && entry.tags.includes(tag));
+          // Ensure entry has required properties with fallbacks
+          const otherInterest = entry.interest || "everyone";
+          const otherTags = entry.tags || [];
+          
+          if (isGenderCompatible(myGenderInterest, otherInterest)) {
+            const sharedTags = myTags.filter(tag => otherTags.includes(tag));
             if (sharedTags.length > 0) {
               bestMatch = { key, otherId: entry.id, sharedTags };
               break; // immediate match
@@ -1034,21 +1069,45 @@ function tryToFindMatch() {
       return;
     }
 
-    // No immediate match → add self
-    const newRef = waitingRef.push();
-    waitingEntryRef = newRef; // Store reference for cleanup
-    newRef.set({
+    // No immediate match → add self with all required data
+    const userData = {
       id: myId,
       interest: myGenderInterest,
       tags: myTags,
-      timestamp: Date.now() // Add timestamp for stale entry cleanup
+      timestamp: Date.now()
+    };
+    
+    console.log("Adding to waiting list:", userData);
+    
+    const newRef = waitingRef.push();
+    waitingEntryRef = newRef; // Store reference for cleanup
+    
+    // Set with a completion callback to verify the data was saved correctly
+    newRef.set(userData, (error) => {
+      if (error) {
+        console.error("Data could not be saved:", error);
+        // Retry after a short delay
+        setTimeout(() => {
+          if (!isConnected && waitingEntryRef) {
+            waitingEntryRef.set(userData);
+          }
+        }, 500);
+      } else {
+        console.log("Data saved successfully");
+      }
     });
 
     // Start heartbeat to keep entry fresh
     if (heartbeatInterval) clearInterval(heartbeatInterval);
     heartbeatInterval = setInterval(() => {
       if (waitingEntryRef && !isConnected) {
-        waitingEntryRef.update({ timestamp: Date.now() });
+        // Update with complete data on each heartbeat
+        waitingEntryRef.update({ 
+          id: myId,
+          interest: myGenderInterest,
+          tags: myTags,
+          timestamp: Date.now() 
+        });
       }
     }, 10000);
 
@@ -1060,7 +1119,10 @@ function tryToFindMatch() {
           
           snap.forEach(child => {
             const entry = child.val();
-            if (entry.id !== myId && isGenderCompatible(myGenderInterest, entry.interest)) {
+            // Ensure entry has required properties with fallbacks
+            const otherInterest = entry.interest || "everyone";
+            
+            if (entry.id !== myId && isGenderCompatible(myGenderInterest, otherInterest)) {
               child.ref.remove();
               connectToPeer(entry.id, []);
               return true; // Break the loop
