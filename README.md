@@ -4,7 +4,7 @@
 
 ---
 
-## 🌟 **TalkRush – Chat With Strangers**  
+## **TalkRush – Chat With Strangers**  
 **No login. No registration.** Just instant, anonymous chats!  
 
 ✅ **Text & Media Sharing** – Exchange messages, images, and more.  
