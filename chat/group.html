@@ -852,8 +852,6 @@ function initializeChat() {
 
     // Set input field value so it persists after reload
     if (nicknameInput) nicknameInput.value = myNickname;
-
-    updateNicknameInDB();
   }
 
   // Show nickname modal if not set
@@ -904,19 +902,6 @@ function saveNickname() {
 
   // Save to localStorage (persistent)
   localStorage.setItem('talkrush_nickname', myNickname);
-
-  // Update in Firebase
-  updateNicknameInDB();
-}
-
-// Update nickname in Firebase globally
-function updateNicknameInDB() {
-  // Store in both locations for compatibility
-  db.ref(`users/${myId}/nickname`).set(myNickname);
-  db.ref(`group/nicknames/${myId}`).set({
-    nickname: myNickname,
-    lastActive: Date.now()
-  });
 }
 
 function joinGroupChat() {
@@ -997,7 +982,6 @@ function sendMessageToGroup(text) {
   newMsgRef.set(message)
     .then(() => {
       isSendingMessage = false;
-      updateNicknameInDB();
       
       // After sending, check if we need to remove the oldest message
       maintainMessageLimit();
@@ -1161,16 +1145,8 @@ function displayMessage(msg) {
   nicknameEl.style.fontWeight = "bold";
   nicknameEl.style.marginBottom = "3px";
   
-  // Get nickname from Firebase or use default
-  if (msg.nickname) {
-    nicknameEl.textContent = msg.nickname;
-  } else {
-    // Fallback to check nicknames in database
-    db.ref(`users/${msg.sender}/nickname`).once('value').then(snapshot => {
-      const userData = snapshot.val();
-      nicknameEl.textContent = userData || 'Guest';
-    });
-  }
+  // Get nickname from message or use default
+  nicknameEl.textContent = msg.nickname || 'Guest';
   
   div.appendChild(nicknameEl);
   
@@ -1460,7 +1436,6 @@ document.addEventListener('click', function(e) {
       nicknameSet = true;
       document.getElementById('currentNickname').textContent = myNickname;
       localStorage.setItem('talkrush_nickname', myNickname);
-      updateNicknameInDB();
     }
   }
 });
