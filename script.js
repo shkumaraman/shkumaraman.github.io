@@ -1,17 +1,27 @@
+const chatLog = document.getElementById("chatLog");
 const msgInput = document.getElementById("msgInput");
 
-// Input focus -> body scroll lock
+function resizeChatLog() {
+  const vh = window.innerHeight; // current viewport height
+  const headerHeight = document.querySelector(".app-header").offsetHeight;
+  const chatControlsHeight = document.querySelector(".chat-controls").offsetHeight;
+  const typingHeight = document.getElementById("typingIndicator").offsetHeight;
+
+  const availableHeight = vh - headerHeight - typingHeight - chatControlsHeight;
+  chatLog.style.height = availableHeight + "px";
+}
+
+// Initial resize
+resizeChatLog();
+
+// Resize on window resize (keyboard open/close triggers resize)
+window.addEventListener("resize", resizeChatLog);
+
+// Optional: input focus -> body scroll lock (jaise pehle)
 msgInput.addEventListener("focus", () => {
   document.body.style.overflow = "hidden";
 });
 
-// Input blur -> body scroll restore
 msgInput.addEventListener("blur", () => {
   document.body.style.overflow = "auto";
 });
-
-// Optional: latest message visible
-const chatLog = document.getElementById("chatLog");
-function scrollToBottom() {
-  chatLog.scrollTop = chatLog.scrollHeight;
-}
