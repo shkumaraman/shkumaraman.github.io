@@ -1,51 +1,43 @@
-<div id="pwa-install-bar" style="display:none; position:fixed; top:0; left:0; right:0; z-index:10000; background:#121212; color:white; padding:10px 20px; display:flex; align-items:center; justify-content:space-between;">
-  <span style="font-weight:bold;">Install TalkRush</span>
-  
-  <div style="display:flex; align-items:center; gap:10px;">
-    <button id="installBtn" style="background:#ffffff; color:#121212; border:none; padding:6px 14px; border-radius:6px; font-weight:bold; cursor:pointer;">
-      Install
-    </button>
-    <button id="closeBtn" style="background:transparent; color:white; border:none; font-size:20px; cursor:pointer; line-height:1;">
-      &times;
-    </button>
-  </div>
+<div id="pwa-install-bar" 
+     style="display:none; position:fixed; top:0; left:0; width:100%; z-index:1000;
+            background:#121212; color:white; padding:6px 14px;
+            display:flex; align-items:center; justify-content:space-between; font-size:14px;">
+  <span style="font-weight:600;">Install TalkRush</span>
+  <button id="installBtn" 
+          style="background:#ffffff; color:#121212; border:none; padding:4px 10px; 
+                 border-radius:4px; font-weight:600; cursor:pointer; font-size:13px;">
+    Install
+  </button>
 </div>
 
 <script>
 let deferredPrompt;
-const bar = document.getElementById("pwa-install-bar");
-const installBtn = document.getElementById("installBtn");
-const closeBtn = document.getElementById("closeBtn");
 
-function hideBar() {
-  bar.style.display = "none";
-}
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
 
-const isStandalone =
-  window.matchMedia("(display-mode: standalone)").matches ||
-  window.navigator.standalone === true;
+  const bar = document.getElementById("pwa-install-bar");
+  bar.style.display = "flex";
 
-if (!isStandalone) {
-  window.addEventListener("beforeinstallprompt", (e) => {
-    e.preventDefault();
-    deferredPrompt = e;
-    bar.style.display = "flex";
+  const installBtn = document.getElementById("installBtn");
+  installBtn.addEventListener("click", () => {
+    bar.style.display = "none";
+    deferredPrompt.prompt();
+
+    deferredPrompt.userChoice.then((choiceResult) => {
+      if (choiceResult.outcome === "accepted") {
+        console.log("User accepted the install ✅");
+      } else {
+        console.log("User dismissed the install ❌");
+      }
+      deferredPrompt = null;
+    });
   });
-}
-
-installBtn.onclick = async () => {
-  if (!deferredPrompt) return;
-  hideBar();
-  deferredPrompt.prompt();
-  await deferredPrompt.userChoice;
-  deferredPrompt = null;
-};
-
-closeBtn.onclick = () => {
-  hideBar();
-};
+});
 
 window.addEventListener("appinstalled", () => {
-  hideBar();
+  document.getElementById("pwa-install-bar").style.display = "none";
+  console.log("PWA installed successfully 🎉");
 });
 </script>
