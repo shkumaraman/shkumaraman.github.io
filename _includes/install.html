@@ -1,38 +1,55 @@
 <div id="pwa-install-bar" style="display:none; position:fixed; top:0; left:0; right:0; z-index:1000; background:#121212; color:white; padding:10px 20px; display:flex; align-items:center; justify-content:space-between;">
   <span style="font-weight:bold;">Install TalkRush</span>
-  <button id="installBtn" style="background:#ffffff; color:#121212; border:none; padding:6px 14px; border-radius:6px; font-weight:bold; cursor:pointer;">
-    Install
-  </button>
+  
+  <div style="display:flex; align-items:center; gap:10px;">
+    <button id="installBtn" style="background:#ffffff; color:#121212; border:none; padding:6px 14px; border-radius:6px; font-weight:bold; cursor:pointer;">
+      Install
+    </button>
+    <button id="closeBtn" style="background:transparent; color:white; border:none; font-size:18px; cursor:pointer; line-height:1;">
+      &times;
+    </button>
+  </div>
 </div>
 
 <script>
 let deferredPrompt;
 
-window.addEventListener("beforeinstallprompt", (e) => {
-  e.preventDefault();
-  deferredPrompt = e;
+// Check if app already installed (different browsers may fire differently)
+const isStandalone = window.matchMedia('(display-mode: standalone)').matches 
+                  || window.navigator.standalone === true;
 
-  // Show the top install bar
-  const bar = document.getElementById("pwa-install-bar");
-  bar.style.display = "flex";
+if (!isStandalone) {
+  window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
 
-  const installBtn = document.getElementById("installBtn");
-  installBtn.addEventListener("click", () => {
-    bar.style.display = "none"; // hide bar
-    deferredPrompt.prompt();
+    // Show bar only if not installed
+    const bar = document.getElementById("pwa-install-bar");
+    bar.style.display = "flex";
 
-    deferredPrompt.userChoice.then((choiceResult) => {
-      if (choiceResult.outcome === "accepted") {
-        console.log("User accepted the install ✅");
-      } else {
-        console.log("User dismissed the install ❌");
-      }
-      deferredPrompt = null;
+    const installBtn = document.getElementById("installBtn");
+    installBtn.addEventListener("click", () => {
+      bar.style.display = "none"; // hide bar
+      deferredPrompt.prompt();
+
+      deferredPrompt.userChoice.then((choiceResult) => {
+        if (choiceResult.outcome === "accepted") {
+          console.log("User accepted the install ✅");
+        } else {
+          console.log("User dismissed the install ❌");
+        }
+        deferredPrompt = null;
+      });
+    });
+
+    const closeBtn = document.getElementById("closeBtn");
+    closeBtn.addEventListener("click", () => {
+      bar.style.display = "none"; // user closed manually
     });
   });
-});
+}
 
-// Hide bar if app is already installed
+// Hide bar if app gets installed
 window.addEventListener("appinstalled", () => {
   document.getElementById("pwa-install-bar").style.display = "none";
   console.log("PWA installed successfully 🎉");
