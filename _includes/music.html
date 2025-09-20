@@ -24,7 +24,7 @@
         font-size: 18px; 
     }
 
-    /* New square div with border radius */
+    /* New square thumbnail */
     .square-icon {
         width: 120px;
         height: 120px;
@@ -35,12 +35,13 @@
         justify-content: center;
         margin: 0 auto 25px;
         box-shadow: 0 6px 20px rgba(0,0,0,0.2);
-        transition: all 0.3s ease;
+        overflow: hidden;
     }
-  
-    .square-icon i {
-        color: white;
-        font-size: 50px;
+    .square-icon img {
+        width: 100%;
+        height: 100%;
+        border-radius: 20px;
+        object-fit: cover;
     }
 
     /* Fullscreen player overlay */
@@ -189,7 +190,7 @@
     }
 </style>
 
-<!-- Mini player (no longer draggable) -->
+<!-- Mini player -->
 <div id="miniPlayer" title="Open/Close Player"><i class="fas fa-music"></i></div>
 
 <!-- Fullscreen Player -->
@@ -199,8 +200,9 @@
         <div class="now-playing" id="nowPlaying">Not playing</div>
     </div>
   
+    <!-- Thumbnail instead of music icon -->
     <div class="square-icon">
-        <i class="fas fa-music"></i>
+        <img id="videoThumbnail" src="" alt="Thumbnail">
     </div>
 
     <input id="urlInput" placeholder="Paste YouTube URL here" />
@@ -208,6 +210,9 @@
     <div class="error-message" id="errorMessage"></div>
     
     <div class="control-buttons">
+        <button id="loopBtn" title="Loop On/Off">
+            <i class="fas fa-repeat" id="loopIcon"></i>
+        </button>
         <button id="prevBtn" title="Back 10 seconds">
             <i class="fas fa-backward-step"></i>
         </button>
@@ -263,6 +268,7 @@
         ytReady: false,
         isPlaying: false,
         isMuted: false,
+        isLooping: false,
         currentSongUrl: "",
         firebaseListener: null,
         currentVideoTitle: "",
@@ -300,6 +306,7 @@
             const nextBtn = document.getElementById('nextBtn');
             const muteBtn = document.getElementById('muteBtn');
             const seekBar = document.getElementById('seekBar');
+            const loopBtn = document.getElementById('loopBtn');
             
             miniPlayer.addEventListener('click', () => {
                 if (fullPlayer.style.display === 'flex') {
@@ -315,6 +322,7 @@
             nextBtn.addEventListener('click', this.handleNext.bind(this));
             muteBtn.addEventListener('click', this.handleMute.bind(this));
             seekBar.addEventListener('input', this.handleSeek.bind(this));
+            loopBtn.addEventListener('click', this.handleLoop.bind(this));
             
             urlInput.addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') {
@@ -332,8 +340,11 @@
                 const data = snapshot.val();
                 if (!data || !this.ytReady) return;
 
-                const { currentSong, status, timestamp, lastUpdate } = data;
+                const { currentSong, status, timestamp, lastUpdate, loop } = data;
                 if (!currentSong) return;
+
+                this.isLooping = !!loop;
+                this.updateLoopIcon();
 
                 document.getElementById('urlInput').value = currentSong;
                 const vid = extractYouTubeID(currentSong);
@@ -378,7 +389,6 @@
                     onReady: () => { 
                         this.ytReady = true; 
                         this.checkSavedState(); 
-                        // Check initial mute status
                         this.isMuted = this.player.isMuted();
                         this.updateMuteIcon();
                     },
@@ -389,13 +399,15 @@
         },
         
         onPlayerStateChange: function(event) {
-            // Update play/pause button when player state changes
             if (event.data === YT.PlayerState.PLAYING) {
                 this.isPlaying = true;
                 this.updatePlayPauseIcon();
             } else if (event.data === YT.PlayerState.PAUSED) {
                 this.isPlaying = false;
                 this.updatePlayPauseIcon();
+            } else if (event.data === YT.PlayerState.ENDED && this.isLooping) {
+                this.player.seekTo(0, true);
+                this.player.playVideo();
             }
         },
         
@@ -411,13 +423,21 @@
         updateMuteIcon: function() {
             const icon = document.getElementById('muteIcon');
             const muteBtn = document.getElementById('muteBtn');
-            
             if (this.isMuted) {
                 icon.className = 'fas fa-volume-mute';
                 muteBtn.classList.add('muted');
             } else {
                 icon.className = 'fas fa-volume-up';
                 muteBtn.classList.remove('muted');
+            }
+        },
+
+        updateLoopIcon: function() {
+            const icon = document.getElementById('loopIcon');
+            if (this.isLooping) {
+                icon.style.color = '#ff5252';
+            } else {
+                icon.style.color = '#333';
             }
         },
         
@@ -446,6 +466,8 @@
                     if (data.status === 'playing' && data.lastUpdate) {
                         effectiveTime += Math.floor((now - data.lastUpdate) / 1000);
                     }
+                    this.isLooping = !!data.loop;
+                    this.updateLoopIcon();
                     this.processNewSong(data.currentSong, data.status, effectiveTime);
                 }
             });
@@ -457,6 +479,9 @@
             
             this.currentSongUrl = url;
             document.getElementById('urlInput').value = url;
+            
+            // Set thumbnail
+            document.getElementById('videoThumbnail').src = `https://img.youtube.com/vi/${vid}/hqdefault.jpg`;
             
             this.fetchVideoTitle(vid).then(title => {
                 this.currentVideoTitle = title;
@@ -486,6 +511,7 @@
         updateState: function(obj) {
             if (!this.firebaseInitialized()) return;
             obj.lastUpdate = Date.now();
+            if (this.isLooping) obj.loop = true;
             firebase.database().ref('music').set(obj).catch(error => {
                 console.error('Firebase update error:', error);
             });
@@ -528,7 +554,6 @@
         
         handleMute: function() {
             if (!this.player) return;
-            
             if (this.player.isMuted()) {
                 this.player.unMute();
                 this.isMuted = false;
@@ -536,7 +561,6 @@
                 this.player.mute();
                 this.isMuted = true;
             }
-            
             this.updateMuteIcon();
         },
         
@@ -561,6 +585,17 @@
             const sec = parseInt(document.getElementById('seekBar').value, 10);
             this.player.seekTo(sec, true);
             this.updateState({ status: this.isPlaying ? 'playing' : 'paused', timestamp: sec, currentSong: this.currentSongUrl });
+        },
+
+        handleLoop: function() {
+            this.isLooping = !this.isLooping;
+            this.updateLoopIcon();
+            this.updateState({
+                status: this.isPlaying ? 'playing' : 'paused',
+                timestamp: Math.floor(this.player.getCurrentTime()),
+                currentSong: this.currentSongUrl,
+                loop: this.isLooping
+            });
         },
         
         updatePlayerUI: function() {
