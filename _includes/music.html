@@ -24,23 +24,30 @@
         font-size: 18px; 
     }
 
-    /* New square div with border radius */
-    .square-icon {
-        width: 120px;
+    /* Thumbnail container */
+    .thumbnail-container {
+        width: 180px;
         height: 120px;
-        background: #ff5252;
+        background: #f0f0f0;
         border-radius: 20px;
         display: flex;
         align-items: center;
         justify-content: center;
         margin: 0 auto 25px;
         box-shadow: 0 6px 20px rgba(0,0,0,0.2);
-        transition: all 0.3s ease;
+        overflow: hidden;
+        position: relative;
     }
   
-    .square-icon i {
-        color: white;
-        font-size: 50px;
+    .thumbnail-container img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+  
+    .thumbnail-container .placeholder {
+        color: #ccc;
+        font-size: 40px;
     }
 
     /* Fullscreen player overlay */
@@ -187,6 +194,14 @@
     #muteBtn.muted i {
         color: #ff5252 !important;
     }
+    
+    /* Loop button styles */
+    #loopBtn.looping {
+        background: #ff5252;
+    }
+    #loopBtn.looping i {
+        color: white !important;
+    }
 </style>
 
 <!-- Mini player (no longer draggable) -->
@@ -199,8 +214,8 @@
         <div class="now-playing" id="nowPlaying">Not playing</div>
     </div>
   
-    <div class="square-icon">
-        <i class="fas fa-music"></i>
+    <div class="thumbnail-container" id="thumbnailContainer">
+        <div class="placeholder"><i class="fas fa-music"></i></div>
     </div>
 
     <input id="urlInput" placeholder="Paste YouTube URL here" />
@@ -208,6 +223,9 @@
     <div class="error-message" id="errorMessage"></div>
     
     <div class="control-buttons">
+        <button id="loopBtn" title="Toggle Loop">
+            <i class="fas fa-repeat" id="loopIcon"></i>
+        </button>
         <button id="prevBtn" title="Back 10 seconds">
             <i class="fas fa-backward-step"></i>
         </button>
@@ -263,6 +281,7 @@
         ytReady: false,
         isPlaying: false,
         isMuted: false,
+        isLooping: false,
         currentSongUrl: "",
         firebaseListener: null,
         currentVideoTitle: "",
@@ -299,6 +318,7 @@
             const prevBtn = document.getElementById('prevBtn');
             const nextBtn = document.getElementById('nextBtn');
             const muteBtn = document.getElementById('muteBtn');
+            const loopBtn = document.getElementById('loopBtn');
             const seekBar = document.getElementById('seekBar');
             
             miniPlayer.addEventListener('click', () => {
@@ -314,6 +334,7 @@
             prevBtn.addEventListener('click', this.handlePrev.bind(this));
             nextBtn.addEventListener('click', this.handleNext.bind(this));
             muteBtn.addEventListener('click', this.handleMute.bind(this));
+            loopBtn.addEventListener('click', this.handleLoop.bind(this));
             seekBar.addEventListener('input', this.handleSeek.bind(this));
             
             urlInput.addEventListener('keypress', (e) => {
@@ -332,7 +353,7 @@
                 const data = snapshot.val();
                 if (!data || !this.ytReady) return;
 
-                const { currentSong, status, timestamp, lastUpdate } = data;
+                const { currentSong, status, timestamp, lastUpdate, loop } = data;
                 if (!currentSong) return;
 
                 document.getElementById('urlInput').value = currentSong;
@@ -344,6 +365,10 @@
                 if (status === 'playing' && lastUpdate) {
                     effectiveTime += Math.floor((now - lastUpdate) / 1000);
                 }
+
+                // Update loop state
+                this.isLooping = loop || false;
+                this.updateLoopIcon();
 
                 const currentVid = this.player ? this.player.getVideoData().video_id : '';
                 if (!currentVid || currentVid !== vid) {
@@ -396,6 +421,10 @@
             } else if (event.data === YT.PlayerState.PAUSED) {
                 this.isPlaying = false;
                 this.updatePlayPauseIcon();
+            } else if (event.data === YT.PlayerState.ENDED && this.isLooping) {
+                // Handle looping
+                this.player.seekTo(0, true);
+                this.player.playVideo();
             }
         },
         
@@ -418,6 +447,24 @@
             } else {
                 icon.className = 'fas fa-volume-up';
                 muteBtn.classList.remove('muted');
+            }
+        },
+        
+        updateLoopIcon: function() {
+            const loopBtn = document.getElementById('loopBtn');
+            if (this.isLooping) {
+                loopBtn.classList.add('looping');
+            } else {
+                loopBtn.classList.remove('looping');
+            }
+        },
+        
+        updateThumbnail: function(videoId) {
+            const thumbnailContainer = document.getElementById('thumbnailContainer');
+            if (videoId) {
+                thumbnailContainer.innerHTML = `<img src="https://i.ytimg.com/vi/${videoId}/mqdefault.jpg" alt="Video Thumbnail">`;
+            } else {
+                thumbnailContainer.innerHTML = '<div class="placeholder"><i class="fas fa-music"></i></div>';
             }
         },
         
@@ -446,6 +493,11 @@
                     if (data.status === 'playing' && data.lastUpdate) {
                         effectiveTime += Math.floor((now - data.lastUpdate) / 1000);
                     }
+                    
+                    // Set loop state
+                    this.isLooping = data.loop || false;
+                    this.updateLoopIcon();
+                    
                     this.processNewSong(data.currentSong, data.status, effectiveTime);
                 }
             });
@@ -457,6 +509,9 @@
             
             this.currentSongUrl = url;
             document.getElementById('urlInput').value = url;
+            
+            // Update thumbnail
+            this.updateThumbnail(vid);
             
             this.fetchVideoTitle(vid).then(title => {
                 this.currentVideoTitle = title;
@@ -486,6 +541,8 @@
         updateState: function(obj) {
             if (!this.firebaseInitialized()) return;
             obj.lastUpdate = Date.now();
+            // Always include the current loop state
+            obj.loop = this.isLooping;
             firebase.database().ref('music').set(obj).catch(error => {
                 console.error('Firebase update error:', error);
             });
@@ -538,6 +595,21 @@
             }
             
             this.updateMuteIcon();
+        },
+        
+        handleLoop: function() {
+            this.isLooping = !this.isLooping;
+            this.updateLoopIcon();
+            
+            // Update Firebase with the new loop state
+            if (this.currentSongUrl) {
+                const currentTime = this.player.getCurrentTime();
+                this.updateState({ 
+                    currentSong: this.currentSongUrl, 
+                    status: this.isPlaying ? 'playing' : 'paused', 
+                    timestamp: currentTime
+                });
+            }
         },
         
         handlePrev: function() {
