@@ -739,8 +739,8 @@ description: "PhotoShare - Share photos privately with a unique code. Upload pho
 
 {% include scripts.html %}
 
-  <script>
-  // Firebase configuration
+<script>
+  // Firebase configuration - only database
   const firebaseConfig = {
     databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
   };
@@ -822,8 +822,8 @@ description: "PhotoShare - Share photos privately with a unique code. Upload pho
     }
   });
 
-  // Image resizing function
-  function resizeImage(file, maxWidth, maxHeight, quality) {
+  // Simple Image compression function
+  function compressImage(file, maxSizeKB = 500) {
     return new Promise((resolve) => {
       const reader = new FileReader();
       reader.onload = (event) => {
@@ -832,27 +832,40 @@ description: "PhotoShare - Share photos privately with a unique code. Upload pho
           const canvas = document.createElement('canvas');
           let width = img.width;
           let height = img.height;
-
-          // Calculate new dimensions while maintaining aspect ratio
-          if (width > height) {
-            if (width > maxWidth) {
-              height *= maxWidth / width;
-              width = maxWidth;
-            }
-          } else {
-            if (height > maxHeight) {
-              width *= maxHeight / height;
-              height = maxHeight;
-            }
+          
+          // Reduce size while maintaining aspect ratio
+          const maxDimension = 800;
+          if (width > height && width > maxDimension) {
+            height = (height * maxDimension) / width;
+            width = maxDimension;
+          } else if (height > maxDimension) {
+            width = (width * maxDimension) / height;
+            height = maxDimension;
           }
-
+          
           canvas.width = width;
           canvas.height = height;
           const ctx = canvas.getContext('2d');
           ctx.drawImage(img, 0, 0, width, height);
           
-          // Convert to data URL with specified quality
-          resolve(canvas.toDataURL('image/jpeg', quality));
+          // Start with high quality and reduce until under maxSizeKB
+          let quality = 0.8;
+          let compressedDataUrl;
+          
+          const compress = () => {
+            compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+            // Calculate approximate size in KB
+            const sizeKB = (compressedDataUrl.length * 0.75) / 1024;
+            
+            if (sizeKB > maxSizeKB && quality > 0.3) {
+              quality -= 0.1;
+              compress();
+            } else {
+              resolve(compressedDataUrl);
+            }
+          };
+          
+          compress();
         };
         img.src = event.target.result;
       };
@@ -860,7 +873,7 @@ description: "PhotoShare - Share photos privately with a unique code. Upload pho
     });
   }
 
-  // Handle file selection with size validation
+  // Handle file selection
   function handleFileSelect(event) {
     const files = event.target.files;
     if (files.length === 0) return;
@@ -868,18 +881,17 @@ description: "PhotoShare - Share photos privately with a unique code. Upload pho
     uploadedFiles = [];
     previewContainer.innerHTML = '';
     
-    for (let i = 0; i < Math.min(files.length, 20); i++) {
+    for (let i = 0; i < Math.min(files.length, 10); i++) { // Reduced to 10 files max
       const file = files[i];
       
-      // Skip non-image files
       if (!file.type.startsWith('image/')) {
         showSystemMessage(`Skipped ${file.name} - not an image file`);
         continue;
       }
       
-      // Check file size (10MB max)
-      if (file.size > 10 * 1024 * 1024) {
-        showSystemMessage(`Skipped ${file.name} - file too large (max 10MB)`);
+      // Check file size (5MB max)
+      if (file.size > 5 * 1024 * 1024) {
+        showSystemMessage(`Skipped ${file.name} - file too large (max 5MB)`);
         continue;
       }
       
@@ -926,49 +938,56 @@ description: "PhotoShare - Share photos privately with a unique code. Upload pho
     }
   }
 
-  // Generate share code with image resizing
+  // Generate share code with simple compression
   async function generateShareCode() {
     if (uploadedFiles.length === 0) {
       showSystemMessage('Please upload at least one photo');
       return;
     }
 
-    // Generate a 5-digit code
+    if (uploadedFiles.length > 10) {
+      showSystemMessage('Maximum 10 photos allowed');
+      return;
+    }
+
     shareCode = Math.floor(10000 + Math.random() * 90000).toString();
     codeDisplay.textContent = shareCode;
     codeDisplay.style.display = 'block';
     shareButtons.style.display = 'flex';
     generateBtn.style.display = 'none';
 
-    showSystemMessage('Uploading photos...');
+    showSystemMessage('Compressing and uploading photos...');
 
     try {
-      // Upload photos to Firebase with resizing
+      const compressedImages = [];
+      
+      // Compress each image
       for (let i = 0; i < uploadedFiles.length; i++) {
-        const file = uploadedFiles[i];
-        
-        // Check file size (resize if larger than 2MB)
-        if (file.size > 2 * 1024 * 1024) {
-          // Resize to max 2000px with 80% quality
-          const resizedDataUrl = await resizeImage(file, 2000, 2000, 0.8);
-          await db.ref(`photos/${shareCode}/${i}`).set(resizedDataUrl);
-        } else {
-          // Upload original if small enough
-          const dataUrl = await new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.onload = (e) => resolve(e.target.result);
-            reader.readAsDataURL(file);
-          });
-          await db.ref(`photos/${shareCode}/${i}`).set(dataUrl);
-        }
+        showSystemMessage(`Compressing photo ${i+1}/${uploadedFiles.length}...`);
+        const compressedDataUrl = await compressImage(uploadedFiles[i], 300); // Max 300KB per image
+        compressedImages.push(compressedDataUrl);
       }
 
-      showSystemMessage('Photos uploaded successfully!');
-      // Set expiration (24 hours)
-      await db.ref(`photos/${shareCode}/expires`).set(Date.now() + 24 * 60 * 60 * 1000);
+      showSystemMessage('Uploading to database...');
+
+      // Upload to Firebase Database
+      await db.ref(`photos/${shareCode}`).set({
+        images: compressedImages,
+        expires: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
+        count: compressedImages.length,
+        created: Date.now()
+      });
+
+      showSystemMessage('Photos shared successfully! Code: ' + shareCode);
+      
     } catch (error) {
-      console.error('Upload error:', error);
+      console.error('Error:', error);
       showSystemMessage('Error uploading photos. Please try again.');
+      
+      // Reset on error
+      generateBtn.style.display = 'block';
+      codeDisplay.style.display = 'none';
+      shareButtons.style.display = 'none';
     }
   }
 
@@ -989,24 +1008,24 @@ description: "PhotoShare - Share photos privately with a unique code. Upload pho
 
   // Share via Web Share API
   function shareCodeViaAPI() {
-  const url = `${window.location.href.split('?')[0]}?code=${shareCode}`;
-  const text = `Check out my photos! Use this code on PhotoShare: ${shareCode}`;
+    const url = `${window.location.href.split('?')[0]}?code=${shareCode}`;
+    const text = `Check out my photos! Use this code on PhotoShare: ${shareCode}`;
 
-  if (navigator.share) {
-    navigator.share({
-      title: 'PhotoShare Code',
-      text: text,
-      url: url
-    })
-    .then(() => console.log('Shared successfully'))
-    .catch((error) => {
-      console.log('Error sharing:', error);
-      copyUrl(); // fallback
-    });
-  } else {
-    copyUrl(); // fallback for unsupported browsers
-    showSystemMessage('URL copied to clipboard!');
-  }
+    if (navigator.share) {
+      navigator.share({
+        title: 'PhotoShare Code',
+        text: text,
+        url: url
+      })
+      .then(() => console.log('Shared successfully'))
+      .catch((error) => {
+        console.log('Error sharing:', error);
+        copyUrl();
+      });
+    } else {
+      copyUrl();
+      showSystemMessage('URL copied to clipboard!');
+    }
   }
 
   // View photos
@@ -1023,7 +1042,7 @@ description: "PhotoShare - Share photos privately with a unique code. Upload pho
     db.ref(`photos/${code}`).once('value')
       .then((snapshot) => {
         const data = snapshot.val();
-        if (!data) {
+        if (!data || !data.images) {
           showSystemMessage('No photos found for this code');
           return;
         }
@@ -1036,31 +1055,27 @@ description: "PhotoShare - Share photos privately with a unique code. Upload pho
           return;
         }
 
-        currentViewerImages = [];
-        // Display photos (skip the expires field)
-        Object.keys(data).forEach(key => {
-          if (key !== 'expires' && data[key]) {
-            currentViewerImages.push(data[key]);
-            const img = document.createElement('img');
-            img.src = data[key];
-            img.alt = 'Shared photo';
-            img.dataset.index = currentViewerImages.length - 1;
-            img.addEventListener('click', () => {
-              openFullscreenViewer(currentViewerImages, parseInt(img.dataset.index));
-            });
-            viewerGallery.appendChild(img);
-          }
+        currentViewerImages = data.images;
+        viewerGallery.innerHTML = '';
+
+        // Display photos
+        data.images.forEach((imageData, index) => {
+          const img = document.createElement('img');
+          img.src = imageData;
+          img.alt = 'Shared photo';
+          img.loading = 'lazy';
+          img.dataset.index = index;
+          img.addEventListener('click', () => {
+            openFullscreenViewer(currentViewerImages, index);
+          });
+          viewerGallery.appendChild(img);
         });
 
-        if (viewerGallery.children.length === 0) {
-          showSystemMessage('No photos found for this code');
-        } else {
-          hideSystemMessage();
-        }
+        showSystemMessage(`Loaded ${data.images.length} photos`);
       })
       .catch((error) => {
         console.error('Error loading photos:', error);
-        showSystemMessage('No photos found for this code');
+        showSystemMessage('Error loading photos. Please check the code.');
       });
   }
 
@@ -1106,9 +1121,6 @@ description: "PhotoShare - Share photos privately with a unique code. Upload pho
     const urlParams = new URLSearchParams(window.location.search);
     const code = urlParams.get('code');
     if (code && code.length === 5 && /^\d+$/.test(code)) {
-      // Switch to view tab and auto-load
-      tabs.forEach(t => t.classList.remove('active'));
-      tabContents.forEach(c => c.classList.remove('active'));
       document.querySelector('.tab[data-tab="view"]').classList.add('active');
       document.getElementById('view-tab').classList.add('active');
       
@@ -1121,7 +1133,7 @@ description: "PhotoShare - Share photos privately with a unique code. Upload pho
   function showSystemMessage(msg) {
     systemMsg.textContent = msg;
     systemMsg.style.display = 'block';
-    setTimeout(hideSystemMessage, 3000);
+    setTimeout(hideSystemMessage, 4000);
   }
 
   function hideSystemMessage() {
