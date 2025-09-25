@@ -292,16 +292,15 @@ description: "PhotoShare - Share photos privately with a unique code. Upload pho
   }
 
   .preview-container {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: 15px;
+    display: flex;
+    justify-content: center;
     margin-bottom: 25px;
   }
 
   .preview-item {
     position: relative;
-    width: 100%;
-    height: 160px;
+    width: 300px;
+    height: 300px;
     border-radius: 12px;
     overflow: hidden;
     box-shadow: 0 4px 8px rgba(0,0,0,0.2);
@@ -403,17 +402,16 @@ description: "PhotoShare - Share photos privately with a unique code. Upload pho
   }
 
   .viewer-gallery {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: 20px;
+    display: flex;
+    justify-content: center;
     width: 100%;
     padding: 10px;
   }
 
   .viewer-gallery img {
-    width: 100%;
-    height: 220px;
-    object-fit: cover;
+    max-width: 100%;
+    max-height: 500px;
+    object-fit: contain;
     border-radius: 12px;
     transition: transform 0.3s, box-shadow 0.3s;
     box-shadow: 0 4px 10px rgba(0,0,0,0.15);
@@ -421,9 +419,8 @@ description: "PhotoShare - Share photos privately with a unique code. Upload pho
   }
 
   .viewer-gallery img:hover {
-    transform: scale(1.05);
+    transform: scale(1.02);
     box-shadow: 0 8px 20px rgba(0,0,0,0.2);
-    z-index: 1;
   }
 
   /* Fullscreen viewer */
@@ -478,36 +475,6 @@ description: "PhotoShare - Share photos privately with a unique code. Upload pho
     transform: rotate(90deg);
   }
 
-  .fullscreen-viewer .nav-btn {
-    position: absolute;
-    top: 50%;
-    transform: translateY(-50%);
-    background: rgba(255,255,255,0.2);
-    color: white;
-    border: none;
-    width: 50px;
-    height: 50px;
-    border-radius: 50%;
-    font-size: 1.5em;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.3s;
-  }
-
-  .fullscreen-viewer .nav-btn:hover {
-    background: rgba(255,255,255,0.3);
-  }
-
-  .fullscreen-viewer .prev-btn {
-    left: 20px;
-  }
-
-  .fullscreen-viewer .next-btn {
-    right: 20px;
-  }
-
   .system-msg {
     position: fixed;
     top: 50%;
@@ -537,20 +504,13 @@ description: "PhotoShare - Share photos privately with a unique code. Upload pho
       font-size: 1em;
     }
     
-    .preview-container {
-      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-    }
-
     .preview-item {
-      height: 140px;
-    }
-
-    .viewer-gallery {
-      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      width: 250px;
+      height: 250px;
     }
 
     .viewer-gallery img {
-      height: 160px;
+      max-height: 400px;
     }
     
     .code-display {
@@ -570,29 +530,16 @@ description: "PhotoShare - Share photos privately with a unique code. Upload pho
     .viewer-input {
       flex-direction: column;
     }
-
-    .fullscreen-viewer .nav-btn {
-      width: 40px;
-      height: 40px;
-      font-size: 1.2em;
-    }
   }
 
   @media (max-width: 480px) {
-    .preview-container {
-      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-    }
-
     .preview-item {
-      height: 120px;
-    }
-
-    .viewer-gallery {
-      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      width: 200px;
+      height: 200px;
     }
 
     .viewer-gallery img {
-      height: 140px;
+      max-height: 300px;
     }
   }
   </style>
@@ -619,9 +566,9 @@ description: "PhotoShare - Share photos privately with a unique code. Upload pho
     <div class="tab-content active" id="upload-tab">
       <div class="upload-area" id="uploadArea">
         <i class="fas fa-cloud-upload-alt"></i>
-        <h3>Click to Upload Photos</h3>
-        <p>or drag and drop files here</p>
-        <input type="file" id="fileInput" accept="image/*" multiple style="display: none;">
+        <h3>Click to Upload Photo</h3>
+        <p>Select one photo to share</p>
+        <input type="file" id="fileInput" accept="image/*" style="display: none;">
       </div>
 
       <div class="preview-container" id="previewContainer"></div>
@@ -653,9 +600,7 @@ description: "PhotoShare - Share photos privately with a unique code. Upload pho
   <!-- Fullscreen Viewer -->
   <div class="fullscreen-viewer" id="fullscreenViewer">
     <button class="close-btn" id="closeFullscreen"><i class="fas fa-times"></i></button>
-    <button class="nav-btn prev-btn" id="prevBtn"><i class="fas fa-chevron-left"></i></button>
     <img id="fullscreenImage" src="" alt="Fullscreen view">
-    <button class="nav-btn next-btn" id="nextBtn"><i class="fas fa-chevron-right"></i></button>
   </div>
 
   <div class="system-msg" id="systemMsg"></div>
@@ -768,14 +713,11 @@ description: "PhotoShare - Share photos privately with a unique code. Upload pho
   const fullscreenViewer = document.getElementById('fullscreenViewer');
   const fullscreenImage = document.getElementById('fullscreenImage');
   const closeFullscreen = document.getElementById('closeFullscreen');
-  const prevBtn = document.getElementById('prevBtn');
-  const nextBtn = document.getElementById('nextBtn');
 
   // Variables
-  let uploadedFiles = [];
+  let uploadedFile = null;
   let shareCode = '';
-  let currentViewerImages = [];
-  let currentFullscreenIndex = 0;
+  let currentViewerImage = null;
 
   // Event listeners
   uploadArea.addEventListener('click', () => fileInput.click());
@@ -786,8 +728,6 @@ description: "PhotoShare - Share photos privately with a unique code. Upload pho
   shareBtn.addEventListener('click', shareCodeViaAPI);
   viewBtn.addEventListener('click', viewPhotos);
   closeFullscreen.addEventListener('click', closeFullscreenViewer);
-  prevBtn.addEventListener('click', showPrevImage);
-  nextBtn.addEventListener('click', showNextImage);
 
   // Tab switching
   tabs.forEach(tab => {
@@ -865,71 +805,66 @@ description: "PhotoShare - Share photos privately with a unique code. Upload pho
     const files = event.target.files;
     if (files.length === 0) return;
 
-    uploadedFiles = [];
-    previewContainer.innerHTML = '';
+    // Only take the first file
+    const file = files[0];
     
-    for (let i = 0; i < Math.min(files.length, 20); i++) {
-      const file = files[i];
-      
-      // Skip non-image files
-      if (!file.type.startsWith('image/')) {
-        showSystemMessage(`Skipped ${file.name} - not an image file`);
-        continue;
-      }
-      
-      // Check file size (10MB max)
-      if (file.size > 10 * 1024 * 1024) {
-        showSystemMessage(`Skipped ${file.name} - file too large (max 10MB)`);
-        continue;
-      }
-      
-      uploadedFiles.push(file);
-      
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const previewItem = document.createElement('div');
-        previewItem.className = 'preview-item';
-        
-        previewItem.innerHTML = `
-          <img src="${e.target.result}" alt="Preview" data-index="${uploadedFiles.length - 1}">
-          <div class="preview-item-remove" data-index="${uploadedFiles.length - 1}">
-            <i class="fas fa-times"></i>
-          </div>
-        `;
-        
-        previewContainer.appendChild(previewItem);
-        
-        // Add click event for fullscreen
-        previewItem.querySelector('img').addEventListener('click', (e) => {
-          openFullscreenViewer(uploadedFiles.map(f => URL.createObjectURL(f)), 
-                             parseInt(e.target.dataset.index));
-        });
-        
-        // Add remove event
-        previewItem.querySelector('.preview-item-remove').addEventListener('click', (e) => {
-          e.stopPropagation();
-          const index = parseInt(e.target.closest('.preview-item-remove').dataset.index);
-          uploadedFiles.splice(index, 1);
-          previewContainer.removeChild(previewItem);
-          if (uploadedFiles.length === 0) {
-            generateBtn.style.display = 'none';
-          }
-        });
-      };
-      reader.readAsDataURL(file);
+    // Clear previous preview
+    previewContainer.innerHTML = '';
+    uploadedFile = null;
+    
+    // Skip non-image files
+    if (!file.type.startsWith('image/')) {
+      showSystemMessage(`Please select an image file`);
+      return;
     }
+    
+    // Check file size (10MB max)
+    if (file.size > 10 * 1024 * 1024) {
+      showSystemMessage(`File too large (max 10MB)`);
+      return;
+    }
+    
+    uploadedFile = file;
+    
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const previewItem = document.createElement('div');
+      previewItem.className = 'preview-item';
+      
+      previewItem.innerHTML = `
+        <img src="${e.target.result}" alt="Preview">
+        <div class="preview-item-remove">
+          <i class="fas fa-times"></i>
+        </div>
+      `;
+      
+      previewContainer.appendChild(previewItem);
+      
+      // Add click event for fullscreen
+      previewItem.querySelector('img').addEventListener('click', () => {
+        openFullscreenViewer(e.target.result);
+      });
+      
+      // Add remove event
+      previewItem.querySelector('.preview-item-remove').addEventListener('click', (e) => {
+        e.stopPropagation();
+        uploadedFile = null;
+        previewContainer.innerHTML = '';
+        generateBtn.style.display = 'none';
+        fileInput.value = '';
+      });
+    };
+    reader.readAsDataURL(file);
 
-    if (uploadedFiles.length > 0) {
+    if (uploadedFile) {
       generateBtn.style.display = 'block';
-    } else {
-      generateBtn.style.display = 'none';
     }
   }
 
   // Generate share code with image resizing
   async function generateShareCode() {
-    if (uploadedFiles.length === 0) {
-      showSystemMessage('Please upload at least one photo');
+    if (!uploadedFile) {
+      showSystemMessage('Please upload a photo');
       return;
     }
 
@@ -940,35 +875,22 @@ description: "PhotoShare - Share photos privately with a unique code. Upload pho
     shareButtons.style.display = 'flex';
     generateBtn.style.display = 'none';
 
-    showSystemMessage('Uploading photos...');
+    showSystemMessage('Uploading photo...');
 
     try {
-      // Upload photos to Firebase with resizing
-      for (let i = 0; i < uploadedFiles.length; i++) {
-        const file = uploadedFiles[i];
-        
-        // Check file size (resize if larger than 2MB)
-        if (file.size > 2 * 1024 * 1024) {
-          // Resize to max 2000px with 80% quality
-          const resizedDataUrl = await resizeImage(file, 2000, 2000, 0.8);
-          await db.ref(`photos/${shareCode}/${i}`).set(resizedDataUrl);
-        } else {
-          // Upload original if small enough
-          const dataUrl = await new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.onload = (e) => resolve(e.target.result);
-            reader.readAsDataURL(file);
-          });
-          await db.ref(`photos/${shareCode}/${i}`).set(dataUrl);
-        }
-      }
+      // Upload photo to Firebase with resizing
+      const file = uploadedFile;
+      
+      // Always resize to optimize storage (max 2000px with 85% quality)
+      const resizedDataUrl = await resizeImage(file, 2000, 2000, 0.85);
+      await db.ref(`photos/${shareCode}/image`).set(resizedDataUrl);
 
-      showSystemMessage('Photos uploaded successfully!');
+      showSystemMessage('Photo uploaded successfully!');
       // Set expiration (24 hours)
       await db.ref(`photos/${shareCode}/expires`).set(Date.now() + 24 * 60 * 60 * 1000);
     } catch (error) {
       console.error('Upload error:', error);
-      showSystemMessage('Error uploading photos. Please try again.');
+      showSystemMessage('Error uploading photo. Please try again.');
     }
   }
 
@@ -990,7 +912,7 @@ description: "PhotoShare - Share photos privately with a unique code. Upload pho
   // Share via Web Share API
   function shareCodeViaAPI() {
   const url = `${window.location.href.split('?')[0]}?code=${shareCode}`;
-  const text = `Check out my photos! Use this code on PhotoShare: ${shareCode}`;
+  const text = `Check out my photo! Use this code on PhotoShare: ${shareCode}`;
 
   if (navigator.share) {
     navigator.share({
@@ -1009,7 +931,7 @@ description: "PhotoShare - Share photos privately with a unique code. Upload pho
   }
   }
 
-  // View photos
+  // View photo
   function viewPhotos() {
     const code = codeInput.value.trim();
     if (code.length !== 5 || !/^\d+$/.test(code)) {
@@ -1018,13 +940,13 @@ description: "PhotoShare - Share photos privately with a unique code. Upload pho
     }
 
     viewerGallery.innerHTML = '';
-    showSystemMessage('Loading photos...');
+    showSystemMessage('Loading photo...');
 
     db.ref(`photos/${code}`).once('value')
       .then((snapshot) => {
         const data = snapshot.val();
         if (!data) {
-          showSystemMessage('No photos found for this code');
+          showSystemMessage('No photo found for this code');
           return;
         }
 
@@ -1036,39 +958,30 @@ description: "PhotoShare - Share photos privately with a unique code. Upload pho
           return;
         }
 
-        currentViewerImages = [];
-        // Display photos (skip the expires field)
-        Object.keys(data).forEach(key => {
-          if (key !== 'expires' && data[key]) {
-            currentViewerImages.push(data[key]);
-            const img = document.createElement('img');
-            img.src = data[key];
-            img.alt = 'Shared photo';
-            img.dataset.index = currentViewerImages.length - 1;
-            img.addEventListener('click', () => {
-              openFullscreenViewer(currentViewerImages, parseInt(img.dataset.index));
-            });
-            viewerGallery.appendChild(img);
-          }
-        });
-
-        if (viewerGallery.children.length === 0) {
-          showSystemMessage('No photos found for this code');
-        } else {
+        // Display photo
+        if (data.image) {
+          currentViewerImage = data.image;
+          const img = document.createElement('img');
+          img.src = data.image;
+          img.alt = 'Shared photo';
+          img.addEventListener('click', () => {
+            openFullscreenViewer(data.image);
+          });
+          viewerGallery.appendChild(img);
           hideSystemMessage();
+        } else {
+          showSystemMessage('No photo found for this code');
         }
       })
       .catch((error) => {
-        console.error('Error loading photos:', error);
-        showSystemMessage('No photos found for this code');
+        console.error('Error loading photo:', error);
+        showSystemMessage('No photo found for this code');
       });
   }
 
   // Fullscreen viewer functions
-  function openFullscreenViewer(images, index) {
-    currentViewerImages = images;
-    currentFullscreenIndex = index;
-    fullscreenImage.src = images[index];
+  function openFullscreenViewer(imageSrc) {
+    fullscreenImage.src = imageSrc;
     fullscreenViewer.classList.add('active');
     document.body.style.overflow = 'hidden';
   }
@@ -1078,26 +991,12 @@ description: "PhotoShare - Share photos privately with a unique code. Upload pho
     document.body.style.overflow = '';
   }
 
-  function showPrevImage() {
-    currentFullscreenIndex = (currentFullscreenIndex - 1 + currentViewerImages.length) % currentViewerImages.length;
-    fullscreenImage.src = currentViewerImages[currentFullscreenIndex];
-  }
-
-  function showNextImage() {
-    currentFullscreenIndex = (currentFullscreenIndex + 1) % currentViewerImages.length;
-    fullscreenImage.src = currentViewerImages[currentFullscreenIndex];
-  }
-
   // Keyboard navigation for fullscreen viewer
   document.addEventListener('keydown', (e) => {
     if (!fullscreenViewer.classList.contains('active')) return;
     
     if (e.key === 'Escape') {
       closeFullscreenViewer();
-    } else if (e.key === 'ArrowLeft') {
-      showPrevImage();
-    } else if (e.key === 'ArrowRight') {
-      showNextImage();
     }
   });
 
