@@ -926,7 +926,7 @@ description: "PhotoShare - Share photos privately with a unique code. Upload pho
     }
   }
 
-  // Generate share code with image resizing
+  // GENERATE SHARE CODE WITH IMPROVED ASYNC UPLOAD LOGIC
   async function generateShareCode() {
     if (uploadedFiles.length === 0) {
       showSystemMessage('Please upload at least one photo');
@@ -943,26 +943,30 @@ description: "PhotoShare - Share photos privately with a unique code. Upload pho
     showSystemMessage('Uploading photos...');
 
     try {
-      // Upload photos to Firebase with resizing
-      for (let i = 0; i < uploadedFiles.length; i++) {
-        const file = uploadedFiles[i];
+      // Create an array of promises for each photo upload
+      const uploadPromises = uploadedFiles.map(async (file, index) => {
+        let dataUrl;
         
         // Check file size (resize if larger than 2MB)
         if (file.size > 2 * 1024 * 1024) {
           // Resize to max 2000px with 80% quality
-          const resizedDataUrl = await resizeImage(file, 2000, 2000, 0.8);
-          await db.ref(`photos/${shareCode}/${i}`).set(resizedDataUrl);
+          dataUrl = await resizeImage(file, 2000, 2000, 0.8);
         } else {
           // Upload original if small enough
-          const dataUrl = await new Promise((resolve) => {
+          dataUrl = await new Promise((resolve) => {
             const reader = new FileReader();
             reader.onload = (e) => resolve(e.target.result);
             reader.readAsDataURL(file);
           });
-          await db.ref(`photos/${shareCode}/${i}`).set(dataUrl);
         }
-      }
+        
+        // Upload the data URL to Firebase and return the promise
+        return db.ref(`photos/${shareCode}/${index}`).set(dataUrl);
+      });
 
+      // Wait for all upload promises to resolve
+      await Promise.all(uploadPromises);
+      
       showSystemMessage('Photos uploaded successfully!');
       // Set expiration (24 hours)
       await db.ref(`photos/${shareCode}/expires`).set(Date.now() + 24 * 60 * 60 * 1000);
