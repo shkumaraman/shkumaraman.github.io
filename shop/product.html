@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Product Details</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css"> <!-- External CSS -->
 </head>
 <body>
   <div id="productContainer"></div>
@@ -24,23 +24,63 @@
           return;
         }
 
+        // Check for multiple images (if present in description as <img>)
+        const parser = new DOMParser();
+        const parsedDescription = parser.parseFromString(product.description, 'text/html');
+        const images = [product.image, ...Array.from(parsedDescription.querySelectorAll('img')).map(img => img.src)];
+
+        const imageSlides = images.map((src, i) => `
+          <img src="${src}" class="slide-image" style="display: ${i === 0 ? 'block' : 'none'}" />
+        `).join("");
+
         const stars = "★".repeat(product.rating) + "☆".repeat(5 - product.rating);
+        const reviews = product.reviews.map(r => `<li>${r}</li>`).join("");
 
         container.innerHTML = `
-          <img src="${product.image}" alt="${product.title}">
+          <div class="image-slider">
+            ${imageSlides}
+            <button class="slide-btn prev">‹</button>
+            <button class="slide-btn next">›</button>
+          </div>
+
           <h2>${product.title}</h2>
           <h3>₹${product.price}</h3>
           <p>${stars} (${product.rating}/5)</p>
-          <div>${product.description}</div>
+
+          <div class="description">${parsedDescription.body.innerHTML}</div>
+
           <p><strong>Status:</strong> ${product.stock ? '✅ In Stock' : '❌ Out of Stock'}</p>
-          <button id="buyBtn" ${product.stock ? '' : 'disabled'}>Buy Now</button>
-          <a href="index.html">← Back</a>
+
+          <div class="action-buttons">
+            <a href="index.html" class="back-btn">← Back</a>
+            <button id="buyBtn" class="buy-btn" ${product.stock ? '' : 'disabled'}>Buy Now</button>
+          </div>
+
+          <div class="reviews-section">
+            <h4>Customer Reviews:</h4>
+            <ul>${reviews}</ul>
+          </div>
         `;
 
+        // Slider logic
+        let currentSlide = 0;
+        const slides = document.querySelectorAll(".slide-image");
+        document.querySelector(".prev").addEventListener("click", () => {
+          slides[currentSlide].style.display = "none";
+          currentSlide = (currentSlide - 1 + slides.length) % slides.length;
+          slides[currentSlide].style.display = "block";
+        });
+        document.querySelector(".next").addEventListener("click", () => {
+          slides[currentSlide].style.display = "none";
+          currentSlide = (currentSlide + 1) % slides.length;
+          slides[currentSlide].style.display = "block";
+        });
+
+        // Buy button logic
         if (product.stock) {
           document.getElementById("buyBtn").addEventListener("click", () => {
             localStorage.setItem("selectedProduct", JSON.stringify(product));
-            window.location.href = "billing.html"; // ✅ Goes to billing page
+            window.location.href = "billing.html";
           });
         }
       });
