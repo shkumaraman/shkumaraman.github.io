@@ -5,33 +5,139 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Flipkart Clone - Shop</title>
   <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
+  <!-- Header with Banner and Search -->
+  <header class="main-header">
+    <div class="header-banner">
+      <div class="banner-content">
+        <h1>Great Indian Festival</h1>
+        <p>Up to 70% Off | Best Deals</p>
+      </div>
+      <div class="countdown-timer">
+        <h3>Deal Ends In:</h3>
+        <div id="timer">
+          <span id="hours">00</span>:<span id="minutes">00</span>:<span id="seconds">00</span>
+        </div>
+      </div>
+    </div>
+    
+    <div class="search-container">
+      <div class="search-bar">
+        <input type="text" id="searchInput" placeholder="Search for products, brands and more...">
+        <button id="searchBtn"><i class="fas fa-search"></i></button>
+      </div>
+    </div>
+  </header>
+
   <div class="container">
-    <h1>Shop</h1>
     <div class="product-grid" id="productList"></div>
   </div>
 
   <script>
+    // Countdown Timer Logic
+    function startCountdown() {
+      // Set the countdown duration (1 hour = 3600 seconds)
+      let timeLeft = 3600; // 1 hour in seconds
+      
+      const timerElement = document.getElementById('timer');
+      const hoursElement = document.getElementById('hours');
+      const minutesElement = document.getElementById('minutes');
+      const secondsElement = document.getElementById('seconds');
+      
+      const countdown = setInterval(() => {
+        if (timeLeft <= 0) {
+          clearInterval(countdown);
+          timerElement.innerHTML = "Deal Expired!";
+          return;
+        }
+        
+        const hours = Math.floor(timeLeft / 3600);
+        const minutes = Math.floor((timeLeft % 3600) / 60);
+        const seconds = timeLeft % 60;
+        
+        hoursElement.textContent = hours.toString().padStart(2, '0');
+        minutesElement.textContent = minutes.toString().padStart(2, '0');
+        secondsElement.textContent = seconds.toString().padStart(2, '0');
+        
+        timeLeft--;
+      }, 1000);
+    }
+
+    // Search Functionality
+    document.getElementById('searchBtn').addEventListener('click', performSearch);
+    document.getElementById('searchInput').addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') {
+        performSearch();
+      }
+    });
+
+    function performSearch() {
+      const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+      const productCards = document.querySelectorAll('.product-card');
+      
+      productCards.forEach(card => {
+        const title = card.querySelector('h3').textContent.toLowerCase();
+        if (title.includes(searchTerm)) {
+          card.style.display = 'block';
+        } else {
+          card.style.display = 'none';
+        }
+      });
+    }
+
+    // Load products
     fetch("products.json")
       .then(res => res.json())
       .then(products => {
         const container = document.getElementById("productList");
         container.innerHTML = products.map(product => `
-          <div class="product-card">
+          <div class="product-card" onclick="window.location.href='product.html?id=${product.id}'">
+            <div class="product-badge">${product.offer || 'Special Deal'}</div>
             <img src="${product.image}" alt="${product.title}" />
             <h3>${product.title}</h3>
-            <p>₹${product.price}</p>
-            <a href="product.html?id=${product.id}">
-              <button>View Details</button>
-            </a>
+            <div class="product-rating">
+              ${generateStarRating(product.rating)}
+              <span class="rating-count">(${product.reviews || '100'})</span>
+            </div>
+            <p class="product-price">₹${product.price}</p>
+            <p class="original-price">${product.originalPrice ? `₹${product.originalPrice}` : ''}</p>
+            <p class="product-discount">${product.discount || '10% off'}</p>
           </div>
         `).join('');
+        
+        // Start countdown after products are loaded
+        startCountdown();
       })
       .catch(error => {
         console.error('Error loading products:', error);
         document.getElementById('productList').innerHTML = '<p>Error loading products</p>';
       });
+
+    // Generate star rating HTML
+    function generateStarRating(rating) {
+      if (!rating) return '<span class="no-rating">No ratings</span>';
+      
+      let stars = '';
+      const fullStars = Math.floor(rating);
+      const hasHalfStar = rating % 1 !== 0;
+      
+      for (let i = 0; i < fullStars; i++) {
+        stars += '<i class="fas fa-star"></i>';
+      }
+      
+      if (hasHalfStar) {
+        stars += '<i class="fas fa-star-half-alt"></i>';
+      }
+      
+      const emptyStars = 5 - Math.ceil(rating);
+      for (let i = 0; i < emptyStars; i++) {
+        stars += '<i class="far fa-star"></i>';
+      }
+      
+      return stars;
+    }
   </script>
 </body>
 </html>
