@@ -1,19 +1,22 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Payment</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
 </head>
 <body>
   <h2>Payment Summary</h2>
-  <div id="summary">Loading...</div>
+  <div id="summary"></div>
+  <div id="qrCode" style="margin-top:20px;"></div>
 
   <script>
     const product = JSON.parse(localStorage.getItem("selectedProduct"));
     const address = JSON.parse(localStorage.getItem("billingAddress"));
-
     const container = document.getElementById("summary");
+    const qrContainer = document.getElementById("qrCode");
 
     if (!product || !address) {
       container.innerHTML = "<p>Error: Missing product or address information.</p>";
@@ -21,7 +24,7 @@
       container.innerHTML = `
         <h3>Product:</h3>
         <p><strong>${product.title}</strong> - ₹${product.price}</p>
-        <img src="${product.image}" width="150"/>
+        <img src="${product.image}" width="150" />
 
         <h3>Billing Address:</h3>
         <p>${address.name}<br>${address.address}<br>Phone: ${address.phone}</p>
@@ -29,14 +32,37 @@
         <h3>Total Amount:</h3>
         <p>₹${product.price}</p>
 
-        <button onclick="confirmPayment()">Pay Now</button>
+        <button id="payBtn">Pay Now</button>
       `;
-    }
 
-    function confirmPayment() {
-      alert("Payment Successful! 🎉");
-      localStorage.clear();
-      window.location.href = "index.html";
+      document.getElementById("payBtn").addEventListener("click", () => {
+        // Clear previous QR if any
+        qrContainer.innerHTML = "";
+
+        // UPI ID from JSON (example, you should update as per your JSON)
+        const upiId = "your-upi-id@bank";
+
+        // UPI Payment URL format
+        // pay?pa=UPI_ID&pn=NAME&am=AMOUNT&cu=INR&tn=NOTE
+        const upiUrl = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(product.title)}&am=${encodeURIComponent(product.price)}&cu=INR&tn=${encodeURIComponent("Payment for " + product.title)}`;
+
+        // Generate QR code inside qrContainer
+        QRCode.toCanvas(upiUrl, { width: 200 }, function (error, canvas) {
+          if (error) {
+            qrContainer.innerHTML = "<p>Failed to generate QR code.</p>";
+            console.error(error);
+            return;
+          }
+          qrContainer.appendChild(canvas);
+          // Optionally show some text below QR code
+          const infoText = document.createElement("p");
+          infoText.textContent = "Scan this QR code to pay via UPI";
+          qrContainer.appendChild(infoText);
+        });
+
+        // Disable button after generating QR
+        document.getElementById("payBtn").disabled = true;
+      });
     }
   </script>
 </body>
