@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
-  <!-- Header with Banner and Search -->
+  <!-- Header with Banner and Icons -->
   <header class="main-header">
     <div class="header-banner">
       <div class="banner-content">
@@ -23,10 +23,24 @@
       </div>
     </div>
     
-    <div class="search-container">
-      <div class="search-bar">
-        <input type="text" id="searchInput" placeholder="Search for products, brands and more...">
-        <button id="searchBtn"><i class="fas fa-search"></i></button>
+    <div class="header-icons">
+      <div class="search-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+          <circle cx="11" cy="11" r="8"></circle>
+          <path d="m21 21-4.3-4.3"></path>
+        </svg>
+      </div>
+      <div class="heart-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+          <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+        </svg>
+      </div>
+      <div class="cart-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+          <circle cx="9" cy="21" r="1"></circle>
+          <circle cx="20" cy="21" r="1"></circle>
+          <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
+        </svg>
       </div>
     </div>
   </header>
@@ -65,26 +79,20 @@
       }, 1000);
     }
 
-    // Search Functionality
-    document.getElementById('searchBtn').addEventListener('click', performSearch);
-    document.getElementById('searchInput').addEventListener('keypress', function(e) {
-      if (e.key === 'Enter') {
-        performSearch();
-      }
-    });
+    // Calculate discounted price
+    function calculateDiscountedPrice(originalPrice, discountPercent) {
+      const discountAmount = (originalPrice * discountPercent) / 100;
+      return Math.round(originalPrice - discountAmount);
+    }
 
-    function performSearch() {
-      const searchTerm = document.getElementById('searchInput').value.toLowerCase();
-      const productCards = document.querySelectorAll('.product-card');
-      
-      productCards.forEach(card => {
-        const title = card.querySelector('h3').textContent.toLowerCase();
-        if (title.includes(searchTerm)) {
-          card.style.display = 'block';
-        } else {
-          card.style.display = 'none';
-        }
-      });
+    // Trim description to 20 words
+    function trimDescription(description) {
+      if (!description) return '';
+      const words = description.split(' ');
+      if (words.length > 20) {
+        return words.slice(0, 20).join(' ') + '...';
+      }
+      return description;
     }
 
     // Load products
@@ -92,20 +100,28 @@
       .then(res => res.json())
       .then(products => {
         const container = document.getElementById("productList");
-        container.innerHTML = products.map(product => `
+        container.innerHTML = products.map(product => {
+          // Calculate discounted price if discount is provided
+          const originalPrice = product.originalPrice || product.price;
+          const discountPercent = product.discount || 10;
+          const discountedPrice = calculateDiscountedPrice(originalPrice, discountPercent);
+          
+          return `
           <div class="product-card" onclick="window.location.href='product.html?id=${product.id}'">
             <div class="product-badge">${product.offer || 'Special Deal'}</div>
             <img src="${product.image}" alt="${product.title}" />
             <h3>${product.title}</h3>
+            <p class="product-description">${trimDescription(product.description)}</p>
             <div class="product-rating">
               ${generateStarRating(product.rating)}
-              <span class="rating-count">(${product.reviews || '100'})</span>
             </div>
-            <p class="product-price">₹${product.price}</p>
-            <p class="original-price">${product.originalPrice ? `₹${product.originalPrice}` : ''}</p>
-            <p class="product-discount">${product.discount || '10% off'}</p>
+            <div class="price-container">
+              <p class="product-price">₹${discountedPrice}</p>
+              <p class="original-price">₹${originalPrice}</p>
+              <p class="product-discount">${discountPercent}% off</p>
+            </div>
           </div>
-        `).join('');
+        `}).join('');
         
         // Start countdown after products are loaded
         startCountdown();
