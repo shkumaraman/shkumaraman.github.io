@@ -42,7 +42,7 @@
         const discountPercent = product.discount || 0;
         const discountedPrice = calculateDiscountedPrice(originalPrice, discountPercent);
 
-        // Get all images - support both single image string and multiple images array
+        // Get all images - support both images array and single image
         let images = [];
         if (Array.isArray(product.images)) {
           images = product.images;
@@ -50,18 +50,14 @@
           images = [product.image];
         }
         
-        // Also extract images from description if any
+        // If no images found, use placeholder
+        if (images.length === 0) {
+          images.push('https://via.placeholder.com/400');
+        }
+
+        // Parse description (images in description will be shown in description section)
         const parser = new DOMParser();
         const parsedDescription = parser.parseFromString(product.description, 'text/html');
-        const descriptionImages = Array.from(parsedDescription.querySelectorAll('img')).map(img => img.src);
-        
-        // Combine all images
-        const allImages = [...images, ...descriptionImages];
-        
-        // If no images found, use placeholder
-        if (allImages.length === 0) {
-          allImages.push('https://via.placeholder.com/400');
-        }
 
         // Generate star rating
         const stars = generateStarRating(product.rating);
@@ -70,16 +66,18 @@
         container.innerHTML = `
           <div class="product-gallery">
             <div class="main-image">
-              <img src="${allImages[0]}" id="mainImage" alt="${product.title}" />
+              <img src="${images[0]}" id="mainImage" alt="${product.title}" />
               ${discountPercent > 0 ? `<div class="discount-badge">${discountPercent}% OFF</div>` : ''}
             </div>
-            <div class="thumbnail-container">
-              ${allImages.map((src, index) => `
-                <div class="thumbnail ${index === 0 ? 'active' : ''}" data-index="${index}">
-                  <img src="${src}" alt="Thumbnail ${index + 1}" />
-                </div>
-              `).join('')}
-            </div>
+            ${images.length > 1 ? `
+              <div class="thumbnail-container">
+                ${images.map((src, index) => `
+                  <div class="thumbnail ${index === 0 ? 'active' : ''}" data-index="${index}">
+                    <img src="${src}" alt="Thumbnail ${index + 1}" />
+                  </div>
+                `).join('')}
+              </div>
+            ` : ''}
           </div>
 
           <div class="product-info">
@@ -124,21 +122,23 @@
           </div>
         `;
 
-        // Image gallery functionality
-        const mainImage = document.getElementById('mainImage');
-        const thumbnails = document.querySelectorAll('.thumbnail');
-        
-        thumbnails.forEach(thumb => {
-          thumb.addEventListener('click', () => {
-            // Remove active class from all thumbnails
-            thumbnails.forEach(t => t.classList.remove('active'));
-            // Add active class to clicked thumbnail
-            thumb.classList.add('active');
-            // Update main image
-            const imageIndex = thumb.getAttribute('data-index');
-            mainImage.src = allImages[imageIndex];
+        // Image gallery functionality (only if multiple images)
+        if (images.length > 1) {
+          const mainImage = document.getElementById('mainImage');
+          const thumbnails = document.querySelectorAll('.thumbnail');
+          
+          thumbnails.forEach(thumb => {
+            thumb.addEventListener('click', () => {
+              // Remove active class from all thumbnails
+              thumbnails.forEach(t => t.classList.remove('active'));
+              // Add active class to clicked thumbnail
+              thumb.classList.add('active');
+              // Update main image
+              const imageIndex = thumb.getAttribute('data-index');
+              mainImage.src = images[imageIndex];
+            });
           });
-        });
+        }
 
         // Buy button activation
         const buyBtn = document.getElementById("buyBtn");
