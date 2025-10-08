@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Product Details</title>
   <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
   <div id="productContainer"></div>
@@ -19,6 +20,12 @@
     const params = new URLSearchParams(window.location.search);
     const id = parseInt(params.get("id"));
 
+    // Calculate discounted price
+    function calculateDiscountedPrice(originalPrice, discountPercent) {
+      const discountAmount = (originalPrice * discountPercent) / 100;
+      return Math.round(originalPrice - discountAmount);
+    }
+
     fetch("products.json")
       .then(res => res.json())
       .then(products => {
@@ -30,51 +37,107 @@
           return;
         }
 
-        // Parse images
+        // Calculate prices
+        const originalPrice = product.originalPrice || product.price;
+        const discountPercent = product.discount || 0;
+        const discountedPrice = calculateDiscountedPrice(originalPrice, discountPercent);
+
+        // Get all images - support both single image string and multiple images array
+        let images = [];
+        if (Array.isArray(product.images)) {
+          images = product.images;
+        } else if (product.image) {
+          images = [product.image];
+        }
+        
+        // Also extract images from description if any
         const parser = new DOMParser();
         const parsedDescription = parser.parseFromString(product.description, 'text/html');
-        const images = [product.image, ...Array.from(parsedDescription.querySelectorAll('img')).map(img => img.src)];
+        const descriptionImages = Array.from(parsedDescription.querySelectorAll('img')).map(img => img.src);
+        
+        // Combine all images
+        const allImages = [...images, ...descriptionImages];
+        
+        // If no images found, use placeholder
+        if (allImages.length === 0) {
+          allImages.push('https://via.placeholder.com/400');
+        }
 
-        const imageSlides = images.map((src, i) => `
-          <img src="${src}" class="slide-image" style="display: ${i === 0 ? 'block' : 'none'}" />
-        `).join("");
-
-        const stars = "★".repeat(product.rating) + "☆".repeat(5 - product.rating);
+        // Generate star rating
+        const stars = generateStarRating(product.rating);
         const reviews = product.reviews.map(r => `<li>${r}</li>`).join("");
 
         container.innerHTML = `
-          <div class="image-slider">
-            ${imageSlides}
-            <button class="slide-btn prev">‹</button>
-            <button class="slide-btn next">›</button>
+          <div class="product-gallery">
+            <div class="main-image">
+              <img src="${allImages[0]}" id="mainImage" alt="${product.title}" />
+              ${discountPercent > 0 ? `<div class="discount-badge">${discountPercent}% OFF</div>` : ''}
+            </div>
+            <div class="thumbnail-container">
+              ${allImages.map((src, index) => `
+                <div class="thumbnail ${index === 0 ? 'active' : ''}" data-index="${index}">
+                  <img src="${src}" alt="Thumbnail ${index + 1}" />
+                </div>
+              `).join('')}
+            </div>
           </div>
 
-          <h2>${product.title}</h2>
-          <h3>₹${product.price}</h3>
-          <p>${stars} (${product.rating}/5)</p>
+          <div class="product-info">
+            <h2>${product.title}</h2>
+            
+            <div class="price-section">
+              ${discountPercent > 0 ? `
+                <div class="original-price">₹${originalPrice}</div>
+                <div class="discounted-price">₹${discountedPrice}</div>
+                <div class="discount-percent">${discountPercent}% off</div>
+              ` : `
+                <div class="current-price">₹${product.price}</div>
+              `}
+            </div>
 
-          <div class="description">${parsedDescription.body.innerHTML}</div>
+            <div class="rating-section">
+              <div class="product-rating">
+                ${stars}
+                <span class="rating-text">${product.rating}/5</span>
+              </div>
+              <span class="rating-count">(${product.reviews ? product.reviews.length : 0} reviews)</span>
+            </div>
 
-          <p><strong>Status:</strong> ${product.stock ? 'In Stock' : 'Out of Stock'}</p>
+            <div class="description">
+              <h3>Product Description</h3>
+              <div>${parsedDescription.body.innerHTML}</div>
+            </div>
 
-          <div class="reviews-section">
-            <h4>Customer Reviews:</h4>
-            <ul>${reviews}</ul>
+            <div class="stock-status">
+              <strong>Status:</strong> 
+              <span class="${product.stock ? 'in-stock' : 'out-of-stock'}">
+                ${product.stock ? 'In Stock' : 'Out of Stock'}
+              </span>
+            </div>
+
+            ${product.reviews && product.reviews.length > 0 ? `
+              <div class="reviews-section">
+                <h3>Customer Reviews</h3>
+                <ul class="reviews-list">${reviews}</ul>
+              </div>
+            ` : ''}
           </div>
         `;
 
-        // Image slider logic
-        let currentSlide = 0;
-        const slides = document.querySelectorAll(".slide-image");
-        document.querySelector(".prev").addEventListener("click", () => {
-          slides[currentSlide].style.display = "none";
-          currentSlide = (currentSlide - 1 + slides.length) % slides.length;
-          slides[currentSlide].style.display = "block";
-        });
-        document.querySelector(".next").addEventListener("click", () => {
-          slides[currentSlide].style.display = "none";
-          currentSlide = (currentSlide + 1) % slides.length;
-          slides[currentSlide].style.display = "block";
+        // Image gallery functionality
+        const mainImage = document.getElementById('mainImage');
+        const thumbnails = document.querySelectorAll('.thumbnail');
+        
+        thumbnails.forEach(thumb => {
+          thumb.addEventListener('click', () => {
+            // Remove active class from all thumbnails
+            thumbnails.forEach(t => t.classList.remove('active'));
+            // Add active class to clicked thumbnail
+            thumb.classList.add('active');
+            // Update main image
+            const imageIndex = thumb.getAttribute('data-index');
+            mainImage.src = allImages[imageIndex];
+          });
         });
 
         // Buy button activation
@@ -87,6 +150,30 @@
           });
         }
       });
+
+    // Generate star rating HTML
+    function generateStarRating(rating) {
+      if (!rating) return '<span class="no-rating">No ratings</span>';
+      
+      let stars = '';
+      const fullStars = Math.floor(rating);
+      const hasHalfStar = rating % 1 !== 0;
+      
+      for (let i = 0; i < fullStars; i++) {
+        stars += '<i class="fas fa-star"></i>';
+      }
+      
+      if (hasHalfStar) {
+        stars += '<i class="fas fa-star-half-alt"></i>';
+      }
+      
+      const emptyStars = 5 - Math.ceil(rating);
+      for (let i = 0; i < emptyStars; i++) {
+        stars += '<i class="far fa-star"></i>';
+      }
+      
+      return stars;
+    }
   </script>
 </body>
 </html>
