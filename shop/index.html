@@ -2,10 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Flipkart Clone - Shop</title>
-  <link rel="stylesheet" href="style.css" />
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="style.css"/>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
 </head>
 <body>
   <!-- Header with Icons -->
@@ -32,7 +32,7 @@
     </div>
   </header>
 
-  <!-- Countdown Timer - Horizontal Layout -->
+  <!-- Countdown Timer Section -->
   <div class="countdown-section">
     <div class="countdown-timer">
       <span class="countdown-label">Deal Ends In:</span>
@@ -56,69 +56,90 @@
   </div>
 
   <!-- Banner Section -->
-  <div class="banner-section" id="bannerSection">
-    <!-- Banner will be loaded from JSON -->
-  </div>
+  <div class="banner-section" id="bannerSection"></div>
 
+  <!-- Product Container -->
   <div class="container">
     <div class="product-grid" id="productList"></div>
   </div>
 
+  <!-- JavaScript -->
   <script>
-    // Countdown Timer Logic
-    function startCountdown() {
-      // Set the countdown duration (1 hour = 3600 seconds)
-      let timeLeft = 3600; // 1 hour in seconds
-      
+    // ✅ Countdown Timer
+    function startCountdown(seconds) {
+      let timeLeft = seconds;
       const hoursElement = document.getElementById('hours');
       const minutesElement = document.getElementById('minutes');
       const secondsElement = document.getElementById('seconds');
-      
+
       const countdown = setInterval(() => {
         if (timeLeft <= 0) {
           clearInterval(countdown);
           document.getElementById('timer').innerHTML = "<span class='deal-expired'>Deal Expired!</span>";
           return;
         }
-        
+
         const hours = Math.floor(timeLeft / 3600);
         const minutes = Math.floor((timeLeft % 3600) / 60);
-        const seconds = timeLeft % 60;
-        
+        const secondsLeft = timeLeft % 60;
+
         hoursElement.textContent = hours.toString().padStart(2, '0');
         minutesElement.textContent = minutes.toString().padStart(2, '0');
-        secondsElement.textContent = seconds.toString().padStart(2, '0');
-        
+        secondsElement.textContent = secondsLeft.toString().padStart(2, '0');
+
         timeLeft--;
       }, 1000);
     }
 
-    // Calculate discounted price
+    // ✅ Calculate discounted price
     function calculateDiscountedPrice(originalPrice, discountPercent) {
       const discountAmount = (originalPrice * discountPercent) / 100;
       return Math.round(originalPrice - discountAmount);
     }
 
-    // Trim description to 20 words
+    // ✅ Trim & sanitize description (remove <img>)
     function trimDescription(description) {
       if (!description) return '';
-      const words = description.split(' ');
+      const sanitized = description.replace(/<img[^>]*>/g, '');
+      const words = sanitized.split(' ').filter(word => word.trim() !== '');
       if (words.length > 20) {
         return words.slice(0, 20).join(' ') + '...';
       }
-      return description;
+      return sanitized;
     }
 
-    // Load products and banner
+    // ✅ Generate star rating
+    function generateStarRating(rating) {
+      if (!rating) return '<span class="no-rating">No ratings</span>';
+      let stars = '';
+      const fullStars = Math.floor(rating);
+      const hasHalfStar = rating % 1 !== 0;
+
+      for (let i = 0; i < fullStars; i++) {
+        stars += '<i class="fas fa-star"></i>';
+      }
+
+      if (hasHalfStar) {
+        stars += '<i class="fas fa-star-half-alt"></i>';
+      }
+
+      const emptyStars = 5 - Math.ceil(rating);
+      for (let i = 0; i < emptyStars; i++) {
+        stars += '<i class="far fa-star"></i>';
+      }
+
+      return stars;
+    }
+
+    // ✅ Load data from products.json
     fetch("products.json")
       .then(res => res.json())
       .then(data => {
-        // Separate products and banner data
         const products = data.filter(item => item.id);
         const bannerData = data.find(item => item.banner);
-        const upiData = data.find(item => item.upi);
-        
-        // Load banner if exists
+        const countdownData = data.find(item => item.countdown);
+
+        // ✅ Render banner
         if (bannerData) {
           const bannerSection = document.getElementById("bannerSection");
           bannerSection.innerHTML = `
@@ -131,66 +152,40 @@
             </div>
           `;
         }
-        
-        // Load products
+
+        // ✅ Render products
         const container = document.getElementById("productList");
         container.innerHTML = products.map(product => {
-          // Calculate discounted price if discount is provided
           const originalPrice = product.originalPrice || product.price;
           const discountPercent = product.discount || 10;
           const discountedPrice = calculateDiscountedPrice(originalPrice, discountPercent);
-          
-          // Auto-generate offer text from discount percentage
           const offerText = `${discountPercent}% OFF`;
-          
+          const image = Array.isArray(product.images) && product.images.length > 0 ? product.images[0] : "placeholder.jpg";
+
           return `
-          <div class="product-card" onclick="window.location.href='product.html?id=${product.id}'">
-            <div class="product-badge">${offerText}</div>
-            <img src="${product.image}" alt="${product.title}" />
-            <h3>${product.title}</h3>
-            <p class="product-description">${trimDescription(product.description)}</p>
-            <div class="product-rating">
-              ${generateStarRating(product.rating)}
+            <div class="product-card" onclick="window.location.href='product.html?id=${product.id}'">
+              <div class="product-badge">${offerText}</div>
+              <img src="${image}" alt="${product.title}" onerror="this.src='fallback.jpg'" />
+              <h3>${product.title}</h3>
+              <p class="product-description">${trimDescription(product.description)}</p>
+              <div class="product-rating">${generateStarRating(product.rating)}</div>
+              <div class="price-container">
+                <p class="product-price">₹${discountedPrice}</p>
+                <p class="original-price">₹${originalPrice}</p>
+                <p class="product-discount">${discountPercent}% off</p>
+              </div>
             </div>
-            <div class="price-container">
-              <p class="product-price">₹${discountedPrice}</p>
-              <p class="original-price">₹${originalPrice}</p>
-              <p class="product-discount">${discountPercent}% off</p>
-            </div>
-          </div>
-        `}).join('');
-        
-        // Start countdown after products are loaded
-        startCountdown();
+          `;
+        }).join('');
+
+        // ✅ Start countdown from JSON
+        const seconds = countdownData?.countdown?.seconds || 3600;
+        startCountdown(seconds);
       })
       .catch(error => {
         console.error('Error loading products:', error);
         document.getElementById('productList').innerHTML = '<p>Error loading products</p>';
       });
-
-    // Generate star rating HTML
-    function generateStarRating(rating) {
-      if (!rating) return '<span class="no-rating">No ratings</span>';
-      
-      let stars = '';
-      const fullStars = Math.floor(rating);
-      const hasHalfStar = rating % 1 !== 0;
-      
-      for (let i = 0; i < fullStars; i++) {
-        stars += '<i class="fas fa-star"></i>';
-      }
-      
-      if (hasHalfStar) {
-        stars += '<i class="fas fa-star-half-alt"></i>';
-      }
-      
-      const emptyStars = 5 - Math.ceil(rating);
-      for (let i = 0; i < emptyStars; i++) {
-        stars += '<i class="far fa-star"></i>';
-      }
-      
-      return stars;
-    }
   </script>
 </body>
 </html>
