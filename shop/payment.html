@@ -21,18 +21,61 @@
     if (!product || !address) {
       container.innerHTML = "<p>Error: Missing product or address information.</p>";
     } else {
+      // Calculate discounted price
+      const originalPrice = product.originalPrice || product.price;
+      const discountPercent = product.discount || 0;
+      const discountedPrice = discountPercent > 0 ? 
+        Math.round(originalPrice - (originalPrice * discountPercent / 100)) : 
+        product.price;
+
       container.innerHTML = `
-        <h3>Product:</h3>
-        <p><strong>${product.title}</strong> - ₹${product.price}</p>
-        <img src="${product.image}" width="150" />
+        <h3>Product Details:</h3>
+        <div class="product-summary">
+          <img src="${product.image}" width="150" />
+          <div class="product-info">
+            <p><strong>${product.title}</strong></p>
+            ${discountPercent > 0 ? `
+              <div class="price-breakdown">
+                <p class="original-price">Original Price: ₹${originalPrice}</p>
+                <p class="discount-amount">Discount: ${discountPercent}% off</p>
+                <p class="discount-savings">You Save: ₹${originalPrice - discountedPrice}</p>
+              </div>
+            ` : ''}
+            <p class="final-price">Final Price: ₹${discountedPrice}</p>
+          </div>
+        </div>
 
         <h3>Billing Address:</h3>
-        <p>${address.name}<br>${address.address}<br>Phone: ${address.phone}</p>
+        <div class="address-summary">
+          <p><strong>${address.name}</strong></p>
+          <p>${address.address}</p>
+          <p>Phone: ${address.phone}</p>
+          ${address.email ? `<p>Email: ${address.email}</p>` : ''}
+        </div>
 
-        <h3>Total Amount:</h3>
-        <p>₹${product.price}</p>
+        <h3>Order Summary:</h3>
+        <div class="order-summary">
+          <div class="summary-row">
+            <span>Product Price:</span>
+            <span>₹${originalPrice}</span>
+          </div>
+          ${discountPercent > 0 ? `
+            <div class="summary-row discount-row">
+              <span>Discount (${discountPercent}%):</span>
+              <span>- ₹${originalPrice - discountedPrice}</span>
+            </div>
+          ` : ''}
+          <div class="summary-row">
+            <span>Delivery Charges:</span>
+            <span>FREE</span>
+          </div>
+          <div class="summary-row total-row">
+            <span><strong>Total Amount:</strong></span>
+            <span><strong>₹${discountedPrice}</strong></span>
+          </div>
+        </div>
 
-        <button id="payBtn">Pay Now</button>
+        <button id="payBtn">Pay Now - ₹${discountedPrice}</button>
       `;
 
       document.getElementById("payBtn").addEventListener("click", () => {
@@ -44,7 +87,7 @@
 
         // UPI Payment URL format
         // pay?pa=UPI_ID&pn=NAME&am=AMOUNT&cu=INR&tn=NOTE
-        const upiUrl = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(product.title)}&am=${encodeURIComponent(product.price)}&cu=INR&tn=${encodeURIComponent("Payment for " + product.title)}`;
+        const upiUrl = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(product.title)}&am=${encodeURIComponent(discountedPrice)}&cu=INR&tn=${encodeURIComponent("Payment for " + product.title)}`;
 
         // Generate QR code inside qrContainer
         QRCode.toCanvas(upiUrl, { width: 200 }, function (error, canvas) {
@@ -57,11 +100,16 @@
           // Optionally show some text below QR code
           const infoText = document.createElement("p");
           infoText.textContent = "Scan this QR code to pay via UPI";
+          infoText.style.textAlign = "center";
+          infoText.style.marginTop = "15px";
+          infoText.style.fontWeight = "500";
+          infoText.style.color = "#388e3c";
           qrContainer.appendChild(infoText);
         });
 
         // Disable button after generating QR
         document.getElementById("payBtn").disabled = true;
+        document.getElementById("payBtn").textContent = "QR Code Generated";
       });
     }
   </script>
