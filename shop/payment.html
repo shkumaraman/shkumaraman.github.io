@@ -8,7 +8,6 @@
   <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
 </head>
 <body>
-
   <div id="summary"></div>
   <div id="qrCode" style="margin-top:20px;"></div>
 
@@ -21,15 +20,28 @@
     if (!product || !address) {
       container.innerHTML = "<p>Error: Missing product or address information.</p>";
     } else {
+      // Calculate discounted price
       const originalPrice = product.originalPrice || product.price;
       const discountPercent = product.discount || 0;
-      const discountedPrice = discountPercent > 0 ?
-        Math.round(originalPrice - (originalPrice * discountPercent / 100)) :
+      const discountedPrice = discountPercent > 0 ? 
+        Math.round(originalPrice - (originalPrice * discountPercent / 100)) : 
         product.price;
 
       container.innerHTML = `
         <div class="product-summary">
-          <img src="${product.image}" width="150" />
+          <img src="${product.image}" width="200" />
+          <div class="product-info">
+            <p><strong>${product.title}</strong></p>
+            <p>${product.description}</p>
+            ${discountPercent > 0 ? `
+              <div class="price-breakdown">
+                <p class="original-price">Original Price: ₹${originalPrice}</p>
+                <p class="discount-amount">Discount: ${discountPercent}% off</p>
+                <p class="discount-savings">You Save: ₹${originalPrice - discountedPrice}</p>
+              </div>
+            ` : ''}
+            <p class="final-price"><strong>Final Price: ₹${discountedPrice}</strong></p>
+          </div>
         </div>
 
         <h3>Billing Address:</h3>
@@ -40,37 +52,20 @@
           ${address.email ? `<p>Email: ${address.email}</p>` : ''}
         </div>
 
-        <h3>Order Summary:</h3>
-        <div class="order-summary">
-          <div class="summary-row">
-            <span>Product Price:</span>
-            <span>₹${originalPrice}</span>
-          </div>
-          ${discountPercent > 0 ? `
-            <div class="summary-row discount-row">
-              <span>Discount (${discountPercent}%):</span>
-              <span>- ₹${originalPrice - discountedPrice}</span>
-            </div>
-          ` : ''}
-          <div class="summary-row">
-            <span>Delivery Charges:</span>
-            <span>FREE</span>
-          </div>
-          <div class="summary-row total-row">
-            <span><strong>Total Amount:</strong></span>
-            <span><strong>₹${discountedPrice}</strong></span>
-          </div>
-        </div>
-
         <button id="payBtn">Pay Now - ₹${discountedPrice}</button>
       `;
 
       document.getElementById("payBtn").addEventListener("click", () => {
+        // Clear previous QR if any
         qrContainer.innerHTML = "";
 
+        // UPI ID from JSON (example)
         const upiId = "your-upi-id@bank";
+
+        // UPI Payment URL format
         const upiUrl = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(product.title)}&am=${encodeURIComponent(discountedPrice)}&cu=INR&tn=${encodeURIComponent("Payment for " + product.title)}`;
 
+        // Generate QR code
         QRCode.toCanvas(upiUrl, { width: 200 }, function (error, canvas) {
           if (error) {
             qrContainer.innerHTML = "<p>Failed to generate QR code.</p>";
@@ -78,7 +73,6 @@
             return;
           }
           qrContainer.appendChild(canvas);
-
           const infoText = document.createElement("p");
           infoText.textContent = "Scan this QR code to pay via UPI";
           infoText.style.textAlign = "center";
@@ -88,6 +82,7 @@
           qrContainer.appendChild(infoText);
         });
 
+        // Disable button
         document.getElementById("payBtn").disabled = true;
         document.getElementById("payBtn").textContent = "QR Code Generated";
       });
