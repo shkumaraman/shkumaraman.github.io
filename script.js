@@ -1,27 +1,20 @@
-// ===============================
-// Theme Toggle Functionality
-// ===============================
+// ----------------- Theme Toggle -----------------
 const themeToggle = document.getElementById('themeToggle');
 const body = document.body;
 
-// Initialize theme from localStorage or system preference
-function initializeTheme() {
-  const savedTheme = localStorage.getItem('theme') ||
-    (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
-  
-  if (savedTheme === 'light') {
-    body.classList.add('light-mode');
-    themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
-  } else {
-    body.classList.remove('light-mode');
-    themeToggle.innerHTML = '<i class="fas fa-moon"></i>';
-  }
+// Load theme from localStorage or system preference
+const savedTheme = localStorage.getItem('theme') ||
+                   (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+
+if (savedTheme === 'light') {
+  body.classList.add('light-mode');
+  themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
+} else {
+  themeToggle.innerHTML = '<i class="fas fa-moon"></i>';
 }
 
-// Toggle theme between light and dark
-function toggleTheme() {
+themeToggle.addEventListener('click', () => {
   body.classList.toggle('light-mode');
-
   if (body.classList.contains('light-mode')) {
     localStorage.setItem('theme', 'light');
     themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
@@ -29,46 +22,36 @@ function toggleTheme() {
     localStorage.setItem('theme', 'dark');
     themeToggle.innerHTML = '<i class="fas fa-moon"></i>';
   }
-}
+});
 
-// Initialize theme on DOM load
-document.addEventListener('DOMContentLoaded', initializeTheme);
-
-// Add toggle button listener
-if (themeToggle) {
-  themeToggle.addEventListener('click', toggleTheme);
-}
-
-// ===============================
-// Chat Layout Adjustments
-// ===============================
+// ----------------- Chat Layout + Input Focus Handling -----------------
 const msgInput = document.getElementById("msgInput");
 const chatLog = document.getElementById("chatLog");
 const chatControls = document.querySelector(".chat-controls");
 const appHeader = document.querySelector(".app-header");
 
-// Set chatLog height based on window size
+// Set chatLog height based on viewport and layout
 function setChatLogHeight() {
   const windowHeight = window.innerHeight;
   const headerHeight = appHeader.offsetHeight;
   const controlsHeight = chatControls.offsetHeight;
-
+  
   const availableHeight = windowHeight - headerHeight - controlsHeight;
   chatLog.style.height = availableHeight + "px";
 }
 
-// Adjust chatLog height on page load
-window.addEventListener("load", setChatLogHeight);
+// Set height on load
+setChatLogHeight();
 
-// Adjust chatLog height on window resize
+// Recalculate height on window resize
 window.addEventListener("resize", setChatLogHeight);
 
-// Lock scroll when input is focused
+// Lock body scroll when input is focused (mobile UX)
 msgInput.addEventListener("focus", () => {
   document.body.style.overflow = "hidden";
 });
 
-// Restore scroll when input loses focus
+// Restore scroll when input is blurred
 msgInput.addEventListener("blur", () => {
   document.body.style.overflow = "auto";
 });
