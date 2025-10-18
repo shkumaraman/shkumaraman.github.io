@@ -74,18 +74,6 @@ body {
   transition: background 0.2s;
 }
 
-.menu-btn {
-  background: none;
-  border: none;
-  color: var(--dark-text);
-  font-size: 24px;
-  cursor: pointer;
-  padding: 5px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
 .profile-container {
   text-align: center;
   background-color: #1e1e1e;
@@ -110,36 +98,6 @@ h2 {
 p {
   margin: 10px 0;
   color: var(--dark-text);
-}
-
-#menu {
-  width: 300px;
-  height: 100%;
-  background: var(--dark-header-bg);
-  position: fixed;
-  top: 0;
-  left: -300px;
-  transition: left 0.3s ease-in-out;
-  overflow-y: auto;
-  padding-top: 60px;
-  display: flex;
-  flex-direction: column;
-  z-index: 99;
-  max-height: 100vh;
-}
-
-#menu a {
-  text-decoration: none;
-  color: #fff;
-  font-size: 16px;
-  margin: 0;
-  padding: 10px 20px;
-  transition: background-color 0.3s;
-}
-
-#menu a:hover {
-  background-color: #333;
-  border-radius: 5px;
 }
 
 ul {
@@ -511,19 +469,7 @@ ul li strong {
   </div>
 </header>
 
-<div id="menu">
-  <a href="/" onclick="toggleMenu()">Home</a>
-  <a href="chat/index.html" onclick="toggleMenu()">Text Chat</a>
-  <a href="chat/group.html" onclick="toggleMenu()">Group Chat</a>
-  <a href="chat/video.html" onclick="toggleMenu()">Video Chat</a>
-  <a href="chat/private-room.html" onclick="toggleMenu()">Private Room</a>
-  <a href="rules.html" onclick="toggleMenu()">Rules</a>
-  <a href="photoshare.html" onclick="toggleMenu()">PhotoShare</a>
-  <a href="about.html" onclick="toggleMenu()">About us</a>
-  <a href="contact.html" onclick="toggleMenu()">Contact us</a>
-  <a href="privacy-policy.html" onclick="toggleMenu()">Privacy Policy</a>
-  <a href="terms.html" onclick="toggleMenu()">Terms And Conditions</a>
-</div>
+<!-- Menu removed -->
 
 <div class="profile-container">
   <h1>Chat with Strangers</h1>
@@ -576,6 +522,9 @@ ul li strong {
       </div>
       <div id="preferenceError" class="preference-feedback preference-error">
         ⚠️ Please enter a nickname
+      </div>
+      <div id="preferenceBanned" class="preference-feedback preference-error">
+        ⚠️ Nickname contains inappropriate content
       </div>
     </div>
     
@@ -882,8 +831,50 @@ let myNickname = "";
 let myGenderInterest = "everyone";
 let myTags = [];
 
+// Bad word filter system
+let bannedWords = [];
+let bannedWordsLoaded = false;
+
+// Load the banned words from filter.txt
+async function loadBannedWords() {
+  try {
+    const response = await fetch('filter.txt');
+    const text = await response.text();
+    bannedWords = text.split('\n')
+      .map(word => word.trim().toLowerCase())
+      .filter(word => word.length > 0); // Remove empty lines
+    bannedWordsLoaded = true;
+    console.log("Banned words loaded successfully:", bannedWords.length);
+  } catch (err) {
+    console.error("Error loading banned words:", err);
+    // Fallback to a basic list if the file can't be loaded
+    bannedWords = ['badword1', 'badword2', 'swearword']; // Add some default bad words
+    bannedWordsLoaded = true;
+  }
+}
+
+// Enhanced check for banned words with case insensitivity and word boundaries
+function containsBannedWords(message) {
+  if (!bannedWordsLoaded || !message || typeof message !== 'string') return false;
+  
+  const lowerMsg = message.toLowerCase();
+  return bannedWords.some(word => {
+    if (!word || word.length < 2) return false;
+    
+    // Escape special regex characters in the word
+    const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    
+    // Create regex pattern that matches word with word boundaries
+    const pattern = new RegExp(`\\b${escapedWord}\\b`, 'i');
+    return pattern.test(message);
+  });
+}
+
 // Load preferences from localStorage on page load
 document.addEventListener("DOMContentLoaded", () => {
+  // Load banned words first
+  loadBannedWords();
+  
   // Load nickname
   const savedNickname = localStorage.getItem("talkrush_nickname");
   const input = document.getElementById("nicknameInput");
@@ -969,6 +960,7 @@ function savePreferences() {
   // Hide any previous feedback
   document.getElementById('preferenceSuccess').style.display = 'none';
   document.getElementById('preferenceError').style.display = 'none';
+  document.getElementById('preferenceBanned').style.display = 'none';
   
   // Get and validate nickname
   const input = document.getElementById("nicknameInput");
@@ -976,6 +968,12 @@ function savePreferences() {
 
   if (!newNickname) {
     document.getElementById('preferenceError').style.display = 'block';
+    return;
+  }
+
+  // Check for banned words in nickname
+  if (containsBannedWords(newNickname)) {
+    document.getElementById('preferenceBanned').style.display = 'block';
     return;
   }
 
