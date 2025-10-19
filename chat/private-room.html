@@ -651,6 +651,27 @@ body.light-mode {
     color: var(--light-text);
 }
 
+.link-btn {
+    background: none;
+    border: none;
+    color: var(--dark-icon-color);
+    cursor: pointer;
+    font-size: 1.2em;
+    margin-left: 5px;
+}
+
+.link-btn:hover {
+    color: var(--dark-text);
+}
+
+.light-mode .link-btn {
+    color: var(--light-icon-color);
+}
+
+.light-mode .link-btn:hover {
+    color: var(--light-text);
+}
+
 /* Input placeholder color */
 #msgInput::placeholder {
     color: var(--dark-secondary-text);
@@ -728,8 +749,8 @@ body.light-mode {
                 <p>Create a new private room and share the code with someone:</p>
                 <div class="room-code-display">
                     <span id="roomCodeDisplay">-----</span>
-                    <button class="copy-btn" id="copyRoomCode" title="Copy code">
-                        <i class="fas fa-copy"></i>
+                    <button class="link-btn" id="copyRoomLink" title="Copy room link">
+                        <i class="fas fa-link"></i>
                     </button>
                 </div>
                 <div class="modal-buttons">
@@ -838,15 +859,56 @@ body.light-mode {
     const roomCodeInput = document.getElementById("roomCodeInput");
     const createRoomBtn = document.getElementById("createRoomBtn");
     const joinRoomBtn = document.getElementById("joinRoomBtn");
-    const copyRoomCodeBtn = document.getElementById("copyRoomCode");
+    const copyRoomLinkBtn = document.getElementById("copyRoomLink");
     const joinError = document.getElementById("joinError");
     const roomBtn = document.getElementById("roomBtn");
     const closeModal = document.getElementsByClassName("close")[0];
 
     // Initialize when page loads
     window.addEventListener('load', () => {
-        // Show room modal on load
-        roomModal.style.display = "block";
+        // Check if we have a saved room in localStorage
+        const savedRoom = localStorage.getItem('currentRoomCode');
+        const savedPeerId = localStorage.getItem('myPeerId');
+        
+        if (savedRoom && savedPeerId) {
+            // Try to reconnect to the room
+            currentRoomCode = savedRoom;
+            myId = savedPeerId;
+            isRoomCreator = localStorage.getItem('isRoomCreator') === 'true';
+            
+            // Check if room still exists
+            db.ref("rooms/" + currentRoomCode).once('value').then((snapshot) => {
+                if (snapshot.exists()) {
+                    const roomData = snapshot.val();
+                    
+                    if (isRoomCreator) {
+                        // I'm the creator, listen for participants
+                        logSystem(`Reconnected to room ${currentRoomCode}. Waiting for participant...`);
+                        db.ref("rooms/" + currentRoomCode + "/participants").on("child_added", (snapshot) => {
+                            if (snapshot.key !== myId) {
+                                connectToPeer(snapshot.key);
+                            }
+                        });
+                    } else {
+                        // I'm a participant, try to connect to creator
+                        logSystem(`Reconnecting to room ${currentRoomCode}...`);
+                        connectToPeer(roomData.creator);
+                    }
+                } else {
+                    // Room no longer exists
+                    localStorage.removeItem('currentRoomCode');
+                    localStorage.removeItem('myPeerId');
+                    localStorage.removeItem('isRoomCreator');
+                    currentRoomCode = null;
+                    isRoomCreator = false;
+                    roomModal.style.display = "block";
+                }
+            });
+        } else {
+            // Show room modal if no saved room
+            roomModal.style.display = "block";
+        }
+        
         startPeer();
     });
 
@@ -901,7 +963,7 @@ body.light-mode {
         return Math.floor(10000 + Math.random() * 90000).toString();
     }
 
-    // Create room functionality - FIXED: Now creates room in a single click
+    // Create room functionality
     createRoomBtn.onclick = () => {
         const code = generateRoomCode();
         roomCodeDisplay.textContent = code;
@@ -916,6 +978,12 @@ body.light-mode {
         }).then(() => {
             currentRoomCode = code;
             isRoomCreator = true;
+            
+            // Save room info to localStorage
+            localStorage.setItem('currentRoomCode', currentRoomCode);
+            localStorage.setItem('myPeerId', myId);
+            localStorage.setItem('isRoomCreator', 'true');
+            
             logSystem(`Room created with code: ${code}. Share this code with someone to chat.`);
             roomModal.style.display = "none";
             
@@ -954,6 +1022,11 @@ body.light-mode {
                 currentRoomCode = code;
                 isRoomCreator = false;
                 
+                // Save room info to localStorage
+                localStorage.setItem('currentRoomCode', currentRoomCode);
+                localStorage.setItem('myPeerId', myId);
+                localStorage.setItem('isRoomCreator', 'false');
+                
                 // Add myself as participant
                 db.ref("rooms/" + code + "/participants").update({
                     [myId]: "active"
@@ -979,15 +1052,16 @@ body.light-mode {
         }, 3000);
     }
 
-    // Copy room code to clipboard
-    copyRoomCodeBtn.onclick = () => {
+    // Copy room link to clipboard
+    copyRoomLinkBtn.onclick = () => {
         const code = roomCodeDisplay.textContent;
         if (code !== "-----") {
-            navigator.clipboard.writeText(code).then(() => {
-                const originalHtml = copyRoomCodeBtn.innerHTML;
-                copyRoomCodeBtn.innerHTML = '<i class="fas fa-check"></i>';
+            const roomLink = window.location.href.split('?')[0] + '?room=' + code;
+            navigator.clipboard.writeText(roomLink).then(() => {
+                const originalHtml = copyRoomLinkBtn.innerHTML;
+                copyRoomLinkBtn.innerHTML = '<i class="fas fa-check"></i>';
                 setTimeout(() => {
-                    copyRoomCodeBtn.innerHTML = originalHtml;
+                    copyRoomLinkBtn.innerHTML = originalHtml;
                 }, 2000);
             }).catch(err => {
                 console.error('Failed to copy: ', err);
@@ -1015,6 +1089,9 @@ body.light-mode {
 
         peer.on('open', (id) => {
             myId = id;
+            // Save peer ID to localStorage
+            localStorage.setItem('myPeerId', myId);
+            
             // If we're not in a room, show the modal
             if (!currentRoomCode) {
                 roomModal.style.display = "block";
@@ -1094,10 +1171,14 @@ body.light-mode {
             db.ref("rooms/" + currentRoomCode).remove();
             currentRoomCode = null;
             isRoomCreator = false;
+            localStorage.removeItem('currentRoomCode');
+            localStorage.removeItem('isRoomCreator');
         } else if (currentRoomCode) {
             // Remove myself from participants
             db.ref("rooms/" + currentRoomCode + "/participants/" + myId).remove();
             currentRoomCode = null;
+            localStorage.removeItem('currentRoomCode');
+            localStorage.removeItem('isRoomCreator');
         }
         
         // Automatically restart the peer connection
@@ -1242,10 +1323,14 @@ body.light-mode {
             db.ref("rooms/" + currentRoomCode).remove();
             currentRoomCode = null;
             isRoomCreator = false;
+            localStorage.removeItem('currentRoomCode');
+            localStorage.removeItem('isRoomCreator');
         } else if (currentRoomCode) {
             // Remove myself from participants
             db.ref("rooms/" + currentRoomCode + "/participants/" + myId).remove();
             currentRoomCode = null;
+            localStorage.removeItem('currentRoomCode');
+            localStorage.removeItem('isRoomCreator');
         }
         
         logSystem("Chat ended. Starting a new connection...");
@@ -1321,14 +1406,33 @@ body.light-mode {
         if (e.target === gifModal) gifModal.style.display = "none";
     });
 
-    // Share button functionality
+    // Share button functionality - only share features
     document.getElementById("shareBtn").onclick = () => {
         if (currentRoomCode) {
-            navigator.clipboard.writeText(window.location.href.split('?')[0] + '?room=' + currentRoomCode).then(() => {
-                logSystem("Room link copied to clipboard!");
-            }).catch(err => {
-                console.error('Failed to copy: ', err);
-            });
+            // Create a shareable link
+            const roomLink = window.location.href.split('?')[0] + '?room=' + currentRoomCode;
+            
+            // Check if Web Share API is available
+            if (navigator.share) {
+                navigator.share({
+                    title: 'Join my Private Chat Room',
+                    text: `Join my private chat room using code: ${currentRoomCode}`,
+                    url: roomLink
+                }).then(() => {
+                    logSystem("Room shared successfully!");
+                }).catch((error) => {
+                    console.log('Error sharing:', error);
+                    // Fallback to copying the link
+                    navigator.clipboard.writeText(roomLink).then(() => {
+                        logSystem("Room link copied to clipboard!");
+                    });
+                });
+            } else {
+                // Fallback for browsers that don't support Web Share API
+                navigator.clipboard.writeText(roomLink).then(() => {
+                    logSystem("Room link copied to clipboard!");
+                });
+            }
         } else {
             logSystem("Create or join a room first to share");
         }
