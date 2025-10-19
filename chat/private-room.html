@@ -620,7 +620,7 @@ body.light-mode {
     color: var(--dark-icon-color);
     cursor: pointer;
     font-size: 1em;
-    margin-left: 8px;
+    margin-left: 10px;
     width: 24px;
     height: 24px;
     display: flex;
@@ -757,7 +757,6 @@ body.light-mode {
     }
     
     .copy-btn {
-        margin-left: 5px;
         width: 22px;
         height: 22px;
         font-size: 0.9em;
@@ -896,8 +895,43 @@ const roomBtn = document.getElementById("roomBtn");
 
 // Initialize when page loads
 window.addEventListener('load', () => {
+    loadFromStorage();
     startPeer();
 });
+
+// Save room data to localStorage
+function saveToStorage() {
+    const roomData = {
+        roomCode: currentRoomCode,
+        isRoomCreator: isRoomCreator,
+        peerId: myId
+    };
+    localStorage.setItem('chatRoomData', JSON.stringify(roomData));
+}
+
+// Load room data from localStorage
+function loadFromStorage() {
+    const savedData = localStorage.getItem('chatRoomData');
+    if (savedData) {
+        const roomData = JSON.parse(savedData);
+        currentRoomCode = roomData.roomCode;
+        isRoomCreator = roomData.isRoomCreator;
+        myId = roomData.peerId; // Store peer ID for reconnection
+        
+        // If we have a room code, show it in the input
+        if (currentRoomCode) {
+            roomCodeInput.value = currentRoomCode;
+        }
+    }
+}
+
+// Clear room data from localStorage
+function clearStorage() {
+    localStorage.removeItem('chatRoomData');
+    currentRoomCode = null;
+    isRoomCreator = false;
+    roomCodeInput.value = '';
+}
 
 // Handle page refresh/close
 window.addEventListener('beforeunload', (e) => {
@@ -936,6 +970,10 @@ roomBtn.onclick = () => {
         roomModal.style.display = "none";
     } else {
         roomModal.style.display = "block";
+        // Load saved room code if exists
+        if (currentRoomCode) {
+            roomCodeInput.value = currentRoomCode;
+        }
     }
 };
 
@@ -963,6 +1001,10 @@ createRoomBtn.onclick = () => {
     }).then(() => {
         currentRoomCode = code;
         isRoomCreator = true;
+        
+        // Save to localStorage
+        saveToStorage();
+        
         logSystem(`Room created with code: ${code}. Share this code with someone to chat.`);
         roomModal.style.display = "none";
         
@@ -1010,6 +1052,9 @@ joinRoomBtn.onclick = () => {
             currentRoomCode = code;
             isRoomCreator = false;
             
+            // Save to localStorage
+            saveToStorage();
+            
             // Add myself as participant
             db.ref("rooms/" + code + "/participants").update({
                 [myId]: "active"
@@ -1029,6 +1074,59 @@ joinRoomBtn.onclick = () => {
         showJoinError("Error joining room. Please try again.");
     });
 };
+
+// Auto-rejoin room if we have saved data
+function autoRejoinRoom() {
+    if (currentRoomCode && myId) {
+        // Show loading screen
+        loadingScreen.style.display = "flex";
+        loadingText.textContent = "Reconnecting to room...";
+        
+        // Check if room still exists
+        db.ref("rooms/" + currentRoomCode).once('value').then((snapshot) => {
+            if (snapshot.exists()) {
+                const roomData = snapshot.val();
+                
+                if (isRoomCreator) {
+                    // I was the creator, wait for participants
+                    logSystem(`Reconnected to room: ${currentRoomCode}. Waiting for participants...`);
+                    loadingScreen.style.display = "none";
+                    
+                    // Listen for participants joining
+                    db.ref("rooms/" + currentRoomCode + "/participants").on("child_added", (snapshot) => {
+                        if (snapshot.key !== myId) {
+                            // Another participant joined, connect to them
+                            connectToPeer(snapshot.key);
+                        }
+                    });
+                } else {
+                    // I was a participant, try to reconnect to creator
+                    db.ref("rooms/" + currentRoomCode + "/participants").update({
+                        [myId]: "active"
+                    }).then(() => {
+                        connectToPeer(roomData.creator);
+                        loadingScreen.style.display = "none";
+                    });
+                }
+            } else {
+                // Room no longer exists
+                loadingScreen.style.display = "none";
+                clearStorage();
+                logSystem("Room no longer exists. Please create or join a new room.");
+                roomModal.style.display = "block";
+            }
+        }).catch((error) => {
+            console.error("Error rejoining room:", error);
+            loadingScreen.style.display = "none";
+            clearStorage();
+            logSystem("Error rejoining room. Please create or join a new room.");
+            roomModal.style.display = "block";
+        });
+    } else {
+        // No saved room data, show modal
+        roomModal.style.display = "block";
+    }
+}
 
 function showJoinError(message) {
     joinError.textContent = message;
@@ -1060,7 +1158,10 @@ function startPeer() {
     isConnected = false;
     if (peer) peer.destroy();
     
-    peer = new Peer({
+    // Try to use saved peer ID for reconnection
+    const savedPeerId = myId;
+    
+    peer = new Peer(savedPeerId, {
         config: {
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
@@ -1074,17 +1175,31 @@ function startPeer() {
 
     peer.on('open', (id) => {
         myId = id;
-        // Hide loading screen and show room modal
+        // Save peer ID to localStorage
+        saveToStorage();
+        
+        // Hide loading screen
         loadingScreen.style.display = "none";
-        roomModal.style.display = "block";
+        
+        // Auto-rejoin room if we have saved data
+        autoRejoinRoom();
     });
 
     peer.on('connection', handleNewConnection);
 
     peer.on('error', (err) => {
         console.error('PeerJS error:', err);
-        loadingScreen.style.display = "none";
-        logSystem("Connection error. Please refresh the page to try again.");
+        
+        // If peer ID is taken, generate a new one
+        if (err.type === 'unavailable-id') {
+            console.log('Peer ID unavailable, generating new one...');
+            myId = null;
+            clearStorage();
+            startPeer();
+        } else {
+            loadingScreen.style.display = "none";
+            logSystem("Connection error. Please refresh the page to try again.");
+        }
     });
 }
 
@@ -1151,12 +1266,10 @@ function endConnection(message) {
     // Clean up room if we were the creator
     if (isRoomCreator && currentRoomCode) {
         db.ref("rooms/" + currentRoomCode).remove();
-        currentRoomCode = null;
-        isRoomCreator = false;
+        clearStorage();
     } else if (currentRoomCode) {
-        // Remove myself from participants
+        // Remove myself from participants but keep room data for reconnection
         db.ref("rooms/" + currentRoomCode + "/participants/" + myId).remove();
-        currentRoomCode = null;
     }
     
     // Automatically restart the peer connection
@@ -1302,12 +1415,11 @@ document.getElementById("skipBtn").onclick = () => {
     // Clean up room if we were the creator
     if (isRoomCreator && currentRoomCode) {
         db.ref("rooms/" + currentRoomCode).remove();
-        currentRoomCode = null;
-        isRoomCreator = false;
+        clearStorage();
     } else if (currentRoomCode) {
         // Remove myself from participants
         db.ref("rooms/" + currentRoomCode + "/participants/" + myId).remove();
-        currentRoomCode = null;
+        clearStorage();
     }
     
     logSystem("Chat ended. Starting a new connection...");
@@ -1401,5 +1513,11 @@ const urlParams = new URLSearchParams(window.location.search);
 const roomCodeFromUrl = urlParams.get('room');
 if (roomCodeFromUrl) {
     roomCodeInput.value = roomCodeFromUrl;
+    // Auto-join if we have a room code from URL
+    setTimeout(() => {
+        if (!isConnected) {
+            joinRoomBtn.click();
+        }
+    }, 1000);
 }
 </script>
