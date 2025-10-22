@@ -64,6 +64,8 @@
       padding: 15px;
       border-radius: 6px;
       box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+      word-wrap: break-word;
+      overflow-wrap: break-word;
     }
 
     .timestamp {
@@ -147,6 +149,8 @@
       border-radius: 8px;
       overflow: hidden;
       background: white;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
     }
 
     .url-preview-content {
@@ -167,6 +171,8 @@
       margin-bottom: 5px;
       font-size: 14px;
       color: #333;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
     }
 
     .preview-description {
@@ -174,12 +180,16 @@
       color: #666;
       margin-bottom: 8px;
       line-height: 1.4;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
     }
 
     .preview-domain {
       font-size: 12px;
       color: #888;
       margin-bottom: 8px;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
     }
 
     .preview-image {
@@ -217,6 +227,28 @@
     .highlighted-post {
       border: 2px solid #007bff;
       background-color: #f0f8ff;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0% { border-color: #007bff; }
+      50% { border-color: #66b3ff; }
+      100% { border-color: #007bff; }
+    }
+
+    .post-content {
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+      line-height: 1.4;
+    }
+
+    .post-content a {
+      color: #007bff;
+      text-decoration: none;
+    }
+
+    .post-content a:hover {
+      text-decoration: underline;
     }
   </style>
 </head>
@@ -236,10 +268,12 @@
 
   <script>
     // Firebase Init
-    firebase.initializeApp({
+    const firebaseConfig = {
       databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
-    });
-
+    };
+    
+    // Initialize Firebase
+    firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
     // Banned words system
@@ -444,7 +478,7 @@
         postId: postId
       };
 
-      newPostRef.set(postData);
+      await newPostRef.set(postData);
 
       document.getElementById("postText").value = "";
       showSystemMessage("Post published successfully!");
@@ -569,17 +603,20 @@
         return;
       }
 
-      // Sort by latest
-      const sortedPosts = Object.entries(posts).sort((a, b) => b[1].timestamp - a[1].timestamp);
+      // Convert to array and sort by latest
+      let postsArray = Object.entries(posts);
+      postsArray.sort((a, b) => b[1].timestamp - a[1].timestamp);
 
       // If we have a post to highlight, move it to the top
       if (highlightPostId && posts[highlightPostId]) {
-        const highlightedPost = [highlightPostId, posts[highlightPostId]];
-        const otherPosts = sortedPosts.filter(([id]) => id !== highlightPostId);
-        sortedPosts = [highlightedPost, ...otherPosts];
+        const highlightedPostIndex = postsArray.findIndex(([id]) => id === highlightPostId);
+        if (highlightedPostIndex !== -1) {
+          const highlightedPost = postsArray.splice(highlightedPostIndex, 1)[0];
+          postsArray.unshift(highlightedPost);
+        }
       }
 
-      sortedPosts.forEach(([postId, post]) => {
+      postsArray.forEach(([postId, post]) => {
         const div = document.createElement("div");
         const currentUserId = getUserId();
         const isMyPost = post.userId === currentUserId;
@@ -612,7 +649,7 @@
                         ${post.urlPreview.description ? `<div class="preview-description">${post.urlPreview.description}</div>` : ''}
                       </div>
                       <div class="preview-image-side">
-                        <img src="${post.urlPreview.image}" alt="Preview">
+                        <img src="${post.urlPreview.image}" alt="Preview" onerror="this.style.display='none'">
                       </div>
                     </div>
                   </div>
@@ -636,7 +673,7 @@
 
         div.innerHTML = `
           <div class="nickname">${displayNickname}</div>
-          <div>${displayText}</div>
+          <div class="post-content">${displayText}</div>
           ${urlPreviewHTML}
           <div class="timestamp">${timeSince(post.timestamp)}</div>
           <div class="buttons">
@@ -661,7 +698,9 @@
         
         // Highlight the post if it's the shared one
         if (postId === highlightPostId) {
-          highlightPost(postId);
+          setTimeout(() => {
+            highlightPost(postId);
+          }, 100);
         }
       });
     });
