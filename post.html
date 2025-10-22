@@ -1,7 +1,7 @@
 ---
 layout: default
-title: "Chat With Strangers"
-description: "Chat with strangers in free random chat rooms. Enjoy anonymous text & video chat, group chat, and mobile-friendly fun. A safe Omegle & OmeTV alternative."
+title: "Post Anonymously — Share Your Thoughts with the World"
+description: "Post anything anonymously without login. Confess, express, or speak your mind freely. No sign-up, 100% private & secure. Start posting now!"
 ---
 
 <style>
@@ -163,6 +163,8 @@ description: "Chat with strangers in free random chat rooms. Enjoy anonymous tex
       flex: 1;
       padding: 60px 15px 20px 15px;
       background: var(--dark-chat-bg);
+      position: relative;
+      overflow: hidden;
     }
 
     .light-mode .posts-container {
@@ -177,6 +179,8 @@ description: "Chat with strangers in free random chat rooms. Enjoy anonymous tex
       box-shadow: 0 2px 4px rgba(0,0,0,0.2);
       max-width: 600px;
       border: 1px solid rgba(255,255,255,0.1);
+      z-index: 10;
+      position: relative;
     }
 
     .light-mode .post-input-container {
@@ -249,6 +253,8 @@ description: "Chat with strangers in free random chat rooms. Enjoy anonymous tex
       overflow-wrap: break-word;
       max-width: 600px;
       border: 1px solid rgba(255,255,255,0.1);
+      position: relative;
+      transition: transform 0.5s ease, opacity 0.5s ease;
     }
 
     .light-mode .post {
@@ -494,6 +500,67 @@ description: "Chat with strangers in free random chat rooms. Enjoy anonymous tex
       100% { border-color: var(--light-msg-me); }
     }
 
+    /* Direct Image Preview Styles */
+    .direct-image-preview {
+      margin: 10px 0;
+      text-align: center;
+    }
+
+    .direct-image-preview img {
+      max-width: 100%;
+      max-height: 300px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+
+    /* Post Rotation Controls */
+    .rotation-controls {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: var(--dark-msg-bg);
+      padding: 10px 15px;
+      border-radius: 20px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      z-index: 100;
+    }
+
+    .light-mode .rotation-controls {
+      background: var(--light-msg-bg);
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+
+    .rotation-controls button {
+      background: var(--post-btn);
+      color: white;
+      border: none;
+      border-radius: 50%;
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .rotation-controls button:hover {
+      background: var(--post-btn-hover);
+    }
+
+    .rotation-speed {
+      font-size: 0.8em;
+      color: var(--dark-secondary-text);
+      margin: 0 5px;
+    }
+
+    .light-mode .rotation-speed {
+      color: var(--light-secondary-text);
+    }
+
     /* Scrollbar styling */
     .posts-container::-webkit-scrollbar {
       width: 8px;
@@ -552,6 +619,17 @@ description: "Chat with strangers in free random chat rooms. Enjoy anonymous tex
       .header-right {
         gap: 5px;
       }
+
+      .rotation-controls {
+        bottom: 10px;
+        right: 10px;
+        padding: 8px 12px;
+      }
+
+      .rotation-controls button {
+        width: 32px;
+        height: 32px;
+      }
     }
   </style>
 
@@ -591,6 +669,20 @@ description: "Chat with strangers in free random chat rooms. Enjoy anonymous tex
   <!-- Posts will be loaded here -->
 </div>
 
+<!-- Post Rotation Controls -->
+<div class="rotation-controls">
+  <button id="rotationToggle" title="Toggle Post Rotation">
+    <i class="fas fa-pause"></i>
+  </button>
+  <button id="rotationSpeedDown" title="Slower Rotation">
+    <i class="fas fa-minus"></i>
+  </button>
+  <span class="rotation-speed" id="rotationSpeedDisplay">5s</span>
+  <button id="rotationSpeedUp" title="Faster Rotation">
+    <i class="fas fa-plus"></i>
+  </button>
+</div>
+
 {% include menu.html %}
 {% include scripts.html %}
   
@@ -603,6 +695,13 @@ description: "Chat with strangers in free random chat rooms. Enjoy anonymous tex
     // Initialize Firebase
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
+
+    // Post rotation variables
+    let isRotationActive = false;
+    let rotationSpeed = 5000; // 5 seconds
+    let rotationInterval;
+    let currentPostIndex = 0;
+    let postsArray = [];
 
     // Banned words system
     let bannedWords = [];
@@ -679,6 +778,13 @@ description: "Chat with strangers in free random chat rooms. Enjoy anonymous tex
       return matches ? matches[0] : null;
     }
 
+    // Check if URL is a direct image
+    function isDirectImageURL(url) {
+      if (!url) return false;
+      const imageExtensions = /\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?.*)?$/i;
+      return imageExtensions.test(url);
+    }
+
     // Normalize URL (add https if missing)
     function normalizeURL(url) {
       if (!url) return null;
@@ -702,6 +808,16 @@ description: "Chat with strangers in free random chat rooms. Enjoy anonymous tex
 
     // Get URL preview data
     async function getURLPreview(url) {
+      // If it's a direct image URL, return a special preview
+      if (isDirectImageURL(url)) {
+        return {
+          isDirectImage: true,
+          image: normalizeURL(url),
+          url: normalizeURL(url),
+          domain: extractDomain(url)
+        };
+      }
+
       try {
         const normalizedUrl = normalizeURL(url);
         const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
@@ -750,7 +866,8 @@ description: "Chat with strangers in free random chat rooms. Enjoy anonymous tex
       
       return text.replace(urlRegex, (url) => {
         const href = normalizeURL(url);
-        return `<a href="${href}" target="_blank" rel="noopener noreferrer">${url}</a>`;
+        // Add rel="nofollow" to all external links
+        return `<a href="${href}" target="_blank" rel="noopener noreferrer nofollow">${url}</a>`;
       });
     }
 
@@ -985,6 +1102,77 @@ description: "Chat with strangers in free random chat rooms. Enjoy anonymous tex
       }
     }
 
+    // Post rotation functions
+    function toggleRotation() {
+      isRotationActive = !isRotationActive;
+      const toggleBtn = document.getElementById('rotationToggle');
+      
+      if (isRotationActive) {
+        toggleBtn.innerHTML = '<i class="fas fa-play"></i>';
+        startRotation();
+      } else {
+        toggleBtn.innerHTML = '<i class="fas fa-pause"></i>';
+        stopRotation();
+      }
+    }
+
+    function startRotation() {
+      if (postsArray.length <= 1) {
+        showSystemMessage("Need more posts to start rotation");
+        isRotationActive = false;
+        document.getElementById('rotationToggle').innerHTML = '<i class="fas fa-pause"></i>';
+        return;
+      }
+      
+      stopRotation(); // Clear any existing interval
+      rotationInterval = setInterval(rotatePosts, rotationSpeed);
+    }
+
+    function stopRotation() {
+      if (rotationInterval) {
+        clearInterval(rotationInterval);
+        rotationInterval = null;
+      }
+    }
+
+    function rotatePosts() {
+      if (postsArray.length <= 1) return;
+      
+      // Hide all posts
+      const allPosts = document.querySelectorAll('.post');
+      allPosts.forEach(post => {
+        post.style.opacity = '0';
+        post.style.transform = 'translateX(-100%)';
+      });
+      
+      // Show next post
+      currentPostIndex = (currentPostIndex + 1) % postsArray.length;
+      const nextPostId = postsArray[currentPostIndex][0];
+      const nextPost = document.querySelector(`[data-post-id="${nextPostId}"]`);
+      
+      if (nextPost) {
+        nextPost.style.opacity = '1';
+        nextPost.style.transform = 'translateX(0)';
+      }
+    }
+
+    function changeRotationSpeed(increase) {
+      if (increase) {
+        rotationSpeed = Math.max(1000, rotationSpeed - 1000); // Minimum 1 second
+      } else {
+        rotationSpeed = Math.min(10000, rotationSpeed + 1000); // Maximum 10 seconds
+      }
+      
+      // Update display
+      document.getElementById('rotationSpeedDisplay').textContent = `${rotationSpeed/1000}s`;
+      
+      // Restart rotation if active
+      if (isRotationActive) {
+        stopRotation();
+        startRotation();
+      }
+    }
+
     // Load and display posts
     const postsContainer = document.getElementById("postsContainer");
 
@@ -1004,7 +1192,7 @@ description: "Chat with strangers in free random chat rooms. Enjoy anonymous tex
       }
 
       // Convert to array and sort by latest
-      let postsArray = Object.entries(posts);
+      postsArray = Object.entries(posts);
       postsArray.sort((a, b) => b[1].timestamp - a[1].timestamp);
 
       // If we have a post to highlight, move it to the top
@@ -1016,7 +1204,7 @@ description: "Chat with strangers in free random chat rooms. Enjoy anonymous tex
         }
       }
 
-      postsArray.forEach(([postId, post]) => {
+      postsArray.forEach(([postId, post], index) => {
         const div = document.createElement("div");
         const currentUserId = getUserId();
         const isMyPost = post.userId === currentUserId;
@@ -1035,39 +1223,50 @@ description: "Chat with strangers in free random chat rooms. Enjoy anonymous tex
 
         let urlPreviewHTML = '';
         if (post.urlPreview && !containsBannedWords(post.text)) {
-          const hasImage = post.urlPreview.image && post.urlPreview.image.length > 0;
-          
-          if (hasImage) {
+          // Check if it's a direct image
+          if (post.urlPreview.isDirectImage) {
             urlPreviewHTML = `
-              <div class="url-preview">
-                <a href="${post.urlPreview.url}" target="_blank" rel="noopener noreferrer">
-                  <div class="url-preview-content">
-                    <div class="preview-with-image">
-                      <div class="preview-text-content">
-                        <div class="preview-domain">${post.urlPreview.domain}</div>
-                        <div class="preview-title">${post.urlPreview.title}</div>
-                        ${post.urlPreview.description ? `<div class="preview-description">${post.urlPreview.description}</div>` : ''}
-                      </div>
-                      <div class="preview-image-side">
-                        <img src="${post.urlPreview.image}" alt="Preview" onerror="this.style.display='none'">
-                      </div>
-                    </div>
-                  </div>
+              <div class="direct-image-preview">
+                <a href="${post.urlPreview.url}" target="_blank" rel="noopener noreferrer nofollow">
+                  <img src="${post.urlPreview.image}" alt="Image preview" onerror="this.style.display='none'">
                 </a>
               </div>
             `;
           } else {
-            urlPreviewHTML = `
-              <div class="url-preview">
-                <a href="${post.urlPreview.url}" target="_blank" rel="noopener noreferrer">
-                  <div class="url-preview-content">
-                    <div class="preview-domain">${post.urlPreview.domain}</div>
-                    <div class="preview-title">${post.urlPreview.title}</div>
-                    ${post.urlPreview.description ? `<div class="preview-description">${post.urlPreview.description}</div>` : ''}
-                  </div>
-                </a>
-              </div>
-            `;
+            const hasImage = post.urlPreview.image && post.urlPreview.image.length > 0;
+            
+            if (hasImage) {
+              urlPreviewHTML = `
+                <div class="url-preview">
+                  <a href="${post.urlPreview.url}" target="_blank" rel="noopener noreferrer nofollow">
+                    <div class="url-preview-content">
+                      <div class="preview-with-image">
+                        <div class="preview-text-content">
+                          <div class="preview-domain">${post.urlPreview.domain}</div>
+                          <div class="preview-title">${post.urlPreview.title}</div>
+                          ${post.urlPreview.description ? `<div class="preview-description">${post.urlPreview.description}</div>` : ''}
+                        </div>
+                        <div class="preview-image-side">
+                          <img src="${post.urlPreview.image}" alt="Preview" onerror="this.style.display='none'">
+                        </div>
+                      </div>
+                    </div>
+                  </a>
+                </div>
+              `;
+            } else {
+              urlPreviewHTML = `
+                <div class="url-preview">
+                  <a href="${post.urlPreview.url}" target="_blank" rel="noopener noreferrer nofollow">
+                    <div class="url-preview-content">
+                      <div class="preview-domain">${post.urlPreview.domain}</div>
+                      <div class="preview-title">${post.urlPreview.title}</div>
+                      ${post.urlPreview.description ? `<div class="preview-description">${post.urlPreview.description}</div>` : ''}
+                    </div>
+                  </a>
+                </div>
+              `;
+            }
           }
         }
 
@@ -1097,6 +1296,12 @@ description: "Chat with strangers in free random chat rooms. Enjoy anonymous tex
             ` : ''}
           </div>
         `;
+
+        // For rotation mode, initially hide all but the first post
+        if (isRotationActive && index !== currentPostIndex) {
+          div.style.opacity = '0';
+          div.style.transform = 'translateX(-100%)';
+        }
 
         postsContainer.appendChild(div);
         
@@ -1138,6 +1343,11 @@ description: "Chat with strangers in free random chat rooms. Enjoy anonymous tex
       } else {
         showSystemMessage("Please set your nickname in the group chat to start posting!");
       }
+
+      // Setup rotation controls
+      document.getElementById('rotationToggle').addEventListener('click', toggleRotation);
+      document.getElementById('rotationSpeedUp').addEventListener('click', () => changeRotationSpeed(true));
+      document.getElementById('rotationSpeedDown').addEventListener('click', () => changeRotationSpeed(false));
     }
 
     // Start the app
