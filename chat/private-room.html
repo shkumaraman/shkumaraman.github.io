@@ -862,20 +862,15 @@ body.light-mode {
 {% include menu.html %}
 
 <script>
-// Firebase config
-const firebaseConfig = {
-    databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
-};
-firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
-
-let peer, myConn, myId, waitingRef;
+let peer, myConn, myId;
 let currentSystemMessage = null;
 let isConnected = false;
 let escPressedOnce = false;
 let escTimer = null;
 let currentRoomCode = null;
 let isRoomCreator = false;
+let roomParticipants = {};
+let connectionAttempts = {};
 
 // GIPHY API Key
 const GIPHY_API_KEY = 'EKvv5S1CcXqYuHgxPNVKiNuiuNHRTzFk';
@@ -903,7 +898,8 @@ function saveToStorage() {
     const roomData = {
         roomCode: currentRoomCode,
         isRoomCreator: isRoomCreator,
-        peerId: myId
+        peerId: myId,
+        participants: roomParticipants
     };
     localStorage.setItem('chatRoomData', JSON.stringify(roomData));
 }
@@ -916,6 +912,7 @@ function loadFromStorage() {
         currentRoomCode = roomData.roomCode;
         isRoomCreator = roomData.isRoomCreator;
         myId = roomData.peerId; // Store peer ID for reconnection
+        roomParticipants = roomData.participants || {};
         
         // If we have a room code, show it in the input
         if (currentRoomCode) {
@@ -929,6 +926,7 @@ function clearStorage() {
     localStorage.removeItem('chatRoomData');
     currentRoomCode = null;
     isRoomCreator = false;
+    roomParticipants = {};
     roomCodeInput.value = '';
 }
 
@@ -955,7 +953,6 @@ document.addEventListener('keydown', (e) => {
             clearTimeout(escTimer);
             escPressedOnce = false;
             if (myConn) myConn.close();
-            cleanUpWaitingList();
             isConnected = false;
             document.getElementById("chatLog").innerHTML = "";
             startPeer();
@@ -990,38 +987,23 @@ createRoomBtn.onclick = () => {
     loadingScreen.style.display = "flex";
     loadingText.textContent = "Creating room...";
     
-    // Save room to Firebase with participants node
-    db.ref("rooms/" + code).set({
-        creator: myId,
-        createdAt: firebase.database.ServerValue.TIMESTAMP,
-        participants: {
-            [myId]: "active"
-        }
-    }).then(() => {
-        currentRoomCode = code;
-        isRoomCreator = true;
-        
-        // Save to localStorage
-        saveToStorage();
-        
-        logSystem(`Room created with code: ${code}. Share this code with someone to chat.`);
-        roomModal.style.display = "none";
-        
-        // Hide loading screen
-        loadingScreen.style.display = "none";
-        
-        // Listen for participants joining
-        db.ref("rooms/" + code + "/participants").on("child_added", (snapshot) => {
-            if (snapshot.key !== myId) {
-                // Another participant joined, connect to them
-                connectToPeer(snapshot.key);
-            }
-        });
-    }).catch((error) => {
-        console.error("Error creating room:", error);
-        loadingScreen.style.display = "none";
-        logSystem("Error creating room. Please try again.");
-    });
+    // Set up room data
+    currentRoomCode = code;
+    isRoomCreator = true;
+    roomParticipants = {
+        [myId]: "active"
+    };
+    
+    // Save to localStorage
+    saveToStorage();
+    
+    logSystem(`Room created with code: ${code}. Share this code with someone to chat.`);
+    roomModal.style.display = "none";
+    
+    // Hide loading screen
+    loadingScreen.style.display = "none";
+    
+    logSystem("Waiting for participants to join... Share the room code: " + code);
 };
 
 // Join room functionality
@@ -1036,95 +1018,49 @@ joinRoomBtn.onclick = () => {
     loadingScreen.style.display = "flex";
     loadingText.textContent = "Joining room...";
     
-    // Check if room exists
-    db.ref("rooms/" + code).once('value').then((snapshot) => {
-        if (snapshot.exists()) {
-            const roomData = snapshot.val();
-            
-            // Check if room already has 2 participants
-            if (roomData.participants && Object.keys(roomData.participants).length >= 2) {
-                loadingScreen.style.display = "none";
-                showJoinError("Room is full. Only 2 participants allowed.");
-                return;
-            }
-            
-            currentRoomCode = code;
-            isRoomCreator = false;
-            
-            // Save to localStorage
-            saveToStorage();
-            
-            // Add myself as participant
-            db.ref("rooms/" + code + "/participants").update({
-                [myId]: "active"
-            }).then(() => {
-                // Try to connect to the room creator
-                connectToPeer(roomData.creator);
-                roomModal.style.display = "none";
-                loadingScreen.style.display = "none";
-            });
-        } else {
-            loadingScreen.style.display = "none";
-            showJoinError("Room not found. Please check the code.");
-        }
-    }).catch((error) => {
-        console.error("Error joining room:", error);
-        loadingScreen.style.display = "none";
-        showJoinError("Error joining room. Please try again.");
-    });
+    currentRoomCode = code;
+    isRoomCreator = false;
+    
+    // Save to localStorage
+    saveToStorage();
+    
+    roomModal.style.display = "none";
+    loadingScreen.style.display = "none";
+    
+    // Try to connect to all participants in the room
+    attemptToConnectToRoom();
 };
 
-// Auto-rejoin room if we have saved data
-function autoRejoinRoom() {
-    if (currentRoomCode && myId) {
-        // Show loading screen
-        loadingScreen.style.display = "flex";
-        loadingText.textContent = "Reconnecting to room...";
-        
-        // Check if room still exists
-        db.ref("rooms/" + currentRoomCode).once('value').then((snapshot) => {
-            if (snapshot.exists()) {
-                const roomData = snapshot.val();
-                
-                if (isRoomCreator) {
-                    // I was the creator, wait for participants
-                    logSystem(`Reconnected to room: ${currentRoomCode}. Waiting for participants...`);
-                    loadingScreen.style.display = "none";
-                    
-                    // Listen for participants joining
-                    db.ref("rooms/" + currentRoomCode + "/participants").on("child_added", (snapshot) => {
-                        if (snapshot.key !== myId) {
-                            // Another participant joined, connect to them
-                            connectToPeer(snapshot.key);
-                        }
-                    });
-                } else {
-                    // I was a participant, try to reconnect to creator
-                    db.ref("rooms/" + currentRoomCode + "/participants").update({
-                        [myId]: "active"
-                    }).then(() => {
-                        connectToPeer(roomData.creator);
-                        loadingScreen.style.display = "none";
-                    });
+function attemptToConnectToRoom() {
+    if (!currentRoomCode) return;
+    
+    // Get participants from localStorage
+    const savedData = localStorage.getItem('chatRoomData');
+    if (savedData) {
+        const roomData = JSON.parse(savedData);
+        if (roomData.roomCode === currentRoomCode && roomData.participants) {
+            roomParticipants = roomData.participants;
+            
+            // Try to connect to each participant
+            Object.keys(roomParticipants).forEach(participantId => {
+                if (participantId !== myId && roomParticipants[participantId] === "active") {
+                    connectToPeer(participantId);
                 }
-            } else {
-                // Room no longer exists
-                loadingScreen.style.display = "none";
-                clearStorage();
-                logSystem("Room no longer exists. Please create or join a new room.");
-                roomModal.style.display = "block";
+            });
+            
+            // If no active participants found, wait and retry
+            const activeParticipants = Object.keys(roomParticipants).filter(id => 
+                id !== myId && roomParticipants[id] === "active"
+            );
+            
+            if (activeParticipants.length === 0) {
+                logSystem("Waiting for room creator to come online...");
+                setTimeout(attemptToConnectToRoom, 3000);
             }
-        }).catch((error) => {
-            console.error("Error rejoining room:", error);
-            loadingScreen.style.display = "none";
-            clearStorage();
-            logSystem("Error rejoining room. Please create or join a new room.");
-            roomModal.style.display = "block";
-        });
+        }
     } else {
-        // No saved room data, show modal
-        loadingScreen.style.display = "none";
-        roomModal.style.display = "block";
+        logSystem("Room not found. Please check the code and try again.");
+        clearStorage();
     }
 }
 
@@ -1175,14 +1111,23 @@ function startPeer() {
 
     peer.on('open', (id) => {
         myId = id;
-        // Save peer ID to localStorage
-        saveToStorage();
+        
+        // Add myself to room participants if in a room
+        if (currentRoomCode) {
+            roomParticipants[myId] = "active";
+            saveToStorage();
+        }
         
         // Hide loading screen
         loadingScreen.style.display = "none";
         
         // Auto-rejoin room if we have saved data
-        autoRejoinRoom();
+        if (currentRoomCode) {
+            autoRejoinRoom();
+        } else {
+            // No saved room data, show modal
+            roomModal.style.display = "block";
+        }
     });
 
     peer.on('connection', handleNewConnection);
@@ -1209,12 +1154,22 @@ function handleNewConnection(conn) {
         return;
     }
     
+    // Add this participant to our room
+    if (currentRoomCode) {
+        roomParticipants[conn.peer] = "active";
+        saveToStorage();
+    }
+    
     setupConnection(conn);
     logSystem("Connected to room participant!");
 }
 
 function connectToPeer(peerId) {
-    if (isConnected) return;
+    if (isConnected || !peerId || peerId === myId) return;
+    
+    // Prevent multiple connection attempts to the same peer
+    if (connectionAttempts[peerId]) return;
+    connectionAttempts[peerId] = true;
     
     const conn = peer.connect(peerId, {
         reliable: true
@@ -1227,7 +1182,18 @@ function connectToPeer(peerId) {
     
     conn.on('error', (err) => {
         console.error("Connection error:", err);
-        logSystem("Failed to connect to participant");
+        delete connectionAttempts[peerId];
+        
+        // If we're the room creator and couldn't connect, keep waiting
+        if (isRoomCreator) {
+            logSystem("Waiting for participants to join...");
+        } else {
+            logSystem("Failed to connect to participant. Retrying...");
+            setTimeout(() => {
+                delete connectionAttempts[peerId];
+                attemptToConnectToRoom();
+            }, 3000);
+        }
     });
 }
 
@@ -1260,30 +1226,45 @@ function setupConnection(conn) {
 
 function endConnection(message) {
     logSystem(message);
+    
+    // Remove disconnected participant from room
+    if (myConn && roomParticipants[myConn.peer]) {
+        roomParticipants[myConn.peer] = "inactive";
+        saveToStorage();
+    }
+    
     myConn = null;
     isConnected = false;
     
-    // Clean up room if we were the creator
-    if (isRoomCreator && currentRoomCode) {
-        db.ref("rooms/" + currentRoomCode).remove();
-        clearStorage();
-    } else if (currentRoomCode) {
-        // Remove myself from participants but keep room data for reconnection
-        db.ref("rooms/" + currentRoomCode + "/participants/" + myId).remove();
+    // If we're in a room, try to reconnect
+    if (currentRoomCode) {
+        setTimeout(() => {
+            attemptToConnectToRoom();
+        }, 2000);
+    } else {
+        // Not in a room, restart fresh
+        setTimeout(() => {
+            startPeer();
+        }, 1000);
     }
-    
-    // Automatically restart the peer connection
-    setTimeout(() => {
-        startPeer();
-    }, 1000);
 }
 
-function cleanUpWaitingList() {
-    if (waitingRef) {
-        waitingRef.off();
-        db.ref("waiting").orderByValue().equalTo(myId).once('value', (snap) => {
-            snap.forEach(child => child.ref.remove());
-        });
+// Auto-rejoin room if we have saved data
+function autoRejoinRoom() {
+    if (currentRoomCode && myId) {
+        // Show loading screen
+        loadingScreen.style.display = "flex";
+        loadingText.textContent = "Reconnecting to room...";
+        
+        logSystem(`Reconnecting to room: ${currentRoomCode}...`);
+        loadingScreen.style.display = "none";
+        
+        // Try to connect to room participants
+        attemptToConnectToRoom();
+    } else {
+        // No saved room data, show modal
+        loadingScreen.style.display = "none";
+        roomModal.style.display = "block";
     }
 }
 
@@ -1409,18 +1390,10 @@ document.getElementById("gifInput").addEventListener("change", (e) => {
 
 document.getElementById("skipBtn").onclick = () => {
     if (myConn) myConn.close();
-    cleanUpWaitingList();
     isConnected = false;
     
-    // Clean up room if we were the creator
-    if (isRoomCreator && currentRoomCode) {
-        db.ref("rooms/" + currentRoomCode).remove();
-        clearStorage();
-    } else if (currentRoomCode) {
-        // Remove myself from participants
-        db.ref("rooms/" + currentRoomCode + "/participants/" + myId).remove();
-        clearStorage();
-    }
+    // Clear room data
+    clearStorage();
     
     logSystem("Chat ended. Starting a new connection...");
     
