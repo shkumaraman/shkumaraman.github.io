@@ -764,37 +764,28 @@ body.light-mode {
 }
 </style>
 
-<!-- Loading Screen -->
-<div id="loadingScreen" class="loading-screen">
-    <div class="loading-spinner"></div>
-    <div class="loading-text" id="loadingText">Initializing chat...</div>
-</div>
-
 <!-- Room Code Modal -->
 <div id="roomModal" class="modal">
     <div class="modal-content">
-     <h2 class="modal-title">Private Chat Room</h2>
+        <h2 class="modal-title">Private Chat Room</h2>
         <div id="createRoomSection">
-            <p>Create a new private room and share the code with someone:</p>
+            <p>Your Room Code (Share this with someone):</p>
             <div class="room-code-display">
                 <span id="roomCodeDisplay">-----</span>
                 <button class="copy-btn" id="copyRoomCode" title="Copy code">
                     <i class="fas fa-copy"></i>
                 </button>
                 <button class="copy-btn" id="shareRoom" title="Share Room Link">
-                     <i class="fas fa-link"></i>
+                    <i class="fas fa-link"></i>
                 </button>      
-            </div>
-            <div class="modal-buttons">
-                <button class="btn btn-primary" id="createRoomBtn">Create Room</button>
             </div>
         </div>
         
         <div id="joinRoomSection" style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #ccc;">
             <p>Join an existing room with a code:</p>
             <div class="code-input">
-                <input type="text" id="roomCodeInput" maxlength="5" placeholder="12345">
-                <button class="btn btn-primary" id="joinRoomBtn">Join</button>
+                <input type="text" id="roomCodeInput" maxlength="5" placeholder="Enter 5-digit code">
+                <button class="btn btn-primary" id="joinRoomBtn">Join Room</button>
             </div>
             <div id="joinError" class="error-message">Invalid room code</div>
         </div>
@@ -803,11 +794,11 @@ body.light-mode {
 
 <div class="chat-container">
     <header class="app-header">
-<div class="header-left">
-    <button class="menu-btn" onclick="toggleMenu()">&#9776;</button>
-    <img src="logo.png" alt="TalkRush Logo" class="logo">
-      <h1 class="app-title">TalkRush Room</h1>
-     </div>
+        <div class="header-left">
+            <button class="menu-btn" onclick="toggleMenu()">&#9776;</button>
+            <img src="logo.png" alt="TalkRush Logo" class="logo">
+            <h1 class="app-title">TalkRush Room</h1>
+        </div>
         <div class="header-right">
             <button class="theme-toggle" id="themeToggle" title="Toggle Dark/Light Mode">
                 <i class="fas fa-moon"></i>
@@ -849,15 +840,15 @@ body.light-mode {
 </div>
 
 <!-- Display Ads -->
-  <ins class="adsbygoogle"
-       style="display:block"
-       data-ad-client="ca-pub-7059052735946479"
-       data-ad-slot="8592327962"
-       data-ad-format="auto"
-       data-full-width-responsive="true"></ins>
-  <script>
-       (adsbygoogle = window.adsbygoogle || []).push({});
-  </script>
+<ins class="adsbygoogle"
+     style="display:block"
+     data-ad-client="ca-pub-7059052735946479"
+     data-ad-slot="8592327962"
+     data-ad-format="auto"
+     data-full-width-responsive="true"></ins>
+<script>
+     (adsbygoogle = window.adsbygoogle || []).push({});
+</script>
 
 {% include menu.html %}
 
@@ -868,20 +859,16 @@ let isConnected = false;
 let escPressedOnce = false;
 let escTimer = null;
 let currentRoomCode = null;
-let isRoomCreator = false;
-let roomParticipants = {};
-let connectionAttempts = {};
+let isInRoom = false;
+let waitingForConnection = false;
 
 // GIPHY API Key
 const GIPHY_API_KEY = 'EKvv5S1CcXqYuHgxPNVKiNuiuNHRTzFk';
 
 // DOM Elements
-const loadingScreen = document.getElementById("loadingScreen");
-const loadingText = document.getElementById("loadingText");
 const roomModal = document.getElementById("roomModal");
 const roomCodeDisplay = document.getElementById("roomCodeDisplay");
 const roomCodeInput = document.getElementById("roomCodeInput");
-const createRoomBtn = document.getElementById("createRoomBtn");
 const joinRoomBtn = document.getElementById("joinRoomBtn");
 const copyRoomCodeBtn = document.getElementById("copyRoomCode");
 const joinError = document.getElementById("joinError");
@@ -897,9 +884,7 @@ window.addEventListener('load', () => {
 function saveToStorage() {
     const roomData = {
         roomCode: currentRoomCode,
-        isRoomCreator: isRoomCreator,
-        peerId: myId,
-        participants: roomParticipants
+        peerId: myId
     };
     localStorage.setItem('chatRoomData', JSON.stringify(roomData));
 }
@@ -910,9 +895,7 @@ function loadFromStorage() {
     if (savedData) {
         const roomData = JSON.parse(savedData);
         currentRoomCode = roomData.roomCode;
-        isRoomCreator = roomData.isRoomCreator;
-        myId = roomData.peerId; // Store peer ID for reconnection
-        roomParticipants = roomData.participants || {};
+        myId = roomData.peerId;
         
         // If we have a room code, show it in the input
         if (currentRoomCode) {
@@ -925,8 +908,6 @@ function loadFromStorage() {
 function clearStorage() {
     localStorage.removeItem('chatRoomData');
     currentRoomCode = null;
-    isRoomCreator = false;
-    roomParticipants = {};
     roomCodeInput.value = '';
 }
 
@@ -973,39 +954,6 @@ roomBtn.onclick = () => {
     }
 };
 
-// Generate a random 5-digit code
-function generateRoomCode() {
-    return Math.floor(10000 + Math.random() * 90000).toString();
-}
-
-// Create room functionality
-createRoomBtn.onclick = () => {
-    const code = generateRoomCode();
-    roomCodeDisplay.textContent = code;
-    
-    // Show loading screen
-    loadingScreen.style.display = "flex";
-    loadingText.textContent = "Creating room...";
-    
-    // Set up room data
-    currentRoomCode = code;
-    isRoomCreator = true;
-    roomParticipants = {
-        [myId]: "active"
-    };
-    
-    // Save to localStorage
-    saveToStorage();
-    
-    logSystem(`Room created with code: ${code}. Share this code with someone to chat.`);
-    roomModal.style.display = "none";
-    
-    // Hide loading screen
-    loadingScreen.style.display = "none";
-    
-    logSystem("Waiting for participants to join... Share the room code: " + code);
-};
-
 // Join room functionality
 joinRoomBtn.onclick = () => {
     const code = roomCodeInput.value.trim();
@@ -1014,53 +962,34 @@ joinRoomBtn.onclick = () => {
         return;
     }
     
-    // Show loading screen
-    loadingScreen.style.display = "flex";
-    loadingText.textContent = "Joining room...";
+    if (code === myId) {
+        showJoinError("Cannot join your own room");
+        return;
+    }
     
     currentRoomCode = code;
-    isRoomCreator = false;
-    
-    // Save to localStorage
     saveToStorage();
     
+    logSystem(`Joining room: ${code}...`);
+    connectToPeer(code);
     roomModal.style.display = "none";
-    loadingScreen.style.display = "none";
-    
-    // Try to connect to all participants in the room
-    attemptToConnectToRoom();
 };
 
-function attemptToConnectToRoom() {
-    if (!currentRoomCode) return;
-    
-    // Get participants from localStorage
-    const savedData = localStorage.getItem('chatRoomData');
-    if (savedData) {
-        const roomData = JSON.parse(savedData);
-        if (roomData.roomCode === currentRoomCode && roomData.participants) {
-            roomParticipants = roomData.participants;
-            
-            // Try to connect to each participant
-            Object.keys(roomParticipants).forEach(participantId => {
-                if (participantId !== myId && roomParticipants[participantId] === "active") {
-                    connectToPeer(participantId);
-                }
-            });
-            
-            // If no active participants found, wait and retry
-            const activeParticipants = Object.keys(roomParticipants).filter(id => 
-                id !== myId && roomParticipants[id] === "active"
-            );
-            
-            if (activeParticipants.length === 0) {
-                logSystem("Waiting for room creator to come online...");
-                setTimeout(attemptToConnectToRoom, 3000);
-            }
+// Auto-rejoin room if we have saved data
+function autoRejoinRoom() {
+    if (currentRoomCode && myId) {
+        if (currentRoomCode === myId) {
+            // I'm the room owner, wait for connections
+            logSystem(`Your room code: ${myId}. Waiting for participants...`);
+            isInRoom = true;
+        } else {
+            // I'm trying to join someone else's room
+            logSystem(`Reconnecting to room: ${currentRoomCode}...`);
+            connectToPeer(currentRoomCode);
         }
     } else {
-        logSystem("Room not found. Please check the code and try again.");
-        clearStorage();
+        // No saved room data, show modal
+        roomModal.style.display = "block";
     }
 }
 
@@ -1111,23 +1040,13 @@ function startPeer() {
 
     peer.on('open', (id) => {
         myId = id;
+        roomCodeDisplay.textContent = id;
         
-        // Add myself to room participants if in a room
-        if (currentRoomCode) {
-            roomParticipants[myId] = "active";
-            saveToStorage();
-        }
-        
-        // Hide loading screen
-        loadingScreen.style.display = "none";
+        // Save peer ID to localStorage
+        saveToStorage();
         
         // Auto-rejoin room if we have saved data
-        if (currentRoomCode) {
-            autoRejoinRoom();
-        } else {
-            // No saved room data, show modal
-            roomModal.style.display = "block";
-        }
+        autoRejoinRoom();
     });
 
     peer.on('connection', handleNewConnection);
@@ -1142,7 +1061,6 @@ function startPeer() {
             clearStorage();
             startPeer();
         } else {
-            loadingScreen.style.display = "none";
             logSystem("Connection error. Please refresh the page to try again.");
         }
     });
@@ -1154,46 +1072,39 @@ function handleNewConnection(conn) {
         return;
     }
     
-    // Add this participant to our room
-    if (currentRoomCode) {
-        roomParticipants[conn.peer] = "active";
-        saveToStorage();
-    }
-    
     setupConnection(conn);
+    isInRoom = true;
     logSystem("Connected to room participant!");
 }
 
 function connectToPeer(peerId) {
-    if (isConnected || !peerId || peerId === myId) return;
+    if (isConnected) return;
     
-    // Prevent multiple connection attempts to the same peer
-    if (connectionAttempts[peerId]) return;
-    connectionAttempts[peerId] = true;
+    waitingForConnection = true;
     
     const conn = peer.connect(peerId, {
         reliable: true
     });
     
     conn.on('open', () => {
+        waitingForConnection = false;
         setupConnection(conn);
+        isInRoom = true;
         logSystem("Connected to room participant!");
     });
     
     conn.on('error', (err) => {
         console.error("Connection error:", err);
-        delete connectionAttempts[peerId];
+        waitingForConnection = false;
+        logSystem("Failed to connect to participant. They might be offline.");
         
-        // If we're the room creator and couldn't connect, keep waiting
-        if (isRoomCreator) {
-            logSystem("Waiting for participants to join...");
-        } else {
-            logSystem("Failed to connect to participant. Retrying...");
-            setTimeout(() => {
-                delete connectionAttempts[peerId];
-                attemptToConnectToRoom();
-            }, 3000);
-        }
+        // Retry connection after 3 seconds
+        setTimeout(() => {
+            if (!isConnected && currentRoomCode) {
+                logSystem("Retrying connection...");
+                connectToPeer(currentRoomCode);
+            }
+        }, 3000);
     });
 }
 
@@ -1226,45 +1137,19 @@ function setupConnection(conn) {
 
 function endConnection(message) {
     logSystem(message);
-    
-    // Remove disconnected participant from room
-    if (myConn && roomParticipants[myConn.peer]) {
-        roomParticipants[myConn.peer] = "inactive";
-        saveToStorage();
-    }
-    
     myConn = null;
     isConnected = false;
+    isInRoom = false;
     
-    // If we're in a room, try to reconnect
-    if (currentRoomCode) {
+    // If we were in a room and got disconnected, try to reconnect
+    if (currentRoomCode && currentRoomCode !== myId) {
+        logSystem("Attempting to reconnect...");
         setTimeout(() => {
-            attemptToConnectToRoom();
+            connectToPeer(currentRoomCode);
         }, 2000);
     } else {
-        // Not in a room, restart fresh
-        setTimeout(() => {
-            startPeer();
-        }, 1000);
-    }
-}
-
-// Auto-rejoin room if we have saved data
-function autoRejoinRoom() {
-    if (currentRoomCode && myId) {
-        // Show loading screen
-        loadingScreen.style.display = "flex";
-        loadingText.textContent = "Reconnecting to room...";
-        
-        logSystem(`Reconnecting to room: ${currentRoomCode}...`);
-        loadingScreen.style.display = "none";
-        
-        // Try to connect to room participants
-        attemptToConnectToRoom();
-    } else {
-        // No saved room data, show modal
-        loadingScreen.style.display = "none";
-        roomModal.style.display = "block";
+        // If we were the room owner, just wait for new connections
+        clearStorage();
     }
 }
 
@@ -1391,10 +1276,9 @@ document.getElementById("gifInput").addEventListener("change", (e) => {
 document.getElementById("skipBtn").onclick = () => {
     if (myConn) myConn.close();
     isConnected = false;
+    isInRoom = false;
     
-    // Clear room data
     clearStorage();
-    
     logSystem("Chat ended. Starting a new connection...");
     
     // Automatically restart the peer connection
@@ -1470,14 +1354,14 @@ window.addEventListener("click", (e) => {
 
 // Share button functionality
 document.getElementById("shareRoom").onclick = () => {
-    if (currentRoomCode) {
-        navigator.clipboard.writeText(window.location.href.split('?')[0] + '?room=' + currentRoomCode).then(() => {
+    if (myId) {
+        navigator.clipboard.writeText(window.location.href.split('?')[0] + '?room=' + myId).then(() => {
             logSystem("Room link copied to clipboard!");
         }).catch(err => {
             console.error('Failed to copy: ', err);
         });
     } else {
-        logSystem("Create or join a room first to share");
+        logSystem("Wait for your room code to be generated");
     }
 };
 
