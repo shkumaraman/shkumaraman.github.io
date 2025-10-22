@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Anonymous Posts</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      max-width: 600px;
+      margin: 40px auto;
+      background: #f5f5f5;
+      padding: 20px;
+    }
+
+    textarea {
+      width: 100%;
+      height: 80px;
+      padding: 10px;
+      font-size: 16px;
+      box-sizing: border-box;
+    }
+
+    button {
+      padding: 8px 16px;
+      margin-top: 10px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    .post {
+      background: white;
+      margin-top: 20px;
+      padding: 15px;
+      border-radius: 6px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+
+    .timestamp {
+      font-size: 12px;
+      color: #888;
+      margin-top: 8px;
+    }
+
+    .buttons {
+      margin-top: 10px;
+    }
+
+    .buttons button {
+      margin-right: 10px;
+    }
+  </style>
+</head>
+<body>
+
+  <h2>Post Something</h2>
+  <textarea id="postText" placeholder="Write here..."></textarea>
+  <br>
+  <button onclick="submitPost()">Post</button>
+
+  <div id="postsContainer"></div>
+
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+  <script>
+    // ✅ Minimal Firebase Init with only databaseURL
+    firebase.initializeApp({
+      databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
+    });
+
+    const db = firebase.database();
+
+    // ✅ Submit a new post
+    function submitPost() {
+      const text = document.getElementById("postText").value.trim();
+      if (text === "") return alert("Write something!");
+      
+      const newPostRef = db.ref("posts").push();
+      newPostRef.set({
+        text: text,
+        timestamp: Date.now(),
+        likes: 0,
+        dislikes: 0
+      });
+
+      document.getElementById("postText").value = "";
+    }
+
+    // ✅ Load and display posts
+    const postsContainer = document.getElementById("postsContainer");
+
+    db.ref("posts").on("value", snapshot => {
+      postsContainer.innerHTML = "";
+      const posts = snapshot.val();
+      if (!posts) return;
+
+      // Sort by latest
+      const sortedPosts = Object.entries(posts).sort((a, b) => b[1].timestamp - a[1].timestamp);
+
+      sortedPosts.forEach(([postId, post]) => {
+        const div = document.createElement("div");
+        div.className = "post";
+
+        div.innerHTML = `
+          <div>${post.text}</div>
+          <div class="timestamp">${timeSince(post.timestamp)}</div>
+          <div class="buttons">
+            <button onclick="likePost('${postId}')">👍 ${post.likes}</button>
+            <button onclick="dislikePost('${postId}')">👎 ${post.dislikes}</button>
+          </div>
+        `;
+
+        postsContainer.appendChild(div);
+      });
+    });
+
+    // ✅ Like/dislike functions (no user tracking)
+    function likePost(postId) {
+      const ref = db.ref("posts/" + postId + "/likes");
+      ref.transaction(current => (current || 0) + 1);
+    }
+
+    function dislikePost(postId) {
+      const ref = db.ref("posts/" + postId + "/dislikes");
+      ref.transaction(current => (current || 0) + 1);
+    }
+
+    // ✅ Convert timestamp to "x ago"
+    function timeSince(ts) {
+      const seconds = Math.floor((Date.now() - ts) / 1000);
+      const intervals = [
+        [31536000, 'year'],
+        [2592000, 'month'],
+        [86400, 'day'],
+        [3600, 'hour'],
+        [60, 'minute'],
+        [1, 'second']
+      ];
+      for (const [unit, label] of intervals) {
+        const count = Math.floor(seconds / unit);
+        if (count >= 1) return `${count} ${label}${count > 1 ? 's' : ''} ago`;
+      }
+      return "just now";
+    }
+  </script>
+</body>
+</html>
