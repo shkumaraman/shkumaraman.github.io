@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Anonymous Posts</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <style>
     body {
       font-family: sans-serif;
@@ -62,7 +64,6 @@
       padding: 15px;
       border-radius: 6px;
       box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-      position: relative;
     }
 
     .timestamp {
@@ -80,6 +81,9 @@
 
     .buttons button {
       margin-right: 0;
+      display: flex;
+      align-items: center;
+      gap: 5px;
     }
 
     .delete-btn {
@@ -139,10 +143,14 @@
 
     .url-preview {
       margin: 10px 0;
-      padding: 10px;
       border: 1px solid #e0e0e0;
-      border-radius: 4px;
-      background: #f8f9fa;
+      border-radius: 8px;
+      overflow: hidden;
+      background: white;
+    }
+
+    .url-preview-content {
+      padding: 12px;
     }
 
     .url-preview a {
@@ -157,23 +165,53 @@
     .preview-title {
       font-weight: bold;
       margin-bottom: 5px;
+      font-size: 14px;
+      color: #333;
     }
 
     .preview-description {
-      font-size: 14px;
+      font-size: 13px;
       color: #666;
-      margin-bottom: 5px;
+      margin-bottom: 8px;
+      line-height: 1.4;
+    }
+
+    .preview-domain {
+      font-size: 12px;
+      color: #888;
+      margin-bottom: 8px;
     }
 
     .preview-image {
-      max-width: 100%;
-      max-height: 150px;
+      width: 100%;
+      max-height: 200px;
+      object-fit: cover;
       border-radius: 4px;
-      margin-top: 5px;
+      margin-top: 8px;
     }
 
-    .my-post {
-      border-left: 4px solid #007bff;
+    .preview-with-image {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+
+    .preview-text-content {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .preview-image-side {
+      width: 80px;
+      height: 80px;
+      flex-shrink: 0;
+    }
+
+    .preview-image-side img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 4px;
     }
   </style>
 </head>
@@ -203,10 +241,10 @@
     let bannedWords = [];
     let bannedWordsLoaded = false;
 
-    // ✅ Load banned words from filter.txt
+    // ✅ Load banned words from /chat/filter.txt
     async function loadBannedWords() {
       try {
-        const response = await fetch('filter.txt');
+        const response = await fetch('/chat/filter.txt');
         const text = await response.text();
         bannedWords = text.split('\n')
           .map(word => word.trim().toLowerCase())
@@ -274,7 +312,17 @@
       return match ? match[0] : null;
     }
 
-    // ✅ Get URL preview data
+    // ✅ Extract domain from URL
+    function extractDomain(url) {
+      try {
+        const domain = new URL(url).hostname.replace('www.', '');
+        return domain;
+      } catch {
+        return url;
+      }
+    }
+
+    // ✅ Get URL preview data (WhatsApp style)
     async function getURLPreview(url) {
       try {
         // Using a CORS proxy to avoid CORS issues
@@ -285,15 +333,24 @@
         const parser = new DOMParser();
         const doc = parser.parseFromString(html, 'text/html');
         
-        const title = doc.querySelector('title')?.textContent || url;
-        const description = doc.querySelector('meta[name="description"]')?.getAttribute('content') || '';
-        const image = doc.querySelector('meta[property="og:image"]')?.getAttribute('content') || '';
+        const title = doc.querySelector('title')?.textContent || 
+                     doc.querySelector('meta[property="og:title"]')?.getAttribute('content') || 
+                     url;
+        
+        const description = doc.querySelector('meta[name="description"]')?.getAttribute('content') ||
+                          doc.querySelector('meta[property="og:description"]')?.getAttribute('content') || 
+                          '';
+        
+        const image = doc.querySelector('meta[property="og:image"]')?.getAttribute('content') || 
+                     doc.querySelector('meta[name="twitter:image"]')?.getAttribute('content') || 
+                     '';
         
         return {
           title: title.substring(0, 100),
-          description: description.substring(0, 200),
+          description: description.substring(0, 150),
           image: image,
-          url: url
+          url: url,
+          domain: extractDomain(url)
         };
       } catch (error) {
         console.error('Error fetching URL preview:', error);
@@ -301,7 +358,8 @@
           title: url,
           description: '',
           image: '',
-          url: url
+          url: url,
+          domain: extractDomain(url)
         };
       }
     }
@@ -357,7 +415,7 @@
       showSystemMessage("Post published successfully!");
     }
 
-    // ✅ Delete post
+    // ✅ Delete post with SweetAlert
     function deletePost(postId, userId) {
       const currentUserId = getUserId();
       if (userId !== currentUserId) {
@@ -365,16 +423,46 @@
         return;
       }
 
-      if (confirm("Are you sure you want to delete this post?")) {
-        db.ref("posts/" + postId).remove()
-          .then(() => {
-            showSystemMessage("Post deleted successfully!");
-          })
-          .catch(error => {
-            showSystemMessage("Error deleting post!");
-            console.error(error);
-          });
-      }
+      Swal.fire({
+        title: 'Are you sure, sweetheart? 💖',
+        text: "This action cannot be undone!",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#dc3545',
+        cancelButtonColor: '#6c757d',
+        confirmButtonText: 'Yes, delete it!',
+        cancelButtonText: 'Cancel',
+        background: '#fff',
+        color: '#333',
+        customClass: {
+          popup: 'sweetheart-popup'
+        }
+      }).then((result) => {
+        if (result.isConfirmed) {
+          db.ref("posts/" + postId).remove()
+            .then(() => {
+              Swal.fire({
+                title: 'Deleted! 💝',
+                text: 'Your post has been deleted.',
+                icon: 'success',
+                confirmButtonColor: '#007bff',
+                background: '#fff',
+                color: '#333'
+              });
+            })
+            .catch(error => {
+              Swal.fire({
+                title: 'Error! 😢',
+                text: 'Failed to delete post.',
+                icon: 'error',
+                confirmButtonColor: '#dc3545',
+                background: '#fff',
+                color: '#333'
+              });
+              console.error(error);
+            });
+        }
+      });
     }
 
     // ✅ Share post using Web Share API
@@ -446,7 +534,7 @@
         const currentUserId = getUserId();
         const isMyPost = post.userId === currentUserId;
         
-        div.className = "post" + (isMyPost ? " my-post" : "");
+        div.className = "post";
 
         // Check if post content contains banned words
         const displayText = containsBannedWords(post.text) 
@@ -459,15 +547,36 @@
 
         let urlPreviewHTML = '';
         if (post.urlPreview && !containsBannedWords(post.text)) {
-          urlPreviewHTML = `
-            <div class="url-preview">
-              <div class="preview-title">
-                <a href="${post.urlPreview.url}" target="_blank">${post.urlPreview.title}</a>
+          const hasImage = post.urlPreview.image && post.urlPreview.image.length > 0;
+          
+          if (hasImage) {
+            urlPreviewHTML = `
+              <div class="url-preview">
+                <div class="url-preview-content">
+                  <div class="preview-with-image">
+                    <div class="preview-text-content">
+                      <div class="preview-domain">${post.urlPreview.domain}</div>
+                      <div class="preview-title">${post.urlPreview.title}</div>
+                      ${post.urlPreview.description ? `<div class="preview-description">${post.urlPreview.description}</div>` : ''}
+                    </div>
+                    <div class="preview-image-side">
+                      <img src="${post.urlPreview.image}" alt="Preview">
+                    </div>
+                  </div>
+                </div>
               </div>
-              ${post.urlPreview.description ? `<div class="preview-description">${post.urlPreview.description}</div>` : ''}
-              ${post.urlPreview.image ? `<img src="${post.urlPreview.image}" class="preview-image" alt="Preview">` : ''}
-            </div>
-          `;
+            `;
+          } else {
+            urlPreviewHTML = `
+              <div class="url-preview">
+                <div class="url-preview-content">
+                  <div class="preview-domain">${post.urlPreview.domain}</div>
+                  <div class="preview-title">${post.urlPreview.title}</div>
+                  ${post.urlPreview.description ? `<div class="preview-description">${post.urlPreview.description}</div>` : ''}
+                </div>
+              </div>
+            `;
+          }
         }
 
         div.innerHTML = `
@@ -476,10 +585,20 @@
           ${urlPreviewHTML}
           <div class="timestamp">${timeSince(post.timestamp)}</div>
           <div class="buttons">
-            <button class="like-btn" onclick="likePost('${postId}')">👍 ${post.likes || 0}</button>
-            <button class="dislike-btn" onclick="dislikePost('${postId}')">👎 ${post.dislikes || 0}</button>
-            <button class="share-btn" onclick="sharePost(${JSON.stringify(post).replace(/"/g, '&quot;')})">📤 Share</button>
-            ${isMyPost ? `<button class="delete-btn" onclick="deletePost('${postId}', '${post.userId}')">🗑 Delete</button>` : ''}
+            <button class="like-btn" onclick="likePost('${postId}')">
+              <i class="fas fa-thumbs-up"></i> ${post.likes || 0}
+            </button>
+            <button class="dislike-btn" onclick="dislikePost('${postId}')">
+              <i class="fas fa-thumbs-down"></i> ${post.dislikes || 0}
+            </button>
+            <button class="share-btn" onclick="sharePost(${JSON.stringify(post).replace(/"/g, '&quot;')})">
+              <i class="fas fa-share"></i> Share
+            </button>
+            ${isMyPost ? `
+              <button class="delete-btn" onclick="deletePost('${postId}', '${post.userId}')">
+                <i class="fas fa-trash"></i> Delete
+              </button>
+            ` : ''}
           </div>
         `;
 
