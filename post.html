@@ -392,9 +392,10 @@ description: "Post anything anonymously without login. Confess, express, or spea
       color: var(--dark-text);
       padding: 10px 15px;
       border-radius: 10px;
-      margin: 5px auto;
+      margin: 10px auto;
       font-style: italic;
       text-align: center;
+      border-left: 3px solid #ffc107;
       max-width: 600px;
     }
 
@@ -515,6 +516,12 @@ description: "Post anything anonymously without login. Confess, express, or spea
       max-height: 300px;
       border-radius: 8px;
       box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+
+    .image-preview img:hover {
+      transform: scale(1.02);
     }
 
     .highlighted-post {
@@ -538,6 +545,67 @@ description: "Post anything anonymously without login. Confess, express, or spea
       0% { border-color: var(--light-msg-me); }
       50% { border-color: #66b3ff; }
       100% { border-color: var(--light-msg-me); }
+    }
+
+    /* Full Screen Image Viewer */
+    .fullscreen-image-viewer {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.9);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10001;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.3s, visibility 0.3s;
+    }
+
+    .fullscreen-image-viewer.active {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    .fullscreen-image-container {
+      position: relative;
+      max-width: 90%;
+      max-height: 90%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .fullscreen-image {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      border-radius: 8px;
+    }
+
+    .close-fullscreen {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      background: rgba(0, 0, 0, 0.7);
+      color: white;
+      border: none;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      cursor: pointer;
+      z-index: 10002;
+      transition: background 0.2s;
+    }
+
+    .close-fullscreen:hover {
+      background: rgba(0, 0, 0, 0.9);
     }
 
     /* Scrollbar styling */
@@ -638,6 +706,16 @@ description: "Post anything anonymously without login. Confess, express, or spea
   <div class="error-container" id="errorContainer"></div>
   
   <!-- Posts will be loaded here -->
+</div>
+
+<!-- Full Screen Image Viewer -->
+<div class="fullscreen-image-viewer" id="fullscreenImageViewer">
+  <button class="close-fullscreen" onclick="closeFullscreenImage()">
+    <i class="fas fa-times"></i>
+  </button>
+  <div class="fullscreen-image-container">
+    <img src="" alt="Full screen image" class="fullscreen-image" id="fullscreenImage">
+  </div>
 </div>
 
 {% include menu.html %}
@@ -747,12 +825,31 @@ description: "Post anything anonymously without login. Confess, express, or spea
       return matches ? matches[0] : null;
     }
 
-    // Check if URL is a direct image
+    // Check if URL is a direct image - including Pinterest and Google Images
     function isImageURL(url) {
       if (!url) return false;
       const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg'];
       const lowerUrl = url.toLowerCase();
-      return imageExtensions.some(ext => lowerUrl.includes(ext));
+      
+      // Check for standard image extensions
+      if (imageExtensions.some(ext => lowerUrl.includes(ext))) {
+        return true;
+      }
+      
+      // Check for Pinterest image URLs
+      if (lowerUrl.includes('pinimg.com') || 
+          (lowerUrl.includes('pinterest.com') && lowerUrl.includes('/pin/'))) {
+        return true;
+      }
+      
+      // Check for Google Images URLs
+      if (lowerUrl.includes('encrypted-tbn0.gstatic.com') || 
+          lowerUrl.includes('googleusercontent.com') ||
+          (lowerUrl.includes('google.com') && lowerUrl.includes('/imgres?'))) {
+        return true;
+      }
+      
+      return false;
     }
 
     // Normalize URL (add https if missing)
@@ -844,6 +941,36 @@ description: "Post anything anonymously without login. Confess, express, or spea
         return `<a href="${href}" target="_blank" rel="noopener nofollow">${url}</a>`;
       });
     }
+
+    // Full screen image viewer functions
+    function openFullscreenImage(imageUrl) {
+      const viewer = document.getElementById('fullscreenImageViewer');
+      const image = document.getElementById('fullscreenImage');
+      
+      image.src = imageUrl;
+      viewer.classList.add('active');
+      document.body.style.overflow = 'hidden'; // Prevent scrolling
+    }
+
+    function closeFullscreenImage() {
+      const viewer = document.getElementById('fullscreenImageViewer');
+      viewer.classList.remove('active');
+      document.body.style.overflow = ''; // Restore scrolling
+    }
+
+    // Close fullscreen image when clicking outside the image
+    document.getElementById('fullscreenImageViewer').addEventListener('click', function(e) {
+      if (e.target === this) {
+        closeFullscreenImage();
+      }
+    });
+
+    // Close fullscreen image with Escape key
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') {
+        closeFullscreenImage();
+      }
+    });
 
     // Submit a new post
     async function submitPost() {
@@ -1143,12 +1270,12 @@ description: "Post anything anonymously without login. Confess, express, or spea
         let urlPreviewHTML = '';
         if (post.urlPreview && !containsBannedWords(post.text)) {
           if (post.urlPreview.type === 'image') {
-            // Direct image preview
+            // Direct image preview with fullscreen capability
             urlPreviewHTML = `
               <div class="image-preview">
-                <a href="${post.urlPreview.url}" target="_blank" rel="noopener nofollow">
-                  <img src="${post.urlPreview.url}" alt="Image preview" onerror="this.style.display='none'">
-                </a>
+                <img src="${post.urlPreview.url}" alt="Image preview" 
+                     onclick="openFullscreenImage('${post.urlPreview.url}')"
+                     onerror="this.style.display='none'">
               </div>
             `;
           } else {
