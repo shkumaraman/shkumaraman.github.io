@@ -13,19 +13,47 @@
       padding: 20px;
     }
 
+    .post-input-container {
+      position: relative;
+      margin-bottom: 20px;
+    }
+
     textarea {
       width: 100%;
       height: 80px;
       padding: 10px;
+      padding-right: 80px;
       font-size: 16px;
       box-sizing: border-box;
+      resize: vertical;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+    }
+
+    .post-button {
+      position: absolute;
+      bottom: 10px;
+      right: 10px;
+      padding: 6px 12px;
+      font-size: 12px;
+      cursor: pointer;
+      background: #007bff;
+      color: white;
+      border: none;
+      border-radius: 4px;
+    }
+
+    .post-button:hover {
+      background: #0056b3;
     }
 
     button {
-      padding: 8px 16px;
-      margin-top: 10px;
-      font-size: 14px;
+      padding: 6px 12px;
+      font-size: 12px;
       cursor: pointer;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      background: white;
     }
 
     .post {
@@ -34,6 +62,7 @@
       padding: 15px;
       border-radius: 6px;
       box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+      position: relative;
     }
 
     .timestamp {
@@ -44,24 +73,59 @@
 
     .buttons {
       margin-top: 10px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
     }
 
     .buttons button {
-      margin-right: 10px;
+      margin-right: 0;
+    }
+
+    .delete-btn {
+      background: #dc3545;
+      color: white;
+      border: none;
+    }
+
+    .delete-btn:hover {
+      background: #c82333;
+    }
+
+    .share-btn {
+      background: #28a745;
+      color: white;
+      border: none;
+    }
+
+    .share-btn:hover {
+      background: #218838;
+    }
+
+    .like-btn {
+      background: #007bff;
+      color: white;
+      border: none;
+    }
+
+    .like-btn:hover {
+      background: #0056b3;
+    }
+
+    .dislike-btn {
+      background: #6c757d;
+      color: white;
+      border: none;
+    }
+
+    .dislike-btn:hover {
+      background: #545b62;
     }
 
     .nickname {
       font-weight: bold;
       color: #2c3e50;
       margin-bottom: 5px;
-    }
-
-    .nickname-setup {
-      background: white;
-      padding: 15px;
-      border-radius: 6px;
-      margin-bottom: 20px;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
     }
 
     .system-msg {
@@ -72,14 +136,54 @@
       margin: 10px 0;
       font-style: italic;
     }
+
+    .url-preview {
+      margin: 10px 0;
+      padding: 10px;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      background: #f8f9fa;
+    }
+
+    .url-preview a {
+      color: #007bff;
+      text-decoration: none;
+    }
+
+    .url-preview a:hover {
+      text-decoration: underline;
+    }
+
+    .preview-title {
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+
+    .preview-description {
+      font-size: 14px;
+      color: #666;
+      margin-bottom: 5px;
+    }
+
+    .preview-image {
+      max-width: 100%;
+      max-height: 150px;
+      border-radius: 4px;
+      margin-top: 5px;
+    }
+
+    .my-post {
+      border-left: 4px solid #007bff;
+    }
   </style>
 </head>
 <body>
 
   <h2>Post Something</h2>
-  <textarea id="postText" placeholder="Write here..."></textarea>
-  <br>
-  <button onclick="submitPost()">Post</button>
+  <div class="post-input-container">
+    <textarea id="postText" placeholder="Write here..."></textarea>
+    <button class="post-button" onclick="submitPost()">Post</button>
+  </div>
 
   <div id="postsContainer"></div>
 
@@ -140,6 +244,16 @@
       return null;
     }
 
+    // ✅ Get user ID from localStorage or create one
+    function getUserId() {
+      let userId = localStorage.getItem("talkrush_user_id");
+      if (!userId) {
+        userId = 'user_' + Math.random().toString(36).substr(2, 9);
+        localStorage.setItem("talkrush_user_id", userId);
+      }
+      return userId;
+    }
+
     // ✅ Show system message
     function showSystemMessage(msg) {
       const systemDiv = document.createElement("div");
@@ -153,8 +267,47 @@
       }, 3000);
     }
 
+    // ✅ Extract URL from text
+    function extractURL(text) {
+      const urlRegex = /(https?:\/\/[^\s]+)/g;
+      const match = text.match(urlRegex);
+      return match ? match[0] : null;
+    }
+
+    // ✅ Get URL preview data
+    async function getURLPreview(url) {
+      try {
+        // Using a CORS proxy to avoid CORS issues
+        const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
+        const response = await fetch(proxyUrl + url);
+        const html = await response.text();
+        
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        
+        const title = doc.querySelector('title')?.textContent || url;
+        const description = doc.querySelector('meta[name="description"]')?.getAttribute('content') || '';
+        const image = doc.querySelector('meta[property="og:image"]')?.getAttribute('content') || '';
+        
+        return {
+          title: title.substring(0, 100),
+          description: description.substring(0, 200),
+          image: image,
+          url: url
+        };
+      } catch (error) {
+        console.error('Error fetching URL preview:', error);
+        return {
+          title: url,
+          description: '',
+          image: '',
+          url: url
+        };
+      }
+    }
+
     // ✅ Submit a new post
-    function submitPost() {
+    async function submitPost() {
       const nickname = getNickname();
       if (!nickname) {
         showSystemMessage("Please set your nickname first in the group chat!");
@@ -177,18 +330,101 @@
         showSystemMessage("Your nickname contains inappropriate words. Please change it in group chat.");
         return;
       }
+
+      const userId = getUserId();
+      const url = extractURL(text);
+      let urlPreview = null;
+
+      // Get URL preview if URL exists
+      if (url) {
+        urlPreview = await getURLPreview(url);
+      }
       
       const newPostRef = db.ref("posts").push();
-      newPostRef.set({
+      const postData = {
         nickname: nickname,
         text: text,
         timestamp: Date.now(),
         likes: 0,
-        dislikes: 0
-      });
+        dislikes: 0,
+        userId: userId,
+        urlPreview: urlPreview
+      };
+
+      newPostRef.set(postData);
 
       document.getElementById("postText").value = "";
       showSystemMessage("Post published successfully!");
+    }
+
+    // ✅ Delete post
+    function deletePost(postId, userId) {
+      const currentUserId = getUserId();
+      if (userId !== currentUserId) {
+        showSystemMessage("You can only delete your own posts!");
+        return;
+      }
+
+      if (confirm("Are you sure you want to delete this post?")) {
+        db.ref("posts/" + postId).remove()
+          .then(() => {
+            showSystemMessage("Post deleted successfully!");
+          })
+          .catch(error => {
+            showSystemMessage("Error deleting post!");
+            console.error(error);
+          });
+      }
+    }
+
+    // ✅ Share post using Web Share API
+    async function sharePost(post) {
+      const shareUrl = window.location.href + '?post=' + encodeURIComponent(JSON.stringify({
+        text: post.text,
+        nickname: post.nickname,
+        timestamp: post.timestamp
+      }));
+
+      const shareData = {
+        title: 'Check out this post',
+        text: post.text.substring(0, 100) + '...',
+        url: shareUrl
+      };
+
+      try {
+        if (navigator.share) {
+          await navigator.share(shareData);
+          showSystemMessage("Post shared successfully!");
+        } else {
+          // Fallback: copy to clipboard
+          await navigator.clipboard.writeText(shareUrl);
+          showSystemMessage("Link copied to clipboard!");
+        }
+      } catch (error) {
+        console.error('Error sharing:', error);
+        // Fallback: copy to clipboard
+        await navigator.clipboard.writeText(shareUrl);
+        showSystemMessage("Link copied to clipboard!");
+      }
+    }
+
+    // ✅ Check if URL has shared post
+    function checkSharedPost() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const sharedPost = urlParams.get('post');
+      
+      if (sharedPost) {
+        try {
+          const postData = JSON.parse(decodeURIComponent(sharedPost));
+          showSystemMessage(`Shared post from ${postData.nickname}: "${postData.text}"`);
+          
+          // Remove the parameter from URL without reload
+          const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
+          window.history.replaceState({}, document.title, newUrl);
+        } catch (error) {
+          console.error('Error parsing shared post:', error);
+        }
+      }
     }
 
     // ✅ Load and display posts
@@ -207,7 +443,10 @@
 
       sortedPosts.forEach(([postId, post]) => {
         const div = document.createElement("div");
-        div.className = "post";
+        const currentUserId = getUserId();
+        const isMyPost = post.userId === currentUserId;
+        
+        div.className = "post" + (isMyPost ? " my-post" : "");
 
         // Check if post content contains banned words
         const displayText = containsBannedWords(post.text) 
@@ -218,13 +457,29 @@
           ? "Anonymous"
           : (post.nickname || 'Anonymous');
 
+        let urlPreviewHTML = '';
+        if (post.urlPreview && !containsBannedWords(post.text)) {
+          urlPreviewHTML = `
+            <div class="url-preview">
+              <div class="preview-title">
+                <a href="${post.urlPreview.url}" target="_blank">${post.urlPreview.title}</a>
+              </div>
+              ${post.urlPreview.description ? `<div class="preview-description">${post.urlPreview.description}</div>` : ''}
+              ${post.urlPreview.image ? `<img src="${post.urlPreview.image}" class="preview-image" alt="Preview">` : ''}
+            </div>
+          `;
+        }
+
         div.innerHTML = `
           <div class="nickname">${displayNickname}</div>
           <div>${displayText}</div>
+          ${urlPreviewHTML}
           <div class="timestamp">${timeSince(post.timestamp)}</div>
           <div class="buttons">
-            <button onclick="likePost('${postId}')">👍 ${post.likes || 0}</button>
-            <button onclick="dislikePost('${postId}')">👎 ${post.dislikes || 0}</button>
+            <button class="like-btn" onclick="likePost('${postId}')">👍 ${post.likes || 0}</button>
+            <button class="dislike-btn" onclick="dislikePost('${postId}')">👎 ${post.dislikes || 0}</button>
+            <button class="share-btn" onclick="sharePost(${JSON.stringify(post).replace(/"/g, '&quot;')})">📤 Share</button>
+            ${isMyPost ? `<button class="delete-btn" onclick="deletePost('${postId}', '${post.userId}')">🗑 Delete</button>` : ''}
           </div>
         `;
 
@@ -276,6 +531,7 @@
     // ✅ Initialize the app
     function initializeApp() {
       loadBannedWords();
+      checkSharedPost();
       
       const nickname = getNickname();
       if (nickname) {
