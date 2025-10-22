@@ -213,6 +213,11 @@
       object-fit: cover;
       border-radius: 4px;
     }
+
+    .highlighted-post {
+      border: 2px solid #007bff;
+      background-color: #f0f8ff;
+    }
   </style>
 </head>
 <body>
@@ -230,18 +235,18 @@
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 
   <script>
-    // ✅ Firebase Init
+    // Firebase Init
     firebase.initializeApp({
       databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
     });
 
     const db = firebase.database();
 
-    // ✅ Banned words system
+    // Banned words system
     let bannedWords = [];
     let bannedWordsLoaded = false;
 
-    // ✅ Load banned words from /chat/filter.txt
+    // Load banned words from /chat/filter.txt
     async function loadBannedWords() {
       try {
         const response = await fetch('/chat/filter.txt');
@@ -259,7 +264,7 @@
       }
     }
 
-    // ✅ Enhanced banned words check
+    // Enhanced banned words check
     function containsBannedWords(message) {
       if (!bannedWordsLoaded || !message || typeof message !== 'string') return false;
       
@@ -273,7 +278,7 @@
       });
     }
 
-    // ✅ Get nickname from localStorage
+    // Get nickname from localStorage
     function getNickname() {
       const savedNickname = localStorage.getItem("talkrush_nickname");
       if (savedNickname) {
@@ -282,7 +287,7 @@
       return null;
     }
 
-    // ✅ Get user ID from localStorage or create one
+    // Get user ID from localStorage or create one
     function getUserId() {
       let userId = localStorage.getItem("talkrush_user_id");
       if (!userId) {
@@ -292,7 +297,7 @@
       return userId;
     }
 
-    // ✅ Show system message
+    // Show system message
     function showSystemMessage(msg) {
       const systemDiv = document.createElement("div");
       systemDiv.className = "system-msg";
@@ -305,29 +310,43 @@
       }, 3000);
     }
 
-    // ✅ Extract URL from text
+    // Extract URL from text
     function extractURL(text) {
-      const urlRegex = /(https?:\/\/[^\s]+)/g;
-      const match = text.match(urlRegex);
-      return match ? match[0] : null;
+      // Updated regex to match URLs with or without protocol
+      const urlRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|([a-zA-Z0-9-]+\.[a-zA-Z]{2,}(\/[^\s]*)?)/g;
+      const matches = text.match(urlRegex);
+      return matches ? matches[0] : null;
     }
 
-    // ✅ Extract domain from URL
+    // Normalize URL (add https if missing)
+    function normalizeURL(url) {
+      if (!url) return null;
+      
+      // If URL doesn't start with http or https, add https
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        return 'https://' + url;
+      }
+      return url;
+    }
+
+    // Extract domain from URL
     function extractDomain(url) {
       try {
-        const domain = new URL(url).hostname.replace('www.', '');
+        const normalizedUrl = normalizeURL(url);
+        const domain = new URL(normalizedUrl).hostname.replace('www.', '');
         return domain;
       } catch {
         return url;
       }
     }
 
-    // ✅ Get URL preview data (WhatsApp style)
+    // Get URL preview data
     async function getURLPreview(url) {
       try {
+        const normalizedUrl = normalizeURL(url);
         // Using a CORS proxy to avoid CORS issues
         const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
-        const response = await fetch(proxyUrl + url);
+        const response = await fetch(proxyUrl + normalizedUrl);
         const html = await response.text();
         
         const parser = new DOMParser();
@@ -349,7 +368,7 @@
           title: title.substring(0, 100),
           description: description.substring(0, 150),
           image: image,
-          url: url,
+          url: normalizedUrl,
           domain: extractDomain(url)
         };
       } catch (error) {
@@ -358,13 +377,26 @@
           title: url,
           description: '',
           image: '',
-          url: url,
+          url: normalizeURL(url),
           domain: extractDomain(url)
         };
       }
     }
 
-    // ✅ Submit a new post
+    // Make text clickable (convert URLs to links)
+    function makeTextClickable(text) {
+      if (!text) return '';
+      
+      // Updated regex to match URLs with or without protocol
+      const urlRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|([a-zA-Z0-9-]+\.[a-zA-Z]{2,}(\/[^\s]*)?)/g;
+      
+      return text.replace(urlRegex, (url) => {
+        const href = normalizeURL(url);
+        return `<a href="${href}" target="_blank" rel="noopener noreferrer">${url}</a>`;
+      });
+    }
+
+    // Submit a new post
     async function submitPost() {
       const nickname = getNickname();
       if (!nickname) {
@@ -399,6 +431,8 @@
       }
       
       const newPostRef = db.ref("posts").push();
+      const postId = newPostRef.key;
+      
       const postData = {
         nickname: nickname,
         text: text,
@@ -406,7 +440,8 @@
         likes: 0,
         dislikes: 0,
         userId: userId,
-        urlPreview: urlPreview
+        urlPreview: urlPreview,
+        postId: postId
       };
 
       newPostRef.set(postData);
@@ -415,7 +450,7 @@
       showSystemMessage("Post published successfully!");
     }
 
-    // ✅ Delete post with SweetAlert
+    // Delete post with SweetAlert
     function deletePost(postId, userId) {
       const currentUserId = getUserId();
       if (userId !== currentUserId) {
@@ -424,7 +459,7 @@
       }
 
       Swal.fire({
-        title: 'Are you sure, sweetheart? 💖',
+        title: 'Are you sure?',
         text: "This action cannot be undone!",
         icon: 'warning',
         showCancelButton: true,
@@ -433,16 +468,13 @@
         confirmButtonText: 'Yes, delete it!',
         cancelButtonText: 'Cancel',
         background: '#fff',
-        color: '#333',
-        customClass: {
-          popup: 'sweetheart-popup'
-        }
+        color: '#333'
       }).then((result) => {
         if (result.isConfirmed) {
           db.ref("posts/" + postId).remove()
             .then(() => {
               Swal.fire({
-                title: 'Deleted! 💝',
+                title: 'Deleted!',
                 text: 'Your post has been deleted.',
                 icon: 'success',
                 confirmButtonColor: '#007bff',
@@ -452,7 +484,7 @@
             })
             .catch(error => {
               Swal.fire({
-                title: 'Error! 😢',
+                title: 'Error!',
                 text: 'Failed to delete post.',
                 icon: 'error',
                 confirmButtonColor: '#dc3545',
@@ -465,13 +497,9 @@
       });
     }
 
-    // ✅ Share post using Web Share API
+    // Share post using Web Share API
     async function sharePost(post) {
-      const shareUrl = window.location.href + '?post=' + encodeURIComponent(JSON.stringify({
-        text: post.text,
-        nickname: post.nickname,
-        timestamp: post.timestamp
-      }));
+      const shareUrl = window.location.origin + window.location.pathname + '?postId=' + post.postId;
 
       const shareData = {
         title: 'Check out this post',
@@ -496,26 +524,41 @@
       }
     }
 
-    // ✅ Check if URL has shared post
+    // Check if URL has shared post ID
     function checkSharedPost() {
       const urlParams = new URLSearchParams(window.location.search);
-      const sharedPost = urlParams.get('post');
+      const sharedPostId = urlParams.get('postId');
       
-      if (sharedPost) {
-        try {
-          const postData = JSON.parse(decodeURIComponent(sharedPost));
-          showSystemMessage(`Shared post from ${postData.nickname}: "${postData.text}"`);
-          
-          // Remove the parameter from URL without reload
-          const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
-          window.history.replaceState({}, document.title, newUrl);
-        } catch (error) {
-          console.error('Error parsing shared post:', error);
-        }
+      if (sharedPostId) {
+        // Highlight the post when it loads
+        highlightPostId = sharedPostId;
+        
+        // Remove the parameter from URL without reload
+        const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
+        window.history.replaceState({}, document.title, newUrl);
+        
+        showSystemMessage("You've opened a shared post. It will be highlighted.");
       }
     }
 
-    // ✅ Load and display posts
+    // Highlight a specific post
+    let highlightPostId = null;
+    function highlightPost(postId) {
+      const postElement = document.querySelector(`[data-post-id="${postId}"]`);
+      if (postElement) {
+        postElement.classList.add('highlighted-post');
+        
+        // Scroll to the highlighted post
+        postElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        
+        // Remove highlight after 5 seconds
+        setTimeout(() => {
+          postElement.classList.remove('highlighted-post');
+        }, 5000);
+      }
+    }
+
+    // Load and display posts
     const postsContainer = document.getElementById("postsContainer");
 
     db.ref("posts").on("value", snapshot => {
@@ -529,17 +572,25 @@
       // Sort by latest
       const sortedPosts = Object.entries(posts).sort((a, b) => b[1].timestamp - a[1].timestamp);
 
+      // If we have a post to highlight, move it to the top
+      if (highlightPostId && posts[highlightPostId]) {
+        const highlightedPost = [highlightPostId, posts[highlightPostId]];
+        const otherPosts = sortedPosts.filter(([id]) => id !== highlightPostId);
+        sortedPosts = [highlightedPost, ...otherPosts];
+      }
+
       sortedPosts.forEach(([postId, post]) => {
         const div = document.createElement("div");
         const currentUserId = getUserId();
         const isMyPost = post.userId === currentUserId;
         
         div.className = "post";
+        div.setAttribute("data-post-id", postId);
 
         // Check if post content contains banned words
         const displayText = containsBannedWords(post.text) 
-          ? "🚫 This post was hidden due to inappropriate content"
-          : post.text;
+          ? "This post was hidden due to inappropriate content"
+          : makeTextClickable(post.text);
 
         const displayNickname = containsBannedWords(post.nickname)
           ? "Anonymous"
@@ -552,28 +603,32 @@
           if (hasImage) {
             urlPreviewHTML = `
               <div class="url-preview">
-                <div class="url-preview-content">
-                  <div class="preview-with-image">
-                    <div class="preview-text-content">
-                      <div class="preview-domain">${post.urlPreview.domain}</div>
-                      <div class="preview-title">${post.urlPreview.title}</div>
-                      ${post.urlPreview.description ? `<div class="preview-description">${post.urlPreview.description}</div>` : ''}
-                    </div>
-                    <div class="preview-image-side">
-                      <img src="${post.urlPreview.image}" alt="Preview">
+                <a href="${post.urlPreview.url}" target="_blank" rel="noopener noreferrer">
+                  <div class="url-preview-content">
+                    <div class="preview-with-image">
+                      <div class="preview-text-content">
+                        <div class="preview-domain">${post.urlPreview.domain}</div>
+                        <div class="preview-title">${post.urlPreview.title}</div>
+                        ${post.urlPreview.description ? `<div class="preview-description">${post.urlPreview.description}</div>` : ''}
+                      </div>
+                      <div class="preview-image-side">
+                        <img src="${post.urlPreview.image}" alt="Preview">
+                      </div>
                     </div>
                   </div>
-                </div>
+                </a>
               </div>
             `;
           } else {
             urlPreviewHTML = `
               <div class="url-preview">
-                <div class="url-preview-content">
-                  <div class="preview-domain">${post.urlPreview.domain}</div>
-                  <div class="preview-title">${post.urlPreview.title}</div>
-                  ${post.urlPreview.description ? `<div class="preview-description">${post.urlPreview.description}</div>` : ''}
-                </div>
+                <a href="${post.urlPreview.url}" target="_blank" rel="noopener noreferrer">
+                  <div class="url-preview-content">
+                    <div class="preview-domain">${post.urlPreview.domain}</div>
+                    <div class="preview-title">${post.urlPreview.title}</div>
+                    ${post.urlPreview.description ? `<div class="preview-description">${post.urlPreview.description}</div>` : ''}
+                  </div>
+                </a>
               </div>
             `;
           }
@@ -591,7 +646,7 @@
             <button class="dislike-btn" onclick="dislikePost('${postId}')">
               <i class="fas fa-thumbs-down"></i> ${post.dislikes || 0}
             </button>
-            <button class="share-btn" onclick="sharePost(${JSON.stringify(post).replace(/"/g, '&quot;')})">
+            <button class="share-btn" onclick="sharePost(${JSON.stringify({...post, postId}).replace(/"/g, '&quot;')})">
               <i class="fas fa-share"></i> Share
             </button>
             ${isMyPost ? `
@@ -603,10 +658,15 @@
         `;
 
         postsContainer.appendChild(div);
+        
+        // Highlight the post if it's the shared one
+        if (postId === highlightPostId) {
+          highlightPost(postId);
+        }
       });
     });
 
-    // ✅ Like/dislike functions
+    // Like/dislike functions
     function likePost(postId) {
       const nickname = getNickname();
       if (!nickname) {
@@ -629,7 +689,7 @@
       ref.transaction(current => (current || 0) + 1);
     }
 
-    // ✅ Convert timestamp to "x ago"
+    // Convert timestamp to "x ago"
     function timeSince(ts) {
       const seconds = Math.floor((Date.now() - ts) / 1000);
       const intervals = [
@@ -647,7 +707,7 @@
       return "just now";
     }
 
-    // ✅ Initialize the app
+    // Initialize the app
     function initializeApp() {
       loadBannedWords();
       checkSharedPost();
