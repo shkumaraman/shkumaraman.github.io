@@ -7,12 +7,12 @@
 ## **TalkRush – Chat With Strangers**  
 **No login. No registration.** Just instant, anonymous chats!  
 
-✅ **Text & Media Sharing** – Exchange messages, images, and more.  
-✅ **Video Calls** – Connect face-to-face instantly.  
-✅ **Private Room Group Chat** – Connect in rooms based on interests.  
-✅ **Gender & Tags Matching** – Find people who match your preferences.  
-✅ **100% Anonymous** – No personal data required.  
-✅ **Simple & Fast** – Start chatting in one click.  
+**Text & Media Sharing** – Exchange messages, images, and more.  
+**Video Calls** – Connect face-to-face instantly.  
+**Private Room Group Chat** – Connect in rooms based on interests.  
+**Gender & Tags Matching** – Find people who match your preferences.  
+**100% Anonymous** – No personal data required.  
+**Simple & Fast** – Start chatting in one click.  
 
 🔗 **Try Now:**  
 - 💬 [Chat Now](https://shkumaraman.github.io)  
