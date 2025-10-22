@@ -49,6 +49,29 @@
     .buttons button {
       margin-right: 10px;
     }
+
+    .nickname {
+      font-weight: bold;
+      color: #2c3e50;
+      margin-bottom: 5px;
+    }
+
+    .nickname-setup {
+      background: white;
+      padding: 15px;
+      border-radius: 6px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+
+    .system-msg {
+      background: #fff3cd;
+      color: #856404;
+      padding: 10px;
+      border-radius: 4px;
+      margin: 10px 0;
+      font-style: italic;
+    }
   </style>
 </head>
 <body>
@@ -65,20 +88,99 @@
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 
   <script>
-    // ✅ Minimal Firebase Init with only databaseURL
+    // ✅ Firebase Init
     firebase.initializeApp({
       databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
     });
 
     const db = firebase.database();
 
+    // ✅ Banned words system
+    let bannedWords = [];
+    let bannedWordsLoaded = false;
+
+    // ✅ Load banned words from filter.txt
+    async function loadBannedWords() {
+      try {
+        const response = await fetch('filter.txt');
+        const text = await response.text();
+        bannedWords = text.split('\n')
+          .map(word => word.trim().toLowerCase())
+          .filter(word => word.length > 0);
+        bannedWordsLoaded = true;
+        console.log("Banned words loaded successfully:", bannedWords.length);
+      } catch (err) {
+        console.error("Error loading banned words:", err);
+        // Fallback to basic list
+        bannedWords = ['badword1', 'badword2', 'swearword'];
+        bannedWordsLoaded = true;
+      }
+    }
+
+    // ✅ Enhanced banned words check
+    function containsBannedWords(message) {
+      if (!bannedWordsLoaded || !message || typeof message !== 'string') return false;
+      
+      const lowerMsg = message.toLowerCase();
+      return bannedWords.some(word => {
+        if (!word || word.length < 2) return false;
+        
+        const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const pattern = new RegExp(`\\b${escapedWord}\\b`, 'i');
+        return pattern.test(message);
+      });
+    }
+
+    // ✅ Get nickname from localStorage
+    function getNickname() {
+      const savedNickname = localStorage.getItem("talkrush_nickname");
+      if (savedNickname) {
+        return savedNickname;
+      }
+      return null;
+    }
+
+    // ✅ Show system message
+    function showSystemMessage(msg) {
+      const systemDiv = document.createElement("div");
+      systemDiv.className = "system-msg";
+      systemDiv.textContent = msg;
+      document.getElementById("postsContainer").prepend(systemDiv);
+      
+      // Remove after 3 seconds
+      setTimeout(() => {
+        systemDiv.remove();
+      }, 3000);
+    }
+
     // ✅ Submit a new post
     function submitPost() {
+      const nickname = getNickname();
+      if (!nickname) {
+        showSystemMessage("Please set your nickname first in the group chat!");
+        return;
+      }
+
       const text = document.getElementById("postText").value.trim();
-      if (text === "") return alert("Write something!");
+      if (text === "") {
+        showSystemMessage("Write something!");
+        return;
+      }
+
+      // Check for banned words
+      if (containsBannedWords(text)) {
+        showSystemMessage("Your post contains inappropriate content and cannot be sent.");
+        return;
+      }
+
+      if (containsBannedWords(nickname)) {
+        showSystemMessage("Your nickname contains inappropriate words. Please change it in group chat.");
+        return;
+      }
       
       const newPostRef = db.ref("posts").push();
       newPostRef.set({
+        nickname: nickname,
         text: text,
         timestamp: Date.now(),
         likes: 0,
@@ -86,6 +188,7 @@
       });
 
       document.getElementById("postText").value = "";
+      showSystemMessage("Post published successfully!");
     }
 
     // ✅ Load and display posts
@@ -94,7 +197,10 @@
     db.ref("posts").on("value", snapshot => {
       postsContainer.innerHTML = "";
       const posts = snapshot.val();
-      if (!posts) return;
+      if (!posts) {
+        postsContainer.innerHTML = '<div class="system-msg">No posts yet. Be the first to post!</div>';
+        return;
+      }
 
       // Sort by latest
       const sortedPosts = Object.entries(posts).sort((a, b) => b[1].timestamp - a[1].timestamp);
@@ -103,12 +209,22 @@
         const div = document.createElement("div");
         div.className = "post";
 
+        // Check if post content contains banned words
+        const displayText = containsBannedWords(post.text) 
+          ? "🚫 This post was hidden due to inappropriate content"
+          : post.text;
+
+        const displayNickname = containsBannedWords(post.nickname)
+          ? "Anonymous"
+          : (post.nickname || 'Anonymous');
+
         div.innerHTML = `
-          <div>${post.text}</div>
+          <div class="nickname">${displayNickname}</div>
+          <div>${displayText}</div>
           <div class="timestamp">${timeSince(post.timestamp)}</div>
           <div class="buttons">
-            <button onclick="likePost('${postId}')">👍 ${post.likes}</button>
-            <button onclick="dislikePost('${postId}')">👎 ${post.dislikes}</button>
+            <button onclick="likePost('${postId}')">👍 ${post.likes || 0}</button>
+            <button onclick="dislikePost('${postId}')">👎 ${post.dislikes || 0}</button>
           </div>
         `;
 
@@ -116,13 +232,25 @@
       });
     });
 
-    // ✅ Like/dislike functions (no user tracking)
+    // ✅ Like/dislike functions
     function likePost(postId) {
+      const nickname = getNickname();
+      if (!nickname) {
+        showSystemMessage("Please set your nickname first in the group chat!");
+        return;
+      }
+      
       const ref = db.ref("posts/" + postId + "/likes");
       ref.transaction(current => (current || 0) + 1);
     }
 
     function dislikePost(postId) {
+      const nickname = getNickname();
+      if (!nickname) {
+        showSystemMessage("Please set your nickname first in the group chat!");
+        return;
+      }
+      
       const ref = db.ref("posts/" + postId + "/dislikes");
       ref.transaction(current => (current || 0) + 1);
     }
@@ -144,6 +272,21 @@
       }
       return "just now";
     }
+
+    // ✅ Initialize the app
+    function initializeApp() {
+      loadBannedWords();
+      
+      const nickname = getNickname();
+      if (nickname) {
+        showSystemMessage(`Welcome back, ${nickname}!`);
+      } else {
+        showSystemMessage("Please set your nickname in the group chat to start posting!");
+      }
+    }
+
+    // Start the app
+    initializeApp();
   </script>
 </body>
 </html>
