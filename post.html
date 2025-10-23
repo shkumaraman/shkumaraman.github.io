@@ -815,6 +815,9 @@ description: "Post anything anonymously without login. Confess, express, or spea
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
+    const POST_EXPIRY_DAYS = 30;
+    const MILLISECONDS_IN_DAY = 24 * 60 * 60 * 1000;
+
     let bannedWords = [];
     let bannedWordsLoaded = false;
     let allPosts = [];
@@ -1273,7 +1276,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
       document.body.style.overflow = '';
     }
 
-    // NEW: Function to update individual post counts without re-rendering
     function updatePostCounts(postId, likes, dislikes) {
       const postElement = document.querySelector(`[data-post-id="${postId}"]`);
       if (postElement) {
@@ -1285,7 +1287,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
         if (likeCountElement) likeCountElement.textContent = likes || 0;
         if (dislikeCountElement) dislikeCountElement.textContent = dislikes || 0;
         
-        // Update button active states
         const userInteraction = hasUserInteracted(postId, 'like') ? 'like' : 
                                hasUserInteracted(postId, 'dislike') ? 'dislike' : null;
         
@@ -1298,13 +1299,39 @@ description: "Post anything anonymously without login. Confess, express, or spea
       }
     }
 
+    function isPostExpired(timestamp) {
+      const postAgeInDays = (Date.now() - timestamp) / MILLISECONDS_IN_DAY;
+      return postAgeInDays > POST_EXPIRY_DAYS;
+    }
+
+    function deleteExpiredPosts() {
+      const currentTime = Date.now();
+      const expiryThreshold = currentTime - (POST_EXPIRY_DAYS * MILLISECONDS_IN_DAY);
+      
+      db.ref("posts").orderByChild("timestamp").endAt(expiryThreshold).once("value")
+        .then(snapshot => {
+          const deletions = [];
+          snapshot.forEach(childSnapshot => {
+            deletions.push(childSnapshot.ref.remove());
+          });
+          return Promise.all(deletions);
+        })
+        .then(() => {
+          if (deletions.length > 0) {
+            console.log(`Deleted ${deletions.length} expired posts`);
+          }
+        })
+        .catch(error => {
+          console.error("Error deleting expired posts:", error);
+        });
+    }
+
     function displayPosts(postsArray) {
       const postsContainer = document.getElementById("postsContainer");
       const postInputContainer = document.querySelector('.post-input-container');
       const searchContainer = document.querySelector('.search-container');
       const errorContainer = document.getElementById("errorContainer");
       
-      // Store current scroll position
       const scrollPosition = window.scrollY;
       
       postsContainer.innerHTML = '';
@@ -1322,7 +1349,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
           "No posts yet. Be the first to post!";
         postsContainer.appendChild(noPostsMsg);
         
-        // Restore scroll position
         requestAnimationFrame(() => {
           window.scrollTo(0, scrollPosition);
         });
@@ -1332,6 +1358,10 @@ description: "Post anything anonymously without login. Confess, express, or spea
       let adCounter = 0;
 
       postsArray.forEach(([postId, post], index) => {
+        if (isPostExpired(post.timestamp)) {
+          return;
+        }
+
         const div = document.createElement("div");
         const currentUserId = getUserId();
         const isMyPost = post.userId === currentUserId;
@@ -1446,7 +1476,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
         }
       });
       
-      // Restore scroll position after rendering
       requestAnimationFrame(() => {
         window.scrollTo(0, scrollPosition);
       });
@@ -1472,7 +1501,10 @@ description: "Post anything anonymously without login. Confess, express, or spea
     function initializeApp() {
       loadBannedWords();
       checkSharedPost();
+      deleteExpiredPosts();
       
+      setInterval(deleteExpiredPosts, 60 * 60 * 1000);
+
       const nickname = getNickname();
       if (nickname) {
         showSuccess(`Welcome back, ${nickname}!`);
@@ -1530,7 +1562,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
         });
       }
 
-      // Initial load and when new posts are added
       db.ref("posts").on("value", snapshot => {
         const posts = snapshot.val();
         
@@ -1542,19 +1573,16 @@ description: "Post anything anonymously without login. Confess, express, or spea
 
         let postsArray = Object.entries(posts);
         
-        // Apply randomization only on initial load
         if (allPosts.length === 0) {
           for (let i = postsArray.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [postsArray[i], postsArray[j]] = [postsArray[j], postsArray[i]];
           }
         } else {
-          // Keep existing order for new posts
           const existingIds = new Set(allPosts.map(([id]) => id));
           const newPosts = postsArray.filter(([id]) => !existingIds.has(id));
           const existingPosts = postsArray.filter(([id]) => existingIds.has(id));
           
-          // Maintain existing order for old posts, append new posts at the end
           const orderedExisting = allPosts.filter(([id]) => existingIds.has(id));
           postsArray = [...orderedExisting, ...newPosts];
         }
@@ -1576,32 +1604,25 @@ description: "Post anything anonymously without login. Confess, express, or spea
         }
       });
 
-      // Handle individual post updates without re-rendering everything
       db.ref("posts").on("child_changed", snapshot => {
         const post = snapshot.val();
         const postId = snapshot.key;
         
-        // Update only the specific post's counts without re-rendering everything
         updatePostCounts(postId, post.likes, post.dislikes);
         
-        // Also update the allPosts array to keep data in sync
         const postIndex = allPosts.findIndex(([id]) => id === postId);
         if (postIndex !== -1) {
           allPosts[postIndex][1] = post;
         }
       });
 
-      // Handle post removal
       db.ref("posts").on("child_removed", snapshot => {
         const postId = snapshot.key;
         
-        // Remove from allPosts array
         allPosts = allPosts.filter(([id]) => id !== postId);
         
-        // Remove user interaction data
         removeUserInteraction(postId);
         
-        // Re-render to reflect the removal
         if (currentSearchTerm) {
           searchPosts(currentSearchTerm);
         } else {
