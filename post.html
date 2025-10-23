@@ -859,6 +859,31 @@ description: "Post anything anonymously without login. Confess, express, or spea
     let highlightPostId = null;
     let keyboardTimeout;
 
+    // Cache DOM elements for better performance
+    const domCache = {
+      postsContainer: null,
+      postInputContainer: null,
+      searchContainer: null,
+      errorContainer: null,
+      searchInput: null,
+      clearSearchBtn: null,
+      postText: null,
+      modal: null,
+      modalClose: null
+    };
+
+    function cacheDOM() {
+      domCache.postsContainer = document.getElementById("postsContainer");
+      domCache.postInputContainer = document.querySelector('.post-input-container');
+      domCache.searchContainer = document.querySelector('.search-container');
+      domCache.errorContainer = document.getElementById("errorContainer");
+      domCache.searchInput = document.getElementById('searchInput');
+      domCache.clearSearchBtn = document.getElementById('clearSearch');
+      domCache.postText = document.getElementById('postText');
+      domCache.modal = document.getElementById('imageModal');
+      domCache.modalClose = document.getElementById('modalClose');
+    }
+
     async function loadBannedWords() {
       try {
         const response = await fetch('/chat/filter.txt');
@@ -903,7 +928,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
     }
 
     function showError(message) {
-      const errorContainer = document.getElementById("errorContainer");
+      const errorContainer = domCache.errorContainer;
       const errorDiv = document.createElement("div");
       errorDiv.className = "error-message";
       errorDiv.innerHTML = `<i class="fas fa-exclamation-circle"></i> ${message}`;
@@ -917,7 +942,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
     }
 
     function showSuccess(message) {
-      const errorContainer = document.getElementById("errorContainer");
+      const errorContainer = domCache.errorContainer;
       const successDiv = document.createElement("div");
       successDiv.className = "success-message";
       successDiv.innerHTML = `<i class="fas fa-check-circle"></i> ${message}`;
@@ -983,7 +1008,9 @@ description: "Post anything anonymously without login. Confess, express, or spea
     }
 
     function clearSearch() {
-      document.getElementById('searchInput').value = '';
+      if (domCache.searchInput) {
+        domCache.searchInput.value = '';
+      }
       currentSearchTerm = '';
       displayedPosts = [...allPosts];
       currentPage = 0;
@@ -1013,7 +1040,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
         return;
       }
 
-      const text = document.getElementById("postText").value.trim();
+      const text = domCache.postText ? domCache.postText.value.trim() : '';
       if (text === "") {
         showError("Write something!");
         return;
@@ -1047,7 +1074,9 @@ description: "Post anything anonymously without login. Confess, express, or spea
 
       try {
         await newPostRef.set(postData);
-        document.getElementById("postText").value = "";
+        if (domCache.postText) {
+          domCache.postText.value = "";
+        }
         showSuccess("Post published successfully!");
         
         if (currentSearchTerm) {
@@ -1221,18 +1250,24 @@ description: "Post anything anonymously without login. Confess, express, or spea
     }
 
     function openImageModal(imageUrl) {
-      const modal = document.getElementById('imageModal');
+      const modal = domCache.modal;
       const modalImage = document.getElementById('modalImage');
       
-      modalImage.src = imageUrl;
-      modal.classList.add('active');
-      document.body.style.overflow = 'hidden';
+      if (modalImage) {
+        modalImage.src = imageUrl;
+      }
+      if (modal) {
+        modal.classList.add('active');
+        document.body.style.overflow = 'hidden';
+      }
     }
 
     function closeImageModal() {
-      const modal = document.getElementById('imageModal');
-      modal.classList.remove('active');
-      document.body.style.overflow = '';
+      const modal = domCache.modal;
+      if (modal) {
+        modal.classList.remove('active');
+        document.body.style.overflow = '';
+      }
     }
 
     function updatePostCounts(postId, likes, dislikes) {
@@ -1295,11 +1330,70 @@ description: "Post anything anonymously without login. Confess, express, or spea
       return imageURL ? normalizeURL(imageURL) : null;
     }
 
+    function createPostElement(postId, post) {
+      const currentUserId = getUserId();
+      const isMyPost = post.userId === currentUserId;
+      
+      const displayText = containsBannedWords(post.text) 
+        ? "This post was hidden due to inappropriate content"
+        : makeTextClickable(post.text);
+
+      const displayNickname = containsBannedWords(post.nickname)
+        ? "Anonymous"
+        : (post.nickname || 'Anonymous');
+
+      // Extract only the first image URL from post text
+      const imageURL = extractFirstImageURL(post.text);
+      let imagePreviewHTML = '';
+      
+      if (imageURL && !containsBannedWords(post.text)) {
+        imagePreviewHTML = `
+          <div class="image-preview">
+            <img src="${imageURL}" alt="Image preview" 
+                 onclick="openImageModal('${imageURL}')"
+                 onerror="this.style.display='none'"
+                 loading="lazy"
+                 style="cursor: pointer;">
+          </div>
+        `;
+      }
+
+      const userInteraction = hasUserInteracted(postId, 'like') ? 'like' : 
+                             hasUserInteracted(postId, 'dislike') ? 'dislike' : null;
+
+      const postElement = document.createElement("div");
+      postElement.className = "post";
+      postElement.setAttribute("data-post-id", postId);
+      
+      postElement.innerHTML = `
+        <div class="nickname">${displayNickname}</div>
+        <div class="post-content">${displayText}</div>
+        ${imagePreviewHTML}
+        <div class="timestamp">${timeSince(post.timestamp)}</div>
+        <div class="buttons">
+          <button class="like-btn ${userInteraction === 'like' ? 'active' : ''}" onclick="likePost('${postId}')">
+            <i class="fas fa-thumbs-up"></i> <span class="like-count">${post.likes || 0}</span>
+          </button>
+          <button class="dislike-btn ${userInteraction === 'dislike' ? 'active' : ''}" onclick="dislikePost('${postId}')">
+            <i class="fas fa-thumbs-down"></i> <span class="dislike-count">${post.dislikes || 0}</span>
+          </button>
+          <button class="share-btn-post" onclick="sharePost(${JSON.stringify({...post, postId}).replace(/"/g, '&quot;')})">
+            <i class="fas fa-share"></i> Share
+          </button>
+          ${isMyPost ? `
+            <button class="delete-btn" onclick="deletePost('${postId}', '${post.userId}')">
+              <i class="fas fa-trash"></i> Delete
+            </button>
+          ` : ''}
+        </div>
+      `;
+      
+      return postElement;
+    }
+
     function displayPostsPage() {
-      const postsContainer = document.getElementById("postsContainer");
-      const postInputContainer = document.querySelector('.post-input-container');
-      const searchContainer = document.querySelector('.search-container');
-      const errorContainer = document.getElementById("errorContainer");
+      const postsContainer = domCache.postsContainer;
+      if (!postsContainer) return;
       
       // Calculate which posts to show
       const startIndex = 0;
@@ -1311,11 +1405,15 @@ description: "Post anything anonymously without login. Confess, express, or spea
       existingPosts.forEach(el => el.remove());
       
       // Re-add input, search, and error containers
-      postsContainer.appendChild(postInputContainer);
-      if (searchContainer) {
-        postsContainer.appendChild(searchContainer);
+      if (domCache.postInputContainer) {
+        postsContainer.appendChild(domCache.postInputContainer);
       }
-      postsContainer.appendChild(errorContainer);
+      if (domCache.searchContainer) {
+        postsContainer.appendChild(domCache.searchContainer);
+      }
+      if (domCache.errorContainer) {
+        postsContainer.appendChild(domCache.errorContainer);
+      }
       
       if (!postsToShow || postsToShow.length === 0) {
         const noPostsMsg = document.createElement("div");
@@ -1334,64 +1432,8 @@ description: "Post anything anonymously without login. Confess, express, or spea
           return;
         }
 
-        const div = document.createElement("div");
-        const currentUserId = getUserId();
-        const isMyPost = post.userId === currentUserId;
-        
-        div.className = "post";
-        div.setAttribute("data-post-id", postId);
-
-        const displayText = containsBannedWords(post.text) 
-          ? "This post was hidden due to inappropriate content"
-          : makeTextClickable(post.text);
-
-        const displayNickname = containsBannedWords(post.nickname)
-          ? "Anonymous"
-          : (post.nickname || 'Anonymous');
-
-        // Extract only the first image URL from post text
-        const imageURL = extractFirstImageURL(post.text);
-        let imagePreviewHTML = '';
-        
-        if (imageURL && !containsBannedWords(post.text)) {
-          imagePreviewHTML = `
-            <div class="image-preview">
-              <img src="${imageURL}" alt="Image preview" 
-                   onclick="openImageModal('${imageURL}')"
-                   onerror="this.style.display='none'"
-                   loading="lazy"
-                   style="cursor: pointer;">
-            </div>
-          `;
-        }
-
-        const userInteraction = hasUserInteracted(postId, 'like') ? 'like' : 
-                               hasUserInteracted(postId, 'dislike') ? 'dislike' : null;
-
-        div.innerHTML = `
-          <div class="nickname">${displayNickname}</div>
-          <div class="post-content">${displayText}</div>
-          ${imagePreviewHTML}
-          <div class="timestamp">${timeSince(post.timestamp)}</div>
-          <div class="buttons">
-            <button class="like-btn ${userInteraction === 'like' ? 'active' : ''}" onclick="likePost('${postId}')">
-              <i class="fas fa-thumbs-up"></i> <span class="like-count">${post.likes || 0}</span>
-            </button>
-            <button class="dislike-btn ${userInteraction === 'dislike' ? 'active' : ''}" onclick="dislikePost('${postId}')">
-              <i class="fas fa-thumbs-down"></i> <span class="dislike-count">${post.dislikes || 0}</span>
-            </button>
-            <button class="share-btn-post" onclick="sharePost(${JSON.stringify({...post, postId}).replace(/"/g, '&quot;')})">
-              <i class="fas fa-share"></i> Share
-            </button>
-            ${isMyPost ? `
-              <button class="delete-btn" onclick="deletePost('${postId}', '${post.userId}')">
-                <i class="fas fa-trash"></i> Delete
-              </button>
-            ` : ''}
-          </div>
-        `;
-
-        postsContainer.appendChild(div);
+        const postElement = createPostElement(postId, post);
+        postsContainer.appendChild(postElement);
         
         adCounter++;
         if (adCounter % 2 === 0) {
@@ -1451,10 +1493,57 @@ description: "Post anything anonymously without login. Confess, express, or spea
       return "just now";
     }
 
+    function initializeEventListeners() {
+      if (domCache.searchInput) {
+        domCache.searchInput.addEventListener('input', (e) => {
+          searchPosts(e.target.value);
+        });
+      }
+      
+      if (domCache.clearSearchBtn) {
+        domCache.clearSearchBtn.addEventListener('click', clearSearch);
+      }
+
+      if (domCache.modalClose) {
+        domCache.modalClose.addEventListener('click', closeImageModal);
+      }
+      
+      if (domCache.modal) {
+        domCache.modal.addEventListener('click', (e) => {
+          if (e.target === domCache.modal || e.target.classList.contains('modal-close')) {
+            closeImageModal();
+          }
+        });
+      }
+      
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && domCache.modal && domCache.modal.classList.contains('active')) {
+          closeImageModal();
+        }
+      });
+
+      if (domCache.postText) {
+        domCache.postText.addEventListener('input', function() {
+          clearTimeout(keyboardTimeout);
+          keyboardTimeout = setTimeout(() => {
+            if (document.activeElement === domCache.postText) {
+              domCache.postText.focus();
+            }
+          }, 3000);
+        });
+
+        domCache.postText.addEventListener('blur', function() {
+          clearTimeout(keyboardTimeout);
+        });
+      }
+    }
+
     function initializeApp() {
+      cacheDOM();
       loadBannedWords();
       checkSharedPost();
       deleteExpiredPosts();
+      initializeEventListeners();
       
       setInterval(deleteExpiredPosts, 60 * 60 * 1000);
 
@@ -1463,56 +1552,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
         showSuccess(`Welcome back, ${nickname}!`);
       } else {
         showError("Please set your Nickname in the Home Page to Start Posting!");
-      }
-
-      const searchInput = document.getElementById('searchInput');
-      const clearSearchBtn = document.getElementById('clearSearch');
-      
-      if (searchInput) {
-        searchInput.addEventListener('input', (e) => {
-          searchPosts(e.target.value);
-        });
-      }
-      
-      if (clearSearchBtn) {
-        clearSearchBtn.addEventListener('click', clearSearch);
-      }
-
-      const modal = document.getElementById('imageModal');
-      const modalClose = document.getElementById('modalClose');
-      
-      if (modalClose) {
-        modalClose.addEventListener('click', closeImageModal);
-      }
-      
-      if (modal) {
-        modal.addEventListener('click', (e) => {
-          if (e.target === modal || e.target.classList.contains('modal-close')) {
-            closeImageModal();
-          }
-        });
-      }
-      
-      document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && modal && modal.classList.contains('active')) {
-          closeImageModal();
-        }
-      });
-
-      const postText = document.getElementById('postText');
-      if (postText) {
-        postText.addEventListener('input', function() {
-          clearTimeout(keyboardTimeout);
-          keyboardTimeout = setTimeout(() => {
-            if (document.activeElement === postText) {
-              postText.focus();
-            }
-          }, 3000);
-        });
-
-        postText.addEventListener('blur', function() {
-          clearTimeout(keyboardTimeout);
-        });
       }
 
       db.ref("posts").on("value", snapshot => {
@@ -1560,6 +1599,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
         }
       });
 
+      // Only update individual posts when they change, don't re-render everything
       db.ref("posts").on("child_changed", snapshot => {
         const post = snapshot.val();
         const postId = snapshot.key;
