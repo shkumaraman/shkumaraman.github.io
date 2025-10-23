@@ -1515,6 +1515,9 @@ description: "Post anything anonymously without login. Confess, express, or spea
         });
       }
 
+      // Track if we're doing initial load
+      let initialLoad = true;
+      
       db.ref("posts").on("value", snapshot => {
         const posts = snapshot.val();
         
@@ -1552,20 +1555,27 @@ description: "Post anything anonymously without login. Confess, express, or spea
           }
         }
 
-        if (currentSearchTerm) {
-          searchPosts(currentSearchTerm);
-        } else {
-          currentPage = 0;
-          displayPostsPage();
+        // Only do full page display on initial load or when search changes
+        if (initialLoad || currentSearchTerm) {
+          if (currentSearchTerm) {
+            searchPosts(currentSearchTerm);
+          } else {
+            currentPage = 0;
+            displayPostsPage();
+          }
+          initialLoad = false;
         }
       });
 
-      // FIXED: Only update the specific post that changed, not the entire page
+      // Handle individual post updates without full re-render
       db.ref("posts").on("child_changed", snapshot => {
         const post = snapshot.val();
         const postId = snapshot.key;
         
-        // Update the post data in our arrays
+        // Update the post counts in the UI without re-rendering everything
+        updatePostCounts(postId, post.likes, post.dislikes);
+        
+        // Update our local data
         const postIndex = allPosts.findIndex(([id]) => id === postId);
         if (postIndex !== -1) {
           allPosts[postIndex][1] = post;
@@ -1575,11 +1585,9 @@ description: "Post anything anonymously without login. Confess, express, or spea
         if (displayedIndex !== -1) {
           displayedPosts[displayedIndex][1] = post;
         }
-        
-        // Only update the specific post element, not the entire page
-        updatePostCounts(postId, post.likes, post.dislikes);
       });
 
+      // Handle post deletions
       db.ref("posts").on("child_removed", snapshot => {
         const postId = snapshot.key;
         
@@ -1588,10 +1596,16 @@ description: "Post anything anonymously without login. Confess, express, or spea
         
         removeUserInteraction(postId);
         
+        // Only re-render if we're in search mode
         if (currentSearchTerm) {
           searchPosts(currentSearchTerm);
-        } else {
-          displayPostsPage();
+        }
+        // Otherwise, just remove the post element
+        else {
+          const postElement = document.querySelector(`[data-post-id="${postId}"]`);
+          if (postElement) {
+            postElement.remove();
+          }
         }
       });
     }
