@@ -824,7 +824,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
     let allPosts = [];
     let displayedPosts = [];
     let currentPage = 0;
-    let isLoading = false;
     let currentSearchTerm = '';
     let highlightPostId = null;
     let keyboardTimeout;
@@ -1255,13 +1254,15 @@ description: "Post anything anonymously without login. Confess, express, or spea
         });
     }
 
-    function extractImageURLs(text) {
-      if (!text) return [];
+    function extractFirstImageURL(text) {
+      if (!text) return null;
       
       const urlRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|([a-zA-Z0-9-]+\.[a-zA-Z]{2,}(\/[^\s]*)?)/g;
       const urls = text.match(urlRegex) || [];
       
-      return urls.filter(url => isImageURL(url)).map(url => normalizeURL(url));
+      // Return only the first image URL found
+      const firstImageURL = urls.find(url => isImageURL(url));
+      return firstImageURL ? normalizeURL(firstImageURL) : null;
     }
 
     function displayPostsPage() {
@@ -1277,7 +1278,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
       const postsToShow = displayedPosts.slice(0, endIndex);
       
       // Clear existing posts but keep input, search, and error containers
-      const existingPosts = postsContainer.querySelectorAll('.post, .system-msg, .ad-container, #loadMoreBtn');
+      const existingPosts = postsContainer.querySelectorAll('.post, .system-msg, .ad-container');
       existingPosts.forEach(el => el.remove());
       
       // Re-add input, search, and error containers
@@ -1294,6 +1295,11 @@ description: "Post anything anonymously without login. Confess, express, or spea
           "No posts found matching your search." : 
           "No posts yet. Be the first to post!";
         postsContainer.appendChild(noPostsMsg);
+        
+        // Hide load more button when no posts
+        if (loadMoreBtn) {
+          loadMoreBtn.style.display = 'none';
+        }
         return;
       }
 
@@ -1319,22 +1325,18 @@ description: "Post anything anonymously without login. Confess, express, or spea
           ? "Anonymous"
           : (post.nickname || 'Anonymous');
 
-        // Extract image URLs from post text
-        const imageURLs = extractImageURLs(post.text);
+        // Extract only the first image URL from post text
+        const firstImageURL = extractFirstImageURL(post.text);
         let imagePreviewHTML = '';
         
-        if (imageURLs.length > 0 && !containsBannedWords(post.text)) {
+        if (firstImageURL && !containsBannedWords(post.text)) {
           imagePreviewHTML = `
-            <div class="image-previews">
-              ${imageURLs.map(url => `
-                <div class="image-preview">
-                  <img src="${url}" alt="Image preview" 
-                       onclick="openImageModal('${url}')"
-                       onerror="this.style.display='none'"
-                       loading="lazy"
-                       style="cursor: pointer;">
-                </div>
-              `).join('')}
+            <div class="image-preview">
+              <img src="${firstImageURL}" alt="Image preview" 
+                   onclick="openImageModal('${firstImageURL}')"
+                   onerror="this.style.display='none'"
+                   loading="lazy"
+                   style="cursor: pointer;">
             </div>
           `;
         }
@@ -1388,6 +1390,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
       if (loadMoreBtn) {
         if (endIndex < displayedPosts.length) {
           loadMoreBtn.style.display = 'block';
+          loadMoreBtn.onclick = loadMorePosts;
         } else {
           loadMoreBtn.style.display = 'none';
         }
@@ -1480,10 +1483,18 @@ description: "Post anything anonymously without login. Confess, express, or spea
         });
       }
 
-      const loadMoreBtn = document.getElementById("loadMoreBtn");
-      if (loadMoreBtn) {
-        loadMoreBtn.addEventListener("click", loadMorePosts);
+      // Add Load More button to the DOM if it doesn't exist
+      let loadMoreBtn = document.getElementById("loadMoreBtn");
+      if (!loadMoreBtn) {
+        loadMoreBtn = document.createElement("button");
+        loadMoreBtn.id = "loadMoreBtn";
+        loadMoreBtn.className = "load-more-btn";
+        loadMoreBtn.textContent = "Load More Posts";
+        loadMoreBtn.style.display = "none";
+        document.getElementById("postsContainer").appendChild(loadMoreBtn);
       }
+
+      loadMoreBtn.addEventListener("click", loadMorePosts);
 
       db.ref("posts").on("value", snapshot => {
         const posts = snapshot.val();
@@ -1562,6 +1573,46 @@ description: "Post anything anonymously without login. Confess, express, or spea
         }
       });
     }
+
+    // Add CSS for load more button
+    const loadMoreCSS = `
+      .load-more-btn {
+        display: block;
+        width: 200px;
+        margin: 20px auto;
+        padding: 12px 24px;
+        background: #007bff;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+      }
+      
+      .load-more-btn:hover {
+        background: #0056b3;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0, 123, 255, 0.3);
+      }
+      
+      .load-more-btn:active {
+        transform: translateY(0);
+      }
+      
+      .dark-mode .load-more-btn {
+        background: #1a73e8;
+      }
+      
+      .dark-mode .load-more-btn:hover {
+        background: #1669d6;
+      }
+    `;
+    
+    const styleSheet = document.createElement("style");
+    styleSheet.textContent = loadMoreCSS;
+    document.head.appendChild(styleSheet);
 
     initializeApp();
 </script>
