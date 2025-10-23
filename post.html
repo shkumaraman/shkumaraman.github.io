@@ -817,13 +817,45 @@ description: "Post anything anonymously without login. Confess, express, or spea
 
     const POST_EXPIRY_DAYS = 30;
     const MILLISECONDS_IN_DAY = 24 * 60 * 60 * 1000;
+    const POSTS_PER_PAGE = 10; // Number of posts to load at a time
 
     let bannedWords = [];
     let bannedWordsLoaded = false;
     let allPosts = [];
+    let displayedPosts = [];
     let currentSearchTerm = '';
     let highlightPostId = null;
     let keyboardTimeout;
+    let currentPage = 0;
+    let isLoading = false;
+    let hasMorePosts = true;
+
+    // Throttle function to limit function calls
+    function throttle(func, limit) {
+      let inThrottle;
+      return function() {
+        const args = arguments;
+        const context = this;
+        if (!inThrottle) {
+          func.apply(context, args);
+          inThrottle = true;
+          setTimeout(() => inThrottle = false, limit);
+        }
+      }
+    }
+
+    // Debounce function to delay execution
+    function debounce(func, wait) {
+      let timeout;
+      return function executedFunction(...args) {
+        const later = () => {
+          clearTimeout(timeout);
+          func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+      };
+    }
 
     async function loadBannedWords() {
       try {
@@ -1000,9 +1032,12 @@ description: "Post anything anonymously without login. Confess, express, or spea
 
     function searchPosts(searchTerm) {
       currentSearchTerm = searchTerm.toLowerCase().trim();
+      currentPage = 0;
+      displayedPosts = [];
       
       if (!currentSearchTerm) {
-        displayPosts(allPosts);
+        displayPosts(allPosts.slice(0, POSTS_PER_PAGE));
+        hasMorePosts = allPosts.length > POSTS_PER_PAGE;
         return;
       }
       
@@ -1014,13 +1049,18 @@ description: "Post anything anonymously without login. Confess, express, or spea
                text.toLowerCase().includes(currentSearchTerm);
       });
       
-      displayPosts(filteredPosts);
+      displayedPosts = filteredPosts;
+      displayPosts(filteredPosts.slice(0, POSTS_PER_PAGE));
+      hasMorePosts = filteredPosts.length > POSTS_PER_PAGE;
     }
 
     function clearSearch() {
       document.getElementById('searchInput').value = '';
       currentSearchTerm = '';
-      displayPosts(allPosts);
+      currentPage = 0;
+      displayedPosts = [];
+      displayPosts(allPosts.slice(0, POSTS_PER_PAGE));
+      hasMorePosts = allPosts.length > POSTS_PER_PAGE;
     }
 
     function createAdElement() {
@@ -1326,6 +1366,26 @@ description: "Post anything anonymously without login. Confess, express, or spea
         });
     }
 
+    function loadMorePosts() {
+      if (isLoading || !hasMorePosts) return;
+      
+      isLoading = true;
+      currentPage++;
+      
+      const postsToDisplay = currentSearchTerm 
+        ? displayedPosts.slice(0, (currentPage + 1) * POSTS_PER_PAGE)
+        : allPosts.slice(0, (currentPage + 1) * POSTS_PER_PAGE);
+      
+      displayPosts(postsToDisplay);
+      
+      // Check if there are more posts to load
+      hasMorePosts = currentSearchTerm
+        ? displayedPosts.length > (currentPage + 1) * POSTS_PER_PAGE
+        : allPosts.length > (currentPage + 1) * POSTS_PER_PAGE;
+      
+      isLoading = false;
+    }
+
     function displayPosts(postsArray) {
       const postsContainer = document.getElementById("postsContainer");
       const postInputContainer = document.querySelector('.post-input-container');
@@ -1334,20 +1394,25 @@ description: "Post anything anonymously without login. Confess, express, or spea
       
       const scrollPosition = window.scrollY;
       
-      postsContainer.innerHTML = '';
-      postsContainer.appendChild(postInputContainer);
-      if (searchContainer) {
-        postsContainer.appendChild(searchContainer);
+      // Only clear posts if we're starting from the beginning
+      if (currentPage === 0) {
+        postsContainer.innerHTML = '';
+        postsContainer.appendChild(postInputContainer);
+        if (searchContainer) {
+          postsContainer.appendChild(searchContainer);
+        }
+        postsContainer.appendChild(errorContainer);
       }
-      postsContainer.appendChild(errorContainer);
       
       if (!postsArray || postsArray.length === 0) {
-        const noPostsMsg = document.createElement("div");
-        noPostsMsg.className = "system-msg";
-        noPostsMsg.textContent = currentSearchTerm ? 
-          "No posts found matching your search." : 
-          "No posts yet. Be the first to post!";
-        postsContainer.appendChild(noPostsMsg);
+        if (currentPage === 0) {
+          const noPostsMsg = document.createElement("div");
+          noPostsMsg.className = "system-msg";
+          noPostsMsg.textContent = currentSearchTerm ? 
+            "No posts found matching your search." : 
+            "No posts yet. Be the first to post!";
+          postsContainer.appendChild(noPostsMsg);
+        }
         
         requestAnimationFrame(() => {
           window.scrollTo(0, scrollPosition);
@@ -1355,9 +1420,14 @@ description: "Post anything anonymously without login. Confess, express, or spea
         return;
       }
 
-      let adCounter = 0;
+      let adCounter = postsContainer.querySelectorAll('.post').length;
 
       postsArray.forEach(([postId, post], index) => {
+        // Skip if post is already displayed
+        if (document.querySelector(`[data-post-id="${postId}"]`)) {
+          return;
+        }
+
         if (isPostExpired(post.timestamp)) {
           return;
         }
@@ -1476,6 +1546,21 @@ description: "Post anything anonymously without login. Confess, express, or spea
         }
       });
       
+      // Add load more button if there are more posts
+      const existingLoadMoreBtn = document.getElementById('loadMoreBtn');
+      if (existingLoadMoreBtn) {
+        existingLoadMoreBtn.remove();
+      }
+      
+      if (hasMorePosts) {
+        const loadMoreBtn = document.createElement('button');
+        loadMoreBtn.id = 'loadMoreBtn';
+        loadMoreBtn.className = 'load-more-btn';
+        loadMoreBtn.textContent = 'Load More Posts';
+        loadMoreBtn.addEventListener('click', loadMorePosts);
+        postsContainer.appendChild(loadMoreBtn);
+      }
+      
       requestAnimationFrame(() => {
         window.scrollTo(0, scrollPosition);
       });
@@ -1516,9 +1601,9 @@ description: "Post anything anonymously without login. Confess, express, or spea
       const clearSearchBtn = document.getElementById('clearSearch');
       
       if (searchInput) {
-        searchInput.addEventListener('input', (e) => {
+        searchInput.addEventListener('input', debounce((e) => {
           searchPosts(e.target.value);
-        });
+        }, 300));
       }
       
       if (clearSearchBtn) {
@@ -1562,6 +1647,16 @@ description: "Post anything anonymously without login. Confess, express, or spea
         });
       }
 
+      // Infinite scroll with throttling
+      window.addEventListener('scroll', throttle(() => {
+        const { scrollTop, scrollHeight, clientHeight } = document.documentElement;
+        
+        // Load more posts when user is near the bottom
+        if (scrollTop + clientHeight >= scrollHeight - 500 && hasMorePosts && !isLoading) {
+          loadMorePosts();
+        }
+      }, 200));
+
       db.ref("posts").on("value", snapshot => {
         const posts = snapshot.val();
         
@@ -1600,7 +1695,10 @@ description: "Post anything anonymously without login. Confess, express, or spea
         if (currentSearchTerm) {
           searchPosts(currentSearchTerm);
         } else {
-          displayPosts(postsArray);
+          // Only display first page initially
+          currentPage = 0;
+          displayPosts(postsArray.slice(0, POSTS_PER_PAGE));
+          hasMorePosts = postsArray.length > POSTS_PER_PAGE;
         }
       });
 
@@ -1620,16 +1718,48 @@ description: "Post anything anonymously without login. Confess, express, or spea
         const postId = snapshot.key;
         
         allPosts = allPosts.filter(([id]) => id !== postId);
+        displayedPosts = displayedPosts.filter(([id]) => id !== postId);
         
         removeUserInteraction(postId);
         
         if (currentSearchTerm) {
           searchPosts(currentSearchTerm);
         } else {
-          displayPosts(allPosts);
+          currentPage = 0;
+          displayPosts(allPosts.slice(0, (currentPage + 1) * POSTS_PER_PAGE));
+          hasMorePosts = allPosts.length > (currentPage + 1) * POSTS_PER_PAGE;
         }
       });
     }
+
+    // Add CSS for load more button
+    const loadMoreCSS = `
+      .load-more-btn {
+        display: block;
+        margin: 20px auto;
+        padding: 10px 20px;
+        background-color: #007bff;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 16px;
+        transition: background-color 0.3s;
+      }
+      
+      .load-more-btn:hover {
+        background-color: #0056b3;
+      }
+      
+      .load-more-btn:disabled {
+        background-color: #6c757d;
+        cursor: not-allowed;
+      }
+    `;
+    
+    const styleSheet = document.createElement("style");
+    styleSheet.textContent = loadMoreCSS;
+    document.head.appendChild(styleSheet);
 
     initializeApp();
 </script>
