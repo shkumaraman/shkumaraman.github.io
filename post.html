@@ -709,7 +709,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
 
 {% include menu.html %}
 {% include scripts.html %}
-  
+
 <script>
     // Firebase Init
     const firebaseConfig = {
@@ -723,6 +723,10 @@ description: "Post anything anonymously without login. Confess, express, or spea
     // Banned words system
     let bannedWords = [];
     let bannedWordsLoaded = false;
+
+    // Search functionality variables
+    let allPosts = [];
+    let currentSearchTerm = '';
 
     // Load banned words from /chat/filter.txt
     async function loadBannedWords() {
@@ -921,6 +925,42 @@ description: "Post anything anonymously without login. Confess, express, or spea
       });
     }
 
+    // Highlight search terms in text
+    function highlightSearchTerms(text, searchTerm) {
+      if (!searchTerm || !text) return text;
+      
+      const regex = new RegExp(`(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+      return text.replace(regex, '<mark class="search-highlight">$1</mark>');
+    }
+
+    // Search posts by nickname and text
+    function searchPosts(searchTerm) {
+      currentSearchTerm = searchTerm.toLowerCase().trim();
+      
+      if (!currentSearchTerm) {
+        // If search is empty, show all posts in random order
+        displayPosts(allPosts);
+        return;
+      }
+      
+      const filteredPosts = allPosts.filter(([postId, post]) => {
+        const nickname = post.nickname || '';
+        const text = post.text || '';
+        
+        return nickname.toLowerCase().includes(currentSearchTerm) || 
+               text.toLowerCase().includes(currentSearchTerm);
+      });
+      
+      displayPosts(filteredPosts);
+    }
+
+    // Clear search
+    function clearSearch() {
+      document.getElementById('searchInput').value = '';
+      currentSearchTerm = '';
+      displayPosts(allPosts);
+    }
+
     // Create AdSense ad element
     function createAdElement() {
       const adContainer = document.createElement('div');
@@ -995,6 +1035,11 @@ description: "Post anything anonymously without login. Confess, express, or spea
         await newPostRef.set(postData);
         document.getElementById("postText").value = "";
         showSuccess("Post published successfully!");
+        
+        // Clear search if active to show new post
+        if (currentSearchTerm) {
+          clearSearch();
+        }
       } catch (error) {
         console.error('Error publishing post:', error);
         showError("Failed to publish post. Please try again.");
@@ -1194,47 +1239,34 @@ description: "Post anything anonymously without login. Confess, express, or spea
       document.body.style.overflow = '';
     }
 
-    // Load and display posts with randomization and ads
-    const postsContainer = document.getElementById("postsContainer");
-    let adCounter = 0;
-
-    db.ref("posts").on("value", snapshot => {
-      // Keep the post input container and error container
+    // Display posts with search highlighting
+    function displayPosts(postsArray) {
+      const postsContainer = document.getElementById("postsContainer");
+      
+      // Keep the post input container, search bar, and error container
       const postInputContainer = document.querySelector('.post-input-container');
+      const searchContainer = document.querySelector('.search-container');
       const errorContainer = document.getElementById("errorContainer");
+      
       postsContainer.innerHTML = '';
       postsContainer.appendChild(postInputContainer);
+      if (searchContainer) {
+        postsContainer.appendChild(searchContainer);
+      }
       postsContainer.appendChild(errorContainer);
       
-      const posts = snapshot.val();
-      if (!posts) {
+      if (!postsArray || postsArray.length === 0) {
         const noPostsMsg = document.createElement("div");
         noPostsMsg.className = "system-msg";
-        noPostsMsg.textContent = "No posts yet. Be the first to post!";
+        noPostsMsg.textContent = currentSearchTerm ? 
+          "No posts found matching your search." : 
+          "No posts yet. Be the first to post!";
         postsContainer.appendChild(noPostsMsg);
         return;
       }
 
-      // Convert to array and randomize order
-      let postsArray = Object.entries(posts);
-      
-      // Randomize posts using Fisher-Yates shuffle
-      for (let i = postsArray.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [postsArray[i], postsArray[j]] = [postsArray[j], postsArray[i]];
-      }
-
-      // If we have a post to highlight, move it to the top
-      if (highlightPostId && posts[highlightPostId]) {
-        const highlightedPostIndex = postsArray.findIndex(([id]) => id === highlightPostId);
-        if (highlightedPostIndex !== -1) {
-          const highlightedPost = postsArray.splice(highlightedPostIndex, 1)[0];
-          postsArray.unshift(highlightedPost);
-        }
-      }
-
       // Reset ad counter
-      adCounter = 0;
+      let adCounter = 0;
 
       postsArray.forEach(([postId, post], index) => {
         const div = document.createElement("div");
@@ -1247,11 +1279,17 @@ description: "Post anything anonymously without login. Confess, express, or spea
         // Check if post content contains banned words
         const displayText = containsBannedWords(post.text) 
           ? "This post was hidden due to inappropriate content"
-          : makeTextClickable(post.text);
+          : makeTextClickable(
+              currentSearchTerm ? 
+              highlightSearchTerms(post.text, currentSearchTerm) : 
+              post.text
+            );
 
         const displayNickname = containsBannedWords(post.nickname)
           ? "Anonymous"
-          : (post.nickname || 'Anonymous');
+          : (currentSearchTerm ? 
+              highlightSearchTerms(post.nickname || 'Anonymous', currentSearchTerm) : 
+              (post.nickname || 'Anonymous'));
 
         let urlPreviewHTML = '';
         if (post.urlPreview && !containsBannedWords(post.text)) {
@@ -1282,8 +1320,8 @@ description: "Post anything anonymously without login. Confess, express, or spea
                       <div class="preview-with-image">
                         <div class="preview-text-content">
                           <div class="preview-domain">${post.urlPreview.domain}</div>
-                          <div class="preview-title">${post.urlPreview.title}</div>
-                          ${post.urlPreview.description ? `<div class="preview-description">${post.urlPreview.description}</div>` : ''}
+                          <div class="preview-title">${currentSearchTerm ? highlightSearchTerms(post.urlPreview.title, currentSearchTerm) : post.urlPreview.title}</div>
+                          ${post.urlPreview.description ? `<div class="preview-description">${currentSearchTerm ? highlightSearchTerms(post.urlPreview.description, currentSearchTerm) : post.urlPreview.description}</div>` : ''}
                         </div>
                         <div class="preview-image-side">
                           <img src="${post.urlPreview.image}" alt="Preview" onerror="this.style.display='none'">
@@ -1299,8 +1337,8 @@ description: "Post anything anonymously without login. Confess, express, or spea
                   <a href="${post.urlPreview.url}" target="_blank" rel="noopener nofollow">
                     <div class="url-preview-content">
                       <div class="preview-domain">${post.urlPreview.domain}</div>
-                      <div class="preview-title">${post.urlPreview.title}</div>
-                      ${post.urlPreview.description ? `<div class="preview-description">${post.urlPreview.description}</div>` : ''}
+                      <div class="preview-title">${currentSearchTerm ? highlightSearchTerms(post.urlPreview.title, currentSearchTerm) : post.urlPreview.title}</div>
+                      ${post.urlPreview.description ? `<div class="preview-description">${currentSearchTerm ? highlightSearchTerms(post.urlPreview.description, currentSearchTerm) : post.urlPreview.description}</div>` : ''}
                     </div>
                   </a>
                 </div>
@@ -1359,6 +1397,47 @@ description: "Post anything anonymously without login. Confess, express, or spea
           }, 100);
         }
       });
+    }
+
+    // Load and display posts with randomization and ads
+    const postsContainer = document.getElementById("postsContainer");
+
+    db.ref("posts").on("value", snapshot => {
+      const posts = snapshot.val();
+      
+      if (!posts) {
+        allPosts = [];
+        displayPosts([]);
+        return;
+      }
+
+      // Convert to array and randomize order
+      let postsArray = Object.entries(posts);
+      
+      // Randomize posts using Fisher-Yates shuffle
+      for (let i = postsArray.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [postsArray[i], postsArray[j]] = [postsArray[j], postsArray[i]];
+      }
+
+      // Store all posts for search functionality
+      allPosts = postsArray;
+
+      // If we have a post to highlight, move it to the top
+      if (highlightPostId && posts[highlightPostId]) {
+        const highlightedPostIndex = postsArray.findIndex(([id]) => id === highlightPostId);
+        if (highlightedPostIndex !== -1) {
+          const highlightedPost = postsArray.splice(highlightedPostIndex, 1)[0];
+          postsArray.unshift(highlightedPost);
+        }
+      }
+
+      // Display posts (will handle search if active)
+      if (currentSearchTerm) {
+        searchPosts(currentSearchTerm);
+      } else {
+        displayPosts(postsArray);
+      }
     });
 
     // Convert timestamp to "x ago"
@@ -1391,58 +1470,83 @@ description: "Post anything anonymously without login. Confess, express, or spea
         showError("Please set your nickname in the group chat to start posting!");
       }
 
+      // Set up search functionality
+      const searchInput = document.getElementById('searchInput');
+      const clearSearchBtn = document.getElementById('clearSearch');
+      
+      if (searchInput) {
+        searchInput.addEventListener('input', (e) => {
+          searchPosts(e.target.value);
+        });
+      }
+      
+      if (clearSearchBtn) {
+        clearSearchBtn.addEventListener('click', clearSearch);
+      }
+
       // Set up image modal event listeners
       const modal = document.getElementById('imageModal');
       const modalClose = document.getElementById('modalClose');
       
-      modalClose.addEventListener('click', closeImageModal);
+      if (modalClose) {
+        modalClose.addEventListener('click', closeImageModal);
+      }
       
-      modal.addEventListener('click', (e) => {
-        if (e.target === modal || e.target.classList.contains('modal-close')) {
-          closeImageModal();
-        }
-      });
+      if (modal) {
+        modal.addEventListener('click', (e) => {
+          if (e.target === modal || e.target.classList.contains('modal-close')) {
+            closeImageModal();
+          }
+        });
+      }
       
       // Close modal with Escape key
       document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && modal.classList.contains('active')) {
+        if (e.key === 'Escape' && modal && modal.classList.contains('active')) {
           closeImageModal();
         }
       });
 
       // Set up share button
-      document.getElementById('shareBtn').addEventListener('click', () => {
-        const shareUrl = window.location.href;
-        if (navigator.share) {
-          navigator.share({
-            title: 'Anonymous Posts',
-            text: 'Share your thoughts anonymously!',
-            url: shareUrl
-          });
-        } else {
-          navigator.clipboard.writeText(shareUrl);
-          showSuccess("App link copied to clipboard!");
-        }
-      });
+      const shareBtn = document.getElementById('shareBtn');
+      if (shareBtn) {
+        shareBtn.addEventListener('click', () => {
+          const shareUrl = window.location.href;
+          if (navigator.share) {
+            navigator.share({
+              title: 'Anonymous Posts',
+              text: 'Share your thoughts anonymously!',
+              url: shareUrl
+            });
+          } else {
+            navigator.clipboard.writeText(shareUrl);
+            showSuccess("App link copied to clipboard!");
+          }
+        });
+      }
 
-      // Set up theme toggle
-      document.getElementById('themeToggle').addEventListener('click', () => {
-        document.body.classList.toggle('light-mode');
-        const icon = document.querySelector('#themeToggle i');
-        if (document.body.classList.contains('light-mode')) {
-          icon.className = 'fas fa-sun';
-          localStorage.setItem('theme', 'light');
-        } else {
-          icon.className = 'fas fa-moon';
-          localStorage.setItem('theme', 'dark');
-        }
-      });
+      // Set up theme toggle with different ID to avoid conflicts
+      const themeToggleBtn = document.getElementById('postsThemeToggle');
+      if (themeToggleBtn) {
+        themeToggleBtn.addEventListener('click', () => {
+          document.body.classList.toggle('light-mode');
+          const icon = themeToggleBtn.querySelector('i');
+          if (document.body.classList.contains('light-mode')) {
+            icon.className = 'fas fa-sun';
+            localStorage.setItem('posts_theme', 'light');
+          } else {
+            icon.className = 'fas fa-moon';
+            localStorage.setItem('posts_theme', 'dark');
+          }
+        });
 
-      // Load saved theme
-      const savedTheme = localStorage.getItem('theme');
-      if (savedTheme === 'light') {
-        document.body.classList.add('light-mode');
-        document.querySelector('#themeToggle i').className = 'fas fa-sun';
+        // Load saved theme
+        const savedTheme = localStorage.getItem('posts_theme');
+        if (savedTheme === 'light') {
+          document.body.classList.add('light-mode');
+          const icon = themeToggleBtn.querySelector('i');
+          if (icon) icon.className = 'fas fa-sun';
+        }
       }
     }
 
