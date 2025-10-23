@@ -1273,11 +1273,39 @@ description: "Post anything anonymously without login. Confess, express, or spea
       document.body.style.overflow = '';
     }
 
+    // NEW: Function to update individual post counts without re-rendering
+    function updatePostCounts(postId, likes, dislikes) {
+      const postElement = document.querySelector(`[data-post-id="${postId}"]`);
+      if (postElement) {
+        const likeCountElement = postElement.querySelector('.like-count');
+        const dislikeCountElement = postElement.querySelector('.dislike-count');
+        const likeBtn = postElement.querySelector('.like-btn');
+        const dislikeBtn = postElement.querySelector('.dislike-btn');
+        
+        if (likeCountElement) likeCountElement.textContent = likes || 0;
+        if (dislikeCountElement) dislikeCountElement.textContent = dislikes || 0;
+        
+        // Update button active states
+        const userInteraction = hasUserInteracted(postId, 'like') ? 'like' : 
+                               hasUserInteracted(postId, 'dislike') ? 'dislike' : null;
+        
+        if (likeBtn) {
+          likeBtn.classList.toggle('active', userInteraction === 'like');
+        }
+        if (dislikeBtn) {
+          dislikeBtn.classList.toggle('active', userInteraction === 'dislike');
+        }
+      }
+    }
+
     function displayPosts(postsArray) {
       const postsContainer = document.getElementById("postsContainer");
       const postInputContainer = document.querySelector('.post-input-container');
       const searchContainer = document.querySelector('.search-container');
       const errorContainer = document.getElementById("errorContainer");
+      
+      // Store current scroll position
+      const scrollPosition = window.scrollY;
       
       postsContainer.innerHTML = '';
       postsContainer.appendChild(postInputContainer);
@@ -1293,6 +1321,11 @@ description: "Post anything anonymously without login. Confess, express, or spea
           "No posts found matching your search." : 
           "No posts yet. Be the first to post!";
         postsContainer.appendChild(noPostsMsg);
+        
+        // Restore scroll position
+        requestAnimationFrame(() => {
+          window.scrollTo(0, scrollPosition);
+        });
         return;
       }
 
@@ -1378,10 +1411,10 @@ description: "Post anything anonymously without login. Confess, express, or spea
           <div class="timestamp">${timeSince(post.timestamp)}</div>
           <div class="buttons">
             <button class="like-btn ${userInteraction === 'like' ? 'active' : ''}" onclick="likePost('${postId}')">
-              <i class="fas fa-thumbs-up"></i> ${post.likes || 0}
+              <i class="fas fa-thumbs-up"></i> <span class="like-count">${post.likes || 0}</span>
             </button>
             <button class="dislike-btn ${userInteraction === 'dislike' ? 'active' : ''}" onclick="dislikePost('${postId}')">
-              <i class="fas fa-thumbs-down"></i> ${post.dislikes || 0}
+              <i class="fas fa-thumbs-down"></i> <span class="dislike-count">${post.dislikes || 0}</span>
             </button>
             <button class="share-btn-post" onclick="sharePost(${JSON.stringify({...post, postId}).replace(/"/g, '&quot;')})">
               <i class="fas fa-share"></i> Share
@@ -1412,42 +1445,12 @@ description: "Post anything anonymously without login. Confess, express, or spea
           }, 100);
         }
       });
+      
+      // Restore scroll position after rendering
+      requestAnimationFrame(() => {
+        window.scrollTo(0, scrollPosition);
+      });
     }
-
-    const postsContainer = document.getElementById("postsContainer");
-
-    db.ref("posts").on("value", snapshot => {
-      const posts = snapshot.val();
-      
-      if (!posts) {
-        allPosts = [];
-        displayPosts([]);
-        return;
-      }
-
-      let postsArray = Object.entries(posts);
-      
-      for (let i = postsArray.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [postsArray[i], postsArray[j]] = [postsArray[j], postsArray[i]];
-      }
-
-      allPosts = postsArray;
-
-      if (highlightPostId && posts[highlightPostId]) {
-        const highlightedPostIndex = postsArray.findIndex(([id]) => id === highlightPostId);
-        if (highlightedPostIndex !== -1) {
-          const highlightedPost = postsArray.splice(highlightedPostIndex, 1)[0];
-          postsArray.unshift(highlightedPost);
-        }
-      }
-
-      if (currentSearchTerm) {
-        searchPosts(currentSearchTerm);
-      } else {
-        displayPosts(postsArray);
-      }
-    });
 
     function timeSince(ts) {
       const seconds = Math.floor((Date.now() - ts) / 1000);
@@ -1526,6 +1529,85 @@ description: "Post anything anonymously without login. Confess, express, or spea
           clearTimeout(keyboardTimeout);
         });
       }
+
+      // Initial load and when new posts are added
+      db.ref("posts").on("value", snapshot => {
+        const posts = snapshot.val();
+        
+        if (!posts) {
+          allPosts = [];
+          displayPosts([]);
+          return;
+        }
+
+        let postsArray = Object.entries(posts);
+        
+        // Apply randomization only on initial load
+        if (allPosts.length === 0) {
+          for (let i = postsArray.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [postsArray[i], postsArray[j]] = [postsArray[j], postsArray[i]];
+          }
+        } else {
+          // Keep existing order for new posts
+          const existingIds = new Set(allPosts.map(([id]) => id));
+          const newPosts = postsArray.filter(([id]) => !existingIds.has(id));
+          const existingPosts = postsArray.filter(([id]) => existingIds.has(id));
+          
+          // Maintain existing order for old posts, append new posts at the end
+          const orderedExisting = allPosts.filter(([id]) => existingIds.has(id));
+          postsArray = [...orderedExisting, ...newPosts];
+        }
+
+        allPosts = postsArray;
+
+        if (highlightPostId && posts[highlightPostId]) {
+          const highlightedPostIndex = postsArray.findIndex(([id]) => id === highlightPostId);
+          if (highlightedPostIndex !== -1) {
+            const highlightedPost = postsArray.splice(highlightedPostIndex, 1)[0];
+            postsArray.unshift(highlightedPost);
+          }
+        }
+
+        if (currentSearchTerm) {
+          searchPosts(currentSearchTerm);
+        } else {
+          displayPosts(postsArray);
+        }
+      });
+
+      // Handle individual post updates without re-rendering everything
+      db.ref("posts").on("child_changed", snapshot => {
+        const post = snapshot.val();
+        const postId = snapshot.key;
+        
+        // Update only the specific post's counts without re-rendering everything
+        updatePostCounts(postId, post.likes, post.dislikes);
+        
+        // Also update the allPosts array to keep data in sync
+        const postIndex = allPosts.findIndex(([id]) => id === postId);
+        if (postIndex !== -1) {
+          allPosts[postIndex][1] = post;
+        }
+      });
+
+      // Handle post removal
+      db.ref("posts").on("child_removed", snapshot => {
+        const postId = snapshot.key;
+        
+        // Remove from allPosts array
+        allPosts = allPosts.filter(([id]) => id !== postId);
+        
+        // Remove user interaction data
+        removeUserInteraction(postId);
+        
+        // Re-render to reflect the removal
+        if (currentSearchTerm) {
+          searchPosts(currentSearchTerm);
+        } else {
+          displayPosts(allPosts);
+        }
+      });
     }
 
     initializeApp();
