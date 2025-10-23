@@ -808,24 +808,20 @@ description: "Post anything anonymously without login. Confess, express, or spea
 {% include scripts.html %}
 
 <script>
-    // Firebase Init
     const firebaseConfig = {
       databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
     };
     
-    // Initialize Firebase
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
-    // Banned words system
     let bannedWords = [];
     let bannedWordsLoaded = false;
-
-    // Search functionality variables
     let allPosts = [];
     let currentSearchTerm = '';
+    let highlightPostId = null;
+    let keyboardTimeout;
 
-    // Load banned words from /chat/filter.txt
     async function loadBannedWords() {
       try {
         const response = await fetch('/chat/filter.txt');
@@ -834,30 +830,24 @@ description: "Post anything anonymously without login. Confess, express, or spea
           .map(word => word.trim().toLowerCase())
           .filter(word => word.length > 0);
         bannedWordsLoaded = true;
-        console.log("Banned words loaded successfully:", bannedWords.length);
       } catch (err) {
-        console.error("Error loading banned words:", err);
-        // Fallback to basic list
         bannedWords = ['badword1', 'badword2', 'swearword'];
         bannedWordsLoaded = true;
       }
     }
 
-    // Enhanced banned words check
     function containsBannedWords(message) {
       if (!bannedWordsLoaded || !message || typeof message !== 'string') return false;
       
       const lowerMsg = message.toLowerCase();
       return bannedWords.some(word => {
         if (!word || word.length < 2) return false;
-        
         const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const pattern = new RegExp(`\\b${escapedWord}\\b`, 'i');
         return pattern.test(message);
       });
     }
 
-    // Get nickname from localStorage
     function getNickname() {
       const savedNickname = localStorage.getItem("talkrush_nickname");
       if (savedNickname) {
@@ -866,7 +856,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
       return null;
     }
 
-    // Get user ID from localStorage or create one
     function getUserId() {
       let userId = localStorage.getItem("talkrush_user_id");
       if (!userId) {
@@ -876,7 +865,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
       return userId;
     }
 
-    // Show error message in error container
     function showError(message) {
       const errorContainer = document.getElementById("errorContainer");
       const errorDiv = document.createElement("div");
@@ -884,7 +872,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
       errorDiv.innerHTML = `<i class="fas fa-exclamation-circle"></i> ${message}`;
       errorContainer.appendChild(errorDiv);
       
-      // Remove after 5 seconds
       setTimeout(() => {
         if (errorDiv.parentNode) {
           errorDiv.remove();
@@ -892,7 +879,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
       }, 5000);
     }
 
-    // Show success message in error container
     function showSuccess(message) {
       const errorContainer = document.getElementById("errorContainer");
       const successDiv = document.createElement("div");
@@ -900,7 +886,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
       successDiv.innerHTML = `<i class="fas fa-check-circle"></i> ${message}`;
       errorContainer.appendChild(successDiv);
       
-      // Remove after 3 seconds
       setTimeout(() => {
         if (successDiv.parentNode) {
           successDiv.remove();
@@ -908,14 +893,12 @@ description: "Post anything anonymously without login. Confess, express, or spea
       }, 3000);
     }
 
-    // Extract URL from text
     function extractURL(text) {
       const urlRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|([a-zA-Z0-9-]+\.[a-zA-Z]{2,}(\/[^\s]*)?)/g;
       const matches = text.match(urlRegex);
       return matches ? matches[0] : null;
     }
 
-    // Check if URL is a direct image
     function isImageURL(url) {
       if (!url) return false;
       const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg'];
@@ -923,7 +906,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
       return imageExtensions.some(ext => lowerUrl.includes(ext));
     }
 
-    // Check if URL is from Google Images
     function isGoogleImagesURL(url) {
       if (!url) return false;
       return url.includes('encrypted-tbn0.gstatic.com') || 
@@ -932,17 +914,14 @@ description: "Post anything anonymously without login. Confess, express, or spea
              (url.includes('google.') && (url.includes('imgres') || url.includes('imgurl')));
     }
 
-    // Normalize URL (add https if missing)
     function normalizeURL(url) {
       if (!url) return null;
-      
       if (!url.startsWith('http://') && !url.startsWith('https://')) {
         return 'https://' + url;
       }
       return url;
     }
 
-    // Extract domain from URL
     function extractDomain(url) {
       try {
         const normalizedUrl = normalizeURL(url);
@@ -953,10 +932,8 @@ description: "Post anything anonymously without login. Confess, express, or spea
       }
     }
 
-    // Get URL preview data
     async function getURLPreview(url) {
       try {
-        // If it's a direct image URL (including Google Images), return image preview
         if (isImageURL(url) || isGoogleImagesURL(url)) {
           return {
             type: 'image',
@@ -968,7 +945,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
           };
         }
 
-        // Otherwise, try to get website preview
         const normalizedUrl = normalizeURL(url);
         const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
         const response = await fetch(proxyUrl + normalizedUrl);
@@ -998,7 +974,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
           domain: extractDomain(url)
         };
       } catch (error) {
-        console.error('Error fetching URL preview:', error);
         return {
           type: 'website',
           title: url,
@@ -1010,10 +985,8 @@ description: "Post anything anonymously without login. Confess, express, or spea
       }
     }
 
-    // Make text clickable (convert URLs to links with nofollow)
     function makeTextClickable(text) {
       if (!text) return '';
-      
       const urlRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|([a-zA-Z0-9-]+\.[a-zA-Z]{2,}(\/[^\s]*)?)/g;
       
       return text.replace(urlRegex, (url) => {
@@ -1022,12 +995,10 @@ description: "Post anything anonymously without login. Confess, express, or spea
       });
     }
 
-    // Search posts by nickname and text
     function searchPosts(searchTerm) {
       currentSearchTerm = searchTerm.toLowerCase().trim();
       
       if (!currentSearchTerm) {
-        // If search is empty, show all posts in random order
         displayPosts(allPosts);
         return;
       }
@@ -1043,14 +1014,12 @@ description: "Post anything anonymously without login. Confess, express, or spea
       displayPosts(filteredPosts);
     }
 
-    // Clear search
     function clearSearch() {
       document.getElementById('searchInput').value = '';
       currentSearchTerm = '';
       displayPosts(allPosts);
     }
 
-    // Create AdSense ad element
     function createAdElement() {
       const adContainer = document.createElement('div');
       adContainer.className = 'ad-container';
@@ -1067,7 +1036,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
       return adContainer;
     }
 
-    // Submit a new post
     async function submitPost() {
       const nickname = getNickname();
       if (!nickname) {
@@ -1081,7 +1049,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
         return;
       }
 
-      // Check for banned words
       if (containsBannedWords(text)) {
         showError("Your post contains inappropriate content and cannot be sent.");
         return;
@@ -1096,14 +1063,10 @@ description: "Post anything anonymously without login. Confess, express, or spea
       const url = extractURL(text);
       let urlPreview = null;
 
-      // Get URL preview if URL exists
       if (url) {
         try {
           urlPreview = await getURLPreview(url);
-        } catch (error) {
-          console.error('Error getting URL preview:', error);
-          // Continue without preview if there's an error
-        }
+        } catch (error) {}
       }
       
       const newPostRef = db.ref("posts").push();
@@ -1125,17 +1088,14 @@ description: "Post anything anonymously without login. Confess, express, or spea
         document.getElementById("postText").value = "";
         showSuccess("Post published successfully!");
         
-        // Clear search if active to show new post
         if (currentSearchTerm) {
           clearSearch();
         }
       } catch (error) {
-        console.error('Error publishing post:', error);
         showError("Failed to publish post. Please try again.");
       }
     }
 
-    // Delete post with SweetAlert
     function deletePost(postId, userId) {
       const currentUserId = getUserId();
       if (userId !== currentUserId) {
@@ -1176,13 +1136,11 @@ description: "Post anything anonymously without login. Confess, express, or spea
                 background: document.body.classList.contains('light-mode') ? '#fff' : '#1e1e1e',
                 color: document.body.classList.contains('light-mode') ? '#333' : '#fff'
               });
-              console.error(error);
             });
         }
       });
     }
 
-    // Share post using Web Share API
     async function sharePost(post) {
       const shareUrl = window.location.origin + window.location.pathname + '?postId=' + post.postId;
 
@@ -1200,13 +1158,11 @@ description: "Post anything anonymously without login. Confess, express, or spea
           showSuccess("Link copied to clipboard!");
         }
       } catch (error) {
-        console.error('Error sharing:', error);
         await navigator.clipboard.writeText(shareUrl);
         showSuccess("Link copied to clipboard!");
       }
     }
 
-    // Check if URL has shared post ID
     function checkSharedPost() {
       const urlParams = new URLSearchParams(window.location.search);
       const sharedPostId = urlParams.get('postId');
@@ -1221,13 +1177,10 @@ description: "Post anything anonymously without login. Confess, express, or spea
       }
     }
 
-    // Highlight a specific post
-    let highlightPostId = null;
     function highlightPost(postId) {
       const postElement = document.querySelector(`[data-post-id="${postId}"]`);
       if (postElement) {
         postElement.classList.add('highlighted-post');
-        
         postElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
         
         setTimeout(() => {
@@ -1236,7 +1189,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
       }
     }
 
-    // Like/Dislike functionality with localStorage tracking
     function hasUserInteracted(postId, type) {
       const interactions = JSON.parse(localStorage.getItem('postInteractions') || '{}');
       return interactions[postId] === type;
@@ -1265,14 +1217,11 @@ description: "Post anything anonymously without login. Confess, express, or spea
                                 hasUserInteracted(postId, 'dislike') ? 'dislike' : null;
 
       if (currentInteraction === 'like') {
-        // Unlike - remove like
         const likeRef = db.ref("posts/" + postId + "/likes");
         likeRef.transaction(current => Math.max(0, (current || 0) - 1));
         removeUserInteraction(postId);
       } else {
-        // Like the post
         if (currentInteraction === 'dislike') {
-          // Remove dislike first
           const dislikeRef = db.ref("posts/" + postId + "/dislikes");
           dislikeRef.transaction(current => Math.max(0, (current || 0) - 1));
         }
@@ -1294,14 +1243,11 @@ description: "Post anything anonymously without login. Confess, express, or spea
                                 hasUserInteracted(postId, 'dislike') ? 'dislike' : null;
 
       if (currentInteraction === 'dislike') {
-        // Undislike - remove dislike
         const dislikeRef = db.ref("posts/" + postId + "/dislikes");
         dislikeRef.transaction(current => Math.max(0, (current || 0) - 1));
         removeUserInteraction(postId);
       } else {
-        // Dislike the post
         if (currentInteraction === 'like') {
-          // Remove like first
           const likeRef = db.ref("posts/" + postId + "/likes");
           likeRef.transaction(current => Math.max(0, (current || 0) - 1));
         }
@@ -1312,7 +1258,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
       }
     }
 
-    // Fullscreen image modal functions
     function openImageModal(imageUrl) {
       const modal = document.getElementById('imageModal');
       const modalImage = document.getElementById('modalImage');
@@ -1328,11 +1273,8 @@ description: "Post anything anonymously without login. Confess, express, or spea
       document.body.style.overflow = '';
     }
 
-    // Display posts without search highlighting
     function displayPosts(postsArray) {
       const postsContainer = document.getElementById("postsContainer");
-      
-      // Keep the post input container, search bar, and error container
       const postInputContainer = document.querySelector('.post-input-container');
       const searchContainer = document.querySelector('.search-container');
       const errorContainer = document.getElementById("errorContainer");
@@ -1354,7 +1296,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
         return;
       }
 
-      // Reset ad counter
       let adCounter = 0;
 
       postsArray.forEach(([postId, post], index) => {
@@ -1365,7 +1306,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
         div.className = "post";
         div.setAttribute("data-post-id", postId);
 
-        // Check if post content contains banned words
         const displayText = containsBannedWords(post.text) 
           ? "This post was hidden due to inappropriate content"
           : makeTextClickable(post.text);
@@ -1379,7 +1319,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
           if (post.urlPreview.type === 'image' || 
               post.urlPreview.type === 'google-image') {
             
-            // Direct image preview with click to open in fullscreen
             const imageUrl = post.urlPreview.image || post.urlPreview.url;
             if (imageUrl) {
               urlPreviewHTML = `
@@ -1392,7 +1331,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
               `;
             }
           } else {
-            // Website preview
             const hasImage = post.urlPreview.image && post.urlPreview.image.length > 0;
             
             if (hasImage) {
@@ -1430,7 +1368,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
           }
         }
 
-        // Check user interaction for this post
         const userInteraction = hasUserInteracted(postId, 'like') ? 'like' : 
                                hasUserInteracted(postId, 'dislike') ? 'dislike' : null;
 
@@ -1459,21 +1396,16 @@ description: "Post anything anonymously without login. Confess, express, or spea
 
         postsContainer.appendChild(div);
         
-        // Insert AdSense ad after every 2 posts
         adCounter++;
         if (adCounter % 2 === 0) {
           const adElement = createAdElement();
           postsContainer.appendChild(adElement);
           
-          // Push the ad to AdSense
           try {
             (adsbygoogle = window.adsbygoogle || []).push({});
-          } catch (error) {
-            console.error('Error loading AdSense ad:', error);
-          }
+          } catch (error) {}
         }
         
-        // Highlight the post if it's the shared one
         if (postId === highlightPostId) {
           setTimeout(() => {
             highlightPost(postId);
@@ -1482,7 +1414,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
       });
     }
 
-    // Load and display posts with randomization and ads
     const postsContainer = document.getElementById("postsContainer");
 
     db.ref("posts").on("value", snapshot => {
@@ -1494,19 +1425,15 @@ description: "Post anything anonymously without login. Confess, express, or spea
         return;
       }
 
-      // Convert to array and randomize order
       let postsArray = Object.entries(posts);
       
-      // Randomize posts using Fisher-Yates shuffle
       for (let i = postsArray.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [postsArray[i], postsArray[j]] = [postsArray[j], postsArray[i]];
       }
 
-      // Store all posts for search functionality
       allPosts = postsArray;
 
-      // If we have a post to highlight, move it to the top
       if (highlightPostId && posts[highlightPostId]) {
         const highlightedPostIndex = postsArray.findIndex(([id]) => id === highlightPostId);
         if (highlightedPostIndex !== -1) {
@@ -1515,7 +1442,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
         }
       }
 
-      // Display posts (will handle search if active)
       if (currentSearchTerm) {
         searchPosts(currentSearchTerm);
       } else {
@@ -1523,7 +1449,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
       }
     });
 
-    // Convert timestamp to "x ago"
     function timeSince(ts) {
       const seconds = Math.floor((Date.now() - ts) / 1000);
       const intervals = [
@@ -1541,7 +1466,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
       return "just now";
     }
 
-    // Initialize the app
     function initializeApp() {
       loadBannedWords();
       checkSharedPost();
@@ -1553,7 +1477,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
         showError("Please set your nickname in the group chat to start posting!");
       }
 
-      // Set up search functionality
       const searchInput = document.getElementById('searchInput');
       const clearSearchBtn = document.getElementById('clearSearch');
       
@@ -1567,7 +1490,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
         clearSearchBtn.addEventListener('click', clearSearch);
       }
 
-      // Set up image modal event listeners
       const modal = document.getElementById('imageModal');
       const modalClose = document.getElementById('modalClose');
       
@@ -1583,27 +1505,28 @@ description: "Post anything anonymously without login. Confess, express, or spea
         });
       }
       
-      // Close modal with Escape key
       document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && modal && modal.classList.contains('active')) {
           closeImageModal();
         }
       });
 
-      // Prevent keyboard from closing when typing
       const postText = document.getElementById('postText');
       if (postText) {
-        postText.addEventListener('focus', function() {
-          // This prevents the keyboard from closing on mobile devices
-          // when the input field is focused
+        postText.addEventListener('input', function() {
+          clearTimeout(keyboardTimeout);
+          keyboardTimeout = setTimeout(() => {
+            if (document.activeElement === postText) {
+              postText.focus();
+            }
+          }, 3000);
         });
-        
+
         postText.addEventListener('blur', function() {
-          // This ensures the keyboard doesn't close unexpectedly
+          clearTimeout(keyboardTimeout);
         });
       }
     }
 
-    // Start the app
     initializeApp();
 </script>
