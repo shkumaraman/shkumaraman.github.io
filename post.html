@@ -1269,15 +1269,14 @@ description: "Post anything anonymously without login. Confess, express, or spea
       const postInputContainer = document.querySelector('.post-input-container');
       const searchContainer = document.querySelector('.search-container');
       const errorContainer = document.getElementById("errorContainer");
-      const loadMoreBtn = document.getElementById("loadMoreBtn");
       
       // Calculate which posts to show
-      const startIndex = currentPage * POSTS_PER_PAGE;
-      const endIndex = startIndex + POSTS_PER_PAGE;
-      const postsToShow = displayedPosts.slice(0, endIndex);
+      const startIndex = 0;
+      const endIndex = (currentPage + 1) * POSTS_PER_PAGE;
+      const postsToShow = displayedPosts.slice(startIndex, endIndex);
       
       // Clear existing posts but keep input, search, and error containers
-      const existingPosts = postsContainer.querySelectorAll('.post, .system-msg, .ad-container');
+      const existingPosts = postsContainer.querySelectorAll('.post, .system-msg, .ad-container, .load-more-container');
       existingPosts.forEach(el => el.remove());
       
       // Re-add input, search, and error containers
@@ -1294,11 +1293,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
           "No posts found matching your search." : 
           "No posts yet. Be the first to post!";
         postsContainer.appendChild(noPostsMsg);
-        
-        // Hide load more button when no posts
-        if (loadMoreBtn) {
-          loadMoreBtn.style.display = 'none';
-        }
         return;
       }
 
@@ -1325,14 +1319,14 @@ description: "Post anything anonymously without login. Confess, express, or spea
           : (post.nickname || 'Anonymous');
 
         // Extract only the first image URL from post text
-        const firstImageURL = extractFirstImageURL(post.text);
+        const imageURL = extractFirstImageURL(post.text);
         let imagePreviewHTML = '';
         
-        if (firstImageURL && !containsBannedWords(post.text)) {
+        if (imageURL && !containsBannedWords(post.text)) {
           imagePreviewHTML = `
             <div class="image-preview">
-              <img src="${firstImageURL}" alt="Image preview" 
-                   onclick="openImageModal('${firstImageURL}')"
+              <img src="${imageURL}" alt="Image preview" 
+                   onclick="openImageModal('${imageURL}')"
                    onerror="this.style.display='none'"
                    loading="lazy"
                    style="cursor: pointer;">
@@ -1385,13 +1379,21 @@ description: "Post anything anonymously without login. Confess, express, or spea
         }
       });
       
-      // Show/hide load more button
-      if (loadMoreBtn) {
-        if (endIndex < displayedPosts.length) {
-          loadMoreBtn.style.display = 'block';
-          loadMoreBtn.onclick = loadMorePosts;
-        } else {
-          loadMoreBtn.style.display = 'none';
+      // Add Load More button if there are more posts to show
+      if (endIndex < displayedPosts.length) {
+        const loadMoreContainer = document.createElement('div');
+        loadMoreContainer.className = 'load-more-container';
+        loadMoreContainer.innerHTML = `
+          <button id="loadMoreBtn" class="load-more-btn">
+            <i class="fas fa-chevron-down"></i> Load More Posts
+          </button>
+        `;
+        postsContainer.appendChild(loadMoreContainer);
+        
+        // Add event listener to the new button
+        const loadMoreBtn = document.getElementById('loadMoreBtn');
+        if (loadMoreBtn) {
+          loadMoreBtn.addEventListener('click', loadMorePosts);
         }
       }
     }
