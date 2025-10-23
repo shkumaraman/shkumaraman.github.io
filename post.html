@@ -559,6 +559,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
       align-items: center;
       justify-content: center;
       padding: 20px;
+      cursor: pointer;
     }
 
     .image-modal.active {
@@ -569,6 +570,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
       max-width: 90%;
       max-height: 90%;
       position: relative;
+      cursor: default;
     }
 
     .modal-content img {
@@ -576,6 +578,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
       max-height: 90vh;
       object-fit: contain;
       border-radius: 8px;
+      cursor: default;
     }
 
     .modal-close {
@@ -589,6 +592,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
       background: none;
       border: none;
       padding: 5px 10px;
+      z-index: 10002;
     }
 
     .modal-close:hover {
@@ -829,7 +833,8 @@ description: "Post anything anonymously without login. Confess, express, or spea
       if (!url) return false;
       return url.includes('encrypted-tbn0.gstatic.com') || 
              url.includes('googleusercontent.com') || 
-             (url.includes('google.') && url.includes('imgres'));
+             url.includes('ggpht.com') ||
+             (url.includes('google.') && (url.includes('imgres') || url.includes('imgurl')));
     }
 
     // Normalize URL (add https if missing)
@@ -856,8 +861,8 @@ description: "Post anything anonymously without login. Confess, express, or spea
     // Get URL preview data
     async function getURLPreview(url) {
       try {
-        // If it's a direct image URL, return image preview
-        if (isImageURL(url)) {
+        // If it's a direct image URL (including Google Images), return image preview
+        if (isImageURL(url) || isGoogleImagesURL(url)) {
           return {
             type: 'image',
             url: normalizeURL(url),
@@ -877,18 +882,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
             description: '',
             image: await getPinterestImage(url),
             domain: 'pinterest.com'
-          };
-        }
-
-        // If it's a Google Images URL, handle it specially
-        if (isGoogleImagesURL(url)) {
-          return {
-            type: 'google-image',
-            url: normalizeURL(url),
-            title: 'Google Image',
-            description: '',
-            image: url,
-            domain: 'google.com'
           };
         }
 
@@ -1300,7 +1293,8 @@ description: "Post anything anonymously without login. Confess, express, or spea
                 <div class="image-preview">
                   <img src="${imageUrl}" alt="Image preview" 
                        onclick="openImageModal('${imageUrl}')"
-                       onerror="this.style.display='none'">
+                       onerror="this.style.display='none'"
+                       style="cursor: pointer;">
                 </div>
               `;
             }
@@ -1418,7 +1412,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
       modalClose.addEventListener('click', closeImageModal);
       
       modal.addEventListener('click', (e) => {
-        if (e.target === modal) {
+        if (e.target === modal || e.target.classList.contains('modal-close')) {
           closeImageModal();
         }
       });
@@ -1429,6 +1423,41 @@ description: "Post anything anonymously without login. Confess, express, or spea
           closeImageModal();
         }
       });
+
+      // Set up share button
+      document.getElementById('shareBtn').addEventListener('click', () => {
+        const shareUrl = window.location.href;
+        if (navigator.share) {
+          navigator.share({
+            title: 'Anonymous Posts',
+            text: 'Share your thoughts anonymously!',
+            url: shareUrl
+          });
+        } else {
+          navigator.clipboard.writeText(shareUrl);
+          showSuccess("App link copied to clipboard!");
+        }
+      });
+
+      // Set up theme toggle
+      document.getElementById('themeToggle').addEventListener('click', () => {
+        document.body.classList.toggle('light-mode');
+        const icon = document.querySelector('#themeToggle i');
+        if (document.body.classList.contains('light-mode')) {
+          icon.className = 'fas fa-sun';
+          localStorage.setItem('theme', 'light');
+        } else {
+          icon.className = 'fas fa-moon';
+          localStorage.setItem('theme', 'dark');
+        }
+      });
+
+      // Load saved theme
+      const savedTheme = localStorage.getItem('theme');
+      if (savedTheme === 'light') {
+        document.body.classList.add('light-mode');
+        document.querySelector('#themeToggle i').className = 'fas fa-sun';
+      }
     }
 
     // Start the app
