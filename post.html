@@ -817,46 +817,19 @@ description: "Post anything anonymously without login. Confess, express, or spea
 
     const POST_EXPIRY_DAYS = 30;
     const MILLISECONDS_IN_DAY = 24 * 60 * 60 * 1000;
-    const POSTS_PER_PAGE = 10; // Number of posts to load at a time
+    const POSTS_PER_PAGE = 10;
 
     let bannedWords = [];
     let bannedWordsLoaded = false;
     let allPosts = [];
     let displayedPosts = [];
+    let currentPage = 1;
+    let isLoading = false;
     let currentSearchTerm = '';
     let highlightPostId = null;
     let keyboardTimeout;
-    let currentPage = 0;
-    let isLoading = false;
-    let hasMorePosts = true;
 
-    // Throttle function to limit function calls
-    function throttle(func, limit) {
-      let inThrottle;
-      return function() {
-        const args = arguments;
-        const context = this;
-        if (!inThrottle) {
-          func.apply(context, args);
-          inThrottle = true;
-          setTimeout(() => inThrottle = false, limit);
-        }
-      }
-    }
-
-    // Debounce function to delay execution
-    function debounce(func, wait) {
-      let timeout;
-      return function executedFunction(...args) {
-        const later = () => {
-          clearTimeout(timeout);
-          func(...args);
-        };
-        clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
-      };
-    }
-
+    // Load banned words
     async function loadBannedWords() {
       try {
         const response = await fetch('/chat/filter.txt');
@@ -871,6 +844,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
       }
     }
 
+    // Check for banned words
     function containsBannedWords(message) {
       if (!bannedWordsLoaded || !message || typeof message !== 'string') return false;
       
@@ -883,14 +857,12 @@ description: "Post anything anonymously without login. Confess, express, or spea
       });
     }
 
+    // Get nickname from localStorage
     function getNickname() {
-      const savedNickname = localStorage.getItem("talkrush_nickname");
-      if (savedNickname) {
-        return savedNickname;
-      }
-      return null;
+      return localStorage.getItem("talkrush_nickname");
     }
 
+    // Get or create user ID
     function getUserId() {
       let userId = localStorage.getItem("talkrush_user_id");
       if (!userId) {
@@ -900,6 +872,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
       return userId;
     }
 
+    // Show error message
     function showError(message) {
       const errorContainer = document.getElementById("errorContainer");
       const errorDiv = document.createElement("div");
@@ -914,6 +887,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
       }, 5000);
     }
 
+    // Show success message
     function showSuccess(message) {
       const errorContainer = document.getElementById("errorContainer");
       const successDiv = document.createElement("div");
@@ -928,12 +902,14 @@ description: "Post anything anonymously without login. Confess, express, or spea
       }, 3000);
     }
 
+    // Extract URL from text
     function extractURL(text) {
       const urlRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|([a-zA-Z0-9-]+\.[a-zA-Z]{2,}(\/[^\s]*)?)/g;
       const matches = text.match(urlRegex);
       return matches ? matches[0] : null;
     }
 
+    // Check if URL is an image
     function isImageURL(url) {
       if (!url) return false;
       const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg'];
@@ -941,6 +917,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
       return imageExtensions.some(ext => lowerUrl.includes(ext));
     }
 
+    // Check if URL is a Google image
     function isGoogleImagesURL(url) {
       if (!url) return false;
       return url.includes('encrypted-tbn0.gstatic.com') || 
@@ -949,6 +926,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
              (url.includes('google.') && (url.includes('imgres') || url.includes('imgurl')));
     }
 
+    // Normalize URL
     function normalizeURL(url) {
       if (!url) return null;
       if (!url.startsWith('http://') && !url.startsWith('https://')) {
@@ -957,6 +935,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
       return url;
     }
 
+    // Extract domain from URL
     function extractDomain(url) {
       try {
         const normalizedUrl = normalizeURL(url);
@@ -967,6 +946,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
       }
     }
 
+    // Get URL preview (simplified for bandwidth)
     async function getURLPreview(url) {
       try {
         if (isImageURL(url) || isGoogleImagesURL(url)) {
@@ -980,32 +960,13 @@ description: "Post anything anonymously without login. Confess, express, or spea
           };
         }
 
-        const normalizedUrl = normalizeURL(url);
-        const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
-        const response = await fetch(proxyUrl + normalizedUrl);
-        const html = await response.text();
-        
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(html, 'text/html');
-        
-        const title = doc.querySelector('title')?.textContent || 
-                     doc.querySelector('meta[property="og:title"]')?.getAttribute('content') || 
-                     url;
-        
-        const description = doc.querySelector('meta[name="description"]')?.getAttribute('content') ||
-                          doc.querySelector('meta[property="og:description"]')?.getAttribute('content') || 
-                          '';
-        
-        const image = doc.querySelector('meta[property="og:image"]')?.getAttribute('content') || 
-                     doc.querySelector('meta[name="twitter:image"]')?.getAttribute('content') || 
-                     '';
-        
+        // For non-image URLs, just return basic info to save bandwidth
         return {
           type: 'website',
-          title: title.substring(0, 100),
-          description: description.substring(0, 150),
-          image: image,
-          url: normalizedUrl,
+          title: url,
+          description: '',
+          image: '',
+          url: normalizeURL(url),
           domain: extractDomain(url)
         };
       } catch (error) {
@@ -1020,6 +981,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
       }
     }
 
+    // Make text clickable
     function makeTextClickable(text) {
       if (!text) return '';
       const urlRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|([a-zA-Z0-9-]+\.[a-zA-Z]{2,}(\/[^\s]*)?)/g;
@@ -1030,18 +992,18 @@ description: "Post anything anonymously without login. Confess, express, or spea
       });
     }
 
+    // Search posts
     function searchPosts(searchTerm) {
       currentSearchTerm = searchTerm.toLowerCase().trim();
-      currentPage = 0;
-      displayedPosts = [];
+      currentPage = 1;
       
       if (!currentSearchTerm) {
-        displayPosts(allPosts.slice(0, POSTS_PER_PAGE));
-        hasMorePosts = allPosts.length > POSTS_PER_PAGE;
+        displayedPosts = [...allPosts];
+        displayPosts();
         return;
       }
       
-      const filteredPosts = allPosts.filter(([postId, post]) => {
+      displayedPosts = allPosts.filter(([postId, post]) => {
         const nickname = post.nickname || '';
         const text = post.text || '';
         
@@ -1049,20 +1011,19 @@ description: "Post anything anonymously without login. Confess, express, or spea
                text.toLowerCase().includes(currentSearchTerm);
       });
       
-      displayedPosts = filteredPosts;
-      displayPosts(filteredPosts.slice(0, POSTS_PER_PAGE));
-      hasMorePosts = filteredPosts.length > POSTS_PER_PAGE;
+      displayPosts();
     }
 
+    // Clear search
     function clearSearch() {
       document.getElementById('searchInput').value = '';
       currentSearchTerm = '';
-      currentPage = 0;
-      displayedPosts = [];
-      displayPosts(allPosts.slice(0, POSTS_PER_PAGE));
-      hasMorePosts = allPosts.length > POSTS_PER_PAGE;
+      currentPage = 1;
+      displayedPosts = [...allPosts];
+      displayPosts();
     }
 
+    // Create ad element
     function createAdElement() {
       const adContainer = document.createElement('div');
       adContainer.className = 'ad-container';
@@ -1079,6 +1040,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
       return adContainer;
     }
 
+    // Submit new post
     async function submitPost() {
       const nickname = getNickname();
       if (!nickname) {
@@ -1139,6 +1101,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
       }
     }
 
+    // Delete post
     function deletePost(postId, userId) {
       const currentUserId = getUserId();
       if (userId !== currentUserId) {
@@ -1184,6 +1147,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
       });
     }
 
+    // Share post
     async function sharePost(post) {
       const shareUrl = window.location.origin + window.location.pathname + '?postId=' + post.postId;
 
@@ -1206,6 +1170,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
       }
     }
 
+    // Check for shared post in URL
     function checkSharedPost() {
       const urlParams = new URLSearchParams(window.location.search);
       const sharedPostId = urlParams.get('postId');
@@ -1220,6 +1185,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
       }
     }
 
+    // Highlight a post
     function highlightPost(postId) {
       const postElement = document.querySelector(`[data-post-id="${postId}"]`);
       if (postElement) {
@@ -1232,23 +1198,27 @@ description: "Post anything anonymously without login. Confess, express, or spea
       }
     }
 
+    // Check if user has interacted with a post
     function hasUserInteracted(postId, type) {
       const interactions = JSON.parse(localStorage.getItem('postInteractions') || '{}');
       return interactions[postId] === type;
     }
 
+    // Set user interaction
     function setUserInteraction(postId, type) {
       const interactions = JSON.parse(localStorage.getItem('postInteractions') || '{}');
       interactions[postId] = type;
       localStorage.setItem('postInteractions', JSON.stringify(interactions));
     }
 
+    // Remove user interaction
     function removeUserInteraction(postId) {
       const interactions = JSON.parse(localStorage.getItem('postInteractions') || '{}');
       delete interactions[postId];
       localStorage.setItem('postInteractions', JSON.stringify(interactions));
     }
 
+    // Like post
     function likePost(postId) {
       const nickname = getNickname();
       if (!nickname) {
@@ -1275,6 +1245,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
       }
     }
 
+    // Dislike post
     function dislikePost(postId) {
       const nickname = getNickname();
       if (!nickname) {
@@ -1301,6 +1272,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
       }
     }
 
+    // Open image modal
     function openImageModal(imageUrl) {
       const modal = document.getElementById('imageModal');
       const modalImage = document.getElementById('modalImage');
@@ -1310,12 +1282,14 @@ description: "Post anything anonymously without login. Confess, express, or spea
       document.body.style.overflow = 'hidden';
     }
 
+    // Close image modal
     function closeImageModal() {
       const modal = document.getElementById('imageModal');
       modal.classList.remove('active');
       document.body.style.overflow = '';
     }
 
+    // Update post counts
     function updatePostCounts(postId, likes, dislikes) {
       const postElement = document.querySelector(`[data-post-id="${postId}"]`);
       if (postElement) {
@@ -1339,11 +1313,13 @@ description: "Post anything anonymously without login. Confess, express, or spea
       }
     }
 
+    // Check if post is expired
     function isPostExpired(timestamp) {
       const postAgeInDays = (Date.now() - timestamp) / MILLISECONDS_IN_DAY;
       return postAgeInDays > POST_EXPIRY_DAYS;
     }
 
+    // Delete expired posts
     function deleteExpiredPosts() {
       const currentTime = Date.now();
       const expiryThreshold = currentTime - (POST_EXPIRY_DAYS * MILLISECONDS_IN_DAY);
@@ -1366,68 +1342,46 @@ description: "Post anything anonymously without login. Confess, express, or spea
         });
     }
 
-    function loadMorePosts() {
-      if (isLoading || !hasMorePosts) return;
-      
-      isLoading = true;
-      currentPage++;
-      
-      const postsToDisplay = currentSearchTerm 
-        ? displayedPosts.slice(0, (currentPage + 1) * POSTS_PER_PAGE)
-        : allPosts.slice(0, (currentPage + 1) * POSTS_PER_PAGE);
-      
-      displayPosts(postsToDisplay);
-      
-      // Check if there are more posts to load
-      hasMorePosts = currentSearchTerm
-        ? displayedPosts.length > (currentPage + 1) * POSTS_PER_PAGE
-        : allPosts.length > (currentPage + 1) * POSTS_PER_PAGE;
-      
-      isLoading = false;
-    }
-
-    function displayPosts(postsArray) {
+    // Display posts with pagination
+    function displayPosts() {
       const postsContainer = document.getElementById("postsContainer");
       const postInputContainer = document.querySelector('.post-input-container');
       const searchContainer = document.querySelector('.search-container');
       const errorContainer = document.getElementById("errorContainer");
       
-      const scrollPosition = window.scrollY;
+      // Clear only posts, keep input and search
+      const existingPosts = postsContainer.querySelectorAll('.post, .system-msg, .ad-container');
+      existingPosts.forEach(post => post.remove());
       
-      // Only clear posts if we're starting from the beginning
-      if (currentPage === 0) {
-        postsContainer.innerHTML = '';
+      // Add input and search back if they were removed
+      if (!postsContainer.contains(postInputContainer)) {
         postsContainer.appendChild(postInputContainer);
-        if (searchContainer) {
-          postsContainer.appendChild(searchContainer);
-        }
+      }
+      if (searchContainer && !postsContainer.contains(searchContainer)) {
+        postsContainer.appendChild(searchContainer);
+      }
+      if (errorContainer && !postsContainer.contains(errorContainer)) {
         postsContainer.appendChild(errorContainer);
       }
       
-      if (!postsArray || postsArray.length === 0) {
-        if (currentPage === 0) {
-          const noPostsMsg = document.createElement("div");
-          noPostsMsg.className = "system-msg";
-          noPostsMsg.textContent = currentSearchTerm ? 
-            "No posts found matching your search." : 
-            "No posts yet. Be the first to post!";
-          postsContainer.appendChild(noPostsMsg);
-        }
-        
-        requestAnimationFrame(() => {
-          window.scrollTo(0, scrollPosition);
-        });
+      // Calculate which posts to show
+      const startIndex = 0;
+      const endIndex = Math.min(currentPage * POSTS_PER_PAGE, displayedPosts.length);
+      const postsToShow = displayedPosts.slice(startIndex, endIndex);
+      
+      if (postsToShow.length === 0) {
+        const noPostsMsg = document.createElement("div");
+        noPostsMsg.className = "system-msg";
+        noPostsMsg.textContent = currentSearchTerm ? 
+          "No posts found matching your search." : 
+          "No posts yet. Be the first to post!";
+        postsContainer.appendChild(noPostsMsg);
         return;
       }
 
-      let adCounter = postsContainer.querySelectorAll('.post').length;
+      let adCounter = 0;
 
-      postsArray.forEach(([postId, post], index) => {
-        // Skip if post is already displayed
-        if (document.querySelector(`[data-post-id="${postId}"]`)) {
-          return;
-        }
-
+      postsToShow.forEach(([postId, post], index) => {
         if (isPostExpired(post.timestamp)) {
           return;
         }
@@ -1546,26 +1500,43 @@ description: "Post anything anonymously without login. Confess, express, or spea
         }
       });
       
-      // Add load more button if there are more posts
-      const existingLoadMoreBtn = document.getElementById('loadMoreBtn');
-      if (existingLoadMoreBtn) {
-        existingLoadMoreBtn.remove();
+      // Show loading indicator if there are more posts to load
+      if (endIndex < displayedPosts.length) {
+        const loadingIndicator = document.createElement("div");
+        loadingIndicator.id = "loadingIndicator";
+        loadingIndicator.className = "loading-indicator";
+        loadingIndicator.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading more posts...';
+        postsContainer.appendChild(loadingIndicator);
       }
-      
-      if (hasMorePosts) {
-        const loadMoreBtn = document.createElement('button');
-        loadMoreBtn.id = 'loadMoreBtn';
-        loadMoreBtn.className = 'load-more-btn';
-        loadMoreBtn.textContent = 'Load More Posts';
-        loadMoreBtn.addEventListener('click', loadMorePosts);
-        postsContainer.appendChild(loadMoreBtn);
-      }
-      
-      requestAnimationFrame(() => {
-        window.scrollTo(0, scrollPosition);
-      });
     }
 
+    // Load more posts when scrolling
+    function loadMorePosts() {
+      if (isLoading) return;
+      
+      const loadingIndicator = document.getElementById("loadingIndicator");
+      if (!loadingIndicator) return;
+      
+      const indicatorPosition = loadingIndicator.getBoundingClientRect().top;
+      const screenHeight = window.innerHeight;
+      
+      // Load more posts when the loading indicator is near the viewport
+      if (indicatorPosition <= screenHeight + 100) {
+        isLoading = true;
+        
+        // Show loading state
+        loadingIndicator.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+        
+        // Simulate loading delay for better UX
+        setTimeout(() => {
+          currentPage++;
+          displayPosts();
+          isLoading = false;
+        }, 500);
+      }
+    }
+
+    // Time since function
     function timeSince(ts) {
       const seconds = Math.floor((Date.now() - ts) / 1000);
       const intervals = [
@@ -1583,13 +1554,16 @@ description: "Post anything anonymously without login. Confess, express, or spea
       return "just now";
     }
 
+    // Initialize the app
     function initializeApp() {
       loadBannedWords();
       checkSharedPost();
       deleteExpiredPosts();
       
+      // Set up periodic cleanup
       setInterval(deleteExpiredPosts, 60 * 60 * 1000);
 
+      // Welcome message
       const nickname = getNickname();
       if (nickname) {
         showSuccess(`Welcome back, ${nickname}!`);
@@ -1597,19 +1571,21 @@ description: "Post anything anonymously without login. Confess, express, or spea
         showError("Please set your Nickname in the Home Page to Start Posting!");
       }
 
+      // Set up search functionality
       const searchInput = document.getElementById('searchInput');
       const clearSearchBtn = document.getElementById('clearSearch');
       
       if (searchInput) {
-        searchInput.addEventListener('input', debounce((e) => {
+        searchInput.addEventListener('input', (e) => {
           searchPosts(e.target.value);
-        }, 300));
+        });
       }
       
       if (clearSearchBtn) {
         clearSearchBtn.addEventListener('click', clearSearch);
       }
 
+      // Set up image modal
       const modal = document.getElementById('imageModal');
       const modalClose = document.getElementById('modalClose');
       
@@ -1631,6 +1607,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
         }
       });
 
+      // Set up keyboard timeout for post input
       const postText = document.getElementById('postText');
       if (postText) {
         postText.addEventListener('input', function() {
@@ -1647,33 +1624,30 @@ description: "Post anything anonymously without login. Confess, express, or spea
         });
       }
 
-      // Infinite scroll with throttling
-      window.addEventListener('scroll', throttle(() => {
-        const { scrollTop, scrollHeight, clientHeight } = document.documentElement;
-        
-        // Load more posts when user is near the bottom
-        if (scrollTop + clientHeight >= scrollHeight - 500 && hasMorePosts && !isLoading) {
-          loadMorePosts();
-        }
-      }, 200));
+      // Set up scroll event for infinite loading
+      window.addEventListener('scroll', loadMorePosts);
 
+      // Firebase listeners
       db.ref("posts").on("value", snapshot => {
         const posts = snapshot.val();
         
         if (!posts) {
           allPosts = [];
-          displayPosts([]);
+          displayedPosts = [];
+          displayPosts();
           return;
         }
 
         let postsArray = Object.entries(posts);
         
+        // Initial random shuffle for first load
         if (allPosts.length === 0) {
           for (let i = postsArray.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [postsArray[i], postsArray[j]] = [postsArray[j], postsArray[i]];
           }
         } else {
+          // Update existing posts and add new ones
           const existingIds = new Set(allPosts.map(([id]) => id));
           const newPosts = postsArray.filter(([id]) => !existingIds.has(id));
           const existingPosts = postsArray.filter(([id]) => existingIds.has(id));
@@ -1683,25 +1657,24 @@ description: "Post anything anonymously without login. Confess, express, or spea
         }
 
         allPosts = postsArray;
+        displayedPosts = [...allPosts];
 
         if (highlightPostId && posts[highlightPostId]) {
-          const highlightedPostIndex = postsArray.findIndex(([id]) => id === highlightPostId);
+          const highlightedPostIndex = displayedPosts.findIndex(([id]) => id === highlightPostId);
           if (highlightedPostIndex !== -1) {
-            const highlightedPost = postsArray.splice(highlightedPostIndex, 1)[0];
-            postsArray.unshift(highlightedPost);
+            const highlightedPost = displayedPosts.splice(highlightedPostIndex, 1)[0];
+            displayedPosts.unshift(highlightedPost);
           }
         }
 
         if (currentSearchTerm) {
           searchPosts(currentSearchTerm);
         } else {
-          // Only display first page initially
-          currentPage = 0;
-          displayPosts(postsArray.slice(0, POSTS_PER_PAGE));
-          hasMorePosts = postsArray.length > POSTS_PER_PAGE;
+          displayPosts();
         }
       });
 
+      // Update post counts when changed
       db.ref("posts").on("child_changed", snapshot => {
         const post = snapshot.val();
         const postId = snapshot.key;
@@ -1714,6 +1687,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
         }
       });
 
+      // Handle post removal
       db.ref("posts").on("child_removed", snapshot => {
         const postId = snapshot.key;
         
@@ -1725,41 +1699,11 @@ description: "Post anything anonymously without login. Confess, express, or spea
         if (currentSearchTerm) {
           searchPosts(currentSearchTerm);
         } else {
-          currentPage = 0;
-          displayPosts(allPosts.slice(0, (currentPage + 1) * POSTS_PER_PAGE));
-          hasMorePosts = allPosts.length > (currentPage + 1) * POSTS_PER_PAGE;
+          displayPosts();
         }
       });
     }
 
-    // Add CSS for load more button
-    const loadMoreCSS = `
-      .load-more-btn {
-        display: block;
-        margin: 20px auto;
-        padding: 10px 20px;
-        background-color: #007bff;
-        color: white;
-        border: none;
-        border-radius: 5px;
-        cursor: pointer;
-        font-size: 16px;
-        transition: background-color 0.3s;
-      }
-      
-      .load-more-btn:hover {
-        background-color: #0056b3;
-      }
-      
-      .load-more-btn:disabled {
-        background-color: #6c757d;
-        cursor: not-allowed;
-      }
-    `;
-    
-    const styleSheet = document.createElement("style");
-    styleSheet.textContent = loadMoreCSS;
-    document.head.appendChild(styleSheet);
-
-    initializeApp();
+    // Initialize the app when DOM is loaded
+    document.addEventListener('DOMContentLoaded', initializeApp);
 </script>
