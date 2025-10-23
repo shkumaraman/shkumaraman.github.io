@@ -1022,14 +1022,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
       });
     }
 
-    // Highlight search terms in text
-    function highlightSearchTerms(text, searchTerm) {
-      if (!searchTerm || !text) return text;
-      
-      const regex = new RegExp(`(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-      return text.replace(regex, '<mark class="search-highlight">$1</mark>');
-    }
-
     // Search posts by nickname and text
     function searchPosts(searchTerm) {
       currentSearchTerm = searchTerm.toLowerCase().trim();
@@ -1336,7 +1328,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
       document.body.style.overflow = '';
     }
 
-    // Display posts with search highlighting
+    // Display posts without search highlighting
     function displayPosts(postsArray) {
       const postsContainer = document.getElementById("postsContainer");
       
@@ -1376,17 +1368,11 @@ description: "Post anything anonymously without login. Confess, express, or spea
         // Check if post content contains banned words
         const displayText = containsBannedWords(post.text) 
           ? "This post was hidden due to inappropriate content"
-          : makeTextClickable(
-              currentSearchTerm ? 
-              highlightSearchTerms(post.text, currentSearchTerm) : 
-              post.text
-            );
+          : makeTextClickable(post.text);
 
         const displayNickname = containsBannedWords(post.nickname)
           ? "Anonymous"
-          : (currentSearchTerm ? 
-              highlightSearchTerms(post.nickname || 'Anonymous', currentSearchTerm) : 
-              (post.nickname || 'Anonymous'));
+          : (post.nickname || 'Anonymous');
 
         let urlPreviewHTML = '';
         if (post.urlPreview && !containsBannedWords(post.text)) {
@@ -1417,8 +1403,8 @@ description: "Post anything anonymously without login. Confess, express, or spea
                       <div class="preview-with-image">
                         <div class="preview-text-content">
                           <div class="preview-domain">${post.urlPreview.domain}</div>
-                          <div class="preview-title">${currentSearchTerm ? highlightSearchTerms(post.urlPreview.title, currentSearchTerm) : post.urlPreview.title}</div>
-                          ${post.urlPreview.description ? `<div class="preview-description">${currentSearchTerm ? highlightSearchTerms(post.urlPreview.description, currentSearchTerm) : post.urlPreview.description}</div>` : ''}
+                          <div class="preview-title">${post.urlPreview.title}</div>
+                          ${post.urlPreview.description ? `<div class="preview-description">${post.urlPreview.description}</div>` : ''}
                         </div>
                         <div class="preview-image-side">
                           <img src="${post.urlPreview.image}" alt="Preview" onerror="this.style.display='none'">
@@ -1434,8 +1420,8 @@ description: "Post anything anonymously without login. Confess, express, or spea
                   <a href="${post.urlPreview.url}" target="_blank" rel="noopener nofollow">
                     <div class="url-preview-content">
                       <div class="preview-domain">${post.urlPreview.domain}</div>
-                      <div class="preview-title">${currentSearchTerm ? highlightSearchTerms(post.urlPreview.title, currentSearchTerm) : post.urlPreview.title}</div>
-                      ${post.urlPreview.description ? `<div class="preview-description">${currentSearchTerm ? highlightSearchTerms(post.urlPreview.description, currentSearchTerm) : post.urlPreview.description}</div>` : ''}
+                      <div class="preview-title">${post.urlPreview.title}</div>
+                      ${post.urlPreview.description ? `<div class="preview-description">${post.urlPreview.description}</div>` : ''}
                     </div>
                   </a>
                 </div>
@@ -1604,46 +1590,17 @@ description: "Post anything anonymously without login. Confess, express, or spea
         }
       });
 
-      // Set up share button
-      const shareBtn = document.getElementById('shareBtn');
-      if (shareBtn) {
-        shareBtn.addEventListener('click', () => {
-          const shareUrl = window.location.href;
-          if (navigator.share) {
-            navigator.share({
-              title: 'Anonymous Posts',
-              text: 'Share your thoughts anonymously!',
-              url: shareUrl
-            });
-          } else {
-            navigator.clipboard.writeText(shareUrl);
-            showSuccess("App link copied to clipboard!");
-          }
+      // Prevent keyboard from closing when typing
+      const postText = document.getElementById('postText');
+      if (postText) {
+        postText.addEventListener('focus', function() {
+          // This prevents the keyboard from closing on mobile devices
+          // when the input field is focused
         });
-      }
-
-      // Set up theme toggle with different ID to avoid conflicts
-      const themeToggleBtn = document.getElementById('postsThemeToggle');
-      if (themeToggleBtn) {
-        themeToggleBtn.addEventListener('click', () => {
-          document.body.classList.toggle('light-mode');
-          const icon = themeToggleBtn.querySelector('i');
-          if (document.body.classList.contains('light-mode')) {
-            icon.className = 'fas fa-sun';
-            localStorage.setItem('posts_theme', 'light');
-          } else {
-            icon.className = 'fas fa-moon';
-            localStorage.setItem('posts_theme', 'dark');
-          }
+        
+        postText.addEventListener('blur', function() {
+          // This ensures the keyboard doesn't close unexpectedly
         });
-
-        // Load saved theme
-        const savedTheme = localStorage.getItem('posts_theme');
-        if (savedTheme === 'light') {
-          document.body.classList.add('light-mode');
-          const icon = themeToggleBtn.querySelector('i');
-          if (icon) icon.className = 'fas fa-sun';
-        }
       }
     }
 
