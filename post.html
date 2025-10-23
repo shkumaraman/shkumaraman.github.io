@@ -856,6 +856,15 @@ description: "Post anything anonymously without login. Confess, express, or spea
       return null;
     }
 
+    function getUserId() {
+      let userId = localStorage.getItem("talkrush_user_id");
+      if (!userId) {
+        userId = 'user_' + Math.random().toString(36).substr(2, 9);
+        localStorage.setItem("talkrush_user_id", userId);
+      }
+      return userId;
+    }
+
     function showError(message) {
       const errorContainer = document.getElementById("errorContainer");
       const errorDiv = document.createElement("div");
@@ -1050,6 +1059,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
         return;
       }
 
+      const userId = getUserId();
       const url = extractURL(text);
       let urlPreview = null;
 
@@ -1068,6 +1078,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
         timestamp: Date.now(),
         likes: 0,
         dislikes: 0,
+        userId: userId,
         urlPreview: urlPreview,
         postId: postId
       };
@@ -1077,9 +1088,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
         document.getElementById("postText").value = "";
         showSuccess("Post published successfully!");
         
-        // Store post ownership in localStorage
-        storePostOwnership(postId);
-        
         if (currentSearchTerm) {
           clearSearch();
         }
@@ -1088,29 +1096,9 @@ description: "Post anything anonymously without login. Confess, express, or spea
       }
     }
 
-    // Store post ownership in localStorage
-    function storePostOwnership(postId) {
-      const myPosts = JSON.parse(localStorage.getItem('myPosts') || '{}');
-      myPosts[postId] = true;
-      localStorage.setItem('myPosts', JSON.stringify(myPosts));
-    }
-
-    // Check if post belongs to current user
-    function isMyPost(postId) {
-      const myPosts = JSON.parse(localStorage.getItem('myPosts') || '{}');
-      return myPosts[postId] === true;
-    }
-
-    // Remove post ownership from localStorage
-    function removePostOwnership(postId) {
-      const myPosts = JSON.parse(localStorage.getItem('myPosts') || '{}');
-      delete myPosts[postId];
-      localStorage.setItem('myPosts', JSON.stringify(myPosts));
-    }
-
-    function deletePost(postId) {
-      // Check ownership using localStorage
-      if (!isMyPost(postId)) {
+    function deletePost(postId, userId) {
+      const currentUserId = getUserId();
+      if (userId !== currentUserId) {
         showError("You can only delete your own posts!");
         return;
       }
@@ -1130,10 +1118,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
         if (result.isConfirmed) {
           db.ref("posts/" + postId).remove()
             .then(() => {
-              // Remove from localStorage as well
-              removePostOwnership(postId);
-              removeUserInteraction(postId);
-              
               Swal.fire({
                 title: 'Deleted!',
                 text: 'Your post has been deleted.',
@@ -1316,8 +1300,8 @@ description: "Post anything anonymously without login. Confess, express, or spea
 
       postsArray.forEach(([postId, post], index) => {
         const div = document.createElement("div");
-        // FIX: Check ownership using localStorage instead of userId
-        const isMyPost = isMyPost(postId);
+        const currentUserId = getUserId();
+        const isMyPost = post.userId === currentUserId;
         
         div.className = "post";
         div.setAttribute("data-post-id", postId);
@@ -1403,7 +1387,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
               <i class="fas fa-share"></i> Share
             </button>
             ${isMyPost ? `
-              <button class="delete-btn" onclick="deletePost('${postId}')">
+              <button class="delete-btn" onclick="deletePost('${postId}', '${post.userId}')">
                 <i class="fas fa-trash"></i> Delete
               </button>
             ` : ''}
