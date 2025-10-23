@@ -822,12 +822,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
       return imageExtensions.some(ext => lowerUrl.includes(ext));
     }
 
-    // Check if URL is from Pinterest
-    function isPinterestURL(url) {
-      if (!url) return false;
-      return url.includes('pinterest.') || url.includes('pin.it');
-    }
-
     // Check if URL is from Google Images
     function isGoogleImagesURL(url) {
       if (!url) return false;
@@ -873,18 +867,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
           };
         }
 
-        // If it's a Pinterest URL, handle it specially
-        if (isPinterestURL(url)) {
-          return {
-            type: 'pinterest',
-            url: normalizeURL(url),
-            title: 'Pinterest Image',
-            description: '',
-            image: await getPinterestImage(url),
-            domain: 'pinterest.com'
-          };
-        }
-
         // Otherwise, try to get website preview
         const normalizedUrl = normalizeURL(url);
         const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
@@ -927,36 +909,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
       }
     }
 
-    // Get Pinterest image URL
-    async function getPinterestImage(url) {
-      try {
-        // For pin.it short URLs, we need to resolve them first
-        if (url.includes('pin.it')) {
-          const response = await fetch(url, { method: 'HEAD', redirect: 'follow' });
-          url = response.url;
-        }
-        
-        // Try to get the image from Pinterest
-        const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
-        const response = await fetch(proxyUrl + url);
-        const html = await response.text();
-        
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(html, 'text/html');
-        
-        // Try to find the main image in Pinterest page
-        const image = doc.querySelector('meta[property="og:image"]')?.getAttribute('content') || 
-                     doc.querySelector('meta[name="pinterest:image"]')?.getAttribute('content') || 
-                     doc.querySelector('img')?.src || 
-                     '';
-        
-        return image;
-      } catch (error) {
-        console.error('Error getting Pinterest image:', error);
-        return '';
-      }
-    }
-
     // Make text clickable (convert URLs to links with nofollow)
     function makeTextClickable(text) {
       if (!text) return '';
@@ -967,6 +919,23 @@ description: "Post anything anonymously without login. Confess, express, or spea
         const href = normalizeURL(url);
         return `<a href="${href}" target="_blank" rel="noopener nofollow">${url}</a>`;
       });
+    }
+
+    // Create AdSense ad element
+    function createAdElement() {
+      const adContainer = document.createElement('div');
+      adContainer.className = 'ad-container';
+      
+      adContainer.innerHTML = `
+        <ins class="adsbygoogle"
+             style="display:block"
+             data-ad-client="ca-pub-7059052735946479"
+             data-ad-slot="8592327962"
+             data-ad-format="auto"
+             data-full-width-responsive="true"></ins>
+      `;
+      
+      return adContainer;
     }
 
     // Submit a new post
@@ -1225,8 +1194,9 @@ description: "Post anything anonymously without login. Confess, express, or spea
       document.body.style.overflow = '';
     }
 
-    // Load and display posts with randomization
+    // Load and display posts with randomization and ads
     const postsContainer = document.getElementById("postsContainer");
+    let adCounter = 0;
 
     db.ref("posts").on("value", snapshot => {
       // Keep the post input container and error container
@@ -1263,7 +1233,10 @@ description: "Post anything anonymously without login. Confess, express, or spea
         }
       }
 
-      postsArray.forEach(([postId, post]) => {
+      // Reset ad counter
+      adCounter = 0;
+
+      postsArray.forEach(([postId, post], index) => {
         const div = document.createElement("div");
         const currentUserId = getUserId();
         const isMyPost = post.userId === currentUserId;
@@ -1283,7 +1256,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
         let urlPreviewHTML = '';
         if (post.urlPreview && !containsBannedWords(post.text)) {
           if (post.urlPreview.type === 'image' || 
-              post.urlPreview.type === 'pinterest' || 
               post.urlPreview.type === 'google-image') {
             
             // Direct image preview with click to open in fullscreen
@@ -1365,6 +1337,20 @@ description: "Post anything anonymously without login. Confess, express, or spea
         `;
 
         postsContainer.appendChild(div);
+        
+        // Insert AdSense ad after every 2 posts
+        adCounter++;
+        if (adCounter % 2 === 0) {
+          const adElement = createAdElement();
+          postsContainer.appendChild(adElement);
+          
+          // Push the ad to AdSense
+          try {
+            (adsbygoogle = window.adsbygoogle || []).push({});
+          } catch (error) {
+            console.error('Error loading AdSense ad:', error);
+          }
+        }
         
         // Highlight the post if it's the shared one
         if (postId === highlightPostId) {
@@ -1462,4 +1448,4 @@ description: "Post anything anonymously without login. Confess, express, or spea
 
     // Start the app
     initializeApp();
-  </script>
+</script>
