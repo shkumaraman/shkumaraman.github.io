@@ -610,10 +610,10 @@ const db = firebase.database();
 
 let myId;
 let myNickname = 'Guest';
-let nicknameSet = false;
+let currentGroup = 'general';
 let lastMessageTimestamp = 0;
 const messageLimit = 25;
-const messageExpiryHours = 6; // Messages older than 6 hour will be deleted
+const messageExpiryHours = 6;
 let isSendingGif = false;
 let isSendingMessage = false;
 let initialMessagesLoaded = false;
@@ -633,104 +633,61 @@ async function loadBannedWords() {
     const text = await response.text();
     bannedWords = text.split('\n')
       .map(word => word.trim().toLowerCase())
-      .filter(word => word.length > 0); // Remove empty lines
+      .filter(word => word.length > 0);
     bannedWordsLoaded = true;
     console.log("Banned words loaded successfully:", bannedWords.length);
   } catch (err) {
     console.error("Error loading banned words:", err);
-    // Fallback to a basic list if the file can't be loaded
-    bannedWords = ['badword1', 'badword2', 'swearword']; // Add some default bad words
+    bannedWords = ['badword1', 'badword2', 'swearword'];
     bannedWordsLoaded = true;
   }
 }
 
-// Enhanced check for banned words with case insensitivity and word boundaries
+// Enhanced check for banned words
 function containsBannedWords(message) {
   if (!bannedWordsLoaded || !message || typeof message !== 'string') return false;
   
   const lowerMsg = message.toLowerCase();
   return bannedWords.some(word => {
     if (!word || word.length < 2) return false;
-    
-    // Escape special regex characters in the word
     const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    
-    // Create regex pattern that matches word with word boundaries
     const pattern = new RegExp(`\\b${escapedWord}\\b`, 'i');
     return pattern.test(message);
   });
 }
 
+// Get group from URL parameter
+function getGroupFromURL() {
+  const urlParams = new URLSearchParams(window.location.search);
+  return urlParams.get('group') || 'general';
+}
+
 // Initialize chat when page loads
 function initializeChat() {
   myId = 'user_' + Math.random().toString(36).substr(2, 9);
+  currentGroup = getGroupFromURL();
   loadBannedWords();
 
   // Check if nickname exists in localStorage
   const savedNickname = localStorage.getItem('talkrush_nickname');
-  const nicknameInput = document.getElementById('nicknameInput');
-
   if (savedNickname) {
     myNickname = savedNickname;
-    nicknameSet = true;
     document.getElementById('currentNickname').textContent = myNickname;
-
-    // Set input field value so it persists after reload
-    if (nicknameInput) nicknameInput.value = myNickname;
   }
 
-  // Show nickname modal if not set
-  if (!nicknameSet) {
-    showNicknameModal();
-  }
+  // Update page title with group name
+  document.title = `TalkRush - ${currentGroup} Group`;
+  document.querySelector('.app-title').textContent = `TalkRush - ${currentGroup}`;
 
-  logSystem("🙏 Namaste GC Lovers!");
+  logSystem(`🚀 Welcome to ${currentGroup} group!`);
   joinGroupChat();
   
-  // Start the cleanup process for old messages
-  setInterval(cleanupOldMessages, 60 * 60 * 1000); // Run every hour
-  cleanupOldMessages(); // Run once on startup
-}
-
-function showNicknameModal() {
-  const modal = document.getElementById('nicknameModal');
-  const nicknameInput = document.getElementById('nicknameInput');
-
-  modal.style.display = 'flex';
-  nicknameInput.focus();
-
-  // If nickname already exists, pre-fill it
-  const savedNickname = localStorage.getItem('talkrush_nickname');
-  if (savedNickname) {
-    nicknameInput.value = savedNickname;
-  }
-}
-
-function saveNickname() {
-  const nicknameInput = document.getElementById('nicknameInput');
-  const newNickname = nicknameInput.value.trim();
-
-  if (!newNickname) {
-    alert("Please enter a nickname");
-    return;
-  }
-
-  if (containsBannedWords(newNickname)) {
-    alert("Nickname contains inappropriate words");
-    return;
-  }
-
-  myNickname = newNickname.substring(0, 20);
-  nicknameSet = true;
-  document.getElementById('currentNickname').textContent = myNickname;
-  document.getElementById('nicknameModal').style.display = 'none';
-
-  // Save to localStorage (persistent)
-  localStorage.setItem('talkrush_nickname', myNickname);
+  setInterval(cleanupOldMessages, 60 * 60 * 1000);
+  cleanupOldMessages();
 }
 
 function joinGroupChat() {
-  messagesRef = db.ref("group/messages").orderByChild("timestamp").limitToLast(messageLimit);
+  messagesRef = db.ref(`groups/${currentGroup}/messages`).orderByChild("timestamp").limitToLast(messageLimit);
   
   if (!initialMessagesLoaded) {
     messagesRef.once('value', (snapshot) => {
@@ -748,7 +705,6 @@ function joinGroupChat() {
     });
   }
   
-  // Listen for new messages
   messagesRef.on('child_added', (snapshot) => {
     const msg = snapshot.val();
     if (msg.timestamp > lastMessageTimestamp && msg.sender !== myId) {
@@ -759,18 +715,18 @@ function joinGroupChat() {
   });
 }
 
-// Clean up messages older than 1 hour
+// Clean up messages older than expiry time
 function cleanupOldMessages() {
-  const oneHourAgo = Date.now() - (messageExpiryHours * 60 * 60 * 1000);
+  const expiryTime = Date.now() - (messageExpiryHours * 60 * 60 * 1000);
   
-  db.ref("group/messages").orderByChild("timestamp").endAt(oneHourAgo).once('value', (snapshot) => {
+  db.ref(`groups/${currentGroup}/messages`).orderByChild("timestamp").endAt(expiryTime).once('value', (snapshot) => {
     if (snapshot.exists()) {
       const updates = {};
       snapshot.forEach((childSnapshot) => {
         updates[childSnapshot.key] = null;
       });
       
-      db.ref("group/messages").update(updates)
+      db.ref(`groups/${currentGroup}/messages`).update(updates)
         .then(() => {
           console.log("Cleaned up old messages");
         })
@@ -784,7 +740,6 @@ function cleanupOldMessages() {
 function sendMessageToGroup(text) {
   if (!text.trim() || isSendingMessage) return;
   
-  // Check for banned words before sending
   if (containsBannedWords(text)) {
     logSystem("Your message contains inappropriate content and cannot be sent.");
     return;
@@ -802,13 +757,10 @@ function sendMessageToGroup(text) {
   
   appendMessage("me", text, timestamp);
   
-  // Use push() to generate a unique key for the message
-  const newMsgRef = db.ref("group/messages").push();
+  const newMsgRef = db.ref(`groups/${currentGroup}/messages`).push();
   newMsgRef.set(message)
     .then(() => {
       isSendingMessage = false;
-      
-      // After sending, check if we need to remove the oldest message
       maintainMessageLimit();
     })
     .catch(err => {
@@ -819,9 +771,8 @@ function sendMessageToGroup(text) {
 
 // Ensure we only keep the latest messageLimit messages
 function maintainMessageLimit() {
-  db.ref("group/messages").orderByChild("timestamp").once('value', (snapshot) => {
+  db.ref(`groups/${currentGroup}/messages`).orderByChild("timestamp").once('value', (snapshot) => {
     if (snapshot.numChildren() > messageLimit) {
-      // Get all messages sorted by timestamp
       const messages = [];
       snapshot.forEach((childSnapshot) => {
         messages.push({
@@ -830,17 +781,14 @@ function maintainMessageLimit() {
         });
       });
       
-      // Sort by timestamp (oldest first)
       messages.sort((a, b) => a.timestamp - b.timestamp);
-      
-      // Remove the oldest messages until we're at the limit
       const messagesToRemove = messages.slice(0, messages.length - messageLimit);
       const updates = {};
       messagesToRemove.forEach(msg => {
         updates[msg.key] = null;
       });
       
-      db.ref("group/messages").update(updates);
+      db.ref(`groups/${currentGroup}/messages`).update(updates);
     }
   });
 }
@@ -914,11 +862,11 @@ function sendImageToGroup(blob) {
   
   appendImage("me", blob, timestamp);
   
-  const newMsgRef = db.ref("group/messages").push();
+  const newMsgRef = db.ref(`groups/${currentGroup}/messages`).push();
   newMsgRef.set(message)
     .then(() => {
       isSendingMessage = false;
-      maintainMessageLimit(); // Check message limit after sending
+      maintainMessageLimit();
     })
     .catch(err => {
       console.error("Error sending image:", err);
@@ -942,12 +890,12 @@ function sendGifToGroup(url) {
   
   appendGif("me", url, timestamp);
   
-  const newMsgRef = db.ref("group/messages").push();
+  const newMsgRef = db.ref(`groups/${currentGroup}/messages`).push();
   newMsgRef.set(message)
     .then(() => {
       isSendingGif = false;
       isSendingMessage = false;
-      maintainMessageLimit(); // Check message limit after sending
+      maintainMessageLimit();
     })
     .catch(err => {
       console.error("Error sending GIF:", err);
@@ -964,16 +912,12 @@ function displayMessage(msg) {
   div.className = "msg " + (msg.sender === myId ? "me" : "stranger");
   div.setAttribute('data-id', msg.timestamp);
   
-  // Add nickname element
   const nicknameEl = document.createElement("div");
   nicknameEl.className = "msg-nickname";
   nicknameEl.style.fontWeight = "bold";
   nicknameEl.style.marginBottom = "2px";
   nicknameEl.style.lineHeight = "1";
-  
-  // Get nickname from message or use default
   nicknameEl.textContent = msg.nickname || 'Guest';
-  
   div.appendChild(nicknameEl);
   
   if (msg.type === "image") {
@@ -985,7 +929,6 @@ function displayMessage(msg) {
     img.src = msg.url;
     div.appendChild(img);
   } else {
-    // Check if message contains banned words before displaying
     if (containsBannedWords(msg.text)) {
       const filteredMsg = document.createElement("div");
       filteredMsg.textContent = "This message was blocked due to inappropriate content";
@@ -1011,7 +954,6 @@ function appendMessage(sender, msg, timestamp = Date.now()) {
   div.className = "msg " + sender;
   div.setAttribute('data-id', timestamp);
   
-  // Add nickname
   const nicknameEl = document.createElement("div");
   nicknameEl.className = "msg-nickname";
   nicknameEl.style.fontWeight = "bold";
@@ -1037,7 +979,6 @@ function appendImage(sender, blob, timestamp = Date.now()) {
   div.className = "msg " + sender;
   div.setAttribute('data-id', timestamp);
   
-  // Add nickname
   const nicknameEl = document.createElement("div");
   nicknameEl.className = "msg-nickname";
   nicknameEl.style.fontWeight = "bold";
@@ -1065,7 +1006,6 @@ function appendGif(sender, url, timestamp = Date.now()) {
   div.className = "msg " + sender;
   div.setAttribute('data-id', timestamp);
   
-  // Add nickname
   const nicknameEl = document.createElement("div");
   nicknameEl.className = "msg-nickname";
   nicknameEl.style.fontWeight = "bold";
@@ -1220,23 +1160,9 @@ window.addEventListener("click", (e) => {
   }
 });
 
-// Nickname display click handler
-document.getElementById("nicknameDisplay").addEventListener("click", showNicknameModal);
-
-// Add this event listener to close nickname modal when clicking outside
-document.addEventListener('click', function(e) {
-  const modal = document.getElementById('nicknameModal');
-  if (e.target === modal) {
-    modal.style.display = 'none';
-    
-    // If no nickname is set and user tries to close modal, set a default
-    if (!nicknameSet) {
-      myNickname = 'Guest_' + Math.random().toString(36).substr(2, 5);
-      nicknameSet = true;
-      document.getElementById('currentNickname').textContent = myNickname;
-      localStorage.setItem('talkrush_nickname', myNickname);
-    }
-  }
+// Nickname display click handler - redirect to profile page
+document.getElementById("nicknameDisplay").addEventListener("click", () => {
+  window.location.href = '/';
 });
 
 window.addEventListener('load', initializeChat);
