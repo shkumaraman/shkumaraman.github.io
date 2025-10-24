@@ -445,60 +445,6 @@ body.light-mode {
   transition: background 0.3s;
 }
   
-/* Modal Styles */
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.4);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 10000;
-  padding: 20px;
-  box-sizing: border-box;
-}
-
-.modal-content {
-  background: white;
-  color: #333;
-  padding: 20px;
-  border-radius: 8px;
-  text-align: center;
-  max-width: 400px;
-  width: 100%;
-  max-height: 90vh;
-  overflow-y: auto;
-  box-shadow: 0 5px 15px rgba(0,0,0,0.3);
-}
-
-.modal-buttons {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin: 20px 0;
-}
-
-.modal-btn {
-  border: none;
-  background: #333;
-  color: white;
-  padding: 12px 15px;
-  cursor: pointer;
-  border-radius: 5px;
-  font-size: 16px;
-  font-weight: bold;
-  width: 100%;
-  transition: all 0.3s ease;
-}
-
-.modal-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-}
-
 /* Responsive adjustments */
 @media (max-width: 600px) {
   .msg {
@@ -523,21 +469,6 @@ body.light-mode {
 }
 </style>
 
-<!-- Nickname Modal -->
-<div id="nicknameModal" class="modal-overlay" style="display: none;">
-  <div class="modal-content">
-    <h3>Choose Your Nickname</h3>
-    <p>Pick a name that will be displayed with your messages</p>
-    <input type="text" id="nicknameInput" placeholder="Anjali123" maxlength="20" 
-           style="width: 100%; padding: 10px; margin: 15px 0; border-radius: 5px; border: 1px solid #ccc;">
-    <div class="modal-buttons">
-      <button onclick="saveNickname()" class="modal-btn">
-        Continue
-      </button>
-    </div>
-  </div>
-</div>
-
 <div class="chat-container">
 <header class="app-header">
   <div class="header-left">
@@ -559,7 +490,7 @@ body.light-mode {
   <div id="chatLog"></div>
 
   <!-- Nickname Display -->
-  <div id="nicknameDisplay">
+  <div id="nicknameDisplay" onclick="goToHome()">
     <span id="currentNickname">Guest</span>
     <i class="fas fa-pencil-alt" style="font-size: 0.7em;"></i>
   </div>
@@ -679,10 +610,9 @@ const db = firebase.database();
 
 let myId;
 let myNickname = 'Guest';
-let nicknameSet = false;
 let lastMessageTimestamp = 0;
 const messageLimit = 25;
-const messageExpiryHours = 6; // Messages older than 6 hour will be deleted
+const messageExpiryHours = 6;
 let isSendingGif = false;
 let isSendingMessage = false;
 let initialMessagesLoaded = false;
@@ -702,13 +632,12 @@ async function loadBannedWords() {
     const text = await response.text();
     bannedWords = text.split('\n')
       .map(word => word.trim().toLowerCase())
-      .filter(word => word.length > 0); // Remove empty lines
+      .filter(word => word.length > 0);
     bannedWordsLoaded = true;
     console.log("Banned words loaded successfully:", bannedWords.length);
   } catch (err) {
     console.error("Error loading banned words:", err);
-    // Fallback to a basic list if the file can't be loaded
-    bannedWords = ['badword1', 'badword2', 'swearword']; // Add some default bad words
+    bannedWords = ['badword1', 'badword2', 'swearword'];
     bannedWordsLoaded = true;
   }
 }
@@ -721,13 +650,17 @@ function containsBannedWords(message) {
   return bannedWords.some(word => {
     if (!word || word.length < 2) return false;
     
-    // Escape special regex characters in the word
     const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    
-    // Create regex pattern that matches word with word boundaries
     const pattern = new RegExp(`\\b${escapedWord}\\b`, 'i');
     return pattern.test(message);
   });
+}
+
+// Get group name from URL
+function getGroupNameFromURL() {
+  const path = window.location.pathname;
+  const pathParts = path.split('/').filter(part => part);
+  return pathParts[pathParts.length - 1] || 'default';
 }
 
 // Initialize chat when page loads
@@ -735,71 +668,31 @@ function initializeChat() {
   myId = 'user_' + Math.random().toString(36).substr(2, 9);
   loadBannedWords();
 
-  // Check if nickname exists in localStorage
+  // Get nickname from localStorage or generate random
   const savedNickname = localStorage.getItem('talkrush_nickname');
-  const nicknameInput = document.getElementById('nicknameInput');
-
   if (savedNickname) {
     myNickname = savedNickname;
-    nicknameSet = true;
-    document.getElementById('currentNickname').textContent = myNickname;
-
-    // Set input field value so it persists after reload
-    if (nicknameInput) nicknameInput.value = myNickname;
+  } else {
+    myNickname = 'Guest_' + Math.random().toString(36).substr(2, 5);
+    localStorage.setItem('talkrush_nickname', myNickname);
   }
-
-  // Show nickname modal if not set
-  if (!nicknameSet) {
-    showNicknameModal();
-  }
+  
+  document.getElementById('currentNickname').textContent = myNickname;
 
   logSystem("🙏 Namaste GC Lovers!");
   joinGroupChat();
   
-  // Start the cleanup process for old messages
-  setInterval(cleanupOldMessages, 60 * 60 * 1000); // Run every hour
-  cleanupOldMessages(); // Run once on startup
+  setInterval(cleanupOldMessages, 60 * 60 * 1000);
+  cleanupOldMessages();
 }
 
-function showNicknameModal() {
-  const modal = document.getElementById('nicknameModal');
-  const nicknameInput = document.getElementById('nicknameInput');
-
-  modal.style.display = 'flex';
-  nicknameInput.focus();
-
-  // If nickname already exists, pre-fill it
-  const savedNickname = localStorage.getItem('talkrush_nickname');
-  if (savedNickname) {
-    nicknameInput.value = savedNickname;
-  }
-}
-
-function saveNickname() {
-  const nicknameInput = document.getElementById('nicknameInput');
-  const newNickname = nicknameInput.value.trim();
-
-  if (!newNickname) {
-    alert("Please enter a nickname");
-    return;
-  }
-
-  if (containsBannedWords(newNickname)) {
-    alert("Nickname contains inappropriate words");
-    return;
-  }
-
-  myNickname = newNickname.substring(0, 20);
-  nicknameSet = true;
-  document.getElementById('currentNickname').textContent = myNickname;
-  document.getElementById('nicknameModal').style.display = 'none';
-
-  // Save to localStorage (persistent)
-  localStorage.setItem('talkrush_nickname', myNickname);
+function goToHome() {
+  window.location.href = '/';
 }
 
 function joinGroupChat() {
-  messagesRef = db.ref("group/messages").orderByChild("timestamp").limitToLast(messageLimit);
+  const groupName = getGroupNameFromURL();
+  messagesRef = db.ref(`groups/${groupName}/messages`).orderByChild("timestamp").limitToLast(messageLimit);
   
   if (!initialMessagesLoaded) {
     messagesRef.once('value', (snapshot) => {
@@ -817,7 +710,6 @@ function joinGroupChat() {
     });
   }
   
-  // Listen for new messages
   messagesRef.on('child_added', (snapshot) => {
     const msg = snapshot.val();
     if (msg.timestamp > lastMessageTimestamp && msg.sender !== myId) {
@@ -828,18 +720,19 @@ function joinGroupChat() {
   });
 }
 
-// Clean up messages older than 1 hour
+// Clean up messages older than specified hours
 function cleanupOldMessages() {
   const oneHourAgo = Date.now() - (messageExpiryHours * 60 * 60 * 1000);
+  const groupName = getGroupNameFromURL();
   
-  db.ref("group/messages").orderByChild("timestamp").endAt(oneHourAgo).once('value', (snapshot) => {
+  db.ref(`groups/${groupName}/messages`).orderByChild("timestamp").endAt(oneHourAgo).once('value', (snapshot) => {
     if (snapshot.exists()) {
       const updates = {};
       snapshot.forEach((childSnapshot) => {
         updates[childSnapshot.key] = null;
       });
       
-      db.ref("group/messages").update(updates)
+      db.ref(`groups/${groupName}/messages`).update(updates)
         .then(() => {
           console.log("Cleaned up old messages");
         })
@@ -853,7 +746,6 @@ function cleanupOldMessages() {
 function sendMessageToGroup(text) {
   if (!text.trim() || isSendingMessage) return;
   
-  // Check for banned words before sending
   if (containsBannedWords(text)) {
     logSystem("Your message contains inappropriate content and cannot be sent.");
     return;
@@ -862,6 +754,7 @@ function sendMessageToGroup(text) {
   isSendingMessage = true;
   
   const timestamp = Date.now();
+  const groupName = getGroupNameFromURL();
   const message = {
     text: text,
     sender: myId,
@@ -871,13 +764,10 @@ function sendMessageToGroup(text) {
   
   appendMessage("me", text, timestamp);
   
-  // Use push() to generate a unique key for the message
-  const newMsgRef = db.ref("group/messages").push();
+  const newMsgRef = db.ref(`groups/${groupName}/messages`).push();
   newMsgRef.set(message)
     .then(() => {
       isSendingMessage = false;
-      
-      // After sending, check if we need to remove the oldest message
       maintainMessageLimit();
     })
     .catch(err => {
@@ -888,9 +778,10 @@ function sendMessageToGroup(text) {
 
 // Ensure we only keep the latest messageLimit messages
 function maintainMessageLimit() {
-  db.ref("group/messages").orderByChild("timestamp").once('value', (snapshot) => {
+  const groupName = getGroupNameFromURL();
+  
+  db.ref(`groups/${groupName}/messages`).orderByChild("timestamp").once('value', (snapshot) => {
     if (snapshot.numChildren() > messageLimit) {
-      // Get all messages sorted by timestamp
       const messages = [];
       snapshot.forEach((childSnapshot) => {
         messages.push({
@@ -899,17 +790,15 @@ function maintainMessageLimit() {
         });
       });
       
-      // Sort by timestamp (oldest first)
       messages.sort((a, b) => a.timestamp - b.timestamp);
       
-      // Remove the oldest messages until we're at the limit
       const messagesToRemove = messages.slice(0, messages.length - messageLimit);
       const updates = {};
       messagesToRemove.forEach(msg => {
         updates[msg.key] = null;
       });
       
-      db.ref("group/messages").update(updates);
+      db.ref(`groups/${groupName}/messages`).update(updates);
     }
   });
 }
@@ -973,6 +862,7 @@ function sendImageToGroup(blob) {
   isSendingMessage = true;
   
   const timestamp = Date.now();
+  const groupName = getGroupNameFromURL();
   const message = {
     type: "image",
     sender: myId,
@@ -983,11 +873,11 @@ function sendImageToGroup(blob) {
   
   appendImage("me", blob, timestamp);
   
-  const newMsgRef = db.ref("group/messages").push();
+  const newMsgRef = db.ref(`groups/${groupName}/messages`).push();
   newMsgRef.set(message)
     .then(() => {
       isSendingMessage = false;
-      maintainMessageLimit(); // Check message limit after sending
+      maintainMessageLimit();
     })
     .catch(err => {
       console.error("Error sending image:", err);
@@ -1001,6 +891,7 @@ function sendGifToGroup(url) {
   isSendingMessage = true;
   
   const timestamp = Date.now();
+  const groupName = getGroupNameFromURL();
   const message = {
     type: "gif",
     sender: myId,
@@ -1011,12 +902,12 @@ function sendGifToGroup(url) {
   
   appendGif("me", url, timestamp);
   
-  const newMsgRef = db.ref("group/messages").push();
+  const newMsgRef = db.ref(`groups/${groupName}/messages`).push();
   newMsgRef.set(message)
     .then(() => {
       isSendingGif = false;
       isSendingMessage = false;
-      maintainMessageLimit(); // Check message limit after sending
+      maintainMessageLimit();
     })
     .catch(err => {
       console.error("Error sending GIF:", err);
@@ -1033,14 +924,11 @@ function displayMessage(msg) {
   div.className = "msg " + (msg.sender === myId ? "me" : "stranger");
   div.setAttribute('data-id', msg.timestamp);
   
-  // Add nickname element
   const nicknameEl = document.createElement("div");
   nicknameEl.className = "msg-nickname";
   nicknameEl.style.fontWeight = "bold";
   nicknameEl.style.marginBottom = "2px";
   nicknameEl.style.lineHeight = "1";
-  
-  // Get nickname from message or use default
   nicknameEl.textContent = msg.nickname || 'Guest';
   
   div.appendChild(nicknameEl);
@@ -1054,7 +942,6 @@ function displayMessage(msg) {
     img.src = msg.url;
     div.appendChild(img);
   } else {
-    // Check if message contains banned words before displaying
     if (containsBannedWords(msg.text)) {
       const filteredMsg = document.createElement("div");
       filteredMsg.textContent = "This message was blocked due to inappropriate content";
@@ -1080,7 +967,6 @@ function appendMessage(sender, msg, timestamp = Date.now()) {
   div.className = "msg " + sender;
   div.setAttribute('data-id', timestamp);
   
-  // Add nickname
   const nicknameEl = document.createElement("div");
   nicknameEl.className = "msg-nickname";
   nicknameEl.style.fontWeight = "bold";
@@ -1106,7 +992,6 @@ function appendImage(sender, blob, timestamp = Date.now()) {
   div.className = "msg " + sender;
   div.setAttribute('data-id', timestamp);
   
-  // Add nickname
   const nicknameEl = document.createElement("div");
   nicknameEl.className = "msg-nickname";
   nicknameEl.style.fontWeight = "bold";
@@ -1134,7 +1019,6 @@ function appendGif(sender, url, timestamp = Date.now()) {
   div.className = "msg " + sender;
   div.setAttribute('data-id', timestamp);
   
-  // Add nickname
   const nicknameEl = document.createElement("div");
   nicknameEl.className = "msg-nickname";
   nicknameEl.style.fontWeight = "bold";
@@ -1286,25 +1170,6 @@ function displayGifs(gifs) {
 window.addEventListener("click", (e) => {
   if (e.target === gifModal) {
     gifModal.style.display = "none";
-  }
-});
-
-// Nickname display click handler
-document.getElementById("nicknameDisplay").addEventListener("click", showNicknameModal);
-
-// Add this event listener to close nickname modal when clicking outside
-document.addEventListener('click', function(e) {
-  const modal = document.getElementById('nicknameModal');
-  if (e.target === modal) {
-    modal.style.display = 'none';
-    
-    // If no nickname is set and user tries to close modal, set a default
-    if (!nicknameSet) {
-      myNickname = 'Guest_' + Math.random().toString(36).substr(2, 5);
-      nicknameSet = true;
-      document.getElementById('currentNickname').textContent = myNickname;
-      localStorage.setItem('talkrush_nickname', myNickname);
-    }
   }
 });
 
