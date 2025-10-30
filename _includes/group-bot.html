@@ -1,5 +1,5 @@
 <script>
-class TalkRushBot {
+  class TalkRushBot {
     constructor() {
         this.bots = new Map();
         this.isInitialized = false;
@@ -7,6 +7,7 @@ class TalkRushBot {
         this.currentGroup = null;
         this.lastUserMessage = '';
         this.lastBotResponder = '';
+        this.lastProcessedTimestamp = 0;
     }
 
     async initialize() {
@@ -80,8 +81,15 @@ class TalkRushBot {
         
         this.botMessagesRef.on('child_added', (snapshot) => {
             const message = snapshot.val();
-            this.processMessage(message);
+            
+            // Only process new messages (after bot initialization)
+            if (message.timestamp > this.lastProcessedTimestamp) {
+                this.processMessage(message);
+            }
         });
+        
+        // Set initial timestamp to current time
+        this.lastProcessedTimestamp = Date.now();
     }
 
     processMessage(message) {
@@ -90,6 +98,7 @@ class TalkRushBot {
         
         const messageText = message.text.toLowerCase().trim();
         
+        // Skip if same message was just processed
         if (this.lastUserMessage === messageText) return;
         this.lastUserMessage = messageText;
         
@@ -114,6 +123,7 @@ class TalkRushBot {
                     this.sendBotResponse(botName, response);
                     botConfig.lastResponseTime = Date.now();
                     this.lastBotResponder = botName;
+                    this.lastProcessedTimestamp = Date.now();
                 }
             }, delay);
         }
@@ -222,5 +232,5 @@ window.addEventListener('load', () => {
     setTimeout(() => {
         window.talkRushBot.initialize();
     }, 2000);
-});
+});      
 </script>
