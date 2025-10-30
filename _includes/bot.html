@@ -1,0 +1,178 @@
+<script>
+class TalkRushBot {
+  constructor() {
+    this.bots = new Map();
+    this.isInitialized = false;
+    this.botMessagesRef = null;
+    this.currentGroup = null;
+  }
+
+  async initialize() {
+    if (this.isInitialized) return;
+    
+    try {
+      await this.loadBotConfig();
+      this.setupBotListener();
+      this.isInitialized = true;
+    } catch (error) {
+      console.error("Failed to initialize bot system:", error);
+      this.createSampleBot();
+    }
+  }
+
+  async loadBotConfig() {
+    try {
+      const response = await fetch('bot.txt');
+      const text = await response.text();
+      this.parseBotConfig(text);
+    } catch (error) {
+      this.createSampleBot();
+    }
+  }
+
+  parseBotConfig(configText) {
+    const lines = configText.split('\n');
+    let currentBot = null;
+    let currentBotConfig = null;
+
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+      
+      if (!trimmedLine) continue;
+      
+      if (trimmedLine.startsWith('#')) {
+        if (currentBot && currentBotConfig) {
+          this.bots.set(currentBot, currentBotConfig);
+        }
+        
+        const botName = trimmedLine.substring(1).trim();
+        currentBot = botName;
+        currentBotConfig = {
+          name: botName,
+          triggers: new Map(),
+          cooldown: 5000,
+          lastResponseTime: 0
+        };
+      } 
+      else if (currentBotConfig && trimmedLine.includes('-')) {
+        const parts = trimmedLine.split('-');
+        if (parts.length >= 2) {
+          const trigger = parts[0].trim().toLowerCase();
+          const response = parts.slice(1).join('-').trim();
+          
+          if (trigger && response) {
+            currentBotConfig.triggers.set(trigger, response);
+          }
+        }
+      }
+    }
+    
+    if (currentBot && currentBotConfig) {
+      this.bots.set(currentBot, currentBotConfig);
+    }
+  }
+
+  createSampleBot() {
+    const sampleBot = {
+      name: "Priya",
+      triggers: new Map([
+        ["hi", "Hey there! How are you doing today? 😊"],
+        ["hello", "Hello! Nice to see you here!"],
+        ["how are you", "I'm good, thanks for asking! Just enjoying the chat here."],
+        ["what's up", "Not much, just chatting with people. How about you?"],
+        ["name", "I'm Priya! What's your name?"]
+      ]),
+      cooldown: 5000,
+      lastResponseTime: 0
+    };
+    
+    this.bots.set("Priya", sampleBot);
+  }
+
+  setupBotListener() {
+    this.currentGroup = this.getGroupFromURL();
+    
+    this.botMessagesRef = firebase.database().ref(`groups/${this.currentGroup}/messages`).orderByChild("timestamp");
+    
+    this.botMessagesRef.on('child_added', (snapshot) => {
+      const message = snapshot.val();
+      this.processMessage(message);
+    });
+  }
+
+  processMessage(message) {
+    if (this.isBotMessage(message)) return;
+    if (!message.text || message.text.trim() === '') return;
+    
+    const messageText = message.text.toLowerCase().trim();
+    
+    this.bots.forEach((botConfig, botName) => {
+      const now = Date.now();
+      if (now - botConfig.lastResponseTime < botConfig.cooldown) return;
+      
+      let response = null;
+      
+      if (botConfig.triggers.has(messageText)) {
+        response = botConfig.triggers.get(messageText);
+      } 
+      else {
+        for (const [trigger, botResponse] of botConfig.triggers) {
+          if (messageText.includes(trigger)) {
+            response = botResponse;
+            break;
+          }
+        }
+      }
+      
+      if (response) {
+        setTimeout(() => {
+          this.sendBotResponse(botName, response);
+        }, Math.random() * 3000 + 1000);
+        
+        botConfig.lastResponseTime = now;
+      }
+    });
+  }
+
+  isBotMessage(message) {
+    if (!message.nickname) return false;
+    
+    let isFromBot = false;
+    this.bots.forEach((botConfig, botName) => {
+      if (message.nickname === botName) {
+        isFromBot = true;
+      }
+    });
+    
+    return isFromBot;
+  }
+
+  sendBotResponse(botName, responseText) {
+    const timestamp = Date.now();
+    const message = {
+      text: responseText,
+      timestamp: timestamp,
+      nickname: botName
+    };
+    
+    const newMsgRef = firebase.database().ref(`groups/${this.currentGroup}/messages`).push();
+    newMsgRef.set(message)
+      .catch(err => {
+        console.error("Error sending bot message:", err);
+      });
+  }
+
+  getGroupFromURL() {
+    const urlParams = new URLSearchParams(window.location.search);
+    return urlParams.get('group') || 'general';
+  }
+}
+
+window.talkRushBot = new TalkRushBot();
+
+window.addEventListener('load', () => {
+  setTimeout(() => {
+    window.talkRushBot.initialize();
+  }, 1000);
+});
+</script>        
