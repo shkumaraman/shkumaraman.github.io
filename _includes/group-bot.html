@@ -77,32 +77,18 @@ class TalkRushBot {
         const priyaBot = {
             name: "Priya",
             triggers: new Map([
-                ["hi", "Hey!"],
-                ["hello", "Hi there"],
-                ["how are you", "Good, you?"],
+                ["hi", "Hey"],
+                ["hello", "Hi"],
+                ["how are you", "Good"],
                 ["name", "Priya"],
                 ["hobby", "Reading"],
-                ["bye", "Bye 👋"]
-            ]),
-            cooldown: 8000,
-            lastResponseTime: 0
-        };
-        
-        const anjaliBot = {
-            name: "Anjali",
-            triggers: new Map([
-                ["hi", "Hello!"],
-                ["hey", "Hi"],
-                ["how are you", "I'm fine"],
-                ["what's up", "Nothing much"],
-                ["bye", "See ya"]
+                ["bye", "Bye"]
             ]),
             cooldown: 8000,
             lastResponseTime: 0
         };
         
         this.bots.set("Priya", priyaBot);
-        this.bots.set("Anjali", anjaliBot);
     }
 
     setupBotListener() {
@@ -132,6 +118,15 @@ class TalkRushBot {
         
         if (availableBots.length === 0) return;
         
+        const mentionedBot = this.getMentionedBot(messageText);
+        if (mentionedBot) {
+            const response = this.getBotResponse(mentionedBot, messageText);
+            if (response) {
+                this.sendDelayedResponse(mentionedBot.name, response, mentionedBot.config);
+            }
+            return;
+        }
+        
         const respondingBot = this.selectRespondingBot(availableBots, messageText);
         if (!respondingBot) return;
         
@@ -139,16 +134,18 @@ class TalkRushBot {
         const response = this.getBotResponse(botConfig, messageText);
         
         if (response) {
-            const delay = Math.random() * 5000 + 3000;
-            
-            setTimeout(() => {
-                if (this.lastUserMessage === messageText) {
-                    this.sendBotResponse(botName, response);
-                    botConfig.lastResponseTime = Date.now();
-                    this.lastBotResponder = botName;
-                }
-            }, delay);
+            this.sendDelayedResponse(botName, response, botConfig);
         }
+    }
+
+    getMentionedBot(messageText) {
+        for (const [botName, botConfig] of this.bots) {
+            const botNameLower = botName.toLowerCase();
+            if (messageText.includes(botNameLower)) {
+                return { name: botName, config: botConfig };
+            }
+        }
+        return null;
     }
 
     selectRespondingBot(availableBots, messageText) {
@@ -180,6 +177,18 @@ class TalkRushBot {
         }
         
         return null;
+    }
+
+    sendDelayedResponse(botName, responseText, botConfig) {
+        const delay = Math.random() * 5000 + 3000;
+        
+        setTimeout(() => {
+            if (this.lastUserMessage === this.lastUserMessage) {
+                this.sendBotResponse(botName, responseText);
+                botConfig.lastResponseTime = Date.now();
+                this.lastBotResponder = botName;
+            }
+        }, delay);
     }
 
     isBotMessage(message) {
