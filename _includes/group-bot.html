@@ -17,7 +17,7 @@ class TalkRushBot {
             this.setupBotListener();
             this.isInitialized = true;
         } catch (error) {
-            this.createSampleBot();
+            console.error("Bot initialization failed");
         }
     }
 
@@ -27,7 +27,7 @@ class TalkRushBot {
             const text = await response.text();
             this.parseBotConfig(text);
         } catch (error) {
-            this.createSampleBot();
+            console.error("Bot config load failed");
         }
     }
 
@@ -73,24 +73,6 @@ class TalkRushBot {
         }
     }
 
-    createSampleBot() {
-        const priyaBot = {
-            name: "Priya",
-            triggers: new Map([
-                ["hi", "Hey"],
-                ["hello", "Hi"],
-                ["how are you", "Good"],
-                ["name", "Priya"],
-                ["hobby", "Reading"],
-                ["bye", "Bye"]
-            ]),
-            cooldown: 8000,
-            lastResponseTime: 0
-        };
-        
-        this.bots.set("Priya", priyaBot);
-    }
-
     setupBotListener() {
         this.currentGroup = this.getGroupFromURL();
         
@@ -118,39 +100,34 @@ class TalkRushBot {
         
         if (availableBots.length === 0) return;
         
-        const mentionedBot = this.getMentionedBot(messageText);
-        if (mentionedBot) {
-            const response = this.getBotResponse(mentionedBot, messageText);
-            if (response) {
-                this.sendDelayedResponse(mentionedBot.name, response, mentionedBot.config);
-            }
-            return;
-        }
-        
         const respondingBot = this.selectRespondingBot(availableBots, messageText);
         if (!respondingBot) return;
         
         const [botName, botConfig] = respondingBot;
-        const response = this.getBotResponse(botConfig, messageText);
+        const response = this.getBotResponse(botConfig, messageText, botName);
         
         if (response) {
-            this.sendDelayedResponse(botName, response, botConfig);
+            const delay = Math.random() * 5000 + 3000;
+            
+            setTimeout(() => {
+                if (this.lastUserMessage === messageText) {
+                    this.sendBotResponse(botName, response);
+                    botConfig.lastResponseTime = Date.now();
+                    this.lastBotResponder = botName;
+                }
+            }, delay);
         }
-    }
-
-    getMentionedBot(messageText) {
-        for (const [botName, botConfig] of this.bots) {
-            const botNameLower = botName.toLowerCase();
-            if (messageText.includes(botNameLower)) {
-                return { name: botName, config: botConfig };
-            }
-        }
-        return null;
     }
 
     selectRespondingBot(availableBots, messageText) {
+        const mentionedBot = this.getMentionedBot(messageText);
+        if (mentionedBot) {
+            const bot = availableBots.find(([name]) => name.toLowerCase() === mentionedBot.toLowerCase());
+            if (bot) return bot;
+        }
+        
         const botsWithResponse = availableBots.filter(([_, config]) => 
-            this.getBotResponse(config, messageText)
+            this.getBotResponse(config, messageText, config.name)
         );
         
         if (botsWithResponse.length === 0) return null;
@@ -165,30 +142,55 @@ class TalkRushBot {
         return botsWithResponse[Math.floor(Math.random() * botsWithResponse.length)];
     }
 
-    getBotResponse(botConfig, messageText) {
-        if (botConfig.triggers.has(messageText)) {
-            return botConfig.triggers.get(messageText);
-        }
-        
-        for (const [trigger, response] of botConfig.triggers) {
-            if (messageText.includes(trigger)) {
-                return response;
+    getMentionedBot(messageText) {
+        const botNames = Array.from(this.bots.keys());
+        for (const botName of botNames) {
+            if (messageText.includes(botName.toLowerCase())) {
+                return botName;
             }
         }
-        
         return null;
     }
 
-    sendDelayedResponse(botName, responseText, botConfig) {
-        const delay = Math.random() * 5000 + 3000;
-        
-        setTimeout(() => {
-            if (this.lastUserMessage === this.lastUserMessage) {
-                this.sendBotResponse(botName, responseText);
-                botConfig.lastResponseTime = Date.now();
-                this.lastBotResponder = botName;
+    getBotResponse(botConfig, messageText, botName) {
+        for (const [trigger, response] of botConfig.triggers) {
+            if (this.isTriggerMatch(trigger, messageText, botName)) {
+                return response;
             }
-        }, delay);
+        }
+        return null;
+    }
+
+    isTriggerMatch(trigger, messageText, botName) {
+        const words = messageText.split(/\s+/);
+        const triggerWords = trigger.split(/\s+/);
+        
+        if (triggerWords.length === 1) {
+            return messageText.includes(trigger);
+        }
+        
+        let matchCount = 0;
+        for (const tWord of triggerWords) {
+            if (words.some(word => this.areWordsSimilar(word, tWord))) {
+                matchCount++;
+            }
+        }
+        
+        return matchCount >= triggerWords.length * 0.6;
+    }
+
+    areWordsSimilar(word1, word2) {
+        if (word1 === word2) return true;
+        if (Math.abs(word1.length - word2.length) > 2) return false;
+        
+        const minLength = Math.min(word1.length, word2.length);
+        let matchCount = 0;
+        
+        for (let i = 0; i < minLength; i++) {
+            if (word1[i] === word2[i]) matchCount++;
+        }
+        
+        return matchCount >= minLength * 0.7;
     }
 
     isBotMessage(message) {
