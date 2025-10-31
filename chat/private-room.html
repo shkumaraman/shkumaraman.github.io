@@ -52,6 +52,10 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
     --share-btn: #25D366;
     --success: #28a745;
     --error: #dc3545;
+    --video-call-btn: #28a745;
+    --video-call-btn-hover: #218838;
+    --end-call-btn: #dc3545;
+    --end-call-btn-hover: #c82333;
 }
 
 * {
@@ -707,6 +711,161 @@ body.light-mode {
     text-align: center;
 }
 
+/* Video Call Styles */
+.video-call-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.9);
+    display: none;
+    flex-direction: column;
+    z-index: 10002;
+}
+
+.video-grid {
+    display: flex;
+    flex: 1;
+    padding: 20px;
+    gap: 10px;
+}
+
+.local-video-container, .remote-video-container {
+    flex: 1;
+    position: relative;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #000;
+}
+
+.video-element {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.video-label {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    background: rgba(0, 0, 0, 0.7);
+    color: white;
+    padding: 5px 10px;
+    border-radius: 5px;
+    font-size: 0.9em;
+}
+
+.video-controls {
+    display: flex;
+    justify-content: center;
+    padding: 20px;
+    gap: 15px;
+}
+
+.video-control-btn {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2em;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.video-control-btn:hover {
+    transform: scale(1.1);
+}
+
+#startVideoCall {
+    background: var(--video-call-btn);
+    color: white;
+}
+
+#startVideoCall:hover {
+    background: var(--video-call-btn-hover);
+}
+
+#endVideoCall {
+    background: var(--end-call-btn);
+    color: white;
+}
+
+#endVideoCall:hover {
+    background: var(--end-call-btn-hover);
+}
+
+.mute-btn, .video-toggle-btn {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+}
+
+.mute-btn:hover, .video-toggle-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.mute-btn.active, .video-toggle-btn.active {
+    background: var(--end-call-btn);
+}
+
+.call-notification {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: var(--dark-msg-bg);
+    color: var(--dark-text);
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+    z-index: 10003;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 15px;
+    max-width: 300px;
+    text-align: center;
+}
+
+.light-mode .call-notification {
+    background: var(--light-msg-bg);
+    color: var(--light-text);
+}
+
+.call-notification-buttons {
+    display: flex;
+    gap: 10px;
+}
+
+.accept-call-btn {
+    background: var(--video-call-btn);
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+.accept-call-btn:hover {
+    background: var(--video-call-btn-hover);
+}
+
+.decline-call-btn {
+    background: var(--end-call-btn);
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+.decline-call-btn:hover {
+    background: var(--end-call-btn-hover);
+}
+
 /* Responsive adjustments */
 @media (max-width: 600px) {
     .msg {
@@ -761,6 +920,20 @@ body.light-mode {
         height: 22px;
         font-size: 0.9em;
     }
+    
+    /* Mobile responsive for video call */
+    .video-grid {
+        flex-direction: column;
+    }
+    
+    .local-video-container, .remote-video-container {
+        height: 50%;
+    }
+    
+    .video-control-btn {
+        width: 50px;
+        height: 50px;
+    }
 }
 </style>
 
@@ -801,6 +974,41 @@ body.light-mode {
     </div>
 </div>
 
+<!-- Video Call Container -->
+<div id="videoCallContainer" class="video-call-container">
+    <div class="video-grid">
+        <div class="local-video-container">
+            <video id="localVideo" class="video-element" autoplay muted></video>
+            <div class="video-label">You</div>
+        </div>
+        <div class="remote-video-container">
+            <video id="remoteVideo" class="video-element" autoplay></video>
+            <div class="video-label">Participant</div>
+        </div>
+    </div>
+    <div class="video-controls">
+        <button id="muteBtn" class="video-control-btn mute-btn" title="Mute Audio">
+            <i class="fas fa-microphone"></i>
+        </button>
+        <button id="videoToggleBtn" class="video-control-btn video-toggle-btn" title="Turn Off Video">
+            <i class="fas fa-video"></i>
+        </button>
+        <button id="endVideoCall" class="video-control-btn" title="End Call">
+            <i class="fas fa-phone-slash"></i>
+        </button>
+    </div>
+</div>
+
+<!-- Call Notification -->
+<div id="callNotification" class="call-notification">
+    <h3>Incoming Video Call</h3>
+    <p>Participant is calling you...</p>
+    <div class="call-notification-buttons">
+        <button id="acceptCallBtn" class="accept-call-btn">Accept</button>
+        <button id="declineCallBtn" class="decline-call-btn">Decline</button>
+    </div>
+</div>
+
 <div class="chat-container">
     <header class="app-header">
 <div class="header-left">
@@ -819,6 +1027,10 @@ body.light-mode {
             <button id="roomBtn" class="share-btn">
                 <i class="fas fa-door-closed"></i>
                 <span>Room</span>
+            </button>
+            <button id="startVideoCall" class="share-btn" title="Start Video Call">
+                <i class="fas fa-video"></i>
+                <span>Video</span>
             </button>
         </div>
     </header>
@@ -878,6 +1090,15 @@ let escTimer = null;
 let currentRoomCode = null;
 let isRoomCreator = false;
 
+// Video call variables
+let localStream = null;
+let remoteStream = null;
+let isInCall = false;
+let isCallActive = false;
+let callMediaConnection = null;
+let isVideoMuted = false;
+let isAudioMuted = false;
+
 // GIPHY API Key
 const GIPHY_API_KEY = 'EKvv5S1CcXqYuHgxPNVKiNuiuNHRTzFk';
 
@@ -892,6 +1113,18 @@ const joinRoomBtn = document.getElementById("joinRoomBtn");
 const copyRoomCodeBtn = document.getElementById("copyRoomCode");
 const joinError = document.getElementById("joinError");
 const roomBtn = document.getElementById("roomBtn");
+
+// Video call elements
+const videoCallContainer = document.getElementById("videoCallContainer");
+const localVideo = document.getElementById("localVideo");
+const remoteVideo = document.getElementById("remoteVideo");
+const startVideoCallBtn = document.getElementById("startVideoCall");
+const endVideoCallBtn = document.getElementById("endVideoCall");
+const muteBtn = document.getElementById("muteBtn");
+const videoToggleBtn = document.getElementById("videoToggleBtn");
+const callNotification = document.getElementById("callNotification");
+const acceptCallBtn = document.getElementById("acceptCallBtn");
+const declineCallBtn = document.getElementById("declineCallBtn");
 
 // Initialize when page loads
 window.addEventListener('load', () => {
@@ -956,6 +1189,7 @@ document.addEventListener('keydown', (e) => {
             clearTimeout(escTimer);
             escPressedOnce = false;
             if (myConn) myConn.close();
+            if (callMediaConnection) callMediaConnection.close();
             cleanUpWaitingList();
             isConnected = false;
             document.getElementById("chatLog").innerHTML = "";
@@ -1058,10 +1292,10 @@ joinRoomBtn.onclick = () => {
             db.ref("rooms/" + code + "/participants").update({
                 [myId]: "active"
             }).then(() => {
-                // Get the first participant to connect to
+                // Find the other participant to connect to
                 const participants = roomData.participants;
-                const firstParticipantId = Object.keys(participants)[0];
-                connectToPeer(firstParticipantId);
+                const otherParticipantId = Object.keys(participants)[0];
+                connectToPeer(otherParticipantId);
                 roomModal.style.display = "none";
                 loadingScreen.style.display = "none";
             });
@@ -1101,17 +1335,20 @@ function autoRejoinRoom() {
                         }
                     });
                 } else {
-                    // I was a participant, try to reconnect to existing participants
-                    db.ref("rooms/" + currentRoomCode + "/participants").update({
-                        [myId]: "active"
-                    }).then(() => {
-                        const participants = roomData.participants;
-                        const firstParticipantId = Object.keys(participants)[0];
-                        if (firstParticipantId && firstParticipantId !== myId) {
-                            connectToPeer(firstParticipantId);
-                        }
+                    // I was a participant, try to reconnect to the other participant
+                    const participants = roomData.participants;
+                    const otherParticipantId = Object.keys(participants).find(id => id !== myId);
+                    if (otherParticipantId) {
+                        db.ref("rooms/" + currentRoomCode + "/participants").update({
+                            [myId]: "active"
+                        }).then(() => {
+                            connectToPeer(otherParticipantId);
+                            loadingScreen.style.display = "none";
+                        });
+                    } else {
                         loadingScreen.style.display = "none";
-                    });
+                        logSystem("Waiting for other participant to join...");
+                    }
                 }
             } else {
                 // Room no longer exists
@@ -1192,6 +1429,9 @@ function startPeer() {
     });
 
     peer.on('connection', handleNewConnection);
+    
+    // Handle incoming media connections (video calls)
+    peer.on('call', handleIncomingCall);
 
     peer.on('error', (err) => {
         console.error('PeerJS error:', err);
@@ -1251,6 +1491,20 @@ function setupConnection(conn) {
             appendGif("stranger", data.url);
         } else if (data.type === "typing") {
             showTypingIndicator();
+        } else if (data.type === "videoCallRequest") {
+            // Handle incoming video call request
+            showIncomingCallNotification();
+        } else if (data.type === "videoCallResponse") {
+            // Handle video call response
+            if (data.accepted) {
+                startVideoCall();
+            } else {
+                logSystem("Video call declined");
+                hideCallNotification();
+            }
+        } else if (data.type === "endVideoCall") {
+            // Handle end video call
+            endVideoCall();
         }
     });
 
@@ -1268,6 +1522,11 @@ function endConnection(message) {
     logSystem(message);
     myConn = null;
     isConnected = false;
+    
+    // End video call if active
+    if (isCallActive) {
+        endVideoCall();
+    }
     
     // Clean up room if we were the creator
     if (isRoomCreator && currentRoomCode) {
@@ -1292,6 +1551,248 @@ function cleanUpWaitingList() {
         });
     }
 }
+
+// ----------------- Video Call Functions -----------------
+// Request a video call
+startVideoCallBtn.onclick = () => {
+    if (!isConnected) {
+        logSystem("You need to be connected to a participant to start a video call");
+        return;
+    }
+    
+    if (isCallActive) {
+        logSystem("Video call is already active");
+        return;
+    }
+    
+    // Send video call request
+    myConn.send({
+        type: "videoCallRequest"
+    });
+    
+    logSystem("Requesting video call...");
+};
+
+// Handle incoming call
+function handleIncomingCall(call) {
+    if (isCallActive) {
+        call.close();
+        return;
+    }
+    
+    callMediaConnection = call;
+    showIncomingCallNotification();
+    
+    // Set up answer button
+    acceptCallBtn.onclick = () => {
+        hideCallNotification();
+        answerCall(call);
+    };
+    
+    // Set up decline button
+    declineCallBtn.onclick = () => {
+        hideCallNotification();
+        declineCall(call);
+    };
+}
+
+// Show incoming call notification
+function showIncomingCallNotification() {
+    callNotification.style.display = "flex";
+}
+
+// Hide incoming call notification
+function hideCallNotification() {
+    callNotification.style.display = "none";
+}
+
+// Answer an incoming call
+async function answerCall(call) {
+    try {
+        // Get local media stream
+        localStream = await navigator.mediaDevices.getUserMedia({ 
+            video: true, 
+            audio: true 
+        });
+        
+        // Answer the call with our stream
+        call.answer(localStream);
+        
+        // Set up call events
+        call.on('stream', (remoteStream) => {
+            remoteVideo.srcObject = remoteStream;
+            isCallActive = true;
+            videoCallContainer.style.display = "flex";
+            logSystem("Video call started");
+        });
+        
+        call.on('close', () => {
+            endVideoCall();
+        });
+        
+        call.on('error', (err) => {
+            console.error("Call error:", err);
+            endVideoCall();
+        });
+        
+        // Send response to other participant
+        if (myConn) {
+            myConn.send({
+                type: "videoCallResponse",
+                accepted: true
+            });
+        }
+    } catch (error) {
+        console.error("Error answering call:", error);
+        logSystem("Failed to start video call. Please check your camera and microphone permissions.");
+        
+        // Send decline response
+        if (myConn) {
+            myConn.send({
+                type: "videoCallResponse",
+                accepted: false
+            });
+        }
+    }
+}
+
+// Decline an incoming call
+function declineCall(call) {
+    call.close();
+    
+    // Send response to other participant
+    if (myConn) {
+        myConn.send({
+            type: "videoCallResponse",
+            accepted: false
+        });
+    }
+    
+    logSystem("Video call declined");
+}
+
+// Start a video call (initiator)
+async function startVideoCall() {
+    try {
+        // Get local media stream
+        localStream = await navigator.mediaDevices.getUserMedia({ 
+            video: true, 
+            audio: true 
+        });
+        
+        // Call the other participant
+        callMediaConnection = peer.call(myConn.peer, localStream);
+        
+        // Set up call events
+        callMediaConnection.on('stream', (remoteStream) => {
+            remoteVideo.srcObject = remoteStream;
+            isCallActive = true;
+            videoCallContainer.style.display = "flex";
+            logSystem("Video call started");
+        });
+        
+        callMediaConnection.on('close', () => {
+            endVideoCall();
+        });
+        
+        callMediaConnection.on('error', (err) => {
+            console.error("Call error:", err);
+            endVideoCall();
+        });
+    } catch (error) {
+        console.error("Error starting call:", error);
+        logSystem("Failed to start video call. Please check your camera and microphone permissions.");
+        
+        // Send end call notification
+        if (myConn) {
+            myConn.send({
+                type: "endVideoCall"
+            });
+        }
+    }
+}
+
+// End video call
+function endVideoCall() {
+    if (callMediaConnection) {
+        callMediaConnection.close();
+        callMediaConnection = null;
+    }
+    
+    if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+        localStream = null;
+    }
+    
+    if (remoteVideo.srcObject) {
+        remoteVideo.srcObject = null;
+    }
+    
+    if (localVideo.srcObject) {
+        localVideo.srcObject = null;
+    }
+    
+    isCallActive = false;
+    videoCallContainer.style.display = "none";
+    
+    // Reset mute and video toggle buttons
+    isAudioMuted = false;
+    isVideoMuted = false;
+    muteBtn.classList.remove("active");
+    videoToggleBtn.classList.remove("active");
+    muteBtn.innerHTML = '<i class="fas fa-microphone"></i>';
+    videoToggleBtn.innerHTML = '<i class="fas fa-video"></i>';
+    
+    // Send end call notification to other participant
+    if (myConn) {
+        myConn.send({
+            type: "endVideoCall"
+        });
+    }
+    
+    logSystem("Video call ended");
+}
+
+// End video call button
+endVideoCallBtn.onclick = endVideoCall;
+
+// Mute/unmute audio
+muteBtn.onclick = () => {
+    if (!localStream) return;
+    
+    const audioTracks = localStream.getAudioTracks();
+    if (audioTracks.length > 0) {
+        isAudioMuted = !isAudioMuted;
+        audioTracks[0].enabled = !isAudioMuted;
+        
+        if (isAudioMuted) {
+            muteBtn.classList.add("active");
+            muteBtn.innerHTML = '<i class="fas fa-microphone-slash"></i>';
+        } else {
+            muteBtn.classList.remove("active");
+            muteBtn.innerHTML = '<i class="fas fa-microphone"></i>';
+        }
+    }
+};
+
+// Toggle video on/off
+videoToggleBtn.onclick = () => {
+    if (!localStream) return;
+    
+    const videoTracks = localStream.getVideoTracks();
+    if (videoTracks.length > 0) {
+        isVideoMuted = !isVideoMuted;
+        videoTracks[0].enabled = !isVideoMuted;
+        
+        if (isVideoMuted) {
+            videoToggleBtn.classList.add("active");
+            videoToggleBtn.innerHTML = '<i class="fas fa-video-slash"></i>';
+        } else {
+            videoToggleBtn.classList.remove("active");
+            videoToggleBtn.innerHTML = '<i class="fas fa-video"></i>';
+        }
+    }
+};
 
 // ----------------- UI functions -----------------
 function appendMessage(sender, msg) {
@@ -1415,6 +1916,7 @@ document.getElementById("gifInput").addEventListener("change", (e) => {
 
 document.getElementById("skipBtn").onclick = () => {
     if (myConn) myConn.close();
+    if (callMediaConnection) callMediaConnection.close();
     cleanUpWaitingList();
     isConnected = false;
     
