@@ -993,7 +993,6 @@ createRoomBtn.onclick = () => {
     
     // Save room to Firebase with participants node
     db.ref("rooms/" + code).set({
-        creator: myId,
         createdAt: firebase.database.ServerValue.TIMESTAMP,
         participants: {
             [myId]: "active"
@@ -1059,8 +1058,10 @@ joinRoomBtn.onclick = () => {
             db.ref("rooms/" + code + "/participants").update({
                 [myId]: "active"
             }).then(() => {
-                // Try to connect to the room creator
-                connectToPeer(roomData.creator);
+                // Get the first participant to connect to
+                const participants = roomData.participants;
+                const firstParticipantId = Object.keys(participants)[0];
+                connectToPeer(firstParticipantId);
                 roomModal.style.display = "none";
                 loadingScreen.style.display = "none";
             });
@@ -1100,11 +1101,15 @@ function autoRejoinRoom() {
                         }
                     });
                 } else {
-                    // I was a participant, try to reconnect to creator
+                    // I was a participant, try to reconnect to existing participants
                     db.ref("rooms/" + currentRoomCode + "/participants").update({
                         [myId]: "active"
                     }).then(() => {
-                        connectToPeer(roomData.creator);
+                        const participants = roomData.participants;
+                        const firstParticipantId = Object.keys(participants)[0];
+                        if (firstParticipantId && firstParticipantId !== myId) {
+                            connectToPeer(firstParticipantId);
+                        }
                         loadingScreen.style.display = "none";
                     });
                 }
