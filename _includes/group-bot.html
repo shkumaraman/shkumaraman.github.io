@@ -1,5 +1,5 @@
 <script>
-  class TalkRushBot {
+class TalkRushBot {
     constructor() {
         this.bots = new Map();
         this.isInitialized = false;
@@ -12,13 +12,13 @@
 
     async initialize() {
         if (this.isInitialized) return;
-        
         try {
             await this.loadBotConfig();
             this.setupBotListener();
             this.isInitialized = true;
+            console.log("🤖 TalkRushBot initialized");
         } catch (error) {
-            console.error("Bot initialization failed");
+            console.error("Bot initialization failed:", error);
         }
     }
 
@@ -28,7 +28,7 @@
             const text = await response.text();
             this.parseBotConfig(text);
         } catch (error) {
-            console.error("Bot config load failed");
+            console.error("❌ Bot config load failed:", error);
         }
     }
 
@@ -38,16 +38,14 @@
         let currentBotConfig = null;
 
         for (const line of lines) {
-            const trimmedLine = line.trim();
-            
-            if (!trimmedLine) continue;
-            
-            if (trimmedLine.startsWith('#')) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+
+            if (trimmed.startsWith('#')) {
                 if (currentBot && currentBotConfig) {
                     this.bots.set(currentBot, currentBotConfig);
                 }
-                
-                const botName = trimmedLine.substring(1).trim();
+                const botName = trimmed.substring(1).trim();
                 currentBot = botName;
                 currentBotConfig = {
                     name: botName,
@@ -55,20 +53,17 @@
                     cooldown: 8000,
                     lastResponseTime: 0
                 };
-            } 
-            else if (currentBotConfig && trimmedLine.includes('-')) {
-                const parts = trimmedLine.split('-');
+            } else if (currentBotConfig && trimmed.includes('-')) {
+                const parts = trimmed.split('-');
                 if (parts.length >= 2) {
-                    const trigger = parts[0].trim().toLowerCase();
+                    const trigger = this.normalizeText(parts[0]);
                     const response = parts.slice(1).join('-').trim();
-                    
                     if (trigger && response) {
                         currentBotConfig.triggers.set(trigger, response);
                     }
                 }
             }
         }
-        
         if (currentBot && currentBotConfig) {
             this.bots.set(currentBot, currentBotConfig);
         }
@@ -76,48 +71,41 @@
 
     setupBotListener() {
         this.currentGroup = this.getGroupFromURL();
-        
         this.botMessagesRef = firebase.database().ref(`groups/${this.currentGroup}/messages`).orderByChild("timestamp");
-        
+
+        this.lastProcessedTimestamp = Date.now();
+
         this.botMessagesRef.on('child_added', (snapshot) => {
             const message = snapshot.val();
-            
-            // Only process new messages (after bot initialization)
             if (message.timestamp > this.lastProcessedTimestamp) {
                 this.processMessage(message);
             }
         });
-        
-        // Set initial timestamp to current time
-        this.lastProcessedTimestamp = Date.now();
     }
 
     processMessage(message) {
         if (this.isBotMessage(message)) return;
         if (!message.text || message.text.trim() === '') return;
-        
-        const messageText = message.text.toLowerCase().trim();
-        
-        // Skip if same message was just processed
+
+        const messageText = this.normalizeText(message.text);
         if (this.lastUserMessage === messageText) return;
+
         this.lastUserMessage = messageText;
-        
-        const availableBots = Array.from(this.bots.entries()).filter(([_, config]) => {
-            const now = Date.now();
-            return now - config.lastResponseTime >= config.cooldown;
+
+        const availableBots = Array.from(this.bots.entries()).filter(([_, cfg]) => {
+            return Date.now() - cfg.lastResponseTime >= cfg.cooldown;
         });
-        
+
         if (availableBots.length === 0) return;
-        
+
         const respondingBot = this.selectRespondingBot(availableBots, messageText);
         if (!respondingBot) return;
-        
+
         const [botName, botConfig] = respondingBot;
-        const response = this.getBotResponse(botConfig, messageText, botName);
-        
+        const response = this.getBotResponse(botConfig, messageText);
+
         if (response) {
-            const delay = Math.random() * 5000 + 3000;
-            
+            const delay = Math.random() * 4000 + 2000; // 2–6 sec delay
             setTimeout(() => {
                 if (this.lastUserMessage === messageText) {
                     this.sendBotResponse(botName, response);
@@ -135,20 +123,18 @@
             const bot = availableBots.find(([name]) => name.toLowerCase() === mentionedBot.toLowerCase());
             if (bot) return bot;
         }
-        
-        const botsWithResponse = availableBots.filter(([_, config]) => 
-            this.getBotResponse(config, messageText, config.name)
+
+        const botsWithResponse = availableBots.filter(([_, cfg]) =>
+            this.getBotResponse(cfg, messageText)
         );
-        
         if (botsWithResponse.length === 0) return null;
-        
+
         if (this.lastBotResponder) {
-            const otherBots = botsWithResponse.filter(([name]) => name !== this.lastBotResponder);
-            if (otherBots.length > 0) {
-                return otherBots[Math.floor(Math.random() * otherBots.length)];
+            const others = botsWithResponse.filter(([n]) => n !== this.lastBotResponder);
+            if (others.length > 0) {
+                return others[Math.floor(Math.random() * others.length)];
             }
         }
-        
         return botsWithResponse[Math.floor(Math.random() * botsWithResponse.length)];
     }
 
@@ -162,62 +148,65 @@
         return null;
     }
 
-    getBotResponse(botConfig, messageText, botName) {
+    getBotResponse(botConfig, messageText) {
         for (const [trigger, response] of botConfig.triggers) {
-            if (this.isTriggerMatch(trigger, messageText, botName)) {
+            if (this.isTriggerMatch(trigger, messageText)) {
                 return response;
             }
         }
         return null;
     }
 
-    isTriggerMatch(trigger, messageText, botName) {
-        const words = messageText.split(/\s+/);
+    // --- SMART LOGIC ---
+
+    normalizeText(text) {
+        return text
+            .toLowerCase()
+            .replace(/[^\p{L}\p{N}\s]/gu, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    isTriggerMatch(trigger, messageText) {
         const triggerWords = trigger.split(/\s+/);
-        
-        if (triggerWords.length === 1) {
-            return messageText.includes(trigger);
-        }
-        
+        const msgWords = messageText.split(/\s+/);
+
         let matchCount = 0;
-        for (const tWord of triggerWords) {
-            if (words.some(word => this.areWordsSimilar(word, tWord))) {
+        for (const t of triggerWords) {
+            if (msgWords.some(m => this.areWordsSimilar(m, t))) {
                 matchCount++;
             }
         }
-        
         return matchCount >= triggerWords.length * 0.6;
     }
 
-    areWordsSimilar(word1, word2) {
-        if (word1 === word2) return true;
-        if (Math.abs(word1.length - word2.length) > 2) return false;
-        
-        const minLength = Math.min(word1.length, word2.length);
-        let matchCount = 0;
-        
-        for (let i = 0; i < minLength; i++) {
-            if (word1[i] === word2[i]) matchCount++;
+    areWordsSimilar(a, b) {
+        if (a === b) return true;
+        if (Math.abs(a.length - b.length) > 2) return false;
+        let matches = 0;
+        for (let i = 0; i < Math.min(a.length, b.length); i++) {
+            if (a[i] === b[i]) matches++;
         }
-        
-        return matchCount >= minLength * 0.7;
+        const ratio = matches / Math.max(a.length, b.length);
+        return ratio > 0.7;
     }
 
+    // --- FIREBASE MESSAGE HANDLING ---
+
     isBotMessage(message) {
-        if (!message.nickname) return false;
-        return this.bots.has(message.nickname);
+        return message.nickname && this.bots.has(message.nickname);
     }
 
     sendBotResponse(botName, responseText) {
         const timestamp = Date.now();
         const message = {
             text: responseText,
-            timestamp: timestamp,
+            timestamp,
             nickname: botName
         };
-        
         const newMsgRef = firebase.database().ref(`groups/${this.currentGroup}/messages`).push();
         newMsgRef.set(message);
+        console.log(`🤖 ${botName}: ${responseText}`);
     }
 
     getGroupFromURL() {
@@ -232,5 +221,5 @@ window.addEventListener('load', () => {
     setTimeout(() => {
         window.talkRushBot.initialize();
     }, 2000);
-});      
+});
 </script>
