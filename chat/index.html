@@ -880,9 +880,13 @@ document.addEventListener('keydown', (e) => {
 const startPeer = () => {
   clearSystemMessage();
   isConnected = false;
-  if (peer) peer.destroy();
+  if (peer) {
+    peer.destroy();
+    peer = null;
+  }
   logSystem("🔍 Looking for a stranger...");
   
+  // Initialize new Peer instance
   peer = new Peer({
     config: {
       iceServers: [
@@ -897,10 +901,14 @@ const startPeer = () => {
 
   peer.on('open', (id) => {
     myId = id;
+    console.log("My Peer ID:", id);
     tryToFindMatch();
   });
 
-  peer.on('connection', handleNewConnection);
+  peer.on('connection', (conn) => {
+    console.log("Incoming connection received");
+    handleNewConnection(conn);
+  });
 
   peer.on('error', (err) => {
     console.error('PeerJS error:', err);
@@ -948,7 +956,7 @@ const tryToFindMatch = async () => {
       return;
     }
 
-    // No immediate match → add self
+    // No immediate match → add self to waiting list
     const newRef = waitingRef.push();
     waitingEntryRef = newRef; // Store reference for cleanup
     await newRef.set({
@@ -957,6 +965,8 @@ const tryToFindMatch = async () => {
       tags: myTags,
       timestamp: Date.now() // Add timestamp for stale entry cleanup
     });
+
+    console.log("Added to waiting list with ID:", myId);
 
     // Start heartbeat to keep entry fresh
     if (heartbeatInterval) clearInterval(heartbeatInterval);
@@ -969,17 +979,25 @@ const tryToFindMatch = async () => {
     // Wait 5s, fallback to any gender-compatible user
     setTimeout(async () => {
       if (!isConnected) {
+        console.log("5 second timeout - trying fallback match");
         const snap = await waitingRef.once('value');
         if (isConnected) return; // Check again if connected
         
+        let foundMatch = false;
         snap.forEach(child => {
+          if (foundMatch) return;
+          
           const entry = child.val();
           if (entry.id !== myId && isGenderCompatible(myGenderInterest, entry.interest)) {
             child.ref.remove();
             connectToPeer(entry.id, []);
-            return true; // Break the loop
+            foundMatch = true;
           }
         });
+        
+        if (!foundMatch) {
+          logSystem("Still searching for a match...");
+        }
       }
     }, 5000);
   } catch (error) {
@@ -993,15 +1011,24 @@ const connectToPeer = (otherId, sharedTags = []) => {
   if (isConnected) return;
   clearSystemMessage();
   logSystem("😍 Connecting to stranger...");
-  const conn = peer.connect(otherId);
-  conn.on("open", () => handleNewConnection(conn, sharedTags));
-  conn.on("error", (err) => {
-    console.error("Connection error:", err);
-    if (!isConnected) {
-      showNewChatButton();
-      logSystem("Failed to connect. Click 'Start New Chat' to try again.");
-    }
-  });
+  
+  try {
+    const conn = peer.connect(otherId, { reliable: true });
+    conn.on("open", () => {
+      console.log("Connection opened to peer:", otherId);
+      handleNewConnection(conn, sharedTags);
+    });
+    conn.on("error", (err) => {
+      console.error("Connection error:", err);
+      if (!isConnected) {
+        showNewChatButton();
+        logSystem("Failed to connect. Click 'Start New Chat' to try again.");
+      }
+    });
+  } catch (error) {
+    console.error("Error creating connection:", error);
+    logSystem("Connection failed. Please try again.");
+  }
 };
 
 const handleNewConnection = (conn, sharedTags = []) => {
@@ -1009,6 +1036,7 @@ const handleNewConnection = (conn, sharedTags = []) => {
     conn.close(); 
     return;
   }
+  
   clearSystemMessage();
   logSystem("Stranger Connected! Say Hi 👋");
 
@@ -1045,6 +1073,7 @@ const setupConnection = (conn) => {
   });
 
   conn.on("close", () => {
+    console.log("Connection closed");
     endConnection("Stranger disconnected! 💔");
   });
 
@@ -1063,7 +1092,11 @@ const endConnection = (message) => {
 
 const cleanUpWaitingList = async () => {
   if (waitingEntryRef) {
-    await waitingEntryRef.remove();
+    try {
+      await waitingEntryRef.remove();
+    } catch (error) {
+      console.error("Error cleaning up waiting list:", error);
+    }
     waitingEntryRef = null;
   }
   if (heartbeatInterval) {
@@ -1073,7 +1106,7 @@ const cleanUpWaitingList = async () => {
 };
 
 const isGenderCompatible = (me, other) => {
-  if (me === "everyone" && other === "everyone") return true; // only everyone ↔ everyone
+  if (me === "everyone" && other === "everyone") return true;
   if (me === "male" && other === "female") return true;
   if (me === "female" && other === "male") return true;
   return false;
@@ -1196,13 +1229,31 @@ document.getElementById("skipBtn").onclick = () => {
   if (myConn) myConn.close();
   cleanUpWaitingList();
   isConnected = false;
-  logSystem("Chat ended. Starting new search...");
+  document.getElementById("chatLog").innerHTML = "";
+  logSystem("Chat ended. Click 'Start New Chat' to begin new chat.");
   showNewChatButton();
 };
 
+// FIXED: Start New Chat button functionality
 document.getElementById("newChatBtn").onclick = () => {
+  console.log("Start New Chat button clicked");
   document.getElementById("chatLog").innerHTML = "";
   hideNewChatButton();
+  
+  // Clean up any existing connections
+  if (myConn) {
+    myConn.close();
+    myConn = null;
+  }
+  if (peer) {
+    peer.destroy();
+    peer = null;
+  }
+  
+  cleanUpWaitingList();
+  isConnected = false;
+  
+  // Start new peer connection
   startPeer();
 };
 
