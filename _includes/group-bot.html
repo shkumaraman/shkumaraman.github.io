@@ -23,13 +23,9 @@ class TalkRushBot {
     }
 
     async loadBotConfig() {
-        try {
-            const response = await fetch('bot.txt');
-            const text = await response.text();
-            this.parseBotConfig(text);
-        } catch (error) {
-            console.error("❌ Bot config load failed:", error);
-        }
+        const response = await fetch('bot.txt');
+        const text = await response.text();
+        this.parseBotConfig(text);
     }
 
     parseBotConfig(configText) {
@@ -49,7 +45,7 @@ class TalkRushBot {
                 currentBot = botName;
                 currentBotConfig = {
                     name: botName,
-                    triggers: new Map(),
+                    triggers: [],
                     cooldown: 8000,
                     lastResponseTime: 0
                 };
@@ -58,9 +54,7 @@ class TalkRushBot {
                 if (parts.length >= 2) {
                     const trigger = this.normalizeText(parts[0]);
                     const response = parts.slice(1).join('-').trim();
-                    if (trigger && response) {
-                        currentBotConfig.triggers.set(trigger, response);
-                    }
+                    currentBotConfig.triggers.push({ trigger, response });
                 }
             }
         }
@@ -71,7 +65,9 @@ class TalkRushBot {
 
     setupBotListener() {
         this.currentGroup = this.getGroupFromURL();
-        this.botMessagesRef = firebase.database().ref(`groups/${this.currentGroup}/messages`).orderByChild("timestamp");
+        this.botMessagesRef = firebase.database()
+            .ref(`groups/${this.currentGroup}/messages`)
+            .orderByChild("timestamp");
 
         this.lastProcessedTimestamp = Date.now();
 
@@ -92,9 +88,9 @@ class TalkRushBot {
 
         this.lastUserMessage = messageText;
 
-        const availableBots = Array.from(this.bots.entries()).filter(([_, cfg]) => {
-            return Date.now() - cfg.lastResponseTime >= cfg.cooldown;
-        });
+        const availableBots = Array.from(this.bots.entries()).filter(([_, cfg]) =>
+            Date.now() - cfg.lastResponseTime >= cfg.cooldown
+        );
 
         if (availableBots.length === 0) return;
 
@@ -102,10 +98,10 @@ class TalkRushBot {
         if (!respondingBot) return;
 
         const [botName, botConfig] = respondingBot;
-        const response = this.getBotResponse(botConfig, messageText);
+        const response = this.getSmartResponse(botConfig, messageText);
 
         if (response) {
-            const delay = Math.random() * 4000 + 2000; // 2–6 sec delay
+            const delay = Math.random() * 4000 + 2000;
             setTimeout(() => {
                 if (this.lastUserMessage === messageText) {
                     this.sendBotResponse(botName, response);
@@ -125,7 +121,7 @@ class TalkRushBot {
         }
 
         const botsWithResponse = availableBots.filter(([_, cfg]) =>
-            this.getBotResponse(cfg, messageText)
+            this.getSmartResponse(cfg, messageText)
         );
         if (botsWithResponse.length === 0) return null;
 
@@ -148,36 +144,46 @@ class TalkRushBot {
         return null;
     }
 
-    getBotResponse(botConfig, messageText) {
-        for (const [trigger, response] of botConfig.triggers) {
-            if (this.isTriggerMatch(trigger, messageText)) {
-                return response;
+    // --- SMARTER LOGIC ---
+    getSmartResponse(botConfig, messageText) {
+        let bestMatch = null;
+        let bestScore = 0;
+
+        for (const { trigger, response } of botConfig.triggers) {
+            const score = this.calculateSimilarity(messageText, trigger);
+            if (score > bestScore) {
+                bestScore = score;
+                bestMatch = response;
             }
+        }
+
+        // Only respond if similarity is strong enough
+        if (bestScore >= 0.6) {
+            return bestMatch;
         }
         return null;
     }
 
-    // --- SMART LOGIC ---
+    calculateSimilarity(textA, textB) {
+        const wordsA = this.normalizeText(textA).split(/\s+/);
+        const wordsB = this.normalizeText(textB).split(/\s+/);
+
+        let matches = 0;
+        for (const a of wordsA) {
+            if (wordsB.some(b => this.areWordsSimilar(a, b))) {
+                matches++;
+            }
+        }
+        const ratioA = matches / wordsA.length;
+        const ratioB = matches / wordsB.length;
+        return (ratioA + ratioB) / 2;
+    }
 
     normalizeText(text) {
-        return text
-            .toLowerCase()
+        return text.toLowerCase()
             .replace(/[^\p{L}\p{N}\s]/gu, '')
             .replace(/\s+/g, ' ')
             .trim();
-    }
-
-    isTriggerMatch(trigger, messageText) {
-        const triggerWords = trigger.split(/\s+/);
-        const msgWords = messageText.split(/\s+/);
-
-        let matchCount = 0;
-        for (const t of triggerWords) {
-            if (msgWords.some(m => this.areWordsSimilar(m, t))) {
-                matchCount++;
-            }
-        }
-        return matchCount >= triggerWords.length * 0.6;
     }
 
     areWordsSimilar(a, b) {
@@ -187,12 +193,10 @@ class TalkRushBot {
         for (let i = 0; i < Math.min(a.length, b.length); i++) {
             if (a[i] === b[i]) matches++;
         }
-        const ratio = matches / Math.max(a.length, b.length);
-        return ratio > 0.7;
+        return (matches / Math.max(a.length, b.length)) > 0.75;
     }
 
-    // --- FIREBASE MESSAGE HANDLING ---
-
+    // --- FIREBASE SEND ---
     isBotMessage(message) {
         return message.nickname && this.bots.has(message.nickname);
     }
@@ -204,8 +208,7 @@ class TalkRushBot {
             timestamp,
             nickname: botName
         };
-        const newMsgRef = firebase.database().ref(`groups/${this.currentGroup}/messages`).push();
-        newMsgRef.set(message);
+        firebase.database().ref(`groups/${this.currentGroup}/messages`).push().set(message);
         console.log(`🤖 ${botName}: ${responseText}`);
     }
 
