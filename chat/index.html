@@ -916,11 +916,10 @@ const startPeer = () => {
   });
 };
 
-const tryToFindMatch = async () => {
+const tryToFindMatch = () => {
   waitingRef = db.ref("waiting");
 
-  try {
-    const snapshot = await waitingRef.once('value');
+  waitingRef.once('value', (snapshot) => {
     const list = snapshot.val();
     let bestMatch = null;
 
@@ -928,7 +927,7 @@ const tryToFindMatch = async () => {
       for (const [key, entry] of Object.entries(list)) {
         // Clean up stale entries (older than 30 seconds)
         if (entry.timestamp && (Date.now() - entry.timestamp) > 30000) {
-          await db.ref(`waiting/${key}`).remove();
+          db.ref(`waiting/${key}`).remove();
           continue;
         }
         
@@ -947,7 +946,7 @@ const tryToFindMatch = async () => {
     }
 
     if (bestMatch) {
-      await db.ref(`waiting/${bestMatch.key}`).remove();
+      db.ref(`waiting/${bestMatch.key}`).remove();
       connectToPeer(bestMatch.otherId, bestMatch.sharedTags);
       return;
     }
@@ -955,7 +954,7 @@ const tryToFindMatch = async () => {
     // No immediate match → add self
     const newRef = waitingRef.push();
     waitingEntryRef = newRef; // Store reference for cleanup
-    await newRef.set({
+    newRef.set({
       id: myId,
       interest: myGenderInterest,
       tags: myTags,
@@ -964,35 +963,30 @@ const tryToFindMatch = async () => {
 
     // Start heartbeat to keep entry fresh
     if (heartbeatInterval) clearInterval(heartbeatInterval);
-    heartbeatInterval = setInterval(async () => {
+    heartbeatInterval = setInterval(() => {
       if (waitingEntryRef && !isConnected) {
-        await waitingEntryRef.update({ timestamp: Date.now() });
+        waitingEntryRef.update({ timestamp: Date.now() });
       }
     }, 10000);
 
     // Wait 5s, fallback to any gender-compatible user
-    setTimeout(async () => {
+    setTimeout(() => {
       if (!isConnected) {
-        const snap = await waitingRef.once('value');
-        if (isConnected) return; // Check again if connected
-        
-        snap.forEach(child => {
-          const entry = child.val();
-          if (entry.id !== myId && isGenderCompatible(myGenderInterest, entry.interest)) {
-            child.ref.remove();
-            connectToPeer(entry.id, []);
-            return true; // Break the loop
-          }
+        waitingRef.once('value', (snap) => {
+          if (isConnected) return; // Check again if connected
+          
+          snap.forEach(child => {
+            const entry = child.val();
+            if (entry.id !== myId && isGenderCompatible(myGenderInterest, entry.interest)) {
+              child.ref.remove();
+              connectToPeer(entry.id, []);
+              return true; // Break the loop
+            }
+          });
         });
       }
     }, 5000);
-  } catch (error) {
-    console.error('Error finding match:', error);
-    if (!isConnected) {
-      showNewChatButton();
-      logSystem("Error finding match. Click 'Start New Chat' to try again.");
-    }
-  }
+  });
 };
 
 const connectToPeer = (otherId, sharedTags = []) => {
@@ -1067,9 +1061,9 @@ const endConnection = (message) => {
   showNewChatButton();
 };
 
-const cleanUpWaitingList = async () => {
+const cleanUpWaitingList = () => {
   if (waitingEntryRef) {
-    await waitingEntryRef.remove();
+    waitingEntryRef.remove();
     waitingEntryRef = null;
   }
   if (heartbeatInterval) {
