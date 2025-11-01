@@ -58,6 +58,7 @@ class TalkRushBot {
                 }
             }
         }
+
         if (currentBot && currentBotConfig) {
             this.bots.set(currentBot, currentBotConfig);
         }
@@ -98,7 +99,7 @@ class TalkRushBot {
         if (!respondingBot) return;
 
         const [botName, botConfig] = respondingBot;
-        const response = this.getSmartResponse(botConfig, messageText);
+        const response = this.getPrioritySmartResponse(botConfig, messageText);
 
         if (response) {
             const delay = Math.random() * 4000 + 2000;
@@ -121,7 +122,7 @@ class TalkRushBot {
         }
 
         const botsWithResponse = availableBots.filter(([_, cfg]) =>
-            this.getSmartResponse(cfg, messageText)
+            this.getPrioritySmartResponse(cfg, messageText)
         );
         if (botsWithResponse.length === 0) return null;
 
@@ -144,26 +145,59 @@ class TalkRushBot {
         return null;
     }
 
-    // --- SMARTER LOGIC ---
-    getSmartResponse(botConfig, messageText) {
+    // --- NEW SMART PRIORITY LOGIC (3-word → 2-word → 1-word fallback) ---
+    getPrioritySmartResponse(botConfig, messageText) {
+        const normalizedMsg = this.normalizeText(messageText);
+        const words = normalizedMsg.split(' ');
+
+        // Generate phrase chunks of length 3, 2, and 1 (priority order)
+        const phraseLevels = [
+            this.extractPhrases(words, 3),
+            this.extractPhrases(words, 2),
+            this.extractPhrases(words, 1)
+        ];
+
+        // Level-wise priority check
+        for (const levelPhrases of phraseLevels) {
+            for (const phrase of levelPhrases) {
+                for (const { trigger, response } of botConfig.triggers) {
+                    const score = this.calculateSimilarity(phrase, trigger);
+                    if (score >= 0.85) {
+                        return response;
+                    }
+                }
+            }
+        }
+
+        // fallback to normal fuzzy match
+        return this.getFallbackResponse(botConfig, normalizedMsg);
+    }
+
+    extractPhrases(words, size) {
+        if (words.length < size) return [];
+        const phrases = [];
+        for (let i = 0; i <= words.length - size; i++) {
+            phrases.push(words.slice(i, i + size).join(' '));
+        }
+        return phrases;
+    }
+
+    getFallbackResponse(botConfig, msg) {
         let bestMatch = null;
         let bestScore = 0;
 
         for (const { trigger, response } of botConfig.triggers) {
-            const score = this.calculateSimilarity(messageText, trigger);
+            const score = this.calculateSimilarity(msg, trigger);
             if (score > bestScore) {
                 bestScore = score;
                 bestMatch = response;
             }
         }
 
-        // Only respond if similarity is strong enough
-        if (bestScore >= 0.6) {
-            return bestMatch;
-        }
-        return null;
+        return bestScore >= 0.6 ? bestMatch : null;
     }
 
+    // --- TEXT SIMILARITY HELPERS ---
     calculateSimilarity(textA, textB) {
         const wordsA = this.normalizeText(textA).split(/\s+/);
         const wordsB = this.normalizeText(textB).split(/\s+/);
