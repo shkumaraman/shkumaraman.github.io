@@ -1112,7 +1112,7 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
-let peer, myConn, myId, waitingRef;
+let peer, myConn, myId;
 let currentSystemMessage = null;
 let isConnected = false;
 let escPressedOnce = false;
@@ -1188,9 +1188,8 @@ function loadFromStorage() {
         const roomData = JSON.parse(savedData);
         currentRoomCode = roomData.roomCode;
         isRoomCreator = roomData.isRoomCreator;
-        myId = roomData.peerId; // Store peer ID for reconnection
+        myId = roomData.peerId;
         
-        // If we have a room code, show it in the input
         if (currentRoomCode) {
             roomCodeInput.value = currentRoomCode;
         }
@@ -1227,11 +1226,7 @@ document.addEventListener('keydown', (e) => {
         } else {
             clearTimeout(escTimer);
             escPressedOnce = false;
-            if (myConn) myConn.close();
-            cleanUpWaitingList();
-            isConnected = false;
-            document.getElementById("chatLog").innerHTML = "";
-            startPeer();
+            destroyRoom();
         }
     }
 });
@@ -1242,7 +1237,6 @@ roomBtn.onclick = () => {
         roomModal.style.display = "none";
     } else {
         roomModal.style.display = "block";
-        // Load saved room code if exists
         if (currentRoomCode) {
             roomCodeInput.value = currentRoomCode;
         }
@@ -1259,11 +1253,9 @@ createRoomBtn.onclick = () => {
     const code = generateRoomCode();
     roomCodeDisplay.textContent = code;
     
-    // Show loading screen
     loadingScreen.style.display = "flex";
     loadingText.textContent = "Creating room...";
     
-    // Save room to Firebase with participants node
     db.ref("rooms/" + code).set({
         creator: myId,
         createdAt: firebase.database.ServerValue.TIMESTAMP,
@@ -1273,20 +1265,14 @@ createRoomBtn.onclick = () => {
     }).then(() => {
         currentRoomCode = code;
         isRoomCreator = true;
-        
-        // Save to localStorage
         saveToStorage();
         
         logSystem(`Room created with code: ${code}. Share this code with someone to chat.`);
         roomModal.style.display = "none";
-        
-        // Hide loading screen
         loadingScreen.style.display = "none";
         
-        // Listen for participants joining
         db.ref("rooms/" + code + "/participants").on("child_added", (snapshot) => {
             if (snapshot.key !== myId) {
-                // Another participant joined, connect to them
                 connectToPeer(snapshot.key);
             }
         });
@@ -1305,16 +1291,13 @@ joinRoomBtn.onclick = () => {
         return;
     }
     
-    // Show loading screen
     loadingScreen.style.display = "flex";
     loadingText.textContent = "Joining room...";
     
-    // Check if room exists
     db.ref("rooms/" + code).once('value').then((snapshot) => {
         if (snapshot.exists()) {
             const roomData = snapshot.val();
             
-            // Check if room already has 2 participants
             if (roomData.participants && Object.keys(roomData.participants).length >= 2) {
                 loadingScreen.style.display = "none";
                 showJoinError("Room is full. Only 2 participants allowed.");
@@ -1323,15 +1306,11 @@ joinRoomBtn.onclick = () => {
             
             currentRoomCode = code;
             isRoomCreator = false;
-            
-            // Save to localStorage
             saveToStorage();
             
-            // Add myself as participant
             db.ref("rooms/" + code + "/participants").update({
                 [myId]: "active"
             }).then(() => {
-                // Try to connect to the room creator
                 connectToPeer(roomData.creator);
                 roomModal.style.display = "none";
                 loadingScreen.style.display = "none";
@@ -1350,29 +1329,23 @@ joinRoomBtn.onclick = () => {
 // Auto-rejoin room if we have saved data
 function autoRejoinRoom() {
     if (currentRoomCode && myId) {
-        // Show loading screen
         loadingScreen.style.display = "flex";
         loadingText.textContent = "Reconnecting to room...";
         
-        // Check if room still exists
         db.ref("rooms/" + currentRoomCode).once('value').then((snapshot) => {
             if (snapshot.exists()) {
                 const roomData = snapshot.val();
                 
                 if (isRoomCreator) {
-                    // I was the creator, wait for participants
                     logSystem(`Reconnected to room: ${currentRoomCode}. Waiting for participants...`);
                     loadingScreen.style.display = "none";
                     
-                    // Listen for participants joining
                     db.ref("rooms/" + currentRoomCode + "/participants").on("child_added", (snapshot) => {
                         if (snapshot.key !== myId) {
-                            // Another participant joined, connect to them
                             connectToPeer(snapshot.key);
                         }
                     });
                 } else {
-                    // I was a participant, try to reconnect to creator
                     db.ref("rooms/" + currentRoomCode + "/participants").update({
                         [myId]: "active"
                     }).then(() => {
@@ -1381,7 +1354,6 @@ function autoRejoinRoom() {
                     });
                 }
             } else {
-                // Room no longer exists
                 loadingScreen.style.display = "none";
                 clearStorage();
                 logSystem("Room no longer exists. Please create or join a new room.");
@@ -1395,7 +1367,6 @@ function autoRejoinRoom() {
             roomModal.style.display = "block";
         });
     } else {
-        // No saved room data, show modal
         loadingScreen.style.display = "none";
         roomModal.style.display = "block";
     }
@@ -1431,7 +1402,6 @@ function startPeer() {
     isConnected = false;
     if (peer) peer.destroy();
     
-    // Try to use saved peer ID for reconnection
     const savedPeerId = myId;
     
     peer = new Peer(savedPeerId, {
@@ -1448,13 +1418,8 @@ function startPeer() {
 
     peer.on('open', (id) => {
         myId = id;
-        // Save peer ID to localStorage
         saveToStorage();
-        
-        // Hide loading screen
         loadingScreen.style.display = "none";
-        
-        // Auto-rejoin room if we have saved data
         autoRejoinRoom();
     });
 
@@ -1463,7 +1428,6 @@ function startPeer() {
     peer.on('error', (err) => {
         console.error('PeerJS error:', err);
         
-        // If peer ID is taken, generate a new one
         if (err.type === 'unavailable-id') {
             console.log('Peer ID unavailable, generating new one...');
             myId = null;
@@ -1544,33 +1508,41 @@ function endConnection(message) {
     myConn = null;
     isConnected = false;
     
-    // End video call if active
     if (isVideoCallActive) {
         endVideoCall();
     }
     
-    // Clean up room if we were the creator
-    if (isRoomCreator && currentRoomCode) {
-        db.ref("rooms/" + currentRoomCode).remove();
-        clearStorage();
-    } else if (currentRoomCode) {
-        // Remove myself from participants but keep room data for reconnection
-        db.ref("rooms/" + currentRoomCode + "/participants/" + myId).remove();
-    }
+    cleanupRoom();
     
-    // Automatically restart the peer connection
     setTimeout(() => {
         startPeer();
     }, 1000);
 }
 
-function cleanUpWaitingList() {
-    if (waitingRef) {
-        waitingRef.off();
-        db.ref("waiting").orderByValue().equalTo(myId).once('value', (snap) => {
-            snap.forEach(child => child.ref.remove());
-        });
+// Clean up room data
+function cleanupRoom() {
+    if (currentRoomCode) {
+        if (isRoomCreator) {
+            db.ref("rooms/" + currentRoomCode).remove();
+            clearStorage();
+        } else {
+            db.ref("rooms/" + currentRoomCode + "/participants/" + myId).remove();
+        }
     }
+}
+
+// Destroy room function for skip button
+function destroyRoom() {
+    if (myConn) myConn.close();
+    
+    cleanupRoom();
+    
+    logSystem("Room destroyed. Creating a new room...");
+    
+    setTimeout(() => {
+        document.getElementById("chatLog").innerHTML = "";
+        startPeer();
+    }, 1000);
 }
 
 // ----------------- Video Call Functions -----------------
@@ -1591,29 +1563,25 @@ async function startVideoCall() {
     }
     
     try {
-        // Request camera and microphone access
         localStream = await navigator.mediaDevices.getUserMedia({ 
             video: true, 
             audio: true 
         });
         
-        // Send video call request
         myConn.send({ type: "video-call-request" });
         isVideoCallRequested = true;
         logSystem("Video call request sent. Waiting for response...");
         
-        // Set timeout for no response
         setTimeout(() => {
             if (!isVideoCallActive && isVideoCallRequested) {
                 logSystem("No response to your video call request");
                 isVideoCallRequested = false;
-                // Stop local stream if not used
                 if (localStream) {
                     localStream.getTracks().forEach(track => track.stop());
                     localStream = null;
                 }
             }
-        }, 30000); // 30 seconds timeout
+        }, 30000);
     } catch (error) {
         console.error("Error accessing camera/microphone:", error);
         logSystem("Could not access camera/microphone. Please check permissions.");
@@ -1622,7 +1590,6 @@ async function startVideoCall() {
 
 function handleVideoCallRequest() {
     if (isVideoCallActive || isVideoCallRequestPending) {
-        // Already in a call or have pending request
         myConn.send({ type: "video-call-declined" });
         return;
     }
@@ -1634,11 +1601,7 @@ function handleVideoCallRequest() {
 function acceptVideoCall() {
     callRequestModal.style.display = "none";
     isVideoCallRequestPending = false;
-    
-    // Send acceptance
     myConn.send({ type: "video-call-accepted" });
-    
-    // Start the video call
     startVideoCallStream();
 }
 
@@ -1654,8 +1617,6 @@ function handleVideoCallAccepted() {
     
     isVideoCallRequested = false;
     logSystem("Video call accepted! Starting call...");
-    
-    // Start the video call
     startVideoCallStream();
 }
 
@@ -1663,7 +1624,6 @@ function handleVideoCallDeclined() {
     isVideoCallRequested = false;
     logSystem("Video call was declined");
     
-    // Stop local stream if not used
     if (localStream) {
         localStream.getTracks().forEach(track => track.stop());
         localStream = null;
@@ -1679,10 +1639,8 @@ async function startVideoCallStream() {
             });
         }
         
-        // Display local video
         localVideo.srcObject = localStream;
         
-        // Create a media connection for video
         const call = peer.call(myConn.peer, localStream);
         
         call.on('stream', (remoteStream) => {
@@ -1696,7 +1654,6 @@ async function startVideoCallStream() {
             endVideoCall();
         });
         
-        // Handle incoming calls
         peer.on('call', (incomingCall) => {
             incomingCall.answer(localStream);
             incomingCall.on('stream', (remoteStream) => {
@@ -1718,7 +1675,6 @@ function endVideoCall() {
         myConn.send({ type: "video-call-ended" });
     }
     
-    // Stop all tracks
     if (localStream) {
         localStream.getTracks().forEach(track => track.stop());
         localStream = null;
@@ -1729,12 +1685,9 @@ function endVideoCall() {
         remoteVideo.srcObject = null;
     }
     
-    // Reset video call state
     isVideoCallActive = false;
     isVideoCallRequested = false;
     isVideoCallRequestPending = false;
-    
-    // Hide video call container
     videoCallContainer.style.display = "none";
     
     logSystem("Video call ended");
@@ -1889,60 +1842,8 @@ document.getElementById("gifInput").addEventListener("change", (e) => {
     e.target.value = "";
 });
 
-// Enhanced skip button with SweetAlert
-document.getElementById("skipBtn").onclick = () => {
-    if (isRoomCreator) {
-        // Show options for room creator
-        Swal.fire({
-            title: 'End Chat Session',
-            text: 'Are you sure you want to destroy this room?',
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonText: 'Destroy Room',
-            cancelButtonText: 'Cancel',
-            reverseButtons: true,
-            confirmButtonColor: '#dc3545',
-            cancelButtonColor: '#6c757d'
-        }).then((result) => {
-            if (result.isConfirmed) {
-                // Destroy room
-                if (myConn) myConn.close();
-                
-                if (currentRoomCode) {
-                    db.ref("rooms/" + currentRoomCode).remove();
-                    clearStorage();
-                }
-                
-                logSystem("Room destroyed. Creating a new room...");
-                
-                // Restart connection
-                setTimeout(() => {
-                    document.getElementById("chatLog").innerHTML = "";
-                    startPeer();
-                }, 1000);
-            }
-        });
-    } else {
-        // Regular skip for non-creators
-        if (myConn) myConn.close();
-        cleanUpWaitingList();
-        isConnected = false;
-        
-        // Remove myself from participants
-        if (currentRoomCode) {
-            db.ref("rooms/" + currentRoomCode + "/participants/" + myId).remove();
-            clearStorage();
-        }
-        
-        logSystem("Chat ended. Starting a new connection...");
-        
-        // Automatically restart the peer connection
-        setTimeout(() => {
-            document.getElementById("chatLog").innerHTML = "";
-            startPeer();
-        }, 1000);
-    }
-};
+// Skip button functionality - simplified
+document.getElementById("skipBtn").onclick = destroyRoom;
 
 // ----------------- GIF Search -----------------
 const gifModal = document.getElementById("gifModal");
@@ -2026,7 +1927,6 @@ const urlParams = new URLSearchParams(window.location.search);
 const roomCodeFromUrl = urlParams.get('room');
 if (roomCodeFromUrl) {
     roomCodeInput.value = roomCodeFromUrl;
-    // Auto-join if we have a room code from URL
     setTimeout(() => {
         if (!isConnected) {
             joinRoomBtn.click();
