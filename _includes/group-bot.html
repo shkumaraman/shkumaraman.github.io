@@ -23,45 +23,31 @@ class TalkRushBot {
     }
 
     async loadBotConfig() {
-        const response = await fetch('bot.txt');
-        const text = await response.text();
-        this.parseBotConfig(text);
+        const response = await fetch('bot.json');
+        const botData = await response.json();
+        this.parseBotConfig(botData);
     }
 
-    parseBotConfig(configText) {
-        const lines = configText.split('\n');
-        let currentBot = null;
-        let currentBotConfig = null;
+    parseBotConfig(botData) {
+        for (const [botName, responses] of Object.entries(botData)) {
+            const botConfig = {
+                name: botName,
+                triggers: [],
+                cooldown: 8000,
+                lastResponseTime: 0
+            };
 
-        for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed) continue;
-
-            if (trimmed.startsWith('#')) {
-                if (currentBot && currentBotConfig) {
-                    this.bots.set(currentBot, currentBotConfig);
-                }
-                const botName = trimmed.substring(1).trim();
-                currentBot = botName;
-                currentBotConfig = {
-                    name: botName,
-                    triggers: [],
-                    cooldown: 8000,
-                    lastResponseTime: 0
-                };
-            } else if (currentBotConfig && trimmed.includes('-')) {
-                const parts = trimmed.split('-');
-                if (parts.length >= 2) {
-                    const trigger = this.normalizeText(parts[0]);
-                    const response = parts.slice(1).join('-').trim();
-                    currentBotConfig.triggers.push({ trigger, response });
-                }
+            // Convert JSON responses to trigger format
+            for (const [trigger, response] of Object.entries(responses)) {
+                botConfig.triggers.push({
+                    trigger: this.normalizeText(trigger),
+                    response: response
+                });
             }
-        }
 
-        if (currentBot && currentBotConfig) {
-            this.bots.set(currentBot, currentBotConfig);
+            this.bots.set(botName, botConfig);
         }
+        console.log(`Loaded ${this.bots.size} bots from JSON config`);
     }
 
     setupBotListener() {
@@ -145,7 +131,7 @@ class TalkRushBot {
         return null;
     }
 
-    // --- NEW SMART PRIORITY LOGIC (3-word → 2-word → 1-word fallback) ---
+    // --- SMART PRIORITY LOGIC (3-word → 2-word → 1-word fallback) ---
     getPrioritySmartResponse(botConfig, messageText) {
         const normalizedMsg = this.normalizeText(messageText);
         const words = normalizedMsg.split(' ');
