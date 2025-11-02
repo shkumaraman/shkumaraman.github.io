@@ -68,7 +68,7 @@
   max-height: 90vh;
   overflow-y: auto;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-  border: 1px solid #444;
+  border: 1px solid #ddd;
 }
 
 .modal-header {
@@ -126,12 +126,13 @@
   font-size: 1rem;
   width: 100%;
   color: #333;
-  background-color: #fff;
+  background-color: #f5f5f5;
   text-align: center;
 }
 
 .nickname-input:focus {
-  border-color: #4CAF50;
+  border-color: #333;
+  background-color: #fff;
 }
 
 .input-hint {
@@ -158,9 +159,8 @@
 }
 
 .gender-option.selected {
-  background-color: #4CAF50;
+  background-color: #333;
   color: white;
-  border-color: #4CAF50;
 }
 
 .tags-input-container {
@@ -170,14 +170,14 @@
   padding: 10px;
   border: 1px solid #ddd;
   border-radius: 5px;
-  background-color: #f9f9f9;
+  background-color: #f5f5f5;
   min-height: 45px;
 }
 
 .tag-item {
   display: flex;
   align-items: center;
-  background-color: #4CAF50;
+  background-color: #333;
   color: #fff;
   padding: 5px 10px;
   border-radius: 20px;
@@ -209,7 +209,7 @@
   text-align: center;
   font-weight: bold;
   display: none;
-  background-color: #4CAF50;
+  background-color: #333;
   color: white;
 }
 
@@ -225,7 +225,7 @@
 }
 
 .save-preferences-btn {
-  background: #4CAF50;
+  background: #333;
   color: #fff;
   border: none;
   padding: 12px 40px;
@@ -239,7 +239,7 @@
 }
 
 .save-preferences-btn:hover {
-  background: #45a049;
+  background: #555;
 }
 
 @media (max-width: 480px) {
@@ -260,36 +260,36 @@
 </style>
 
 <script>
-// Global variables for preferences
-let myNickname = "";
-let myGenderInterest = "everyone";
-let myTags = [];
-let bannedWords = [];
-let bannedWordsLoaded = false;
+// Global variables for preferences - different names to avoid conflicts
+let prefsMyNickname = "";
+let prefsGenderInterest = "everyone";
+let prefsMyTags = [];
+let prefsBannedWords = [];
+let prefsBannedWordsLoaded = false;
 
 // Load the banned words from filter.txt
-async function loadBannedWords() {
+async function loadPrefsBannedWords() {
   try {
     const response = await fetch('filter.txt');
     const text = await response.text();
-    bannedWords = text.split('\n')
+    prefsBannedWords = text.split('\n')
       .map(word => word.trim().toLowerCase())
       .filter(word => word.length > 0);
-    bannedWordsLoaded = true;
-    console.log("Banned words loaded successfully:", bannedWords.length);
+    prefsBannedWordsLoaded = true;
+    console.log("Banned words loaded successfully:", prefsBannedWords.length);
   } catch (err) {
     console.error("Error loading banned words:", err);
-    bannedWords = ['badword1', 'badword2', 'swearword'];
-    bannedWordsLoaded = true;
+    prefsBannedWords = ['badword1', 'badword2', 'swearword'];
+    prefsBannedWordsLoaded = true;
   }
 }
 
 // Check for banned words
-function containsBannedWords(message) {
-  if (!bannedWordsLoaded || !message || typeof message !== 'string') return false;
+function prefsContainsBannedWords(message) {
+  if (!prefsBannedWordsLoaded || !message || typeof message !== 'string') return false;
   
   const lowerMsg = message.toLowerCase();
-  return bannedWords.some(word => {
+  return prefsBannedWords.some(word => {
     if (!word || word.length < 2) return false;
     const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const pattern = new RegExp(`\\b${escapedWord}\\b`, 'i');
@@ -321,7 +321,7 @@ function loadSavedPreferences() {
   const input = document.getElementById("nicknameInput");
 
   if (savedNickname) {
-    myNickname = savedNickname;
+    prefsMyNickname = savedNickname;
     input.value = savedNickname;
   } else {
     input.value = "";
@@ -330,7 +330,7 @@ function loadSavedPreferences() {
   // Load gender interest
   const savedGenderInterest = localStorage.getItem("talkrush_gender_interest");
   if (savedGenderInterest) {
-    myGenderInterest = savedGenderInterest;
+    prefsGenderInterest = savedGenderInterest;
     // Update UI to show selected gender
     document.querySelectorAll('.gender-option').forEach(option => {
       if (option.getAttribute('data-value') === savedGenderInterest) {
@@ -344,9 +344,9 @@ function loadSavedPreferences() {
   // Load tags
   const savedTags = localStorage.getItem("talkrush_tags");
   if (savedTags) {
-    myTags = JSON.parse(savedTags);
+    prefsMyTags = JSON.parse(savedTags);
   } else {
-    myTags = [];
+    prefsMyTags = [];
   }
   renderTags();
   
@@ -363,7 +363,7 @@ function selectGender(element) {
   element.classList.add('selected');
   
   // Update gender interest
-  myGenderInterest = element.getAttribute('data-value');
+  prefsGenderInterest = element.getAttribute('data-value');
 }
 
 function handleTagInput(event) {
@@ -372,8 +372,8 @@ function handleTagInput(event) {
     const tagInput = document.getElementById('tagInput');
     const tagValue = tagInput.value.trim();
     
-    if (tagValue && !myTags.includes(tagValue) && myTags.length < 5) {
-      myTags.push(tagValue);
+    if (tagValue && !prefsMyTags.includes(tagValue) && prefsMyTags.length < 5) {
+      prefsMyTags.push(tagValue);
       renderTags();
       tagInput.value = '';
     }
@@ -387,7 +387,7 @@ function renderTags() {
   tagsContainer.innerHTML = '';
   
   // Add tags
-  myTags.forEach((tag, index) => {
+  prefsMyTags.forEach((tag, index) => {
     const tagElement = document.createElement('div');
     tagElement.className = 'tag-item';
     tagElement.innerHTML = `${tag} <span class="close" onclick="removeTag(${index})">×</span>`;
@@ -399,7 +399,7 @@ function renderTags() {
 }
 
 function removeTag(index) {
-  myTags.splice(index, 1);
+  prefsMyTags.splice(index, 1);
   renderTags();
 }
 
@@ -417,19 +417,19 @@ function savePreferences() {
   }
 
   // Check for banned words in nickname
-  if (containsBannedWords(newNickname)) {
+  if (prefsContainsBannedWords(newNickname)) {
     document.getElementById('preferenceBanned').style.display = 'block';
     return;
   }
 
-  myNickname = newNickname.substring(0, 20); // max 20 chars
-  localStorage.setItem("talkrush_nickname", myNickname);
+  prefsMyNickname = newNickname.substring(0, 20); // max 20 chars
+  localStorage.setItem("talkrush_nickname", prefsMyNickname);
   
   // Save gender interest
-  localStorage.setItem("talkrush_gender_interest", myGenderInterest);
+  localStorage.setItem("talkrush_gender_interest", prefsGenderInterest);
   
   // Save tags
-  localStorage.setItem("talkrush_tags", JSON.stringify(myTags));
+  localStorage.setItem("talkrush_tags", JSON.stringify(prefsMyTags));
   
   // Update nickname display if it exists
   updateNicknameDisplay();
@@ -447,7 +447,7 @@ function savePreferences() {
 function updateNicknameDisplay() {
   const nicknameDisplay = document.getElementById('currentNickname');
   if (nicknameDisplay) {
-    nicknameDisplay.textContent = myNickname || 'Guest';
+    nicknameDisplay.textContent = prefsMyNickname || 'Guest';
   }
 }
 
@@ -460,25 +460,25 @@ function checkNicknameExists() {
       openPreferencesModal();
     }, 500);
   } else {
-    myNickname = savedNickname;
+    prefsMyNickname = savedNickname;
     updateNicknameDisplay();
   }
 }
 
 // Initialize when page loads
-document.addEventListener("DOMContentLoaded", () => {
-  loadBannedWords();
+document.addEventListener("DOMContentLoaded", function() {
+  loadPrefsBannedWords();
   checkNicknameExists();
   
   // Load other preferences
   const savedGenderInterest = localStorage.getItem("talkrush_gender_interest");
   if (savedGenderInterest) {
-    myGenderInterest = savedGenderInterest;
+    prefsGenderInterest = savedGenderInterest;
   }
   
   const savedTags = localStorage.getItem("talkrush_tags");
   if (savedTags) {
-    myTags = JSON.parse(savedTags);
+    prefsMyTags = JSON.parse(savedTags);
   }
 });
 </script>
