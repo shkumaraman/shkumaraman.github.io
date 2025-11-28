@@ -5,9 +5,9 @@ import json
 from youtube_transcript_api import YouTubeTranscriptApi, NoTranscriptFound
 
 app = FastAPI(
-    title="Unofficial YouTube API (Ultimate Version)",
-    description="YouTube search, video details & captions using m.youtube.com parser. 100% Render compatible.",
-    version="4.0.0",
+    title="Unofficial YouTube API (Stable Version)",
+    description="YouTube Search + Video Details + Captions using m.youtube.com. Fully Render-compatible.",
+    version="5.0.0",
 )
 
 
@@ -15,7 +15,7 @@ app = FastAPI(
 async def root():
     return {
         "name": "YouTube API",
-        "version": "4.0.0",
+        "version": "5.0.0",
         "status": "ok",
         "docs": "/docs",
         "endpoints": {
@@ -26,63 +26,89 @@ async def root():
     }
 
 
-# ----------------------------------------------------
-#   🔥 YOUTUBE SEARCH (MOBILE VERSION SCRAPER)
-#   100% WORKING ON RENDER / NO JS REQUIRED
-# ----------------------------------------------------
+# -------------------------------------------------------------
+# 🔥 SUPER STABLE YOUTUBE SEARCH (NO JS, NO PROXIES ERROR)
+# -------------------------------------------------------------
 def youtube_search_mobile(query: str, limit: int = 10):
     url = f"https://m.youtube.com/results?search_query={query.replace(' ', '+')}"
     headers = {"User-Agent": "Mozilla/5.0"}
 
     html = requests.get(url, headers=headers).text
 
-    # Extract ytInitialData
+    # Extract ytInitialData safely
     try:
-        data_json = re.search(r"var ytInitialData = (.*?);</script>", html).group(1)
-        data = json.loads(data_json)
+        raw_json = re.search(r"var ytInitialData = (.*?);</script>", html).group(1)
+        data = json.loads(raw_json)
     except:
         return []
 
     results = []
 
+    # Navigate JSON structure safely
     try:
-        contents = data["contents"]["twoColumnSearchResultsRenderer"]["primaryContents"]["sectionListRenderer"]["contents"]
+        contents = data["contents"]["twoColumnSearchResultsRenderer"]["primaryContents"][
+            "sectionListRenderer"
+        ]["contents"]
     except:
         return results
 
     for sec in contents:
         items = sec.get("itemSectionRenderer", {}).get("contents", [])
+
         for item in items:
             video = item.get("videoRenderer")
-            if video:
-                vid = video["videoId"]
-                title = video["title"]["runs"][0]["text"]
-                thumbnail = video["thumbnail"]["thumbnails"][-1]["url"]
-                channel = video["ownerText"]["runs"][0]["text"] if "ownerText" in video else None
-                views = video["viewCountText"]["simpleText"] if "viewCountText" in video else None
-                duration = video["lengthText"]["simpleText"] if "lengthText" in video else None
+            if not video:
+                continue
 
-                results.append({
-                    "videoId": vid,
-                    "title": title,
-                    "url": f"https://www.youtube.com/watch?v={vid}",
-                    "thumbnail": thumbnail,
-                    "channel": channel,
-                    "views": views,
-                    "duration": duration
-                })
+            # Video ID
+            vid = video.get("videoId", "")
 
-                if len(results) >= limit:
-                    return results
+            # Title
+            title = video.get("title", {}).get("runs", [{}])[0].get("text", "")
+
+            # Thumbnail
+            thumbnail = (
+                video.get("thumbnail", {}).get("thumbnails", [{}])[-1].get("url", "")
+            )
+
+            # Channel
+            channel = (
+                video.get("ownerText", {}).get("runs", [{}])[0].get("text", "")
+            )
+
+            # Duration
+            duration = (
+                video.get("lengthText", {}).get("simpleText")
+                or video.get("lengthText", {}).get("runs", [{}])[0].get("text")
+                if "lengthText" in video
+                else None
+            )
+
+            # Views - fixes {'simpleText'} + {'runs'}
+            view_obj = video.get("viewCountText", {})
+            views = (
+                view_obj.get("simpleText")
+                or (view_obj.get("runs", [{}])[0].get("text") if "runs" in view_obj else None)
+            )
+
+            results.append({
+                "videoId": vid,
+                "title": title,
+                "url": f"https://www.youtube.com/watch?v={vid}",
+                "thumbnail": thumbnail,
+                "channel": channel,
+                "views": views,
+                "duration": duration,
+            })
+
+            if len(results) >= limit:
+                return results
 
     return results
 
 
 @app.get("/search/videos")
-async def search_videos(
-    query: str = Query(...),
-    limit: int = Query(10, ge=1, le=50)
-):
+async def search_videos(query: str, limit: int = 10):
     try:
         data = youtube_search_mobile(query, limit)
         return {"query": query, "count": len(data), "results": data}
@@ -90,9 +116,9 @@ async def search_videos(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ----------------------------------------------------
-#        🎯 VIDEO DETAILS (TITLE SCRAPER)
-# ----------------------------------------------------
+# -------------------------------------------------------------
+# 🎯 VIDEO DETAILS SCRAPER (WORKS ALWAYS)
+# -------------------------------------------------------------
 @app.get("/video/{video_id}")
 async def video_details(video_id: str):
     url = f"https://m.youtube.com/watch?v={video_id}"
@@ -100,22 +126,22 @@ async def video_details(video_id: str):
 
     html = requests.get(url, headers=headers).text
 
-    # extract title
-    title_match = re.search(r'"title":"(.*?)"', html)
-    title = title_match.group(1).encode("utf-8").decode("unicode_escape") if title_match else "Unknown"
+    # Extract title
+    match = re.search(r'"title":"(.*?)"', html)
+    title = match.group(1).encode("utf-8").decode("unicode_escape") if match else "Unknown"
 
     return {
         "videoId": video_id,
         "title": title,
-        "url": f"https://www.youtube.com/watch?v={video_id}"
+        "url": f"https://www.youtube.com/watch?v={video_id}",
     }
 
 
-# ----------------------------------------------------
-#          📝 CAPTIONS (TRANSCRIPTS)
-# ----------------------------------------------------
+# -------------------------------------------------------------
+# 📝 CAPTIONS (JSON / TEXT / SRT)
+# -------------------------------------------------------------
 def _seconds_to_srt_timestamp(seconds: float) -> str:
-    millis = int(round(seconds * 1000))
+    millis = int(seconds * 1000)
     hours = millis // 3600000
     millis %= 3600000
     minutes = millis // 60000
@@ -128,19 +154,20 @@ def _seconds_to_srt_timestamp(seconds: float) -> str:
 @app.get("/captions/{video_id}")
 async def captions(video_id: str, lang: str = "en", format: str = "json"):
     try:
-        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+        transcripts = YouTubeTranscriptApi.list_transcripts(video_id)
 
-        # manual or auto
+        # get manual or auto
         try:
-            transcript = transcript_list.find_transcript([lang])
+            t = transcripts.find_transcript([lang])
         except:
-            transcript = transcript_list.find_generated_transcript([lang])
+            t = transcripts.find_generated_transcript([lang])
 
-        data = transcript.fetch()
-        available = [t.language_code for t in transcript_list]
+        data = t.fetch()
+        available = [x.language_code for x in transcripts]
 
         if format == "text":
-            return {"captions": "\n".join([x["text"] for x in data])}
+            text = "\n".join([c["text"] for c in data])
+            return {"text": text}
 
         if format == "srt":
             srt = []
@@ -151,16 +178,16 @@ async def captions(video_id: str, lang: str = "en", format: str = "json"):
                 srt.append(f"{_seconds_to_srt_timestamp(start)} --> {_seconds_to_srt_timestamp(end)}")
                 srt.append(c["text"])
                 srt.append("")
-            return {"captions_srt": "\n".join(srt)}
+            return {"srt": "\n".join(srt)}
 
         return {
             "video_id": video_id,
             "language": lang,
+            "available_languages": available,
             "captions": data,
-            "available_languages": available
         }
 
     except NoTranscriptFound:
-        raise HTTPException(status_code=404, detail="No captions available.")
+        raise HTTPException(status_code=404, detail="No captions found.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
