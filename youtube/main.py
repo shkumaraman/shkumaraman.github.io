@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 app = FastAPI(
     title="Unofficial YouTube API (Stable V9 - Clean)",
     description="YouTube Search + Details + Captions",
-    version="9.0.1",
+    version="1.0",
 )
 
 app.add_middleware(
