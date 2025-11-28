@@ -1,34 +1,34 @@
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException
 import requests
 import re
 import json
 from youtube_transcript_api import YouTubeTranscriptApi, NoTranscriptFound
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
-import subprocess
+
 
 # -------------------------------------------------------------
 # 🛡 CORS ENABLED
 # -------------------------------------------------------------
 app = FastAPI(
-    title="Unofficial YouTube API (Stable V9)",
-    description="YouTube Search + Details + Captions + Audio Streaming via yt-dlp pipe",
-    version="9.0.0",
+    title="Unofficial YouTube API (Stable V9 - Clean)",
+    description="YouTube Search + Details + Captions",
+    version="9.0.1",
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],        
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+
 @app.get("/")
 async def root():
     return {
         "name": "YouTube API",
-        "version": "9.0.0",
+        "version": "9.0.1",
         "status": "ok",
         "docs": "/docs",
     }
@@ -128,35 +128,6 @@ async def video_details(video_id: str):
         "title": title,
         "url": f"https://www.youtube.com/watch?v={video_id}",
     }
-
-
-# -------------------------------------------------------------
-# 🎵 AUDIO STREAMING (yt-dlp PIPE STREAM)
-# -------------------------------------------------------------
-@app.get("/stream/{video_id}")
-async def stream_audio(video_id: str):
-    youtube_url = f"https://www.youtube.com/watch?v={video_id}"
-
-    try:
-        # yt-dlp से audio को memory (stdout) पर stream करवाते हैं
-        process = subprocess.Popen(
-            ["yt-dlp", "-f", "bestaudio", "-o", "-", youtube_url],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-
-        # Streaming generator
-        def generate():
-            while True:
-                chunk = process.stdout.read(4096)
-                if not chunk:
-                    break
-                yield chunk
-
-        return StreamingResponse(generate(), media_type="audio/mp4")
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Streaming failed: {str(e)}")
 
 
 # -------------------------------------------------------------
