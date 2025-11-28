@@ -5,20 +5,20 @@ import json
 from youtube_transcript_api import YouTubeTranscriptApi, NoTranscriptFound
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-import yt_dlp
+import subprocess
 
 # -------------------------------------------------------------
 # 🛡 CORS ENABLED
 # -------------------------------------------------------------
 app = FastAPI(
-    title="Unofficial YouTube API (Stable V8)",
-    description="YouTube Search + Details + Captions + Audio Stream",
-    version="8.0.0",
+    title="Unofficial YouTube API (Stable V9)",
+    description="YouTube Search + Details + Captions + Audio Streaming via yt-dlp pipe",
+    version="9.0.0",
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],        
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -28,7 +28,7 @@ app.add_middleware(
 async def root():
     return {
         "name": "YouTube API",
-        "version": "8.0.0",
+        "version": "9.0.0",
         "status": "ok",
         "docs": "/docs",
     }
@@ -73,13 +73,13 @@ def youtube_search_mobile(query: str, limit: int = 10):
             channel = video.get("ownerText", {}).get("runs", [{}])[0].get("text", "")
             duration_obj = video.get("lengthText", {})
             duration = (
-                duration_obj.get("simpleText") or
-                (duration_obj.get("runs", [{}])[0].get("text") if "runs" in duration_obj else None)
+                duration_obj.get("simpleText")
+                or (duration_obj.get("runs", [{}])[0].get("text") if "runs" in duration_obj else None)
             )
             view_obj = video.get("viewCountText", {})
             views = (
-                view_obj.get("simpleText") or
-                (view_obj.get("runs", [{}])[0].get("text") if "runs" in view_obj else None)
+                view_obj.get("simpleText")
+                or (view_obj.get("runs", [{}])[0].get("text") if "runs" in view_obj else None)
             )
 
             results.append({
@@ -131,35 +131,32 @@ async def video_details(video_id: str):
 
 
 # -------------------------------------------------------------
-# 🎵 STREAM AUDIO (MAIN FEATURE)
+# 🎵 AUDIO STREAMING (yt-dlp PIPE STREAM)
 # -------------------------------------------------------------
 @app.get("/stream/{video_id}")
 async def stream_audio(video_id: str):
     youtube_url = f"https://www.youtube.com/watch?v={video_id}"
 
-    ydl_opts = {
-        "format": "bestaudio/best",
-        "quiet": True,
-        "noplaylist": True,
-    }
-
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(youtube_url, download=False)
-            stream_url = info["url"]
+        # yt-dlp से audio को memory (stdout) पर stream करवाते हैं
+        process = subprocess.Popen(
+            ["yt-dlp", "-f", "bestaudio", "-o", "-", youtube_url],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+        # Streaming generator
+        def generate():
+            while True:
+                chunk = process.stdout.read(4096)
+                if not chunk:
+                    break
+                yield chunk
+
+        return StreamingResponse(generate(), media_type="audio/mp4")
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to extract stream: {str(e)}")
-
-    def audio_generator():
-        try:
-            audio = requests.get(stream_url, stream=True)
-            for chunk in audio.iter_content(chunk_size=1024):
-                if chunk:
-                    yield chunk
-        except:
-            return
-
-    return StreamingResponse(audio_generator(), media_type="audio/mp4")
+        raise HTTPException(status_code=500, detail=f"Streaming failed: {str(e)}")
 
 
 # -------------------------------------------------------------
