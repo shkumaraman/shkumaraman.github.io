@@ -4,19 +4,21 @@ import re
 import json
 from youtube_transcript_api import YouTubeTranscriptApi, NoTranscriptFound
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
+import yt_dlp
 
 # -------------------------------------------------------------
-# 🛡 Enable CORS (IMPORTANT for frontend)
+# 🛡 CORS ENABLED
 # -------------------------------------------------------------
 app = FastAPI(
-    title="Unofficial YouTube API (Stable V7)",
-    description="YouTube Search + Details + Captions using m.youtube.com. Fully Render-compatible.",
-    version="7.0.0",
+    title="Unofficial YouTube API (Stable V8)",
+    description="YouTube Search + Details + Captions + Audio Stream",
+    version="8.0.0",
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],        # allow all domains
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -26,14 +28,14 @@ app.add_middleware(
 async def root():
     return {
         "name": "YouTube API",
-        "version": "7.0.0",
+        "version": "8.0.0",
         "status": "ok",
         "docs": "/docs",
     }
 
 
 # -------------------------------------------------------------
-# 🔥 SUPER STABLE YOUTUBE SEARCH — NO HTML, NO CRASH
+# 🔥 SUPER STABLE MOBILE SEARCH
 # -------------------------------------------------------------
 def youtube_search_mobile(query: str, limit: int = 10):
     url = f"https://m.youtube.com/results?search_query={query.replace(' ', '+')}"
@@ -44,7 +46,6 @@ def youtube_search_mobile(query: str, limit: int = 10):
     except:
         return []
 
-    # Extract JSON safely
     try:
         raw_json = re.search(r"var ytInitialData = (.*?);</script>", html).group(1)
         data = json.loads(raw_json)
@@ -53,7 +54,6 @@ def youtube_search_mobile(query: str, limit: int = 10):
 
     results = []
 
-    # JSON Navigation (safe)
     try:
         main = data["contents"]["twoColumnSearchResultsRenderer"]["primaryContents"]
         sections = main["sectionListRenderer"]["contents"]
@@ -62,26 +62,20 @@ def youtube_search_mobile(query: str, limit: int = 10):
 
     for sec in sections:
         items = sec.get("itemSectionRenderer", {}).get("contents", [])
-
         for item in items:
             video = item.get("videoRenderer")
             if not video:
                 continue
 
-            # SAFE EXTRACTIONS
             vid = video.get("videoId", "")
             title = video.get("title", {}).get("runs", [{}])[0].get("text", "")
             thumbnail = video.get("thumbnail", {}).get("thumbnails", [{}])[-1].get("url", "")
             channel = video.get("ownerText", {}).get("runs", [{}])[0].get("text", "")
-
-            # Duration (safe)
             duration_obj = video.get("lengthText", {})
             duration = (
                 duration_obj.get("simpleText") or
                 (duration_obj.get("runs", [{}])[0].get("text") if "runs" in duration_obj else None)
             )
-
-            # Views (safe)
             view_obj = video.get("viewCountText", {})
             views = (
                 view_obj.get("simpleText") or
@@ -108,25 +102,13 @@ def youtube_search_mobile(query: str, limit: int = 10):
 async def search_videos(query: str, limit: int = 10):
     try:
         data = youtube_search_mobile(query, limit)
-
-        # Force JSON-only response
-        return {
-            "ok": True,
-            "query": query,
-            "count": len(data),
-            "results": data
-        }
-
+        return {"ok": True, "query": query, "count": len(data), "results": data}
     except Exception as e:
-        return {
-            "ok": False,
-            "error": str(e),
-            "results": []
-        }
+        return {"ok": False, "error": str(e), "results": []}
 
 
 # -------------------------------------------------------------
-# 🎯 VIDEO DETAILS (SAFE)
+# 🎯 VIDEO DETAILS
 # -------------------------------------------------------------
 @app.get("/video/{video_id}")
 async def video_details(video_id: str):
@@ -136,7 +118,7 @@ async def video_details(video_id: str):
     try:
         html = requests.get(url, headers=headers, timeout=10).text
     except:
-        raise HTTPException(status_code=500, detail="Failed to connect to YouTube")
+        raise HTTPException(status_code=500, detail="Failed to connect")
 
     match = re.search(r'"title":"(.*?)"', html)
     title = match.group(1).encode("utf-8").decode("unicode_escape") if match else "Unknown"
@@ -149,7 +131,39 @@ async def video_details(video_id: str):
 
 
 # -------------------------------------------------------------
-# 📝 CAPTIONS (JSON / TEXT / SRT)
+# 🎵 STREAM AUDIO (MAIN FEATURE)
+# -------------------------------------------------------------
+@app.get("/stream/{video_id}")
+async def stream_audio(video_id: str):
+    youtube_url = f"https://www.youtube.com/watch?v={video_id}"
+
+    ydl_opts = {
+        "format": "bestaudio/best",
+        "quiet": True,
+        "noplaylist": True,
+    }
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(youtube_url, download=False)
+            stream_url = info["url"]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to extract stream: {str(e)}")
+
+    def audio_generator():
+        try:
+            audio = requests.get(stream_url, stream=True)
+            for chunk in audio.iter_content(chunk_size=1024):
+                if chunk:
+                    yield chunk
+        except:
+            return
+
+    return StreamingResponse(audio_generator(), media_type="audio/mp4")
+
+
+# -------------------------------------------------------------
+# 📝 CAPTIONS
 # -------------------------------------------------------------
 def _seconds_to_srt_timestamp(seconds: float) -> str:
     millis = int(seconds * 1000)
