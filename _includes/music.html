@@ -20,7 +20,6 @@
         margin: 0;
         padding: 0;
         box-sizing: border-box;
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     }
 
     body {
@@ -607,8 +606,7 @@
         },
 
         onPlayerStateChange(e) {
-            if (e.data === YT.PlayerState.PLAYING) this.isPlaying = true;
-            else this.isPlaying = false;
+            this.isPlaying = e.data === YT.PlayerState.PLAYING;
 
             if (e.data === YT.PlayerState.ENDED && this.isLooping) {
                 this.player.seekTo(0);
@@ -681,43 +679,50 @@
                 });
             };
 
+            // SEEK BAR FIXED + THROTTLING
             const bar = document.getElementById("seekBarContainer");
             let isSeeking = false;
+            let lastSeekUpdate = 0;
+
+            const handleSeek = (x) => {
+                if (!this.player) return;
+                const rect = bar.getBoundingClientRect();
+                const percent = Math.min(Math.max(0, x - rect.left), rect.width) / rect.width;
+                const seekTime = percent * this.player.getDuration();
+                this.player.seekTo(seekTime);
+
+                const now = Date.now();
+                if (now - lastSeekUpdate > 300) {
+                    lastSeekUpdate = now;
+                    this.updateState({
+                        status: "playing",
+                        timestamp: seekTime,
+                        currentVideoId: this.currentVideoId
+                    });
+                }
+            };
 
             bar.addEventListener("mousedown", e => {
                 isSeeking = true;
-                this.seekToEvent(e);
+                handleSeek(e.clientX);
             });
 
             document.addEventListener("mousemove", e => {
-                if (isSeeking) this.seekToEvent(e);
+                if (isSeeking) handleSeek(e.clientX);
             });
 
             document.addEventListener("mouseup", () => (isSeeking = false));
 
             bar.addEventListener("touchstart", e => {
                 isSeeking = true;
-                this.seekToEvent(e.touches[0]);
+                handleSeek(e.touches[0].clientX);
             });
 
             document.addEventListener("touchmove", e => {
-                if (isSeeking) this.seekToEvent(e.touches[0]);
+                if (isSeeking) handleSeek(e.touches[0].clientX);
             });
 
             document.addEventListener("touchend", () => (isSeeking = false));
-
-            this.seekToEvent = e => {
-                if (!this.player) return;
-                const rect = bar.getBoundingClientRect();
-                const percent = Math.min(Math.max(0, e.clientX - rect.left), rect.width) / rect.width;
-                const seekTime = percent * this.player.getDuration();
-                this.player.seekTo(seekTime);
-                this.updateState({
-                    status: "playing",
-                    timestamp: seekTime,
-                    currentVideoId: this.currentVideoId
-                });
-            };
         },
 
         updatePlayPauseIcon() {
@@ -751,36 +756,36 @@
                 this.isLooping = !!loop;
                 document.getElementById("loopBtn").classList.toggle("active-control", this.isLooping);
 
-                const now = Date.now();
                 let effectiveTime = timestamp || 0;
-
                 if (status === "playing" && lastUpdate) {
-                    effectiveTime += Math.floor((now - lastUpdate) / 1000);
+                    effectiveTime += Math.floor((Date.now() - lastUpdate) / 1000);
                 }
 
-                const currentVid = this.player?.getVideoData().video_id;
-
-                if (!currentVid || currentVid !== currentVideoId) {
+                // IMPORTANT FIX — always reload when video changes
+                if (currentVideoId !== this.currentVideoId) {
                     this.processNewSong(currentVideoId, status, effectiveTime);
-                } else {
-                    const ct = this.player.getCurrentTime();
-                    if (Math.abs(ct - effectiveTime) > 2) {
-                        this.player.seekTo(effectiveTime, true);
-                    }
-
-                    if (status === "playing") {
-                        if (this.player.getPlayerState() !== YT.PlayerState.PLAYING) {
-                            this.player.playVideo();
-                        }
-                    } else {
-                        if (this.player.getPlayerState() !== YT.PlayerState.PAUSED) {
-                            this.player.pauseVideo();
-                        }
-                    }
-
-                    this.isPlaying = status === "playing";
-                    this.updatePlayPauseIcon();
+                    return;
                 }
+
+                // sync time
+                const ct = this.player.getCurrentTime();
+                if (Math.abs(ct - effectiveTime) > 2) {
+                    this.player.seekTo(effectiveTime, true);
+                }
+
+                // sync play/pause
+                if (status === "playing") {
+                    if (this.player.getPlayerState() !== YT.PlayerState.PLAYING) {
+                        this.player.playVideo();
+                    }
+                } else {
+                    if (this.player.getPlayerState() !== YT.PlayerState.PAUSED) {
+                        this.player.pauseVideo();
+                    }
+                }
+
+                this.isPlaying = status === "playing";
+                this.updatePlayPauseIcon();
             });
         },
 
@@ -795,11 +800,10 @@
                     const data = snap.val();
                     if (!data || !data.currentVideoId) return;
 
-                    const now = Date.now();
                     let effective = data.timestamp || 0;
 
                     if (data.status === "playing" && data.lastUpdate) {
-                        effective += Math.floor((now - data.lastUpdate) / 1000);
+                        effective += Math.floor((Date.now() - data.lastUpdate) / 1000);
                     }
 
                     this.isLooping = !!data.loop;
@@ -848,11 +852,7 @@
             obj.lastUpdate = Date.now();
             if (this.isLooping) obj.loop = true;
 
-            firebase
-                .database()
-                .ref("music")
-                .set(obj)
-                .catch(err => console.error(err));
+            firebase.database().ref("music").update(obj);
         }
     };
 
