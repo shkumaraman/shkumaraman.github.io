@@ -28,7 +28,7 @@ app.add_middleware(
 async def root():
     return {
         "name": "YouTube API",
-        "version": "9.0.1",
+        "version": "1.0",
         "status": "ok",
         "docs": "/docs",
     }
