@@ -461,8 +461,6 @@
 <script>
     const API_BASE = "https://youtube-0vra.onrender.com";
 
-    /* ------------------ SEARCH BOX SYSTEM ------------------ */
-
     document.getElementById("searchBox").addEventListener("input", async function () {
         let q = this.value.trim();
 
@@ -514,12 +512,11 @@
         });
     }
 
-    /* ------------------ PLAY FROM SEARCH ------------------ */
-
     function playFromSearch(video) {
         const vid = video.videoId;
 
-        musicPlayer.currentSongUrl = `https://www.youtube.com/watch?v=${vid}`;
+        // Direct videoId use karo, URL banane ki zarurat nahi
+        musicPlayer.currentVideoId = vid;
 
         const thumbnail = document.getElementById("videoThumbnail");
         thumbnail.src = `https://img.youtube.com/vi/${vid}/hqdefault.jpg`;
@@ -533,9 +530,9 @@
         musicPlayer.isPlaying = true;
         musicPlayer.updatePlayPauseIcon();
 
-        // Firebase Sync
+        // Firebase me bhi direct videoId save karo
         musicPlayer.updateState({
-            currentSong: musicPlayer.currentSongUrl,
+            currentVideoId: vid,
             status: "playing",
             timestamp: 0
         });
@@ -543,8 +540,6 @@
         document.getElementById("searchResults").innerHTML = "";
         document.getElementById("searchBox").value = "";
     }
-
-    /* ------------------ YOUTUBE IFRAME API ------------------ */
 
     if (typeof YT === "undefined") {
         let tag = document.createElement("script");
@@ -559,23 +554,18 @@
         return `${m}:${s < 10 ? "0" : ""}${s}`;
     }
 
-    /* ------------------ MAIN PLAYER OBJECT ------------------ */
-
     var musicPlayer = {
         player: null,
         ytReady: false,
         isPlaying: false,
         isMuted: false,
         isLooping: false,
-        currentSongUrl: "",
+        currentVideoId: "",
         firebaseListener: null,
         isFullScreen: false,
 
-        /* -------- INIT -------- */
-
         init: function () {
             document.getElementById("miniPlayer").onclick = () => this.toggleFullPlayer();
-
             this.setupControls();
 
             if (typeof YT !== "undefined") {
@@ -601,8 +591,6 @@
                 this.isFullScreen = true;
             }
         },
-
-        /* -------- YT READY -------- */
 
         onYouTubeIframeAPIReady: function () {
             this.player = new YT.Player("player", {
@@ -638,8 +626,6 @@
             this.updatePlayPauseIcon();
         },
 
-        /* -------- CONTROLS -------- */
-
         setupControls() {
             document.getElementById("playPauseBtn").onclick = () => {
                 if (!this.player) return;
@@ -649,14 +635,14 @@
                     this.updateState({
                         status: "paused",
                         timestamp: this.player.getCurrentTime(),
-                        currentSong: this.currentSongUrl
+                        currentVideoId: this.currentVideoId
                     });
                 } else {
                     this.player.playVideo();
                     this.updateState({
                         status: "playing",
                         timestamp: this.player.getCurrentTime(),
-                        currentSong: this.currentSongUrl
+                        currentVideoId: this.currentVideoId
                     });
                 }
             };
@@ -667,7 +653,7 @@
                 this.updateState({
                     status: "playing",
                     timestamp: t,
-                    currentSong: this.currentSongUrl
+                    currentVideoId: this.currentVideoId
                 });
             };
 
@@ -677,7 +663,7 @@
                 this.updateState({
                     status: "playing",
                     timestamp: t,
-                    currentSong: this.currentSongUrl
+                    currentVideoId: this.currentVideoId
                 });
             };
 
@@ -699,12 +685,10 @@
                 this.updateState({
                     status: this.isPlaying ? "playing" : "paused",
                     timestamp: Math.floor(this.player.getCurrentTime()),
-                    currentSong: this.currentSongUrl,
+                    currentVideoId: this.currentVideoId,
                     loop: this.isLooping
                 });
             };
-
-            /* -------- Custom Seek Bar -------- */
 
             const bar = document.getElementById("seekBarContainer");
             let isSeeking = false;
@@ -744,7 +728,7 @@
                 this.updateState({
                     status: "playing",
                     timestamp: seekTime,
-                    currentSong: this.currentSongUrl
+                    currentVideoId: this.currentVideoId
                 });
             };
         },
@@ -760,8 +744,6 @@
             document.getElementById("muteBtn").classList.toggle("active-control", this.isMuted);
         },
 
-        /* ---------------- FIREBASE ---------------- */
-
         firebaseInitialized() {
             return typeof firebase !== "undefined" && firebase.apps.length > 0;
         },
@@ -776,14 +758,11 @@
                 const data = snap.val();
                 if (!data || !this.ytReady) return;
 
-                const { currentSong, status, timestamp, lastUpdate, loop } = data;
-                if (!currentSong) return;
+                const { currentVideoId, status, timestamp, lastUpdate, loop } = data;
+                if (!currentVideoId) return;
 
                 this.isLooping = !!loop;
                 document.getElementById("loopBtn").classList.toggle("active-control", this.isLooping);
-
-                const vid = this.extractYouTubeID(currentSong);
-                if (!vid) return;
 
                 const now = Date.now();
                 let effectiveTime = timestamp || 0;
@@ -794,8 +773,8 @@
 
                 const currentVid = this.player?.getVideoData().video_id;
 
-                if (!currentVid || currentVid !== vid) {
-                    this.processNewSong(currentSong, status, effectiveTime);
+                if (!currentVid || currentVid !== currentVideoId) {
+                    this.processNewSong(currentVideoId, status, effectiveTime);
                 } else {
                     const ct = this.player.getCurrentTime();
                     if (Math.abs(ct - effectiveTime) > 2) {
@@ -818,10 +797,6 @@
             });
         },
 
-        extractYouTubeID(input) {
-            return /^[a-zA-Z0-9_-]{11}$/.test(input) ? input : null;
-        },
-
         checkSavedState() {
             if (!this.firebaseInitialized()) return;
 
@@ -831,7 +806,7 @@
                 .once("value")
                 .then(snap => {
                     const data = snap.val();
-                    if (!data || !data.currentSong) return;
+                    if (!data || !data.currentVideoId) return;
 
                     const now = Date.now();
                     let effective = data.timestamp || 0;
@@ -845,32 +820,28 @@
                         .getElementById("loopBtn")
                         .classList.toggle("active-control", this.isLooping);
 
-                    this.processNewSong(data.currentSong, data.status, effective);
+                    this.processNewSong(data.currentVideoId, data.status, effective);
                 });
         },
 
-        processNewSong(url, status, timestamp) {
-            const vid = this.extractYouTubeID(url);
-            if (!vid) return;
-
-            this.currentSongUrl = url;
+        processNewSong(videoId, status, timestamp) {
+            this.currentVideoId = videoId;
 
             const thumbnail = document.getElementById("videoThumbnail");
-            thumbnail.src = `https://img.youtube.com/vi/${vid}/hqdefault.jpg`;
+            thumbnail.src = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
             thumbnail.onerror = () => (thumbnail.src = "/chat/logo.png");
 
-            this.fetchVideoTitle(vid)
+            this.fetchVideoTitle(videoId)
                 .then(title => {
                     this.currentVideoTitle = title;
                     document.getElementById("nowPlaying").textContent = "Playing: " + title;
                 })
                 .catch(() => {
                     this.currentVideoTitle = "Unknown Title";
-                    document.getElementById("nowPlaying").textContent =
-                        "Playing: " + url;
+                    document.getElementById("nowPlaying").textContent = "Playing: " + videoId;
                 });
 
-            this.player.loadVideoById({ videoId: vid, startSeconds: timestamp });
+            this.player.loadVideoById({ videoId: videoId, startSeconds: timestamp });
             if (status === "playing") this.player.playVideo();
             else this.player.pauseVideo();
 
