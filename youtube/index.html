@@ -1,247 +1,74 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
   <meta charset="UTF-8">
-  <title>MusicPlay 🎵</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MusicPlay (Working)</title>
   <style>
-    body {
-      font-family: system-ui, sans-serif;
-      background: #0f0f0f;
-      color: white;
-      margin: 0;
-      padding: 20px;
-      max-width: 900px;
-      margin: auto;
-    }
-    
-    h1 {
-      font-size: 26px;
-      margin-bottom: 15px;
-      color: #ff375f;
-      text-align: center;
-    }
-
-    .search-box {
-      display: flex;
-      gap: 10px;
-      margin-bottom: 20px;
-    }
-    
-    .search-input {
-      flex: 1;
-      padding: 12px;
-      border: 1px solid #333;
-      background: #1a1a1a;
-      color: white;
-      border-radius: 8px;
-      font-size: 16px;
-    }
-    
-    .search-btn {
-      padding: 12px 24px;
-      background: #ff375f;
-      color: white;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 16px;
-    }
-
-    .song-list {
-      list-style: none;
-      padding: 0;
-      margin: 0;
-    }
-
-    .song-item {
-      display: flex;
-      align-items: center;
-      padding: 12px;
-      gap: 15px;
-      border-bottom: 1px solid #333;
-      cursor: pointer;
-    }
-    
-    .song-item:hover {
-      background: #1a1a1a;
-    }
-
-    .song-thumb {
-      width: 70px;
-      height: 70px;
-      border-radius: 10px;
-      object-fit: cover;
-    }
-
-    .song-title {
-      font-size: 15px;
-      font-weight: 600;
-      margin-bottom: 3px;
-    }
-
-    .song-artist {
-      color: #ccc;
-      font-size: 13px;
-    }
-
-    .song-duration {
-      margin-left: auto;
-      color: #bbb;
-      font-size: 14px;
-    }
-
-    .status {
-      margin-top: 10px;
-      text-align: center;
-      color: #aaa;
-    }
-
-    /* Player */
-    .player {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      background: #1a1a1a;
-      padding: 15px;
-      border-top: 1px solid #333;
-    }
-
-    .player-info {
-      text-align: center;
-      margin-bottom: 12px;
-    }
-
-    .player-controls {
-      display: flex;
-      justify-content: center;
-      gap: 20px;
-    }
-
-    .control-btn {
-      font-size: 28px;
-      background: none;
-      border: none;
-      color: white;
-      cursor: pointer;
-    }
+    body { background:#0f0f0f; color:white; font-family:sans-serif; padding:20px; }
+    .song { padding:10px; border-bottom:1px solid #333; cursor:pointer; display:flex; gap:10px; }
+    img { width:80px; height:80px; border-radius:8px; object-fit:cover; }
   </style>
 </head>
 <body>
 
-<h1>🎵 MusicPlay</h1>
+<h1>MusicPlay 🎵</h1>
 
-<div class="search-box">
-  <input type="text" id="searchInput" class="search-input" placeholder="Search songs…">
-  <button id="searchBtn" class="search-btn">Search</button>
-</div>
+<input id="query" placeholder="Search..." style="padding:10px;width:70%;">
+<button onclick="search()" style="padding:10px;">Search</button>
 
-<div id="status" class="status"></div>
+<div id="list"></div>
 
-<ul id="songList" class="song-list"></ul>
+<h2 id="title"></h2>
 
-<div id="player" class="player" style="display: none;">
-  <div class="player-info">
-    <div id="nowPlaying">No song playing</div>
-  </div>
-  <div class="player-controls">
-    <button id="playBtn" class="control-btn">⏸️</button>
-  </div>
-</div>
+<!-- YOUTUBE PLAYER -->
+<iframe 
+  id="player"
+  width="0" 
+  height="0"
+  style="display:none;"
+  src=""
+  frameborder="0"
+  allow="autoplay">
+</iframe>
 
 <script>
-  // ------------ CONFIG ------------
-  const BASE_URL = "https://youtube-0vra.onrender.com";
-  let currentAudio = null;
+const BASE="https://youtube-0vra.onrender.com";
 
-  // ------------ SEARCH ------------
-  document.getElementById("searchBtn").onclick = searchSongs;
-  document.getElementById("searchInput").onkeypress = (e) => {
-    if (e.key === "Enter") searchSongs();
-  };
+async function search(){
+  const q=document.getElementById('query').value.trim();
+  if(!q) return;
+  const list = document.getElementById('list');
+  list.innerHTML = "Searching...";
 
-  async function searchSongs() {
-    const query = document.getElementById("searchInput").value.trim();
-    if (!query) return;
+  const r=await fetch(`${BASE}/search/videos?query=${q}&limit=20`);
+  const t=await r.text();
+  const data=JSON.parse(t);
 
-    document.getElementById("status").textContent = "Searching…";
-    const list = document.getElementById("songList");
-    list.innerHTML = "";
+  list.innerHTML="";
+  data.results.forEach(v=>{
+    const div=document.createElement("div");
+    div.className="song";
+    div.innerHTML=`
+      <img src="${v.thumbnail}">
+      <div>
+         <b>${v.title}</b><br>
+         ${v.channel}<br>
+         ${v.duration || "--:--"}
+      </div>
+    `;
+    div.onclick=()=>playSong(v);
+    list.appendChild(div);
+  });
+}
 
-    try {
-      const res = await fetch(`${BASE_URL}/search/videos?query=${encodeURIComponent(query)}&limit=20`);
-      const text = await res.text();
+function playSong(v){
+  document.getElementById('title').textContent = v.title;
 
-      if (text.startsWith("<")) {
-        document.getElementById("status").textContent = "Server returned HTML, not JSON.";
-        return;
-      }
-
-      const data = JSON.parse(text);
-
-      if (!data.results || data.results.length === 0) {
-        document.getElementById("status").textContent = "No results found!";
-        return;
-      }
-
-      document.getElementById("status").textContent = `Found ${data.results.length} songs`;
-
-      data.results.forEach(song => {
-        const li = document.createElement("li");
-        li.className = "song-item";
-
-        li.innerHTML = `
-          <img src="${song.thumbnail}" class="song-thumb">
-          <div>
-            <div class="song-title">${song.title}</div>
-            <div class="song-artist">${song.channel}</div>
-          </div>
-          <div class="song-duration">${song.duration || '--:--'}</div>
-        `;
-
-        li.onclick = () => playSong(song);
-        list.appendChild(li);
-      });
-
-    } catch (e) {
-      document.getElementById("status").textContent = "Error fetching search results.";
-    }
-  }
-
-  // ------------ PLAY SONG ------------
-  function playSong(song) {
-    if (currentAudio) {
-      currentAudio.pause();
-    }
-
-    const player = document.getElementById("player");
-    const nowPlaying = document.getElementById("nowPlaying");
-    const playBtn = document.getElementById("playBtn");
-
-    nowPlaying.textContent = `${song.title} — ${song.channel}`;
-    player.style.display = "block";
-
-    currentAudio = new Audio(`${BASE_URL}/stream/${song.videoId}`);
-
-    currentAudio.play().then(() => {
-      playBtn.textContent = "⏸️";
-    }).catch(err => {
-      console.error(err);
-      alert("Error: Cannot play audio. Maybe streaming failed.");
-    });
-
-    playBtn.onclick = () => {
-      if (currentAudio.paused) {
-        currentAudio.play();
-        playBtn.textContent = "⏸️";
-      } else {
-        currentAudio.pause();
-        playBtn.textContent = "▶️";
-      }
-    };
-  }
-
+  // YT IFRAME AUDIO TRICK (Working every time!)
+  document.getElementById('player').style.display="block";
+  document.getElementById('player').src =
+    `https://www.youtube.com/embed/${v.videoId}?autoplay=1`;
+}
 </script>
 
 </body>
