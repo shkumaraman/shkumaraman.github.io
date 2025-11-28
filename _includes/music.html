@@ -99,15 +99,6 @@
             margin-bottom: 25px;
         }
 
-        .player-header h3 {
-            font-size: 28px;
-            font-weight: 700;
-            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            letter-spacing: -0.5px;
-        }
-
         .now-playing {
             font-size: 14px;
             color: var(--text-light);
@@ -450,27 +441,6 @@
                 text-align: center;
             }
         }
-
-        @media (max-width: 480px) {
-            .thumbnail-container {
-                width: 150px;
-                height: 150px;
-            }
-            
-            .control-buttons {
-                gap: 10px;
-            }
-            
-            .control-buttons button {
-                width: 45px;
-                height: 45px;
-            }
-            
-            #playPauseBtn {
-                width: 55px;
-                height: 55px;
-            }
-        }
     </style>
 
     <!-- Mini Player Button -->
@@ -485,7 +455,6 @@
         </div>
 
         <div class="player-header">
-            <h3>MusicPlay</h3>
             <div id="nowPlaying" class="now-playing">Not playing</div>
         </div>
 
@@ -537,472 +506,463 @@
     <!-- Hidden YouTube Player -->
     <div id="player"></div>
 
-    <script>
-        // Firebase Configuration
-        const firebaseConfig = {
-            // Add your Firebase configuration here
-            apiKey: "your-api-key",
-            authDomain: "your-project.firebaseapp.com",
-            databaseURL: "https://your-project-default-rtdb.firebaseio.com",
-            projectId: "your-project-id",
-            storageBucket: "your-project.appspot.com",
-            messagingSenderId: "your-sender-id",
-            appId: "your-app-id"
-        };
+<script>
 
-        // Initialize Firebase
-        if (firebaseConfig.apiKey !== "your-api-key") {
-            firebase.initializeApp(firebaseConfig);
+    const API_BASE = "https://youtube-0vra.onrender.com";
+
+    /* ------------------ SEARCH BOX SYSTEM ------------------ */
+
+    document.getElementById("searchBox").addEventListener("input", async function () {
+        let q = this.value.trim();
+
+        if (!q) {
+            document.getElementById("searchResults").innerHTML = "";
+            return;
         }
 
-        const API_BASE = "https://youtube-0vra.onrender.com";
+        document.getElementById("searchResults").innerHTML =
+            "<div class='search-result-item'>Searching...</div>";
 
-        /* ------------------ SEARCH BOX SYSTEM ------------------ */
+        try {
+            const res = await fetch(`${API_BASE}/search/videos?query=${q}&limit=20`);
+            const data = await res.json();
 
-        document.getElementById("searchBox").addEventListener("input", async function () {
-            let q = this.value.trim();
-
-            if (!q) {
-                document.getElementById("searchResults").innerHTML = "";
+            if (!data.results) {
+                document.getElementById("searchResults").innerHTML =
+                    "<div class='search-result-item'>No results found</div>";
                 return;
             }
 
-            document.getElementById("searchResults").innerHTML = "<div class='search-result-item'>Searching...</div>";
+            renderResults(data.results);
+        } catch {
+            document.getElementById("searchResults").innerHTML =
+                "<div class='search-result-item'>Error loading results</div>";
+        }
+    });
 
-            try {
-                const res = await fetch(`${API_BASE}/search/videos?query=${q}&limit=20`);
-                const data = await res.json();
+    function renderResults(list) {
+        const box = document.getElementById("searchResults");
+        box.innerHTML = "";
 
-                if (!data.results) {
-                    document.getElementById("searchResults").innerHTML = "<div class='search-result-item'>No results found</div>";
-                    return;
-                }
+        list.forEach(v => {
+            const div = document.createElement("div");
+            div.className = "search-result-item";
 
-                renderResults(data.results);
-            } catch {
-                document.getElementById("searchResults").innerHTML = "<div class='search-result-item'>Error loading results</div>";
-            }
+            const thumb = v.thumbnail || `https://img.youtube.com/vi/${v.videoId}/default.jpg`;
+
+            div.innerHTML = `
+                <img src="${thumb}" class="search-result-thumbnail">
+                <div class="search-result-info">
+                    <div class="search-result-title">${v.title}</div>
+                    <div class="search-result-channel">${v.channel} • ${v.duration || ""}</div>
+                </div>
+            `;
+
+            div.onclick = () => playFromSearch(v);
+            box.appendChild(div);
+        });
+    }
+
+    /* ------------------ PLAY FROM SEARCH ------------------ */
+
+    function playFromSearch(video) {
+        const vid = video.videoId;
+
+        musicPlayer.currentSongUrl = `https://www.youtube.com/watch?v=${vid}`;
+
+        const thumbnail = document.getElementById("videoThumbnail");
+        thumbnail.src = `https://img.youtube.com/vi/${vid}/hqdefault.jpg`;
+        thumbnail.onerror = () => (thumbnail.src = "/chat/logo.png");
+
+        document.getElementById("nowPlaying").textContent = "Playing: " + video.title;
+        musicPlayer.currentVideoTitle = video.title;
+
+        musicPlayer.player.loadVideoById(vid);
+        musicPlayer.player.playVideo();
+        musicPlayer.isPlaying = true;
+        musicPlayer.updatePlayPauseIcon();
+
+        // Firebase Sync
+        musicPlayer.updateState({
+            currentSong: musicPlayer.currentSongUrl,
+            status: "playing",
+            timestamp: 0
         });
 
-        function renderResults(list) {
-            const box = document.getElementById("searchResults");
-            box.innerHTML = "";
+        document.getElementById("searchResults").innerHTML = "";
+        document.getElementById("searchBox").value = "";
+    }
 
-            list.forEach(v => {
-                const div = document.createElement("div");
-                div.className = "search-result-item";
-                
-                const thumbnailUrl = v.thumbnail || `https://img.youtube.com/vi/${v.videoId}/default.jpg`;
-                
-                div.innerHTML = `
-                    <img src="${thumbnailUrl}" class="search-result-thumbnail" alt="Thumbnail">
-                    <div class="search-result-info">
-                        <div class="search-result-title">${v.title}</div>
-                        <div class="search-result-channel">${v.channel} • ${v.duration || ""}</div>
-                    </div>
-                `;
+    /* ------------------ YOUTUBE IFRAME API ------------------ */
 
-                div.onclick = () => playFromSearch(v);
-                box.appendChild(div);
+    if (typeof YT === "undefined") {
+        let tag = document.createElement("script");
+        tag.src = "https://www.youtube.com/iframe_api";
+        document.body.appendChild(tag);
+    }
+
+    function formatTime(sec) {
+        sec = Math.floor(sec);
+        const m = Math.floor(sec / 60);
+        const s = sec % 60;
+        return `${m}:${s < 10 ? "0" : ""}${s}`;
+    }
+
+    /* ------------------ MAIN PLAYER OBJECT ------------------ */
+
+    var musicPlayer = {
+        player: null,
+        ytReady: false,
+        isPlaying: false,
+        isMuted: false,
+        isLooping: false,
+        currentSongUrl: "",
+        firebaseListener: null,
+
+        /* -------- INIT -------- */
+
+        init: function () {
+            document.getElementById("miniPlayer").onclick = () => this.showFullPlayer();
+            document.querySelector(".close-player").onclick = () => this.hideFullPlayer();
+
+            this.setupControls();
+
+            if (typeof YT !== "undefined") {
+                this.onYouTubeIframeAPIReady();
+            } else {
+                window.onYouTubeIframeAPIReady = this.onYouTubeIframeAPIReady.bind(this);
+            }
+
+            this.setupFirebaseListener();
+        },
+
+        showFullPlayer() {
+            const p = document.getElementById("fullPlayer");
+            p.style.display = "flex";
+            setTimeout(() => (p.style.opacity = "1"), 10);
+        },
+
+        hideFullPlayer() {
+            const p = document.getElementById("fullPlayer");
+            p.style.opacity = "0";
+            setTimeout(() => (p.style.display = "none"), 300);
+        },
+
+        /* -------- YT READY -------- */
+
+        onYouTubeIframeAPIReady: function () {
+            this.player = new YT.Player("player", {
+                videoId: "",
+                height: "0",
+                width: "0",
+                playerVars: {
+                    controls: 0,
+                    modestbranding: 1,
+                    rel: 0,
+                    playsinline: 1
+                },
+                events: {
+                    onReady: () => {
+                        this.ytReady = true;
+                        this.updateMuteIcon();
+                        this.checkSavedState();
+                    },
+                    onStateChange: this.onPlayerStateChange.bind(this)
+                }
             });
-        }
+        },
 
-        /* ------------------ PLAY FROM SEARCH ------------------ */
+        onPlayerStateChange(e) {
+            if (e.data === YT.PlayerState.PLAYING) this.isPlaying = true;
+            else this.isPlaying = false;
 
-        function playFromSearch(video) {
-            const vid = video.videoId;
+            if (e.data === YT.PlayerState.ENDED && this.isLooping) {
+                this.player.seekTo(0);
+                this.player.playVideo();
+            }
 
-            musicPlayer.currentSongUrl = `https://www.youtube.com/watch?v=${vid}`;
+            this.updatePlayPauseIcon();
+        },
+
+        /* -------- CONTROLS -------- */
+
+        setupControls() {
+            document.getElementById("playPauseBtn").onclick = () => {
+                if (!this.player) return;
+
+                if (this.isPlaying) {
+                    this.player.pauseVideo();
+                    this.updateState({
+                        status: "paused",
+                        timestamp: this.player.getCurrentTime(),
+                        currentSong: this.currentSongUrl
+                    });
+                } else {
+                    this.player.playVideo();
+                    this.updateState({
+                        status: "playing",
+                        timestamp: this.player.getCurrentTime(),
+                        currentSong: this.currentSongUrl
+                    });
+                }
+            };
+
+            document.getElementById("prevBtn").onclick = () => {
+                let t = Math.max(0, this.player.getCurrentTime() - 10);
+                this.player.seekTo(t);
+                this.updateState({
+                    status: "playing",
+                    timestamp: t,
+                    currentSong: this.currentSongUrl
+                });
+            };
+
+            document.getElementById("nextBtn").onclick = () => {
+                let t = Math.min(this.player.getDuration(), this.player.getCurrentTime() + 10);
+                this.player.seekTo(t);
+                this.updateState({
+                    status: "playing",
+                    timestamp: t,
+                    currentSong: this.currentSongUrl
+                });
+            };
+
+            document.getElementById("muteBtn").onclick = () => {
+                if (this.player.isMuted()) {
+                    this.player.unMute();
+                    this.isMuted = false;
+                } else {
+                    this.player.mute();
+                    this.isMuted = true;
+                }
+                this.updateMuteIcon();
+            };
+
+            document.getElementById("loopBtn").onclick = () => {
+                this.isLooping = !this.isLooping;
+                document.getElementById("loopBtn").classList.toggle("active-control", this.isLooping);
+
+                this.updateState({
+                    status: this.isPlaying ? "playing" : "paused",
+                    timestamp: Math.floor(this.player.getCurrentTime()),
+                    currentSong: this.currentSongUrl,
+                    loop: this.isLooping
+                });
+            };
+
+            /* -------- Custom Seek Bar -------- */
+
+            const bar = document.getElementById("seekBarContainer");
+            let isSeeking = false;
+
+            bar.addEventListener("mousedown", e => {
+                isSeeking = true;
+                this.seekToEvent(e);
+            });
+
+            document.addEventListener("mousemove", e => {
+                if (isSeeking) this.seekToEvent(e);
+            });
+
+            document.addEventListener("mouseup", () => (isSeeking = false));
+
+            bar.addEventListener("touchstart", e => {
+                isSeeking = true;
+                this.seekToEvent(e.touches[0]);
+            });
+
+            document.addEventListener("touchmove", e => {
+                if (isSeeking) this.seekToEvent(e.touches[0]);
+            });
+
+            document.addEventListener("touchend", () => (isSeeking = false));
+
+            this.seekToEvent = e => {
+                if (!this.player) return;
+
+                const rect = bar.getBoundingClientRect();
+                const percent = Math.min(Math.max(0, e.clientX - rect.left), rect.width) / rect.width;
+
+                const seekTime = percent * this.player.getDuration();
+
+                this.player.seekTo(seekTime);
+
+                this.updateState({
+                    status: "playing",
+                    timestamp: seekTime,
+                    currentSong: this.currentSongUrl
+                });
+            };
+        },
+
+        updatePlayPauseIcon() {
+            document.getElementById("playPauseIcon").className =
+                this.isPlaying ? "fas fa-pause" : "fas fa-play";
+        },
+
+        updateMuteIcon() {
+            document.getElementById("muteIcon").className =
+                this.isMuted ? "fas fa-volume-mute" : "fas fa-volume-up";
+            document.getElementById("muteBtn").classList.toggle("active-control", this.isMuted);
+        },
+
+        /* ---------------- FIREBASE ---------------- */
+
+        firebaseInitialized() {
+            return typeof firebase !== "undefined" && firebase.apps.length > 0;
+        },
+
+        setupFirebaseListener() {
+            if (!this.firebaseInitialized()) return;
+            if (this.firebaseListener) this.firebaseListener();
+
+            const ref = firebase.database().ref("music");
+
+            this.firebaseListener = ref.on("value", snap => {
+                const data = snap.val();
+                if (!data || !this.ytReady) return;
+
+                const { currentSong, status, timestamp, lastUpdate, loop } = data;
+                if (!currentSong) return;
+
+                this.isLooping = !!loop;
+                document.getElementById("loopBtn").classList.toggle("active-control", this.isLooping);
+
+                const vid = this.extractYouTubeID(currentSong);
+                if (!vid) return;
+
+                const now = Date.now();
+                let effectiveTime = timestamp || 0;
+
+                if (status === "playing" && lastUpdate) {
+                    effectiveTime += Math.floor((now - lastUpdate) / 1000);
+                }
+
+                const currentVid = this.player?.getVideoData().video_id;
+
+                if (!currentVid || currentVid !== vid) {
+                    this.processNewSong(currentSong, status, effectiveTime);
+                } else {
+                    const ct = this.player.getCurrentTime();
+                    if (Math.abs(ct - effectiveTime) > 2) {
+                        this.player.seekTo(effectiveTime, true);
+                    }
+
+                    if (status === "playing") {
+                        if (this.player.getPlayerState() !== YT.PlayerState.PLAYING) {
+                            this.player.playVideo();
+                        }
+                    } else {
+                        if (this.player.getPlayerState() !== YT.PlayerState.PAUSED) {
+                            this.player.pauseVideo();
+                        }
+                    }
+
+                    this.isPlaying = status === "playing";
+                    this.updatePlayPauseIcon();
+                }
+            });
+        },
+
+        extractYouTubeID(input) {
+            return /^[a-zA-Z0-9_-]{11}$/.test(input) ? input : null;
+        },
+
+        checkSavedState() {
+            if (!this.firebaseInitialized()) return;
+
+            firebase
+                .database()
+                .ref("music")
+                .once("value")
+                .then(snap => {
+                    const data = snap.val();
+                    if (!data || !data.currentSong) return;
+
+                    const now = Date.now();
+                    let effective = data.timestamp || 0;
+
+                    if (data.status === "playing" && data.lastUpdate) {
+                        effective += Math.floor((now - data.lastUpdate) / 1000);
+                    }
+
+                    this.isLooping = !!data.loop;
+                    document
+                        .getElementById("loopBtn")
+                        .classList.toggle("active-control", this.isLooping);
+
+                    this.processNewSong(data.currentSong, data.status, effective);
+                });
+        },
+
+        processNewSong(url, status, timestamp) {
+            const vid = this.extractYouTubeID(url);
+            if (!vid) return;
+
+            this.currentSongUrl = url;
 
             const thumbnail = document.getElementById("videoThumbnail");
             thumbnail.src = `https://img.youtube.com/vi/${vid}/hqdefault.jpg`;
-            
-            // Fallback if thumbnail fails to load
-            thumbnail.onerror = function() {
-                this.src = "/chat/logo.png";
-            };
+            thumbnail.onerror = () => (thumbnail.src = "/chat/logo.png");
 
-            document.getElementById("nowPlaying").textContent = "Playing: " + video.title;
-            musicPlayer.currentVideoTitle = video.title;
-
-            musicPlayer.player.loadVideoById(vid);
-            musicPlayer.player.playVideo();
-            musicPlayer.isPlaying = true;
-            musicPlayer.updatePlayPauseIcon();
-
-            // Firebase Sync
-            musicPlayer.updateState({
-                currentSong: musicPlayer.currentSongUrl,
-                status: "playing",
-                timestamp: 0
-            });
-
-            // clear search
-            document.getElementById("searchResults").innerHTML = "";
-            document.getElementById("searchBox").value = "";
-        }
-
-        /* ---------------- YOUTUBE IFRAME API ---------------- */
-
-        if (typeof YT === "undefined") {
-            let tag = document.createElement("script");
-            tag.src = "https://www.youtube.com/iframe_api";
-            document.body.appendChild(tag);
-        }
-
-        function formatTime(sec) {
-            sec = Math.floor(sec);
-            const m = Math.floor(sec / 60);
-            const s = sec % 60;
-            return `${m}:${s < 10 ? "0" : ""}${s}`;
-        }
-
-        /* ------------------ MAIN PLAYER OBJECT ------------------ */
-
-        var musicPlayer = {
-            player: null,
-            ytReady: false,
-            isPlaying: false,
-            isMuted: false,
-            isLooping: false,
-            currentSongUrl: "",
-            firebaseListener: null,
-
-            init: function () {
-                document.getElementById("miniPlayer").onclick = () => {
-                    this.showFullPlayer();
-                };
-
-                document.querySelector(".close-player").onclick = () => {
-                    this.hideFullPlayer();
-                };
-
-                this.setupControls();
-
-                if (typeof YT !== "undefined") {
-                    this.onYouTubeIframeAPIReady();
-                } else {
-                    window.onYouTubeIframeAPIReady = this.onYouTubeIframeAPIReady.bind(this);
-                }
-
-                this.setupFirebaseListener();
-            },
-
-            showFullPlayer: function() {
-                const p = document.getElementById("fullPlayer");
-                p.style.display = "flex";
-                setTimeout(() => {
-                    p.style.opacity = "1";
-                }, 10);
-            },
-
-            hideFullPlayer: function() {
-                const p = document.getElementById("fullPlayer");
-                p.style.opacity = "0";
-                setTimeout(() => {
-                    p.style.display = "none";
-                }, 300);
-            },
-
-            onYouTubeIframeAPIReady: function () {
-                this.player = new YT.Player("player", {
-                    videoId: "",
-                    height: "0",
-                    width: "0",
-                    playerVars: {
-                        controls: 0,
-                        modestbranding: 1,
-                        rel: 0,
-                        playsinline: 1
-                    },
-                    events: {
-                        onReady: () => {
-                            this.ytReady = true;
-                            this.updateMuteIcon();
-                            this.checkSavedState();
-                        },
-                        onStateChange: this.onPlayerStateChange.bind(this)
-                    }
-                });
-            },
-
-            onPlayerStateChange: function (e) {
-                if (e.data === YT.PlayerState.PLAYING) {
-                    this.isPlaying = true;
-                } else if (e.data === YT.PlayerState.PAUSED) {
-                    this.isPlaying = false;
-                } else if (e.data === YT.PlayerState.ENDED && this.isLooping) {
-                    this.player.seekTo(0);
-                    this.player.playVideo();
-                }
-                this.updatePlayPauseIcon();
-            },
-
-            /* ------------------ CONTROLS ------------------ */
-
-            setupControls: function () {
-                document.getElementById("playPauseBtn").onclick = () => {
-                    if (!this.player) return;
-
-                    if (this.isPlaying) {
-                        this.player.pauseVideo();
-                        this.updateState({ status: "paused", timestamp: this.player.getCurrentTime(), currentSong: this.currentSongUrl });
-                    } else {
-                        this.player.playVideo();
-                        this.updateState({ status: "playing", timestamp: this.player.getCurrentTime(), currentSong: this.currentSongUrl });
-                    }
-                };
-
-                document.getElementById("prevBtn").onclick = () => {
-                    let t = Math.max(0, this.player.getCurrentTime() - 10);
-                    this.player.seekTo(t);
-                    this.updateState({ status: "playing", timestamp: t, currentSong: this.currentSongUrl });
-                };
-
-                document.getElementById("nextBtn").onclick = () => {
-                    let t = Math.min(this.player.getDuration(), this.player.getCurrentTime() + 10);
-                    this.player.seekTo(t);
-                    this.updateState({ status: "playing", timestamp: t, currentSong: this.currentSongUrl });
-                };
-
-                document.getElementById("muteBtn").onclick = () => {
-                    if (this.player.isMuted()) {
-                        this.player.unMute();
-                        this.isMuted = false;
-                    } else {
-                        this.player.mute();
-                        this.isMuted = true;
-                    }
-                    this.updateMuteIcon();
-                };
-
-                document.getElementById("loopBtn").onclick = () => {
-                    this.isLooping = !this.isLooping;
-                    document.getElementById("loopBtn").classList.toggle("active-control", this.isLooping);
-                    this.updateState({
-                        status: this.isPlaying ? "playing" : "paused",
-                        timestamp: Math.floor(this.player.getCurrentTime()),
-                        currentSong: this.currentSongUrl,
-                        loop: this.isLooping
-                    });
-                };
-
-                // Custom progress bar
-                const seekBarContainer = document.getElementById("seekBarContainer");
-                const progressBar = document.getElementById("progressBar");
-                const sliderThumb = document.getElementById("sliderThumb");
-
-                let isSeeking = false;
-
-                seekBarContainer.addEventListener("mousedown", (e) => {
-                    isSeeking = true;
-                    this.handleSeek(e);
-                });
-
-                document.addEventListener("mousemove", (e) => {
-                    if (isSeeking) {
-                        this.handleSeek(e);
-                    }
-                });
-
-                document.addEventListener("mouseup", () => {
-                    isSeeking = false;
-                });
-
-                // Touch events for mobile
-                seekBarContainer.addEventListener("touchstart", (e) => {
-                    isSeeking = true;
-                    this.handleSeek(e.touches[0]);
-                });
-
-                document.addEventListener("touchmove", (e) => {
-                    if (isSeeking) {
-                        this.handleSeek(e.touches[0]);
-                    }
-                });
-
-                document.addEventListener("touchend", () => {
-                    isSeeking = false;
-                });
-
-                this.handleSeek = (e) => {
-                    if (!this.player) return;
-                    
-                    const rect = seekBarContainer.getBoundingClientRect();
-                    const percent = Math.min(Math.max(0, e.clientX - rect.left), rect.width) / rect.width;
-                    const duration = this.player.getDuration();
-                    const seekTime = percent * duration;
-                    
-                    this.player.seekTo(seekTime);
-                    this.updateState({ status: "playing", timestamp: seekTime, currentSong: this.currentSongUrl });
-                };
-            },
-
-            /* ---------------- UI UPDATE ---------------- */
-
-            updatePlayPauseIcon: function () {
-                document.getElementById("playPauseIcon").className =
-                    this.isPlaying ? "fas fa-pause" : "fas fa-play";
-            },
-
-            updateMuteIcon: function () {
-                document.getElementById("muteIcon").className =
-                    this.isMuted ? "fas fa-volume-mute" : "fas fa-volume-up";
-                document.getElementById("muteBtn").classList.toggle("active-control", this.isMuted);
-            },
-
-            /* ---------------- FIREBASE ---------------- */
-
-            setupFirebaseListener: function () {
-                if (!this.firebaseInitialized()) return;
-                if (this.firebaseListener) this.firebaseListener();
-                
-                const stateRef = firebase.database().ref('music');
-                this.firebaseListener = stateRef.on('value', (snapshot) => {
-                    const data = snapshot.val();
-                    if (!data || !this.ytReady) return;
-
-                    const { currentSong, status, timestamp, lastUpdate, loop } = data;
-                    if (!currentSong) return;
-
-                    this.isLooping = !!loop;
-                    document.getElementById("loopBtn").classList.toggle("active-control", this.isLooping);
-
-                    const vid = this.extractYouTubeID(currentSong);
-                    if (!vid) return;
-
-                    const now = Date.now();
-                    let effectiveTime = timestamp || 0;
-                    if (status === 'playing' && lastUpdate) {
-                        effectiveTime += Math.floor((now - lastUpdate) / 1000);
-                    }
-
-                    const currentVid = this.player ? this.player.getVideoData().video_id : '';
-                    if (!currentVid || currentVid !== vid) {
-                        this.processNewSong(currentSong, status, effectiveTime);
-                    } else {
-                        const currentTime = this.player.getCurrentTime();
-                        if (Math.abs(currentTime - effectiveTime) > 2) {
-                            this.player.seekTo(effectiveTime, true);
-                        }
-                        if (status === 'playing' && this.player.getPlayerState() !== YT.PlayerState.PLAYING) {
-                            this.player.playVideo();
-                            this.isPlaying = true;
-                            this.updatePlayPauseIcon();
-                        } else if (status === 'paused' && this.player.getPlayerState() !== YT.PlayerState.PAUSED) {
-                            this.player.pauseVideo();
-                            this.isPlaying = false;
-                            this.updatePlayPauseIcon();
-                        }
-                    }
-                });
-            },
-
-            extractYouTubeID: function(url) {
-                if (!url) return null;
-                if (/^[a-zA-Z0-9_-]{11}$/.test(url)) return url;
-                try {
-                    const u = new URL(url);
-                    if (u.hostname.includes("youtu.be")) return u.pathname.slice(1);
-                    if (u.searchParams.get("v")) return u.searchParams.get("v");
-                } catch {}
-                const m = url.match(/[a-zA-Z0-9_-]{11}/);
-                return m ? m[0] : null;
-            },
-
-            checkSavedState: function() {
-                if (!this.firebaseInitialized()) return;
-                const stateRef = firebase.database().ref('music');
-                stateRef.once('value').then((snapshot) => {
-                    const data = snapshot.val();
-                    if (data && data.currentSong) {
-                        const now = Date.now();
-                        let effectiveTime = data.timestamp || 0;
-                        if (data.status === 'playing' && data.lastUpdate) {
-                            effectiveTime += Math.floor((now - data.lastUpdate) / 1000);
-                        }
-                        this.isLooping = !!data.loop;
-                        document.getElementById("loopBtn").classList.toggle("active-control", this.isLooping);
-                        this.processNewSong(data.currentSong, data.status, effectiveTime);
-                    }
-                });
-            },
-
-            processNewSong: function(url, status, timestamp) {
-                const vid = this.extractYouTubeID(url || '');
-                if (!vid) return;
-                
-                this.currentSongUrl = url;
-                
-                // Set thumbnail
-                const thumbnail = document.getElementById("videoThumbnail");
-                thumbnail.src = `https://img.youtube.com/vi/${vid}/hqdefault.jpg`;
-                
-                // Fallback if thumbnail fails to load
-                thumbnail.onerror = function() {
-                    this.src = "/chat/logo.png";
-                };
-                
-                this.fetchVideoTitle(vid).then(title => {
+            this.fetchVideoTitle(vid)
+                .then(title => {
                     this.currentVideoTitle = title;
-                    document.getElementById("nowPlaying").textContent = 'Playing: ' + title;
-                }).catch(() => {
+                    document.getElementById("nowPlaying").textContent = "Playing: " + title;
+                })
+                .catch(() => {
                     this.currentVideoTitle = "Unknown Title";
-                    document.getElementById("nowPlaying").textContent = 'Playing: ' + url;
+                    document.getElementById("nowPlaying").textContent =
+                        "Playing: " + url;
                 });
-                
-                this.player.loadVideoById({ videoId: vid, startSeconds: timestamp || 0 });
-                if (status === 'playing') {
-                    this.player.playVideo();
-                    this.isPlaying = true;
-                } else {
-                    this.player.pauseVideo();
-                    this.isPlaying = false;
-                }
-                this.updatePlayPauseIcon();
-            },
 
-            fetchVideoTitle: function(videoId) {
-                return fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`)
-                    .then(response => response.json())
-                    .then(data => data.title);
-            },
+            this.player.loadVideoById({ videoId: vid, startSeconds: timestamp });
+            if (status === "playing") this.player.playVideo();
+            else this.player.pauseVideo();
 
-            updateState: function(obj) {
-                if (!this.firebaseInitialized()) return;
-                obj.lastUpdate = Date.now();
-                if (this.isLooping) obj.loop = true;
-                firebase.database().ref('music').set(obj).catch(error => {
-                    console.error('Firebase update error:', error);
-                });
-            },
+            this.isPlaying = status === "playing";
+            this.updatePlayPauseIcon();
+        },
 
-            firebaseInitialized: function() {
-                return typeof firebase !== 'undefined' && firebase.apps.length > 0;
-            }
-        };
+        fetchVideoTitle(videoId) {
+            return fetch(
+                `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`
+            )
+                .then(res => res.json())
+                .then(data => data.title);
+        },
 
-        /* ---------------- INIT ---------------- */
+        updateState(obj) {
+            if (!this.firebaseInitialized()) return;
 
-        musicPlayer.init();
+            obj.lastUpdate = Date.now();
+            if (this.isLooping) obj.loop = true;
 
-        // Update progress bar and time display
-        setInterval(() => {
-            if (!musicPlayer.player) return;
-            
-            const currentTime = musicPlayer.player.getCurrentTime();
-            const duration = musicPlayer.player.getDuration();
-            
-            document.getElementById("curTime").textContent = formatTime(currentTime);
-            document.getElementById("duration").textContent = formatTime(duration);
-            
-            // Update progress bar
-            if (duration > 0) {
-                const progressPercent = (currentTime / duration) * 100;
-                document.getElementById("progressBar").style.width = `${progressPercent}%`;
-                
-                const sliderThumb = document.getElementById("sliderThumb");
-                sliderThumb.style.left = `${progressPercent}%`;
-            }
-        }, 1000);
-    </script>
+            firebase
+                .database()
+                .ref("music")
+                .set(obj)
+                .catch(err => console.error(err));
+        }
+    };
+
+
+    musicPlayer.init();
+
+    setInterval(() => {
+        if (!musicPlayer.player) return;
+
+        const ct = musicPlayer.player.getCurrentTime();
+        const dur = musicPlayer.player.getDuration();
+
+        document.getElementById("curTime").textContent = formatTime(ct);
+        document.getElementById("duration").textContent = formatTime(dur);
+
+        if (dur > 0) {
+            const percent = (ct / dur) * 100;
+            document.getElementById("progressBar").style.width = percent + "%";
+            document.getElementById("sliderThumb").style.left = percent + "%";
+        }
+    }, 1000);
+
+</script>
