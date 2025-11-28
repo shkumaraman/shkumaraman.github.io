@@ -1,12 +1,14 @@
-
 from fastapi import FastAPI, HTTPException, Query
-from youtubesearchpython import VideosSearch, ChannelsSearch, PlaylistsSearch, Video
 from youtube_transcript_api import YouTubeTranscriptApi, NoTranscriptFound
+import requests
+from bs4 import BeautifulSoup
+import json
+import re
 
 app = FastAPI(
-    title="Unofficial YouTube API",
-    description="Simple unofficial wrapper around YouTube search, video details, and captions using youtubesearchpython + youtube-transcript-api.",
-    version="2.0.0",
+    title="Unofficial YouTube API (Stable Version)",
+    description="YouTube search, video details & captions without any unstable libraries.",
+    version="3.0.0",
 )
 
 
@@ -14,70 +16,113 @@ app = FastAPI(
 async def root():
     return {
         "name": "Unofficial YouTube API",
-        "version": "2.0.0",
+        "version": "3.0.0",
         "status": "ok",
         "docs": "/docs",
         "endpoints": {
             "video_search": "/search/videos?query=QUERY&limit=10",
-            "channel_search": "/search/channels?query=QUERY&limit=10",
-            "playlist_search": "/search/playlists?query=QUERY&limit=10",
-            "video_details": "/video/{video_id}",
-            "captions": "/captions/{video_id}?lang=en&format=json",
+            "video_details": "/video/VIDEO_ID",
+            "captions": "/captions/VIDEO_ID",
         },
     }
 
 
+# ----------------------------------------------------
+#  SIMPLE YOUTUBE SEARCH (NO API KEY, NO BROKEN LIBS)
+# ----------------------------------------------------
+def youtube_search(query: str, limit: int = 10):
+    url = "https://www.youtube.com/results"
+    params = {"search_query": query}
+
+    response = requests.get(url, params=params)
+    html = response.text
+
+    soup = BeautifulSoup(html, "html.parser")
+    scripts = soup.find_all("script")
+
+    data = None
+    for script in scripts:
+        if "ytInitialData" in script.text:
+            try:
+                text = script.text
+                json_str = text.split("ytInitialData = ")[1].split(";</script>")[0]
+                data = json.loads(json_str)
+                break
+            except:
+                continue
+
+    if not data:
+        return []
+
+    results = []
+    try:
+        sections = data["contents"]["twoColumnSearchResultsRenderer"]["primaryContents"]["sectionListRenderer"]["contents"]
+    except:
+        return []
+
+    for sec in sections:
+        items = sec.get("itemSectionRenderer", {}).get("contents", [])
+        for item in items:
+            if "videoRenderer" in item:
+                v = item["videoRenderer"]
+                video_id = v["videoId"]
+                title = v["title"]["runs"][0]["text"]
+                thumbnail = v["thumbnail"]["thumbnails"][-1]["url"]
+                channel = v["ownerText"]["runs"][0]["text"] if "ownerText" in v else None
+                duration = v["lengthText"]["simpleText"] if "lengthText" in v else None
+                views = v["viewCountText"]["simpleText"] if "viewCountText" in v else None
+
+                results.append({
+                    "videoId": video_id,
+                    "title": title,
+                    "url": f"https://www.youtube.com/watch?v={video_id}",
+                    "thumbnail": thumbnail,
+                    "channel": channel,
+                    "views": views,
+                    "duration": duration
+                })
+
+                if len(results) >= limit:
+                    return results
+
+    return results
+
+
 @app.get("/search/videos")
 async def search_videos(
-    query: str = Query(..., description="Search query for videos"),
-    limit: int = Query(10, ge=1, le=50, description="Maximum number of results"),
+    query: str = Query(..., description="Search query for YouTube videos"),
+    limit: int = Query(10, ge=1, le=50)
 ):
     try:
-        search = VideosSearch(query, limit=limit)
-        return search.result()
+        data = youtube_search(query, limit)
+        return {"results": data, "count": len(data)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/search/channels")
-async def search_channels(
-    query: str = Query(..., description="Search query for channels"),
-    limit: int = Query(10, ge=1, le=50, description="Maximum number of results"),
-):
-    try:
-        search = ChannelsSearch(query, limit=limit)
-        return search.result()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/search/playlists")
-async def search_playlists(
-    query: str = Query(..., description="Search query for playlists"),
-    limit: int = Query(10, ge=1, le=50, description="Maximum number of results"),
-):
-    try:
-        search = PlaylistsSearch(query, limit=limit)
-        return search.result()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
+# ----------------------------------------------------
+#       SIMPLE VIDEO DETAILS (TITLE SCRAPER)
+# ----------------------------------------------------
 @app.get("/video/{video_id}")
-async def get_video(video_id: str):
-    """
-    Get detailed information about a single video.
-    video_id can be the full URL or the 11-character ID.
-    """
-    try:
-        info = Video.getInfo(video_id)
-        return info
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+async def video_details(video_id: str):
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    response = requests.get(url)
+
+    # Title extraction from HTML
+    match = re.search(r'"title":"(.*?)"', response.text)
+    title = match.group(1).encode("utf-8").decode("unicode_escape") if match else "Unknown"
+
+    return {
+        "videoId": video_id,
+        "title": title,
+        "url": url
+    }
 
 
+# ----------------------------------------------------
+#                CAPTIONS (TRANSCRIPTS)
+# ----------------------------------------------------
 def _seconds_to_srt_timestamp(seconds: float) -> str:
-    # Convert float seconds to SRT timestamp "HH:MM:SS,mmm"
     millis = int(round(seconds * 1000))
     hours = millis // (1000 * 60 * 60)
     millis %= 1000 * 60 * 60
@@ -89,82 +134,50 @@ def _seconds_to_srt_timestamp(seconds: float) -> str:
 
 
 @app.get("/captions/{video_id}")
-async def get_captions(
+async def captions(
     video_id: str,
-    lang: str = Query("en", description="Preferred language code (e.g., en, hi, es)"),
-    format: str = Query(
-        "json",
-        description="Response format: 'json' (default), 'text', or 'srt'",
-        regex="^(json|text|srt)$",
-    ),
+    lang: str = "en",
+    format: str = "json"
 ):
-    """
-    Fetch YouTube video captions (subtitles) without official API key.
-
-    - Tries to get manually uploaded subtitles in requested lang.
-    - Falls back to auto-generated subtitles if needed.
-    - Supports multiple output formats (json/text/srt).
-    """
     try:
         transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
 
-        # Choose transcript: try manual -> fallback to auto-generated in same lang
+        # manual or auto
         try:
             transcript = transcript_list.find_transcript([lang])
-        except Exception:
-            # Try auto-generated transcript for that language
-            try:
-                transcript = transcript_list.find_generated_transcript([lang])
-            except Exception:
-                raise NoTranscriptFound
+        except:
+            transcript = transcript_list.find_generated_transcript([lang])
 
         data = transcript.fetch()
 
-        # Collect available language codes
-        available_languages = [t.language_code for t in transcript_list]
+        available = [t.language_code for t in transcript_list]
 
+        # plain text
         if format == "text":
-            text = "\n".join([item["text"] for item in data if item.get("text")])
-            return {
-                "video_id": video_id,
-                "language": lang,
-                "format": "text",
-                "available_languages": available_languages,
-                "captions_text": text,
-            }
+            text = "\n".join([x["text"] for x in data])
+            return {"video_id": video_id, "language": lang, "captions": text}
 
+        # SRT format
         if format == "srt":
-            srt_lines = []
-            for idx, c in enumerate(data, start=1):
-                start = c.get("start", 0.0)
-                duration = c.get("duration", 0.0)
-                end = start + duration
-                text = c.get("text", "").replace("\n", " ").strip()
-                if not text:
-                    continue
-                srt_lines.append(str(idx))
-                srt_lines.append(f"{_seconds_to_srt_timestamp(start)} --> {_seconds_to_srt_timestamp(end)}")
-                srt_lines.append(text)
-                srt_lines.append("")  # blank line
-            srt_content = "\n".join(srt_lines)
-            return {
-                "video_id": video_id,
-                "language": lang,
-                "format": "srt",
-                "available_languages": available_languages,
-                "captions_srt": srt_content,
-            }
+            srt = []
+            for i, c in enumerate(data, 1):
+                start = c["start"]
+                end = start + c["duration"]
+                srt.append(str(i))
+                srt.append(f"{_seconds_to_srt_timestamp(start)} --> {_seconds_to_srt_timestamp(end)}")
+                srt.append(c["text"])
+                srt.append("")
+            return {"video_id": video_id, "language": lang, "captions_srt": "\n".join(srt)}
 
-        # Default: json
+        # JSON
         return {
             "video_id": video_id,
             "language": lang,
-            "format": "json",
-            "available_languages": available_languages,
-            "captions": data,
+            "available_languages": available,
+            "captions": data
         }
 
     except NoTranscriptFound:
-        raise HTTPException(status_code=404, detail="No captions available for this video in the requested language.")
+        raise HTTPException(status_code=404, detail="No captions for this video.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
