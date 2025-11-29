@@ -460,7 +460,6 @@
 <script>
     const API_BASE = "https://youtube-0vra.onrender.com";
 
-    // Search functionality remains same...
     document.getElementById("searchBox").addEventListener("input", async function () {
         let q = this.value.trim();
         if (!q) {
@@ -509,14 +508,25 @@
 
     function playFromSearch(video) {
         const vid = video.videoId;
-        
-        // Direct Firebase update - don't update local player immediately
+        musicPlayer.currentVideoId = vid;
+
+        const thumbnail = document.getElementById("videoThumbnail");
+        thumbnail.src = `https://img.youtube.com/vi/${vid}/hqdefault.jpg`;
+        thumbnail.onerror = () => (thumbnail.src = "/chat/logo.png");
+
+        document.getElementById("nowPlaying").textContent = "Playing: " + video.title;
+        musicPlayer.currentVideoTitle = video.title;
+
+        musicPlayer.player.loadVideoById(vid);
+        musicPlayer.player.playVideo();
+        musicPlayer.isPlaying = true;
+        musicPlayer.updatePlayPauseIcon();
+
+        // Firebase me update karo
         musicPlayer.updateState({
             currentVideoId: vid,
             status: "playing",
-            timestamp: 0,
-            title: video.title,
-            forceUpdate: true
+            timestamp: 0
         });
 
         document.getElementById("searchResults").innerHTML = "";
@@ -545,8 +555,7 @@
         currentVideoId: "",
         firebaseListener: null,
         isFullScreen: false,
-        lastUpdateTime: 0,
-        isUpdating: false, // Prevent recursive updates
+        lastFirebaseUpdate: 0,
 
         init: function () {
             document.getElementById("miniPlayer").onclick = () => this.toggleFullPlayer();
@@ -601,28 +610,14 @@
         onPlayerStateChange(e) {
             if (e.data === YT.PlayerState.PLAYING) {
                 this.isPlaying = true;
-                // Only update Firebase if this is a user action, not from Firebase sync
-                if (!this.isUpdating) {
-                    this.updateState({
-                        status: "playing",
-                        timestamp: this.player.getCurrentTime(),
-                        currentVideoId: this.currentVideoId
-                    });
-                }
             } else if (e.data === YT.PlayerState.PAUSED) {
                 this.isPlaying = false;
-                if (!this.isUpdating) {
-                    this.updateState({
-                        status: "paused", 
-                        timestamp: this.player.getCurrentTime(),
-                        currentVideoId: this.currentVideoId
-                    });
+            } else if (e.data === YT.PlayerState.ENDED) {
+                this.isPlaying = false;
+                if (this.isLooping) {
+                    this.player.seekTo(0);
+                    this.player.playVideo();
                 }
-            }
-
-            if (e.data === YT.PlayerState.ENDED && this.isLooping) {
-                this.player.seekTo(0);
-                this.player.playVideo();
             }
 
             this.updatePlayPauseIcon();
@@ -632,10 +627,22 @@
             document.getElementById("playPauseBtn").onclick = () => {
                 if (!this.player) return;
 
+                const currentTime = Math.floor(this.player.getCurrentTime());
+                
                 if (this.isPlaying) {
                     this.player.pauseVideo();
+                    this.updateState({
+                        status: "paused",
+                        timestamp: currentTime,
+                        currentVideoId: this.currentVideoId
+                    });
                 } else {
                     this.player.playVideo();
+                    this.updateState({
+                        status: "playing",
+                        timestamp: currentTime,
+                        currentVideoId: this.currentVideoId
+                    });
                 }
             };
 
@@ -643,7 +650,7 @@
                 let t = Math.max(0, this.player.getCurrentTime() - 10);
                 this.player.seekTo(t);
                 this.updateState({
-                    status: "playing",
+                    status: this.isPlaying ? "playing" : "paused",
                     timestamp: t,
                     currentVideoId: this.currentVideoId
                 });
@@ -653,7 +660,7 @@
                 let t = Math.min(this.player.getDuration(), this.player.getCurrentTime() + 10);
                 this.player.seekTo(t);
                 this.updateState({
-                    status: "playing",
+                    status: this.isPlaying ? "playing" : "paused",
                     timestamp: t,
                     currentVideoId: this.currentVideoId
                 });
@@ -695,13 +702,13 @@
 
             document.addEventListener("mouseup", () => {
                 if (isSeeking) {
+                    isSeeking = false;
                     this.updateState({
-                        status: "playing",
-                        timestamp: this.player.getCurrentTime(),
+                        status: this.isPlaying ? "playing" : "paused",
+                        timestamp: Math.floor(this.player.getCurrentTime()),
                         currentVideoId: this.currentVideoId
                     });
                 }
-                isSeeking = false;
             });
 
             bar.addEventListener("touchstart", e => {
@@ -715,13 +722,13 @@
 
             document.addEventListener("touchend", () => {
                 if (isSeeking) {
+                    isSeeking = false;
                     this.updateState({
-                        status: "playing", 
-                        timestamp: this.player.getCurrentTime(),
+                        status: this.isPlaying ? "playing" : "paused",
+                        timestamp: Math.floor(this.player.getCurrentTime()),
                         currentVideoId: this.currentVideoId
                     });
                 }
-                isSeeking = false;
             });
 
             this.seekToEvent = e => {
@@ -729,7 +736,7 @@
                 const rect = bar.getBoundingClientRect();
                 const percent = Math.min(Math.max(0, e.clientX - rect.left), rect.width) / rect.width;
                 const seekTime = percent * this.player.getDuration();
-                this.player.seekTo(seekTime);
+                this.player.seekTo(seekTime, true);
             };
         },
 
@@ -758,43 +765,51 @@
                 const data = snap.val();
                 if (!data || !this.ytReady) return;
 
-                const { currentVideoId, status, timestamp, lastUpdate, loop, title, forceUpdate } = data;
+                const { currentVideoId, status, timestamp, lastUpdate, loop } = data;
+                
+                // Skip if no video ID
                 if (!currentVideoId) return;
 
-                this.isUpdating = true; // Prevent recursive updates
+                // Skip if this is our own recent update
+                if (lastUpdate && lastUpdate === this.lastFirebaseUpdate) {
+                    return;
+                }
 
-                // Update loop state
                 this.isLooping = !!loop;
                 document.getElementById("loopBtn").classList.toggle("active-control", this.isLooping);
 
-                const currentVid = this.player?.getVideoData().video_id;
+                const now = Date.now();
+                let effectiveTime = timestamp || 0;
 
-                // If video changed or force update
-                if (!currentVid || currentVid !== currentVideoId || forceUpdate) {
-                    this.processNewSong(currentVideoId, status, timestamp || 0, title);
+                if (status === "playing" && lastUpdate) {
+                    effectiveTime += Math.floor((now - lastUpdate) / 1000);
+                }
+
+                const currentVid = this.player?.getVideoData()?.video_id;
+
+                // Always update if video changed
+                if (!currentVid || currentVid !== currentVideoId) {
+                    this.processNewSong(currentVideoId, status, effectiveTime);
                 } else {
-                    // Same video, just sync state
-                    const currentTime = this.player.getCurrentTime();
+                    // Same video - sync position and state
+                    const ct = this.player.getCurrentTime();
                     
-                    // Only seek if difference is significant (more than 2 seconds)
-                    if (timestamp !== undefined && Math.abs(currentTime - timestamp) > 2) {
-                        this.player.seekTo(timestamp, true);
+                    // Only seek if difference is significant
+                    if (Math.abs(ct - effectiveTime) > 3) {
+                        this.player.seekTo(effectiveTime, true);
                     }
 
                     // Sync play/pause state
-                    if (status === "playing" && this.player.getPlayerState() !== YT.PlayerState.PLAYING) {
+                    const currentState = this.player.getPlayerState();
+                    if (status === "playing" && currentState !== YT.PlayerState.PLAYING) {
                         this.player.playVideo();
-                    } else if (status === "paused" && this.player.getPlayerState() !== YT.PlayerState.PAUSED) {
+                    } else if (status === "paused" && currentState !== YT.PlayerState.PAUSED) {
                         this.player.pauseVideo();
                     }
 
                     this.isPlaying = status === "playing";
                     this.updatePlayPauseIcon();
                 }
-
-                setTimeout(() => {
-                    this.isUpdating = false;
-                }, 100);
             });
         },
 
@@ -809,39 +824,50 @@
                     const data = snap.val();
                     if (!data || !data.currentVideoId) return;
 
+                    const now = Date.now();
+                    let effective = data.timestamp || 0;
+
+                    if (data.status === "playing" && data.lastUpdate) {
+                        effective += Math.floor((now - data.lastUpdate) / 1000);
+                    }
+
                     this.isLooping = !!data.loop;
                     document.getElementById("loopBtn").classList.toggle("active-control", this.isLooping);
 
-                    this.processNewSong(data.currentVideoId, data.status, data.timestamp || 0, data.title);
+                    this.processNewSong(data.currentVideoId, data.status, effective);
                 });
         },
 
-        processNewSong(videoId, status, timestamp, title) {
+        processNewSong(videoId, status, timestamp) {
+            // Same video check - avoid reloading
+            if (this.currentVideoId === videoId) {
+                const ct = this.player.getCurrentTime();
+                if (Math.abs(ct - timestamp) > 3) {
+                    this.player.seekTo(timestamp, true);
+                }
+                return;
+            }
+
             this.currentVideoId = videoId;
 
             const thumbnail = document.getElementById("videoThumbnail");
             thumbnail.src = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
             thumbnail.onerror = () => (thumbnail.src = "/chat/logo.png");
 
-            // Use provided title or fetch it
-            if (title) {
-                this.currentVideoTitle = title;
-                document.getElementById("nowPlaying").textContent = "Playing: " + title;
-            } else {
-                this.fetchVideoTitle(videoId)
-                    .then(title => {
-                        this.currentVideoTitle = title;
-                        document.getElementById("nowPlaying").textContent = "Playing: " + title;
-                    })
-                    .catch(() => {
-                        this.currentVideoTitle = "Unknown Title";
-                        document.getElementById("nowPlaying").textContent = "Playing: " + videoId;
-                    });
-            }
+            this.fetchVideoTitle(videoId)
+                .then(title => {
+                    this.currentVideoTitle = title;
+                    document.getElementById("nowPlaying").textContent = "Playing: " + title;
+                })
+                .catch(() => {
+                    this.currentVideoTitle = "Unknown Title";
+                    document.getElementById("nowPlaying").textContent = "Playing: " + videoId;
+                });
 
-            this.player.loadVideoById({ 
+            // Load new video with timestamp
+            this.player.loadVideoById({
                 videoId: videoId, 
-                startSeconds: timestamp || 0 
+                startSeconds: timestamp || 0
             });
             
             if (status === "playing") {
@@ -858,21 +884,30 @@
             return fetch(
                 `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`
             )
-                .then(res => res.json())
-                .then(data => data.title);
+                .then(res => {
+                    if (!res.ok) throw new Error('Failed to fetch title');
+                    return res.json();
+                })
+                .then(data => data.title)
+                .catch(() => "Unknown Title");
         },
 
         updateState(obj) {
-            if (!this.firebaseInitialized() || this.isUpdating) return;
+            if (!this.firebaseInitialized()) return;
 
+            // Current timestamp add karo
+            obj.timestamp = Math.floor(this.player.getCurrentTime());
             obj.lastUpdate = Date.now();
+            this.lastFirebaseUpdate = obj.lastUpdate;
+            
             if (this.isLooping) obj.loop = true;
-
+            
+            // Direct update karo without delay
             firebase
                 .database()
                 .ref("music")
                 .set(obj)
-                .catch(err => console.error(err));
+                .catch(err => console.error("Firebase update error:", err));
         }
     };
 
