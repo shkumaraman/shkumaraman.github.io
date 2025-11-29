@@ -350,18 +350,6 @@
         firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
     }
 
-    function extractYouTubeID(url) {
-        if (!url) return null;
-        if (/^[a-zA-Z0-9_-]{11}$/.test(url)) return url;
-        try {
-            const u = new URL(url);
-            if (u.hostname.includes("youtu.be")) return u.pathname.slice(1);
-            if (u.searchParams.get("v")) return u.searchParams.get("v");
-        } catch {}
-        const m = url.match(/[a-zA-Z0-9_-]{11}/);
-        return m ? m[0] : null;
-    }
-
     function formatTime(seconds) {
         if (isNaN(seconds) || seconds < 0) return "0:00";
         const mins = Math.floor(seconds / 60);
@@ -406,7 +394,9 @@
         setupEventListeners: function() {
             const miniPlayer = document.getElementById('miniPlayer');
             const fullPlayer = document.getElementById('fullPlayer');
-            const urlInput = document.getElementById('urlInput');
+            const searchInput = document.getElementById('searchInput');
+            const searchBtn = document.getElementById('searchBtn');
+            const searchResults = document.getElementById('searchResults');
             const playPauseBtn = document.getElementById('playPauseBtn');
             const prevBtn = document.getElementById('prevBtn');
             const nextBtn = document.getElementById('nextBtn');
@@ -419,18 +409,25 @@
            fullPlayer.style.display === 'flex' ? 'none' : 'flex';
         });
             
+            searchBtn.addEventListener('click', this.handleSearch.bind(this));
+            searchInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    this.handleSearch();
+                }
+            });
+            
+            document.addEventListener('click', (e) => {
+                if (!searchResults.contains(e.target) && e.target !== searchInput && e.target !== searchBtn) {
+                    searchResults.style.display = 'none';
+                }
+            });
+            
             playPauseBtn.addEventListener('click', this.handlePlayPause.bind(this));
             prevBtn.addEventListener('click', this.handlePrev.bind(this));
             nextBtn.addEventListener('click', this.handleNext.bind(this));
             muteBtn.addEventListener('click', this.handleMute.bind(this));
             seekBar.addEventListener('input', this.handleSeek.bind(this));
             loopBtn.addEventListener('click', this.handleLoop.bind(this));
-            
-            urlInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    playPauseBtn.click();
-                }
-            });
         },
         
         setupFirebaseListener: function() {
@@ -448,9 +445,8 @@
                 this.isLooping = !!loop;
                 this.updateLoopIcon();
 
-                document.getElementById('urlInput').value = currentSong;
-                const vid = extractYouTubeID(currentSong);
-                if (!vid) return;
+                document.getElementById('searchInput').value = currentSong;
+                const vid = currentSong;
 
                 const now = Date.now();
                 let effectiveTime = timestamp || 0;
@@ -576,13 +572,12 @@
         },
         
         processNewSong: function(url, status, timestamp) {
-            const vid = extractYouTubeID(url || '');
+            const vid = url;
             if (!vid) return;
             
             this.currentSongUrl = url;
-            document.getElementById('urlInput').value = url;
+            document.getElementById('searchInput').value = url;
             
-            // Set thumbnail
             document.getElementById('videoThumbnail').src = `https://img.youtube.com/vi/${vid}/hqdefault.jpg`;
             
             this.fetchVideoTitle(vid).then(title => {
@@ -619,35 +614,108 @@
             });
         },
         
+        handleSearch: function() {
+            const query = document.getElementById('searchInput').value.trim();
+            if (!query) return;
+            
+            document.getElementById('loadingIndicator').style.display = 'block';
+            document.getElementById('errorMessage').style.display = 'none';
+            
+            fetch(`https://youtube-0vra.onrender.com/search/videos?query=${encodeURIComponent(query)}`)
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('loadingIndicator').style.display = 'none';
+                    
+                    if (data.ok && data.results && data.results.length > 0) {
+                        this.displaySearchResults(data.results);
+                    } else {
+                        document.getElementById('errorMessage').textContent = "No results found.";
+                        document.getElementById('errorMessage').style.display = 'block';
+                    }
+                })
+                .catch(error => {
+                    document.getElementById('loadingIndicator').style.display = 'none';
+                    document.getElementById('errorMessage').textContent = "Search failed. Please try again.";
+                    document.getElementById('errorMessage').style.display = 'block';
+                    console.error('Search error:', error);
+                });
+        },
+        
+        displaySearchResults: function(results) {
+            const searchResults = document.getElementById('searchResults');
+            searchResults.innerHTML = '';
+            
+            results.forEach(result => {
+                const item = document.createElement('div');
+                item.className = 'search-result-item';
+                item.innerHTML = `
+                    <img src="${result.thumbnail}" alt="Thumbnail" class="result-thumbnail">
+                    <div class="result-info">
+                        <div class="result-title">${result.title}</div>
+                        <div class="result-channel">${result.channel}</div>
+                    </div>
+                `;
+                
+                item.addEventListener('click', () => {
+                    this.selectVideo(result);
+                    searchResults.style.display = 'none';
+                });
+                
+                searchResults.appendChild(item);
+            });
+            
+            searchResults.style.display = 'block';
+        },
+        
+        selectVideo: function(video) {
+            this.currentSongUrl = video.videoId;
+            document.getElementById('searchInput').value = video.title;
+            
+            document.getElementById('videoThumbnail').src = video.thumbnail;
+            
+            this.currentVideoTitle = video.title;
+            document.getElementById('nowPlaying').textContent = 'Playing: ' + video.title;
+            
+            const vid = video.videoId;
+            if (!vid) return;
+            
+            this.player.loadVideoById({ videoId: vid, startSeconds: 0 });
+            this.player.playVideo();
+            this.isPlaying = true;
+            this.updatePlayPauseIcon();
+            this.updateState({ currentSong: video.videoId, status: 'playing', timestamp: 0 });
+        },
+        
         handlePlayPause: function() {
-            const url = document.getElementById('urlInput').value.trim();
-            const vid = extractYouTubeID(url);
-            if (!vid) return alert('Please enter a valid YouTube URL');
             if (!this.ytReady) return alert('Player not ready yet!');
             
             document.getElementById('errorMessage').style.display = 'none';
-            document.getElementById('loadingIndicator').style.display = 'block';
+            
+            if (!this.currentSongUrl) {
+                document.getElementById('errorMessage').textContent = "Please search and select a video first.";
+                document.getElementById('errorMessage').style.display = 'block';
+                return;
+            }
             
             const currentVid = this.player.getVideoData().video_id;
             let startTime = Math.floor(this.player.getCurrentTime() || 0);
             
-            if (currentVid !== vid) {
-                this.currentSongUrl = url;
-                this.player.loadVideoById({ videoId: vid, startSeconds: 0 });
+            if (currentVid !== this.currentSongUrl) {
+                this.player.loadVideoById({ videoId: this.currentSongUrl, startSeconds: 0 });
                 this.player.playVideo();
                 this.isPlaying = true;
                 this.updatePlayPauseIcon();
-                this.updateState({ currentSong: url, status: 'playing', timestamp: 0 });
+                this.updateState({ currentSong: this.currentSongUrl, status: 'playing', timestamp: 0 });
                 document.getElementById('loadingIndicator').style.display = 'none';
             } else {
                 if (!this.isPlaying) {
                     this.player.playVideo();
                     this.isPlaying = true;
-                    this.updateState({ currentSong: url, status: 'playing', timestamp: startTime });
+                    this.updateState({ currentSong: this.currentSongUrl, status: 'playing', timestamp: startTime });
                 } else {
                     this.player.pauseVideo();
                     this.isPlaying = false;
-                    this.updateState({ currentSong: url, status: 'paused', timestamp: startTime });
+                    this.updateState({ currentSong: this.currentSongUrl, status: 'paused', timestamp: startTime });
                 }
                 this.updatePlayPauseIcon();
                 document.getElementById('loadingIndicator').style.display = 'none';
