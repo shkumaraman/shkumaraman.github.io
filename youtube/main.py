@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # 🛡 CORS ENABLED
 # -------------------------------------------------------------
 app = FastAPI(
-    title="Unofficial YouTube API (Stable V9 - Clean)",
+    title="Unofficial YouTube API",
     description="YouTube Search + Details + Captions",
     version="1.0",
 )
