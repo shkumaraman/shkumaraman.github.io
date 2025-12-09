@@ -1104,7 +1104,7 @@ const state = {
     escPressedOnce: false,
     escTimer: null,
     currentRoomCode: null,
-    isRoomCreator: false,
+    typingTimeout: null,
     
     // Video call state
     localStream: null,
@@ -1191,8 +1191,7 @@ const storage = {
     save: () => {
         const roomData = {
             roomCode: state.currentRoomCode,
-            isRoomCreator: state.isRoomCreator,
-            peerId: state.myId
+            peerId: state.myId  // Always save peer ID for reconnection
         };
         localStorage.setItem('chatRoomData', JSON.stringify(roomData));
     },
@@ -1202,7 +1201,14 @@ const storage = {
             const savedData = localStorage.getItem('chatRoomData');
             if (!savedData) return null;
             
-            return JSON.parse(savedData);
+            const data = JSON.parse(savedData);
+            
+            // Check if saved peer ID is valid
+            if (data.peerId && typeof data.peerId === 'string' && data.peerId.length > 0) {
+                state.myId = data.peerId;
+                return data;
+            }
+            return null;
         } catch (error) {
             console.error('Error loading from storage:', error);
             return null;
@@ -1212,7 +1218,7 @@ const storage = {
     clear: () => {
         localStorage.removeItem('chatRoomData');
         state.currentRoomCode = null;
-        state.isRoomCreator = false;
+        state.myId = null; // Peer ID bhi clear karo
         elements.roomCodeInput.value = '';
     }
 };
@@ -1228,6 +1234,7 @@ const messageHandler = {
         } else if (type === 'image' || type === 'gif') {
             const img = document.createElement("img");
             img.src = content;
+            img.alt = type === 'gif' ? 'GIF' : 'Image';
             div.appendChild(img);
         }
         
@@ -1277,23 +1284,24 @@ const roomManager = {
         elements.loadingText.textContent = "Creating room...";
         
         try {
+            // Sabse pehle khud ko participant add karo
+            const participants = {};
+            participants[state.myId] = "active";
+            
+            // Room create karo with participants
             await db.ref("rooms/" + code).set({
-                creator: state.myId,
-                createdAt: firebase.database.ServerValue.TIMESTAMP,
-                participants: {
-                    [state.myId]: "active"
-                }
+                participants: participants,
+                createdAt: firebase.database.ServerValue.TIMESTAMP
             });
             
             state.currentRoomCode = code;
-            state.isRoomCreator = true;
             storage.save();
             
             messageHandler.logSystem(`Room created with code: ${code}. Share this code with someone to chat.`);
             utils.hide(elements.roomModal);
             utils.hide(elements.loadingScreen);
             
-            // Listen for participants joining
+            // Listen for other participants
             roomManager.setupParticipantListener(code);
             
         } catch (error) {
@@ -1328,7 +1336,6 @@ const roomManager = {
             }
             
             state.currentRoomCode = code;
-            state.isRoomCreator = false;
             storage.save();
             
             // Add myself as participant
@@ -1336,8 +1343,14 @@ const roomManager = {
                 [state.myId]: "active"
             });
             
-            // Connect to the room creator
-            await connectionManager.connectToPeer(roomData.creator);
+            // Sab existing participants se connect karo
+            const participants = Object.keys(roomData.participants || {});
+            for (const participantId of participants) {
+                if (participantId !== state.myId) {
+                    await connectionManager.connectToPeer(participantId);
+                }
+            }
+            
             utils.hide(elements.roomModal);
             utils.hide(elements.loadingScreen);
             
@@ -1353,9 +1366,17 @@ const roomManager = {
     },
     
     setupParticipantListener: (roomCode) => {
-        db.ref("rooms/" + roomCode + "/participants").on("child_added", (snapshot) => {
-            if (snapshot.key !== state.myId) {
+        const ref = db.ref("rooms/" + roomCode + "/participants");
+        
+        ref.on("child_added", (snapshot) => {
+            if (snapshot.key !== state.myId && snapshot.val() === "active") {
                 connectionManager.connectToPeer(snapshot.key);
+            }
+        });
+        
+        ref.on("child_removed", (snapshot) => {
+            if (snapshot.key !== state.myId) {
+                messageHandler.logSystem("Participant left the room");
             }
         });
     },
@@ -1384,18 +1405,25 @@ const roomManager = {
             }
             
             const roomData = snapshot.val();
+            const participants = Object.keys(roomData.participants || {});
             
-            if (state.isRoomCreator) {
-                messageHandler.logSystem(`Reconnected to room: ${state.currentRoomCode}. Waiting for participants...`);
-                utils.hide(elements.loadingScreen);
-                roomManager.setupParticipantListener(state.currentRoomCode);
-            } else {
+            // Khud ko dobara add karo (agar nahi hai to)
+            if (!participants.includes(state.myId)) {
                 await db.ref("rooms/" + state.currentRoomCode + "/participants").update({
                     [state.myId]: "active"
                 });
-                await connectionManager.connectToPeer(roomData.creator);
-                utils.hide(elements.loadingScreen);
             }
+            
+            messageHandler.logSystem(`Reconnected to room: ${state.currentRoomCode}`);
+            
+            // Sab existing participants se connect karo
+            for (const participantId of participants) {
+                if (participantId !== state.myId) {
+                    await connectionManager.connectToPeer(participantId);
+                }
+            }
+            
+            utils.hide(elements.loadingScreen);
             
         } catch (error) {
             console.error("Error rejoining room:", error);
@@ -1409,9 +1437,16 @@ const roomManager = {
     destroyRoom: async () => {
         if (state.currentRoomCode) {
             try {
-                await db.ref("rooms/" + state.currentRoomCode).remove();
+                // Sirf khud ko hatao, room ko completely destroy mat karo
+                await db.ref("rooms/" + state.currentRoomCode + "/participants/" + state.myId).remove();
+                
+                // Check if room is empty, tabhi destroy karo
+                const snapshot = await db.ref("rooms/" + state.currentRoomCode + "/participants").once('value');
+                if (!snapshot.exists() || Object.keys(snapshot.val()).length === 0) {
+                    await db.ref("rooms/" + state.currentRoomCode).remove();
+                }
             } catch (error) {
-                console.error("Error destroying room:", error);
+                console.error("Error leaving room:", error);
             }
         }
         storage.clear();
@@ -1528,10 +1563,8 @@ const connectionManager = {
         
         videoCallManager.endVideoCall();
         
-        // Clean up room
-        if (state.isRoomCreator && state.currentRoomCode) {
-            roomManager.destroyRoom();
-        } else if (state.currentRoomCode) {
+        // Room se hatao khud ko
+        if (state.currentRoomCode) {
             db.ref("rooms/" + state.currentRoomCode + "/participants/" + state.myId).remove();
         }
         
@@ -1773,6 +1806,7 @@ const gifManager = {
             const img = document.createElement("img");
             img.src = gifUrl;
             img.className = "gif-item";
+            img.alt = "GIF";
             img.onclick = () => {
                 if (state.myConn && state.isConnected) {
                     state.myConn.send({ type: "gif", url: gifUrl });
@@ -1935,7 +1969,6 @@ const init = () => {
     const savedData = storage.load();
     if (savedData) {
         state.currentRoomCode = savedData.roomCode;
-        state.isRoomCreator = savedData.isRoomCreator;
         state.myId = savedData.peerId;
         
         if (state.currentRoomCode) {
