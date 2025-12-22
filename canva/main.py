@@ -3,7 +3,7 @@ import time
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 
-TARGET_URL = "https://www.canva.com/en_in/login/"
+TARGET_URL = "https://www.canva.com/"
 
 options = Options()
 options.add_argument("--headless")
