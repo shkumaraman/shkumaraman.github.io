@@ -365,6 +365,7 @@
         currentSongUrl: "",
         firebaseListener: null,
         currentVideoTitle: "",
+        lastAutoUpdate: 0,
 
         init: function() {
             if (document.readyState === 'loading') {
@@ -403,10 +404,9 @@
             const seekBar = document.getElementById('seekBar');
             const loopBtn = document.getElementById('loopBtn');
             
-           miniPlayer.addEventListener('click', () => {
-           fullPlayer.style.display =
-           fullPlayer.style.display === 'flex' ? 'none' : 'flex';
-        });
+            miniPlayer.addEventListener('click', () => {
+                fullPlayer.style.display = fullPlayer.style.display === 'flex' ? 'none' : 'flex';
+            });
             
             searchBtn.addEventListener('click', this.handleSearch.bind(this));
             searchInput.addEventListener('keypress', (e) => {
@@ -444,23 +444,29 @@
                 this.isLooping = !!loop;
                 this.updateLoopIcon();
 
-                document.getElementById('searchInput').value = currentSong;
                 const vid = currentSong;
 
-                const now = Date.now();
-                let effectiveTime = timestamp || 0;
+                // Calculate actual time based on lastUpdate
+                let actualTime = timestamp || 0;
                 if (status === 'playing' && lastUpdate) {
-                    effectiveTime += Math.floor((now - lastUpdate) / 1000);
+                    const timeDiff = Math.floor((Date.now() - lastUpdate) / 1000);
+                    actualTime = timestamp + timeDiff;
+                    if (actualTime < 0) actualTime = 0;
                 }
 
                 const currentVid = this.player ? this.player.getVideoData().video_id : '';
+                
+                // If new song or different song
                 if (!currentVid || currentVid !== vid) {
-                    this.processNewSong(currentSong, status, effectiveTime);
+                    this.processNewSong(currentSong, status, actualTime);
                 } else {
+                    // Sync time if difference is significant
                     const currentTime = this.player.getCurrentTime();
-                    if (Math.abs(currentTime - effectiveTime) > 2) {
-                        this.player.seekTo(effectiveTime, true);
+                    if (Math.abs(currentTime - actualTime) > 1.5) { // 1.5 seconds threshold
+                        this.player.seekTo(actualTime, true);
                     }
+                    
+                    // Sync play/pause state
                     if (status === 'playing' && this.player.getPlayerState() !== YT.PlayerState.PLAYING) {
                         this.player.playVideo();
                         this.isPlaying = true;
@@ -499,9 +505,19 @@
             if (event.data === YT.PlayerState.PLAYING) {
                 this.isPlaying = true;
                 this.updatePlayPauseIcon();
+                
+                // Update Firebase when video starts playing
+                if (this.currentSongUrl) {
+                    this.updateState('playing');
+                }
             } else if (event.data === YT.PlayerState.PAUSED) {
                 this.isPlaying = false;
                 this.updatePlayPauseIcon();
+                
+                // Update Firebase when video is paused
+                if (this.currentSongUrl) {
+                    this.updateState('paused');
+                }
             } else if (event.data === YT.PlayerState.ENDED && this.isLooping) {
                 this.player.seekTo(0, true);
                 this.player.playVideo();
@@ -558,14 +574,19 @@
             stateRef.once('value').then((snapshot) => {
                 const data = snapshot.val();
                 if (data && data.currentSong) {
-                    const now = Date.now();
-                    let effectiveTime = data.timestamp || 0;
-                    if (data.status === 'playing' && data.lastUpdate) {
-                        effectiveTime += Math.floor((now - data.lastUpdate) / 1000);
-                    }
-                    this.isLooping = !!data.loop;
+                    const { currentSong, status, timestamp, lastUpdate, loop } = data;
+                    
+                    this.isLooping = !!loop;
                     this.updateLoopIcon();
-                    this.processNewSong(data.currentSong, data.status, effectiveTime);
+                    
+                    let effectiveTime = timestamp || 0;
+                    if (status === 'playing' && lastUpdate) {
+                        const timeDiff = Math.floor((Date.now() - lastUpdate) / 1000);
+                        effectiveTime = timestamp + timeDiff;
+                        if (effectiveTime < 0) effectiveTime = 0;
+                    }
+                    
+                    this.processNewSong(currentSong, status, effectiveTime);
                 }
             });
         },
@@ -577,8 +598,10 @@
             this.currentSongUrl = url;
             document.getElementById('searchInput').value = url;
             
+            // Update thumbnail
             document.getElementById('videoThumbnail').src = `https://img.youtube.com/vi/${vid}/hqdefault.jpg`;
             
+            // Fetch and display video title
             this.fetchVideoTitle(vid).then(title => {
                 this.currentVideoTitle = title;
                 document.getElementById('nowPlaying').textContent = 'Playing: ' + title;
@@ -587,6 +610,7 @@
                 document.getElementById('nowPlaying').textContent = 'Playing: ' + url;
             });
             
+            // Load and play/pause the video
             this.player.loadVideoById({ videoId: vid, startSeconds: timestamp || 0 });
             if (status === 'playing') {
                 this.player.playVideo();
@@ -596,6 +620,9 @@
                 this.isPlaying = false;
             }
             this.updatePlayPauseIcon();
+            
+            // Update Firebase with the new song state
+            this.updateState(status);
         },
         
         fetchVideoTitle: function(videoId) {
@@ -604,11 +631,20 @@
                 .then(data => data.title);
         },
         
-        updateState: function(obj) {
-            if (!this.firebaseInitialized()) return;
-            obj.lastUpdate = Date.now();
-            if (this.isLooping) obj.loop = true;
-            firebase.database().ref('music').set(obj).catch(error => {
+        updateState: function(status) {
+            if (!this.firebaseInitialized() || !this.currentSongUrl) return;
+            
+            const currentTime = this.player ? Math.floor(this.player.getCurrentTime()) : 0;
+            
+            const stateObj = {
+                currentSong: this.currentSongUrl,
+                status: status,
+                timestamp: currentTime,
+                lastUpdate: Date.now(),
+                loop: this.isLooping
+            };
+            
+            firebase.database().ref('music').set(stateObj).catch(error => {
                 console.error('Firebase update error:', error);
             });
         },
@@ -670,19 +706,24 @@
             this.currentSongUrl = video.videoId;
             document.getElementById('searchInput').value = video.title;
             
+            // Update thumbnail
             document.getElementById('videoThumbnail').src = video.thumbnail || '/chat/logo.png';
             
+            // Update title display
             this.currentVideoTitle = video.title;
             document.getElementById('nowPlaying').textContent = 'Playing: ' + video.title;
             
             const vid = video.videoId;
             if (!vid) return;
             
+            // Load and play the video
             this.player.loadVideoById({ videoId: vid, startSeconds: 0 });
             this.player.playVideo();
             this.isPlaying = true;
             this.updatePlayPauseIcon();
-            this.updateState({ currentSong: video.videoId, status: 'playing', timestamp: 0 });
+            
+            // Update Firebase
+            this.updateState('playing');
         },
         
         handlePlayPause: function() {
@@ -696,29 +737,18 @@
                 return;
             }
             
-            const currentVid = this.player.getVideoData().video_id;
-            let startTime = Math.floor(this.player.getCurrentTime() || 0);
+            const currentTime = Math.floor(this.player.getCurrentTime() || 0);
             
-            if (currentVid !== this.currentSongUrl) {
-                this.player.loadVideoById({ videoId: this.currentSongUrl, startSeconds: 0 });
+            if (!this.isPlaying) {
                 this.player.playVideo();
                 this.isPlaying = true;
-                this.updatePlayPauseIcon();
-                this.updateState({ currentSong: this.currentSongUrl, status: 'playing', timestamp: 0 });
-                document.getElementById('loadingIndicator').style.display = 'none';
+                this.updateState('playing');
             } else {
-                if (!this.isPlaying) {
-                    this.player.playVideo();
-                    this.isPlaying = true;
-                    this.updateState({ currentSong: this.currentSongUrl, status: 'playing', timestamp: startTime });
-                } else {
-                    this.player.pauseVideo();
-                    this.isPlaying = false;
-                    this.updateState({ currentSong: this.currentSongUrl, status: 'paused', timestamp: startTime });
-                }
-                this.updatePlayPauseIcon();
-                document.getElementById('loadingIndicator').style.display = 'none';
+                this.player.pauseVideo();
+                this.isPlaying = false;
+                this.updateState('paused');
             }
+            this.updatePlayPauseIcon();
         },
         
         handleMute: function() {
@@ -737,7 +767,11 @@
             if (!this.player) return;
             const newTime = Math.max(0, this.player.getCurrentTime() - 10);
             this.player.seekTo(newTime, true);
-            this.updateState({ status: this.isPlaying ? 'playing' : 'paused', timestamp: newTime, currentSong: this.currentSongUrl });
+            
+            // Update Firebase with new time
+            if (this.currentSongUrl) {
+                this.updateState(this.isPlaying ? 'playing' : 'paused');
+            }
         },
         
         handleNext: function() {
@@ -746,33 +780,43 @@
             const duration = this.player.getDuration();
             const newTime = Math.min(duration, currentTime + 10);
             this.player.seekTo(newTime, true);
-            this.updateState({ status: this.isPlaying ? 'playing' : 'paused', timestamp: newTime, currentSong: this.currentSongUrl });
+            
+            // Update Firebase with new time
+            if (this.currentSongUrl) {
+                this.updateState(this.isPlaying ? 'playing' : 'paused');
+            }
         },
         
         handleSeek: function() {
             if (!this.player) return;
             const sec = parseInt(document.getElementById('seekBar').value, 10);
             this.player.seekTo(sec, true);
-            this.updateState({ status: this.isPlaying ? 'playing' : 'paused', timestamp: sec, currentSong: this.currentSongUrl });
+            
+            // Immediately update Firebase with new time
+            if (this.currentSongUrl) {
+                this.updateState(this.isPlaying ? 'playing' : 'paused');
+            }
         },
 
         handleLoop: function() {
             this.isLooping = !this.isLooping;
             this.updateLoopIcon();
-            this.updateState({
-                status: this.isPlaying ? 'playing' : 'paused',
-                timestamp: Math.floor(this.player.getCurrentTime()),
-                currentSong: this.currentSongUrl,
-                loop: this.isLooping
-            });
+            
+            // Update Firebase with loop state
+            if (this.currentSongUrl) {
+                this.updateState(this.isPlaying ? 'playing' : 'paused');
+            }
         },
         
         updatePlayerUI: function() {
             if (!this.player) return;
+            
             const t = Math.floor(this.player.getCurrentTime() || 0);
             const d = Math.floor(this.player.getDuration() || 0);
+            
             document.getElementById('curTime').textContent = formatTime(t);
             document.getElementById('duration').textContent = formatTime(d);
+            
             const seekBar = document.getElementById('seekBar');
             if (!seekBar.matches(':active')) {
                 seekBar.max = d;
@@ -781,6 +825,22 @@
             
             const progress = (t / d) * 100;
             seekBar.style.background = `linear-gradient(to right, #ff5252 ${progress}%, #ddd ${progress}%)`;
+            
+            // Automatically update Firebase every 5 seconds when playing
+            if (this.isPlaying && this.firebaseInitialized() && this.currentSongUrl) {
+                const now = Date.now();
+                if (!this.lastAutoUpdate || (now - this.lastAutoUpdate) > 5000) {
+                    this.lastAutoUpdate = now;
+                    
+                    // Update only timestamp and lastUpdate to avoid conflicts
+                    firebase.database().ref('music').update({
+                        timestamp: t,
+                        lastUpdate: now
+                    }).catch(error => {
+                        console.error('Auto-update error:', error);
+                    });
+                }
+            }
         },
         
         firebaseInitialized: function() {
