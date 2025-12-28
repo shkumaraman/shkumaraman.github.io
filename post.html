@@ -36,8 +36,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
       --post-btn-hover: #0056b3;
       --delete-btn: #dc3545;
       --share-btn: #25D366;
-      --like-btn: #28a745;
-      --dislike-btn: #6c757d;
     }
 
     * {
@@ -342,24 +340,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
       align-items: center;
       gap: 5px;
       transition: all 0.2s;
-    }
-
-    .like-btn {
-      background: var(--like-btn);
-      color: white;
-    }
-
-    .like-btn:hover {
-      opacity: 0.9;
-    }
-
-    .dislike-btn {
-      background: var(--dislike-btn);
-      color: white;
-    }
-
-    .dislike-btn:hover {
-      opacity: 0.9;
     }
 
     .share-btn-post {
@@ -828,8 +808,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
         nickname: nickname,
         text: text,
         timestamp: Date.now(),
-        likes: 0,
-        dislikes: 0,
         userId: userId,
         postId: postId
       };
@@ -940,75 +918,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
       }
     }
 
-    function hasUserInteracted(postId, type) {
-      const interactions = JSON.parse(localStorage.getItem('postInteractions') || '{}');
-      return interactions[postId] === type;
-    }
-
-    function setUserInteraction(postId, type) {
-      const interactions = JSON.parse(localStorage.getItem('postInteractions') || '{}');
-      interactions[postId] = type;
-      localStorage.setItem('postInteractions', JSON.stringify(interactions));
-    }
-
-    function removeUserInteraction(postId) {
-      const interactions = JSON.parse(localStorage.getItem('postInteractions') || '{}');
-      delete interactions[postId];
-      localStorage.setItem('postInteractions', JSON.stringify(interactions));
-    }
-
-    function likePost(postId) {
-      const nickname = getNickname();
-      if (!nickname) {
-        showAlert("Please set your Nickname first in the Home Page!");
-        return;
-      }
-
-      const currentInteraction = hasUserInteracted(postId, 'like') ? 'like' : 
-                                hasUserInteracted(postId, 'dislike') ? 'dislike' : null;
-
-      if (currentInteraction === 'like') {
-        const likeRef = db.ref("posts/" + postId + "/likes");
-        likeRef.transaction(current => Math.max(0, (current || 0) - 1));
-        removeUserInteraction(postId);
-      } else {
-        if (currentInteraction === 'dislike') {
-          const dislikeRef = db.ref("posts/" + postId + "/dislikes");
-          dislikeRef.transaction(current => Math.max(0, (current || 0) - 1));
-        }
-
-        const likeRef = db.ref("posts/" + postId + "/likes");
-        likeRef.transaction(current => (current || 0) + 1);
-        setUserInteraction(postId, 'like');
-      }
-    }
-
-    function dislikePost(postId) {
-      const nickname = getNickname();
-      if (!nickname) {
-        showAlert("Please set your Nickname first in the Home Page!");
-        return;
-      }
-
-      const currentInteraction = hasUserInteracted(postId, 'like') ? 'like' : 
-                                hasUserInteracted(postId, 'dislike') ? 'dislike' : null;
-
-      if (currentInteraction === 'dislike') {
-        const dislikeRef = db.ref("posts/" + postId + "/dislikes");
-        dislikeRef.transaction(current => Math.max(0, (current || 0) - 1));
-        removeUserInteraction(postId);
-      } else {
-        if (currentInteraction === 'like') {
-          const likeRef = db.ref("posts/" + postId + "/likes");
-          likeRef.transaction(current => Math.max(0, (current || 0) - 1));
-        }
-
-        const dislikeRef = db.ref("posts/" + postId + "/dislikes");
-        dislikeRef.transaction(current => (current || 0) + 1);
-        setUserInteraction(postId, 'dislike');
-      }
-    }
-
     function openImageModal(imageUrl) {
       const modal = document.getElementById('imageModal');
       const modalImage = document.getElementById('modalImage');
@@ -1022,29 +931,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
       const modal = document.getElementById('imageModal');
       modal.classList.remove('active');
       document.body.style.overflow = '';
-    }
-
-    function updatePostCounts(postId, likes, dislikes) {
-      const postElement = document.querySelector(`[data-post-id="${postId}"]`);
-      if (postElement) {
-        const likeCountElement = postElement.querySelector('.like-count');
-        const dislikeCountElement = postElement.querySelector('.dislike-count');
-        const likeBtn = postElement.querySelector('.like-btn');
-        const dislikeBtn = postElement.querySelector('.dislike-btn');
-        
-        if (likeCountElement) likeCountElement.textContent = likes || 0;
-        if (dislikeCountElement) dislikeCountElement.textContent = dislikes || 0;
-        
-        const userInteraction = hasUserInteracted(postId, 'like') ? 'like' : 
-                               hasUserInteracted(postId, 'dislike') ? 'dislike' : null;
-        
-        if (likeBtn) {
-          likeBtn.classList.toggle('active', userInteraction === 'like');
-        }
-        if (dislikeBtn) {
-          dislikeBtn.classList.toggle('active', userInteraction === 'dislike');
-        }
-      }
     }
 
     function isPostExpired(timestamp) {
@@ -1160,21 +1046,12 @@ description: "Post anything anonymously without login. Confess, express, or spea
           `;
         }
 
-        const userInteraction = hasUserInteracted(postId, 'like') ? 'like' : 
-                               hasUserInteracted(postId, 'dislike') ? 'dislike' : null;
-
         div.innerHTML = `
           <div class="nickname">${displayNickname}</div>
           <div class="post-content">${displayText}</div>
           ${imagePreviewHTML}
           <div class="timestamp">${timeSince(post.timestamp)}</div>
           <div class="buttons">
-            <button class="like-btn ${userInteraction === 'like' ? 'active' : ''}" onclick="likePost('${postId}')">
-              <i class="fas fa-thumbs-up"></i> <span class="like-count">${post.likes || 0}</span>
-            </button>
-            <button class="dislike-btn ${userInteraction === 'dislike' ? 'active' : ''}" onclick="dislikePost('${postId}')">
-              <i class="fas fa-thumbs-down"></i> <span class="dislike-count">${post.dislikes || 0}</span>
-            </button>
             <button class="share-btn-post" onclick="sharePost(${JSON.stringify({...post, postId}).replace(/"/g, '&quot;')})">
               <i class="fas fa-share"></i> Share
             </button>
@@ -1306,30 +1183,11 @@ description: "Post anything anonymously without login. Confess, express, or spea
         }
       });
 
-      db.ref("posts").on("child_changed", snapshot => {
-        const post = snapshot.val();
-        const postId = snapshot.key;
-        
-        updatePostCounts(postId, post.likes, post.dislikes);
-        
-        const postIndex = allPosts.findIndex(([id]) => id === postId);
-        if (postIndex !== -1) {
-          allPosts[postIndex][1] = post;
-        }
-        
-        const displayedIndex = displayedPosts.findIndex(([id]) => id === postId);
-        if (displayedIndex !== -1) {
-          displayedPosts[displayedIndex][1] = post;
-        }
-      });
-
       db.ref("posts").on("child_removed", snapshot => {
         const postId = snapshot.key;
         
         allPosts = allPosts.filter(([id]) => id !== postId);
         displayedPosts = displayedPosts.filter(([id]) => id !== postId);
-        
-        removeUserInteraction(postId);
         
         if (currentSearchTerm) {
           searchPosts(currentSearchTerm);
