@@ -2,15 +2,14 @@ from fastapi import FastAPI, HTTPException
 import requests
 import re
 import json
-from youtube_transcript_api import YouTubeTranscriptApi, NoTranscriptFound
 from fastapi.middleware.cors import CORSMiddleware
 
 # -------------------------------------------------------------
-# 🛡 APP + CORS
+# 🛡 CORS ENABLED
 # -------------------------------------------------------------
 app = FastAPI(
     title="Unofficial YouTube API",
-    description="YouTube Search + Video Details + Captions",
+    description="YouTube Search + Details",
     version="1.0",
 )
 
@@ -22,9 +21,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# -------------------------------------------------------------
-# 🏠 ROOT
-# -------------------------------------------------------------
+
 @app.get("/")
 async def root():
     return {
@@ -34,8 +31,9 @@ async def root():
         "docs": "/docs",
     }
 
+
 # -------------------------------------------------------------
-# 🔥 MOBILE SEARCH
+# 🔥 SUPER STABLE MOBILE SEARCH
 # -------------------------------------------------------------
 def youtube_search_mobile(query: str, limit: int = 10):
     url = f"https://m.youtube.com/results?search_query={query.replace(' ', '+')}"
@@ -43,14 +41,20 @@ def youtube_search_mobile(query: str, limit: int = 10):
 
     try:
         html = requests.get(url, headers=headers, timeout=10).text
+    except:
+        return []
+
+    try:
         raw_json = re.search(r"var ytInitialData = (.*?);</script>", html).group(1)
         data = json.loads(raw_json)
     except:
         return []
 
     results = []
+
     try:
-        sections = data["contents"]["twoColumnSearchResultsRenderer"]["primaryContents"]["sectionListRenderer"]["contents"]
+        main = data["contents"]["twoColumnSearchResultsRenderer"]["primaryContents"]
+        sections = main["sectionListRenderer"]["contents"]
     except:
         return []
 
@@ -61,18 +65,26 @@ def youtube_search_mobile(query: str, limit: int = 10):
             if not video:
                 continue
 
-            vid = video.get("videoId")
-            title = video.get("title", {}).get("runs", [{}])[0].get("text")
-            thumb = video.get("thumbnail", {}).get("thumbnails", [{}])[-1].get("url")
-            channel = video.get("ownerText", {}).get("runs", [{}])[0].get("text")
-            duration = video.get("lengthText", {}).get("simpleText")
-            views = video.get("viewCountText", {}).get("simpleText")
+            vid = video.get("videoId", "")
+            title = video.get("title", {}).get("runs", [{}])[0].get("text", "")
+            thumbnail = video.get("thumbnail", {}).get("thumbnails", [{}])[-1].get("url", "")
+            channel = video.get("ownerText", {}).get("runs", [{}])[0].get("text", "")
+            duration_obj = video.get("lengthText", {})
+            duration = (
+                duration_obj.get("simpleText")
+                or (duration_obj.get("runs", [{}])[0].get("text") if "runs" in duration_obj else None)
+            )
+            view_obj = video.get("viewCountText", {})
+            views = (
+                view_obj.get("simpleText")
+                or (view_obj.get("runs", [{}])[0].get("text") if "runs" in view_obj else None)
+            )
 
             results.append({
                 "videoId": vid,
                 "title": title,
                 "url": f"https://www.youtube.com/watch?v={vid}",
-                "thumbnail": thumb,
+                "thumbnail": thumbnail,
                 "channel": channel,
                 "views": views,
                 "duration": duration,
@@ -83,13 +95,15 @@ def youtube_search_mobile(query: str, limit: int = 10):
 
     return results
 
+
 @app.get("/search/videos")
 async def search_videos(query: str, limit: int = 10):
-    return {
-        "ok": True,
-        "query": query,
-        "results": youtube_search_mobile(query, limit)
-    }
+    try:
+        data = youtube_search_mobile(query, limit)
+        return {"ok": True, "query": query, "count": len(data), "results": data}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "results": []}
+
 
 # -------------------------------------------------------------
 # 🎯 VIDEO DETAILS
@@ -101,60 +115,14 @@ async def video_details(video_id: str):
 
     try:
         html = requests.get(url, headers=headers, timeout=10).text
-        match = re.search(r'"title":"(.*?)"', html)
-        title = match.group(1).encode("utf-8").decode("unicode_escape") if match else "Unknown"
     except:
-        title = "Unknown"
+        raise HTTPException(status_code=500, detail="Failed to connect")
+
+    match = re.search(r'"title":"(.*?)"', html)
+    title = match.group(1).encode("utf-8").decode("unicode_escape") if match else "Unknown"
 
     return {
         "videoId": video_id,
         "title": title,
         "url": f"https://www.youtube.com/watch?v={video_id}",
     }
-
-# -------------------------------------------------------------
-# 🕒 SRT TIME
-# -------------------------------------------------------------
-def _seconds_to_srt(seconds: float) -> str:
-    ms = int(seconds * 1000)
-    h = ms // 3600000
-    ms %= 3600000
-    m = ms // 60000
-    ms %= 60000
-    s = ms // 1000
-    ms %= 1000
-    return f"{h:02}:{m:02}:{s:02},{ms:03d}"
-
-# -------------------------------------------------------------
-# 📝 CAPTIONS / LYRICS (Backwards-compatible)
-# -------------------------------------------------------------
-@app.get("/captions/{video_id}")
-async def captions(video_id: str, lang: str = "en", format: str = "json"):
-    try:
-        try:
-            # Modern versions (language support)
-            data = YouTubeTranscriptApi.get_transcript(video_id, languages=[lang])
-        except AttributeError:
-            # Old versions fallback (no language)
-            data = YouTubeTranscriptApi.get_transcript(video_id)
-
-        if format == "text":
-            return {"video_id": video_id, "language": lang, "text": "\n".join(c["text"] for c in data)}
-
-        if format == "srt":
-            srt = []
-            for i, c in enumerate(data, 1):
-                start = c["start"]
-                end = start + c["duration"]
-                srt.append(str(i))
-                srt.append(f"{_seconds_to_srt(start)} --> {_seconds_to_srt(end)}")
-                srt.append(c["text"])
-                srt.append("")
-            return {"srt": "\n".join(srt)}
-
-        return {"video_id": video_id, "language": lang, "captions": data}
-
-    except NoTranscriptFound:
-        raise HTTPException(status_code=404, detail="No captions found")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
