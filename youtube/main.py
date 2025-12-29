@@ -35,7 +35,7 @@ async def root():
     }
 
 # -------------------------------------------------------------
-# 🔥 MOBILE SEARCH (STABLE)
+# 🔥 MOBILE SEARCH
 # -------------------------------------------------------------
 def youtube_search_mobile(query: str, limit: int = 10):
     url = f"https://m.youtube.com/results?search_query={query.replace(' ', '+')}"
@@ -49,10 +49,8 @@ def youtube_search_mobile(query: str, limit: int = 10):
         return []
 
     results = []
-
     try:
-        sections = data["contents"]["twoColumnSearchResultsRenderer"] \
-            ["primaryContents"]["sectionListRenderer"]["contents"]
+        sections = data["contents"]["twoColumnSearchResultsRenderer"]["primaryContents"]["sectionListRenderer"]["contents"]
     except:
         return []
 
@@ -104,7 +102,7 @@ async def video_details(video_id: str):
     try:
         html = requests.get(url, headers=headers, timeout=10).text
         match = re.search(r'"title":"(.*?)"', html)
-        title = match.group(1).encode("utf-8").decode("unicode_escape")
+        title = match.group(1).encode("utf-8").decode("unicode_escape") if match else "Unknown"
     except:
         title = "Unknown"
 
@@ -128,22 +126,20 @@ def _seconds_to_srt(seconds: float) -> str:
     return f"{h:02}:{m:02}:{s:02},{ms:03d}"
 
 # -------------------------------------------------------------
-# 📝 CAPTIONS / LYRICS
+# 📝 CAPTIONS / LYRICS (Backwards-compatible)
 # -------------------------------------------------------------
 @app.get("/captions/{video_id}")
 async def captions(video_id: str, lang: str = "en", format: str = "json"):
     try:
-        data = YouTubeTranscriptApi.get_transcript(
-            video_id,
-            languages=[lang]
-        )
+        try:
+            # Modern versions (language support)
+            data = YouTubeTranscriptApi.get_transcript(video_id, languages=[lang])
+        except AttributeError:
+            # Old versions fallback (no language)
+            data = YouTubeTranscriptApi.get_transcript(video_id)
 
         if format == "text":
-            return {
-                "video_id": video_id,
-                "language": lang,
-                "text": "\n".join(c["text"] for c in data)
-            }
+            return {"video_id": video_id, "language": lang, "text": "\n".join(c["text"] for c in data)}
 
         if format == "srt":
             srt = []
@@ -156,14 +152,9 @@ async def captions(video_id: str, lang: str = "en", format: str = "json"):
                 srt.append("")
             return {"srt": "\n".join(srt)}
 
-        return {
-            "video_id": video_id,
-            "language": lang,
-            "captions": data
-        }
+        return {"video_id": video_id, "language": lang, "captions": data}
 
     except NoTranscriptFound:
         raise HTTPException(status_code=404, detail="No captions found")
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
