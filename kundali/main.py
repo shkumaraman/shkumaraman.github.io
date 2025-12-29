@@ -4,7 +4,6 @@ from flatlib.chart import Chart
 from flatlib.datetime import Datetime
 from flatlib.geopos import GeoPos
 from flatlib import const, nakshatra, dasha
-import math
 
 app = FastAPI()
 
@@ -17,7 +16,12 @@ app.add_middleware(
 )
 
 def calculate_all(data):
-    # Extract birth info
+    # Validate inputs
+    required_fields = ['year','month','date','hours','minutes','latitude','longitude','timezone']
+    for field in required_fields:
+        if field not in data:
+            return {"error": f"Missing required field: {field}"}
+
     year = data['year']
     month = data['month']
     date_day = data['date']
@@ -46,10 +50,13 @@ def calculate_all(data):
         h = chart.get(const.HOUSES[i-1])
         houses[f"house_{i}"] = {"sign": h.sign, "longitude": round(h.lon, 2)}
 
-    # Moon & Nakshatra
+    # Moon, Nakshatra, Nakshatra Pada
     moon = chart.get(const.MOON)
     moon_sign = moon.sign
     moon_nakshatra = nakshatra.getNakshatra(moon.lon)
+    # Nakshatra Pada calculation (1-4)
+    moon_nakshatra_deg = moon.lon % 30
+    pada = int(moon_nakshatra_deg // 3.75) + 1
 
     # Vimshottari Dasha
     vimshottari = []
@@ -57,57 +64,80 @@ def calculate_all(data):
         v_dasha = dasha.VimshottariDasha(chart)
         for pd in v_dasha.progression():
             vimshottari.append(str(pd))
-    except:
-        vimshottari = ["Not calculated"]
+    except Exception as e:
+        vimshottari = [f"Not calculated ({e})"]
 
     # Char Dasha & Yogini Dasha
     try:
         char_d = dasha.CharDasha(chart)
         char_dasha = [str(pd) for pd in char_d.progression()]
-    except:
-        char_dasha = ["Not calculated"]
+    except Exception as e:
+        char_dasha = [f"Not calculated ({e})"]
 
     try:
         yogini_d = dasha.YoginiDasha(chart)
         yogini_dasha = [str(pd) for pd in yogini_d.progression()]
-    except:
-        yogini_dasha = ["Not calculated"]
+    except Exception as e:
+        yogini_dasha = [f"Not calculated ({e})"]
 
     # Panchang
     tithi = nakshatra.getTithi(dt)
-    vara = dt.wday
+    vara = (dt.wday + 1) % 7 or 7  # Sunday = 1
     yoga = nakshatra.getYoga(dt)
     karana = nakshatra.getKarana(dt)
 
     # Manglik Check
-    mars = chart.get(const.MARS)
     mars_house = chart.getHouse(const.MARS)
     manglik = mars_house in [1,2,4,7,8,12]
 
-    # Kalsarpa Check
+    # Kalsarpa Check (Robust)
     rahu = chart.get(const.NNODE)
     ketu = chart.get(const.SNODE)
-    kalsarpa = all(rahu.lon < chart.get(p).lon < ketu.lon or ketu.lon < chart.get(p).lon < rahu.lon for p in const.PLANETS)
+    def is_kalsarpa():
+        for planet in const.PLANETS:
+            pl = chart.get(planet)
+            if rahu.lon < ketu.lon:
+                if not (rahu.lon < pl.lon < ketu.lon):
+                    return False
+            else:  # Crosses 0° Aries
+                if not (pl.lon > rahu.lon or pl.lon < ketu.lon):
+                    return False
+        return True
+    kalsarpa = is_kalsarpa()
 
     # Hora & Abhujh Muhurta
     hora = "Surya" if dt.hours % 2 == 0 else "Chandra"
     abhujh_muhurta = "Yes" if 24 - dt.hours >= 20 else "No"
 
-    # Navamsa Chart
+    # Navamsa Chart (Accurate)
     navamsa = {}
     for planet in const.PLANETS:
         p = chart.get(planet)
-        # 1/9th division (Navamsa) approximation
-        navamsa_deg = p.lon % 30 / 3.3333333
-        navamsa_sign_index = int(navamsa_deg) % 12
+        sign_index = const.SIGNS.index(p.sign)
+        deg_in_sign = p.lon % 30
+        navamsa_index = int(deg_in_sign // 3.3333333)  # 9 divisions
+        navamsa_sign_index = (sign_index*3 + navamsa_index) % 12
         navamsa_sign = const.SIGNS[navamsa_sign_index]
         navamsa[planet] = {"sign": navamsa_sign, "longitude": round(p.lon,2)}
+
+    # Advanced Child / Progeny Analysis
+    # Consider 5th house, its lord, Jupiter, and Manglik
+    fifth_house = chart.get(const.HOUSES[4])
+    fifth_house_planets = [p for p in const.PLANETS if chart.getHouse(p) == 5]
+    jupiter = chart.get(const.JUPITER)
+    jupiter_house = chart.getHouse(const.JUPITER)
+    child_prediction = {
+        "fifth_house_planets": fifth_house_planets,
+        "jupiter_house": jupiter_house,
+        "manglik": manglik,
+        "prediction": "Favorable" if not manglik and jupiter_house in [5,9] else "Check timing / further analysis needed"
+    }
 
     result = {
         "planets": planets,
         "ascendant": asc_sign,
         "houses": houses,
-        "moon": {"sign": moon_sign, "nakshatra": moon_nakshatra},
+        "moon": {"sign": moon_sign, "nakshatra": moon_nakshatra, "pada": pada},
         "vimshottari_dasha": vimshottari,
         "char_dasha": char_dasha,
         "yogini_dasha": yogini_dasha,
@@ -116,7 +146,8 @@ def calculate_all(data):
         "kalsarpa": kalsarpa,
         "hora": hora,
         "abhujh_muhurta": abhujh_muhurta,
-        "navamsa": navamsa
+        "navamsa": navamsa,
+        "child_prediction": child_prediction
     }
 
     return result
