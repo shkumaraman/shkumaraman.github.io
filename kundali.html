@@ -11,24 +11,17 @@
 </head>
 <body>
 
-<h2>🔥 COMPLETE FREE KUNDALI (ALL POSSIBLE DATA)</h2>
+<h2>COMPLETE FREE KUNDALI (ALL DATA)</h2>
 
 <!-- INPUTS -->
-<input id="year" type="number" value="2002" placeholder="Year">
-<input id="month" type="number" value="10" placeholder="Month">
-<input id="date" type="number" value="16" placeholder="Date"><br>
-
-<input id="hours" type="number" value="5" placeholder="Hours">
-<input id="minutes" type="number" value="52" placeholder="Minutes">
-<input id="seconds" type="number" value="0" placeholder="Seconds"><br>
-
-<input id="latitude" type="number" value="26.82" step="0.01" placeholder="Latitude">
-<input id="longitude" type="number" value="85.00" step="0.01" placeholder="Longitude">
+<input id="date" type="text" value="16/10/2002" placeholder="DD/MM/YYYY"><br>
+<input id="time" type="text" value="05:52:00" placeholder="HH:MM:SS"><br>
+<input id="location" type="text" value="27.4246736,83.9144972" placeholder="Latitude,Longitude"><br>
 <input id="timezone" type="number" value="5.5" step="0.5" placeholder="Timezone"><br><br>
 
-<button onclick="fetchAll()">🚀 FETCH FULL KUNDALI</button>
+<button onclick="fetchAll()">FETCH FULL KUNDALI</button>
 
-<h3>📦 RAW JSON OUTPUT</h3>
+<h3>RAW JSON OUTPUT</h3>
 <pre id="output"></pre>
 
 <script>
@@ -36,34 +29,35 @@ const API_KEY = "kT8NTaKyfs6Yn6j2KxmEwaVqen1iG2y11mKcd09o";
 const BASE = "https://json.freeastrologyapi.com/";
 
 function getBirthData() {
-  return {
-    year: +year.value,
-    month: +month.value,
-    date: +date.value,
-    hours: +hours.value,
-    minutes: +minutes.value,
-    seconds: +seconds.value,
-    latitude: +latitude.value,
-    longitude: +longitude.value,
-    timezone: +timezone.value
-  };
+  const [dd, mm, yyyy] = date.value.split("/").map(Number);
+  const [hours, minutes, seconds] = time.value.split(":").map(Number);
+  const [latitude, longitude] = location.value.split(",").map(Number);
+
+  return { year: yyyy, month: mm, date: dd, hours, minutes, seconds, latitude, longitude, timezone: +timezone.value };
 }
 
 async function call(endpoint, body) {
-  const res = await fetch(BASE + endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": API_KEY
-    },
-    body: JSON.stringify(body)
-  });
-  return res.json();
+  try {
+    const res = await fetch(BASE + endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": API_KEY
+      },
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  } catch (err) {
+    throw new Error(`Failed to fetch ${endpoint}: ${err.message}`);
+  }
 }
 
 async function fetchAll() {
   const b = getBirthData();
   const data = {};
+  const output = document.getElementById("output");
+  output.textContent = "Fetching...";
 
   try {
     data.planets = await call("planets", b);
@@ -88,11 +82,10 @@ async function fetchAll() {
     data.char_dasha = await call("char-dasha", b);
     data.yogini_dasha = await call("yogini-dasha", b);
 
-    document.getElementById("output").textContent =
-      JSON.stringify(data, null, 2);
+    output.textContent = JSON.stringify(data, null, 2);
 
   } catch (e) {
-    output.textContent = "ERROR: " + e;
+    output.textContent = "ERROR: " + e.message;
   }
 }
 </script>
