@@ -694,6 +694,7 @@ body.light-mode {
 {% include users-count.html %}
 {% include menu.html %}
 {% include scripts.html %}
+{% include bot.html %}
 
 <script>
 // Firebase config
@@ -710,6 +711,10 @@ let escPressedOnce = false;
 let escTimer = null;
 let heartbeatInterval;
 
+// Bot instance
+let chatBot = null;
+let isBotConnected = false;
+
 // GIPHY API Key
 const GIPHY_API_KEY = 'EKvv5S1CcXqYuHgxPNVKiNuiuNHRTzFk';
 
@@ -722,20 +727,31 @@ let myNickname = localStorage.getItem("talkrush_nickname") || "Guest";
 let myGenderInterest = localStorage.getItem("talkrush_gender_interest") || "everyone";
 let myTags = JSON.parse(localStorage.getItem("talkrush_tags") || "[]");
 
-// Initialize when page loads - DON'T auto-connect
+// Initialize when page loads
 window.addEventListener('load', () => {
   showNewChatButton();
   logSystem("Click 'Start New Chat' to begin chatting with a stranger!");
+  
+  // Initialize bot
+  chatBot = new ChatBot(null, (msg) => {
+    if (isBotConnected && isConnected) {
+      if (typeof msg === 'string') {
+        // For bot, directly append message as stranger
+        appendMessage("stranger", msg);
+      } else if (msg.type === "typing") {
+        showTypingIndicator();
+      }
+    }
+  }, "Stranger");
 });
 
-// Handle page refresh/close - Improved cleanup
+// Handle page refresh/close
 window.addEventListener('beforeunload', (e) => {
   if (isConnected) {
     e.preventDefault();
     e.returnValue = 'Are you sure you want to leave? Your chat will be disconnected.';
     return e.returnValue;
   } else {
-    // Clean up waiting list entry when leaving page
     cleanUpWaitingList();
   }
 });
@@ -744,6 +760,7 @@ window.addEventListener('beforeunload', (e) => {
 window.addEventListener('pagehide', () => {
   cleanUpWaitingList();
   if (heartbeatInterval) clearInterval(heartbeatInterval);
+  if (chatBot) chatBot.deactivate();
 });
 
 // Escape key functionality
@@ -762,6 +779,7 @@ document.addEventListener('keydown', (e) => {
       if (myConn) myConn.close();
       cleanUpWaitingList();
       isConnected = false;
+      isBotConnected = false;
       document.getElementById("chatLog").innerHTML = "";
       showNewChatButton();
       logSystem("Chat ended. Starting new search...");
@@ -775,6 +793,7 @@ document.addEventListener('keydown', (e) => {
 function startPeer() {
   clearSystemMessage();
   isConnected = false;
+  isBotConnected = false;
   if (peer) peer.destroy();
   logSystem("🔍 Looking for a stranger...");
   
@@ -795,11 +814,14 @@ function startPeer() {
     tryToFindMatch();
   });
 
-  peer.on('connection', handleNewConnection);
+  peer.on('connection', (conn) => {
+    // For real connections
+    isBotConnected = false;
+    handleNewConnection(conn, []);
+  });
 
   peer.on('error', (err) => {
     console.error('PeerJS error:', err);
-    // Only show button if not already connected
     if (!isConnected) {
       showNewChatButton();
       logSystem("Connection error. Click 'Start New Chat' to try again.");
@@ -816,7 +838,6 @@ function tryToFindMatch() {
 
     if (list) {
       for (let [key, entry] of Object.entries(list)) {
-        // Clean up stale entries (older than 30 seconds)
         if (entry.timestamp && (Date.now() - entry.timestamp) > 30000) {
           db.ref("waiting/" + key).remove();
           continue;
@@ -827,7 +848,7 @@ function tryToFindMatch() {
             const sharedTags = myTags.filter(tag => entry.tags && entry.tags.includes(tag));
             if (sharedTags.length > 0) {
               bestMatch = { key, otherId: entry.id, sharedTags };
-              break; // immediate match
+              break;
             } else if (!bestMatch) {
               bestMatch = { key, otherId: entry.id, sharedTags: [] };
             }
@@ -842,17 +863,17 @@ function tryToFindMatch() {
       return;
     }
 
-    // No immediate match → add self
+    // No match found - add self to waiting
     const newRef = waitingRef.push();
-    waitingEntryRef = newRef; // Store reference for cleanup
+    waitingEntryRef = newRef;
     newRef.set({
       id: myId,
       interest: myGenderInterest,
       tags: myTags,
-      timestamp: Date.now() // Add timestamp for stale entry cleanup
+      timestamp: Date.now()
     });
 
-    // Start heartbeat to keep entry fresh
+    // Start heartbeat
     if (heartbeatInterval) clearInterval(heartbeatInterval);
     heartbeatInterval = setInterval(() => {
       if (waitingEntryRef && !isConnected) {
@@ -860,23 +881,31 @@ function tryToFindMatch() {
       }
     }, 10000);
 
-    // Wait 5s, fallback to any gender-compatible user
+    // Wait 7 seconds for real user, then connect to bot
     setTimeout(() => {
       if (!isConnected) {
         waitingRef.once('value', (snap) => {
-          if (isConnected) return; // Check again if connected
+          if (isConnected) return;
           
+          let foundRealUser = false;
           snap.forEach(child => {
             const entry = child.val();
             if (entry.id !== myId && isGenderCompatible(myGenderInterest, entry.interest)) {
               child.ref.remove();
               connectToPeer(entry.id, []);
-              return true; // Break the loop
+              foundRealUser = true;
+              return true;
             }
           });
+          
+          // If no real user found after 7 seconds, connect to bot
+          if (!foundRealUser && !isConnected) {
+            cleanUpWaitingList();
+            connectToBot();
+          }
         });
       }
-    }, 5000);
+    }, 7000);
   });
 }
 
@@ -885,7 +914,10 @@ function connectToPeer(otherId, sharedTags = []) {
   clearSystemMessage();
   logSystem("😍 Connecting to stranger...");
   const conn = peer.connect(otherId);
-  conn.on("open", () => handleNewConnection(conn, sharedTags));
+  conn.on("open", () => {
+    isBotConnected = false; // Not a bot connection
+    handleNewConnection(conn, sharedTags);
+  });
   conn.on("error", (err) => {
     console.error("Connection error:", err);
     if (!isConnected) {
@@ -895,11 +927,45 @@ function connectToPeer(otherId, sharedTags = []) {
   });
 }
 
+function connectToBot() {
+  if (isConnected) return;
+  
+  clearSystemMessage();
+  logSystem("Stranger Connected! Say Hi 👋");
+  
+  // Set bot connection flag
+  isBotConnected = true;
+  isConnected = true;
+  
+  // Activate bot
+  chatBot.activate();
+  chatBot.setConnected(true);
+  
+  hideNewChatButton();
+  
+  // Bot sends greeting after a short delay
+  setTimeout(() => {
+    if (chatBot && isConnected && isBotConnected) {
+      chatBot.sendGreeting();
+    }
+  }, 1000);
+}
+
 function handleNewConnection(conn, sharedTags = []) {
   if (isConnected) {
     conn.close(); 
     return;
   }
+  
+  // This is a real connection, not bot
+  isBotConnected = false;
+  
+  // Deactivate bot if it was active
+  if (chatBot) {
+    chatBot.deactivate();
+    chatBot.setConnected(false);
+  }
+  
   clearSystemMessage();
   logSystem("Stranger Connected! Say Hi 👋");
 
@@ -947,8 +1013,16 @@ function setupConnection(conn) {
 
 function endConnection(message) {
   logSystem(message);
+  
+  // Deactivate bot
+  if (chatBot) {
+    chatBot.deactivate();
+    chatBot.setConnected(false);
+  }
+  
   myConn = null;
   isConnected = false;
+  isBotConnected = false;
   showNewChatButton();
 }
 
@@ -964,7 +1038,7 @@ function cleanUpWaitingList() {
 }
 
 function isGenderCompatible(me, other) {
-  if (me === "everyone" && other === "everyone") return true; // only everyone ↔ everyone
+  if (me === "everyone" && other === "everyone") return true;
   if (me === "male" && other === "female") return true;
   if (me === "female" && other === "male") return true;
   return false;
@@ -1056,7 +1130,10 @@ document.getElementById("msgInput").addEventListener("keypress", (e) => {
 });
 
 document.getElementById("msgInput").addEventListener("input", () => {
-  if (myConn && isConnected) myConn.send({ type: "typing" });
+  if (isConnected && !isBotConnected && myConn) {
+    // Only send typing indicator for real connections, not bot
+    myConn.send({ type: "typing" });
+  }
 });
 
 document.getElementById("sendBtn").onclick = sendMessage;
@@ -1064,20 +1141,38 @@ document.getElementById("sendBtn").onclick = sendMessage;
 function sendMessage() {
   const input = document.getElementById("msgInput");
   const msg = input.value.trim();
-  if (msg && myConn && isConnected) {
+  
+  if (!msg || !isConnected) {
+    input.value = "";
+    return;
+  }
+  
+  if (isBotConnected) {
+    // For bot connection: just show your message, bot won't respond
+    appendMessage("me", msg);
+  } else if (myConn) {
+    // For real connection: send to other user
     myConn.send(msg);
     appendMessage("me", msg);
-    input.value = "";
   }
+  
+  input.value = "";
 }
 
 document.getElementById("imgInput").addEventListener("change", (e) => {
   const file = e.target.files[0];
-  if (!file || !myConn || !isConnected) return;
+  if (!file || !isConnected) return;
+  
   const reader = new FileReader();
   reader.onload = () => {
-    myConn.send({ type: "image", blob: reader.result });
-    appendImage("me", reader.result);
+    if (isBotConnected) {
+      // For bot: just show your image
+      appendImage("me", reader.result);
+    } else if (myConn) {
+      // For real connection: send to other user
+      myConn.send({ type: "image", blob: reader.result });
+      appendImage("me", reader.result);
+    }
   };
   reader.readAsDataURL(file);
   e.target.value = "";
@@ -1087,6 +1182,8 @@ document.getElementById("skipBtn").onclick = () => {
   if (myConn) myConn.close();
   cleanUpWaitingList();
   isConnected = false;
+  isBotConnected = false;
+  document.getElementById("chatLog").innerHTML = "";
   logSystem("Chat ended. Starting new search...");
   showNewChatButton();
 };
@@ -1147,9 +1244,15 @@ function displayGifs(gifs) {
     img.src = gifUrl;
     img.className = "gif-item";
     img.onclick = () => {
-      if (myConn && isConnected) {
-        myConn.send({ type: "gif", url: gifUrl });
-        appendGif("me", gifUrl);
+      if (isConnected) {
+        if (isBotConnected) {
+          // For bot: just show your GIF
+          appendGif("me", gifUrl);
+        } else if (myConn) {
+          // For real connection: send to other user
+          myConn.send({ type: "gif", url: gifUrl });
+          appendGif("me", gifUrl);
+        }
         gifModal.style.display = "none";
       }
     };
