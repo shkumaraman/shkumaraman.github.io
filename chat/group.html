@@ -873,85 +873,46 @@ function displayMessage(msg) {
   time.textContent = formatTimestamp(msg.timestamp);
   div.appendChild(time);
   document.getElementById("chatLog").appendChild(div);
-}
-
-function appendMessage(sender, msg, timestamp = Date.now()) {
-  if (document.querySelector(`[data-id="${timestamp}"]`)) return;
-  
-  const div = document.createElement("div");
-  div.className = "msg " + sender;
-  div.setAttribute('data-id', timestamp);
-  
-  const nicknameEl = document.createElement("div");
-  nicknameEl.className = "msg-nickname";
-  nicknameEl.style.fontWeight = "bold";
-  nicknameEl.style.marginBottom = "2px";
-  nicknameEl.style.lineHeight = "1";
-  nicknameEl.textContent = myNickname;
-  div.appendChild(nicknameEl);
-  
-  div.appendChild(document.createTextNode(msg));
-  
-  const time = document.createElement("div");
-  time.className = "timestamp";
-  time.textContent = formatTimestamp(timestamp);
-  div.appendChild(time);
-  document.getElementById("chatLog").appendChild(div);
   scrollToBottom();
 }
 
-function appendImage(sender, blob, timestamp = Date.now()) {
-  if (document.querySelector(`[data-id="${timestamp}"]`)) return;
-  
-  const div = document.createElement("div");
-  div.className = "msg " + sender;
-  div.setAttribute('data-id', timestamp);
-  
-  const nicknameEl = document.createElement("div");
-  nicknameEl.className = "msg-nickname";
-  nicknameEl.style.fontWeight = "bold";
-  nicknameEl.style.marginBottom = "2px";
-  nicknameEl.style.lineHeight = "1";
-  nicknameEl.textContent = myNickname;
-  div.appendChild(nicknameEl);
-  
-  const img = document.createElement("img");
-  img.src = blob;
-  div.appendChild(img);
-  
-  const time = document.createElement("div");
-  time.className = "timestamp";
-  time.textContent = formatTimestamp(timestamp);
-  div.appendChild(time);
-  document.getElementById("chatLog").appendChild(div);
-  scrollToBottom();
+// Helper function for creating messages
+function createMessageObject(type, content, sender = myNickname) {
+  return {
+    type: type,
+    timestamp: Date.now(),
+    nickname: sender,
+    ...(type === "text" && { text: content }),
+    ...(type === "image" && { blob: content }),
+    ...(type === "gif" && { url: content })
+  };
 }
 
-function appendGif(sender, url, timestamp = Date.now()) {
-  if (document.querySelector(`[data-id="${timestamp}"]`)) return;
+function appendChatMessage(type, content, sender = myNickname) {
+  const msg = createMessageObject(type, content, sender);
+  displayMessage(msg);
+}
+
+// For backward compatibility
+function appendMessage(sender, msg) {
+  appendChatMessage("text", msg, sender);
+}
+
+function appendImage(sender, blob) {
+  appendChatMessage("image", blob, sender);
+}
+
+function appendGif(sender, url) {
+  appendChatMessage("gif", url, sender);
+}
+
+// Helper function for direct sending
+function sendChatMessage(type, content) {
+  if (!myConn || !isConnected) return;
   
-  const div = document.createElement("div");
-  div.className = "msg " + sender;
-  div.setAttribute('data-id', timestamp);
-  
-  const nicknameEl = document.createElement("div");
-  nicknameEl.className = "msg-nickname";
-  nicknameEl.style.fontWeight = "bold";
-  nicknameEl.style.marginBottom = "2px";
-  nicknameEl.style.lineHeight = "1";
-  nicknameEl.textContent = myNickname;
-  div.appendChild(nicknameEl);
-  
-  const img = document.createElement("img");
-  img.src = url;
-  div.appendChild(img);
-  
-  const time = document.createElement("div");
-  time.className = "timestamp";
-  time.textContent = formatTimestamp(timestamp);
-  div.appendChild(time);
-  document.getElementById("chatLog").appendChild(div);
-  scrollToBottom();
+  const msg = createMessageObject(type, content);
+  myConn.send(msg);
+  displayMessage(msg);
 }
 
 function formatTimestamp(timestamp) {
