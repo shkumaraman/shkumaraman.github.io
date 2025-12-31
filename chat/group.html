@@ -557,7 +557,6 @@ const GIPHY_API_KEY = 'EKvv5S1CcXqYuHgxPNVKiNuiuNHRTzFk';
 let bannedWords = [];
 let bannedWordsLoaded = false;
 
-// Load the banned words from filter.txt
 async function loadBannedWords() {
   try {
     const response = await fetch('filter.txt');
@@ -566,7 +565,7 @@ async function loadBannedWords() {
       .map(word => word.trim().toLowerCase())
       .filter(word => word.length > 0);
     bannedWordsLoaded = true;
-    console.log("Banned words loaded successfully:", bannedWords.length);
+    console.log("Banned words loaded:", bannedWords.length);
   } catch (err) {
     console.error("Error loading banned words:", err);
     bannedWords = ['badword1', 'badword2', 'swearword'];
@@ -574,7 +573,6 @@ async function loadBannedWords() {
   }
 }
 
-// Enhanced check for banned words
 function containsBannedWords(message) {
   if (!bannedWordsLoaded || !message || typeof message !== 'string') return false;
   
@@ -587,25 +585,21 @@ function containsBannedWords(message) {
   });
 }
 
-// Get group from URL parameter
 function getGroupFromURL() {
   const urlParams = new URLSearchParams(window.location.search);
   return urlParams.get('group') || 'general';
 }
 
-// Initialize chat when page loads
 function initializeChat() {
   myId = 'user_' + Math.random().toString(36).substr(2, 9);
   currentGroup = getGroupFromURL();
   loadBannedWords();
 
-  // Check if nickname exists in localStorage
-const savedNickname = localStorage.getItem('talkrush_nickname');
-if (savedNickname) {
-  myNickname = savedNickname;
-}
+  const savedNickname = localStorage.getItem('talkrush_nickname');
+  if (savedNickname) {
+    myNickname = savedNickname;
+  }
 
-  // Update page title with group name
   document.title = `TalkRush - ${currentGroup} Group`;
   document.querySelector('.app-title').textContent = `TalkRush - ${currentGroup}`;
 
@@ -645,7 +639,6 @@ function joinGroupChat() {
   });
 }
 
-// Clean up messages older than expiry time
 function cleanupOldMessages() {
   const expiryTime = Date.now() - (messageExpiryHours * 60 * 60 * 1000);
   
@@ -681,10 +674,9 @@ function sendMessageToGroup(text) {
   const message = {
     text: text,
     timestamp: timestamp,
-    nickname: myNickname
+    nickname: myNickname,
+    type: "text"
   };
-  
-  appendMessage("me", text, timestamp);
   
   const newMsgRef = db.ref(`groups/${currentGroup}/messages`).push();
   newMsgRef.set(message)
@@ -698,7 +690,6 @@ function sendMessageToGroup(text) {
     });
 }
 
-// Ensure we only keep the latest messageLimit messages
 function maintainMessageLimit() {
   db.ref(`groups/${currentGroup}/messages`).orderByChild("timestamp").once('value', (snapshot) => {
     if (snapshot.numChildren() > messageLimit) {
@@ -788,8 +779,6 @@ function sendImageToGroup(blob) {
     nickname: myNickname
   };
   
-  appendImage("me", blob, timestamp);
-  
   const newMsgRef = db.ref(`groups/${currentGroup}/messages`).push();
   newMsgRef.set(message)
     .then(() => {
@@ -815,8 +804,6 @@ function sendGifToGroup(url) {
     nickname: myNickname
   };
   
-  appendGif("me", url, timestamp);
-  
   const newMsgRef = db.ref(`groups/${currentGroup}/messages`).push();
   newMsgRef.set(message)
     .then(() => {
@@ -831,7 +818,6 @@ function sendGifToGroup(url) {
     });
 }
 
-// UI Functions
 function displayMessage(msg) {
   if (document.querySelector(`[data-id="${msg.timestamp}"]`)) return;
   
@@ -874,45 +860,6 @@ function displayMessage(msg) {
   div.appendChild(time);
   document.getElementById("chatLog").appendChild(div);
   scrollToBottom();
-}
-
-// Helper function for creating messages
-function createMessageObject(type, content, sender = myNickname) {
-  return {
-    type: type,
-    timestamp: Date.now(),
-    nickname: sender,
-    ...(type === "text" && { text: content }),
-    ...(type === "image" && { blob: content }),
-    ...(type === "gif" && { url: content })
-  };
-}
-
-function appendChatMessage(type, content, sender = myNickname) {
-  const msg = createMessageObject(type, content, sender);
-  displayMessage(msg);
-}
-
-// For backward compatibility
-function appendMessage(sender, msg) {
-  appendChatMessage("text", msg, sender);
-}
-
-function appendImage(sender, blob) {
-  appendChatMessage("image", blob, sender);
-}
-
-function appendGif(sender, url) {
-  appendChatMessage("gif", url, sender);
-}
-
-// Helper function for direct sending
-function sendChatMessage(type, content) {
-  if (!myConn || !isConnected) return;
-  
-  const msg = createMessageObject(type, content);
-  myConn.send(msg);
-  displayMessage(msg);
 }
 
 function formatTimestamp(timestamp) {
@@ -959,7 +906,6 @@ function sendMessage() {
   }
 }
 
-// Image button click handler
 document.getElementById("imgBtn").addEventListener("click", () => {
   document.getElementById("imgInput").click();
 });
@@ -981,7 +927,6 @@ document.getElementById("imgInput").addEventListener("change", (e) => {
   e.target.value = "";
 });
 
-// GIF button click handler
 document.getElementById("gifBtn").addEventListener("click", (e) => {
   e.preventDefault();
   gifModal.style.display = gifModal.style.display === "block" ? "none" : "block";
@@ -990,7 +935,6 @@ document.getElementById("gifBtn").addEventListener("click", (e) => {
   }
 });
 
-// GIF Search functionality with GIPHY
 const gifModal = document.getElementById("gifModal");
 const gifSearch = document.getElementById("gifSearch");
 const gifResults = document.getElementById("gifResults");
