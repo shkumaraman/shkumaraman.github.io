@@ -7,7 +7,7 @@ import hmac, hashlib
 
 app = FastAPI()
 
-# CORS (Universal Frontend Support)
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -38,7 +38,7 @@ async def create_order(request: Request):
         raise HTTPException(status_code=400, detail="Valid amount required")
 
     order = client.order.create({
-        "amount": int(float(amount) * 100),  # rupees → paise
+        "amount": int(float(amount) * 100),
         "currency": "INR",
         "payment_capture": 1
     })
@@ -50,7 +50,7 @@ async def create_order(request: Request):
         "key": os.getenv("RAZORPAY_KEY_ID")
     }
 
-# 2️⃣ Verify Payment (Frontend triggered)
+# 2️⃣ Verify Payment (Frontend)
 @app.post("/verify-payment")
 async def verify_payment(request: Request):
     data = await request.json()
@@ -65,14 +65,24 @@ async def verify_payment(request: Request):
     except:
         raise HTTPException(status_code=400, detail="Payment verification failed")
 
-# 3️⃣ Webhook (Razorpay server-to-server)
+# 3️⃣ Webhook (FIXED)
 @app.post("/razorpay-webhook")
 async def razorpay_webhook(request: Request):
-    webhook_secret = os.getenv("RAZORPAY_WEBHOOK_SECRET")  # Razorpay Dashboard me generate karke add karo
+    webhook_secret = os.getenv("RAZORPAY_WEBHOOK_SECRET")
     body = await request.body()
     signature = request.headers.get("X-Razorpay-Signature")
 
-    # Verify signature
+    # 🧪 Browser / Test call (NO signature)
+    if not signature:
+        return JSONResponse(
+            {
+                "status": "ok",
+                "message": "Webhook received (browser/test call – no signature)"
+            },
+            status_code=200
+        )
+
+    # 🔐 Real Razorpay verification
     expected_signature = hmac.new(
         webhook_secret.encode(),
         body,
@@ -80,20 +90,22 @@ async def razorpay_webhook(request: Request):
     ).hexdigest()
 
     if signature != expected_signature:
-        return JSONResponse({"status": "invalid signature"}, status_code=400)
+        return JSONResponse(
+            {"status": "invalid signature"},
+            status_code=400
+        )
 
     payload = await request.json()
     event = payload.get("event")
     data = payload.get("payload")
 
-    # Example: Payment captured
     if event == "payment.captured":
-        payment_id = data["payment"]["entity"]["id"]
-        order_id = data["payment"]["entity"]["order_id"]
-        amount = data["payment"]["entity"]["amount"]
-        print(f"[Webhook] Payment captured: Payment ID: {payment_id}, Order ID: {order_id}, Amount: {amount}")
+        payment = data["payment"]["entity"]
+        print(
+            f"[Webhook] Payment captured | "
+            f"payment_id={payment['id']} | "
+            f"order_id={payment['order_id']} | "
+            f"amount={payment['amount']}"
+        )
 
-        # Example:
-        # db.update_payment(order_id=order_id, payment_id=payment_id, status="captured")
-
-    return {"status": "ok"}
+    return {"status": "ok", "event": event}
