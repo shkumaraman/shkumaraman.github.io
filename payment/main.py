@@ -1,7 +1,9 @@
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 import razorpay
 import os
+import hmac, hashlib
 
 app = FastAPI()
 
@@ -21,7 +23,7 @@ client = razorpay.Client(
     )
 )
 
-# Health Check (Render needs this)
+# Health Check
 @app.get("/")
 def health():
     return {"status": "ok"}
@@ -32,11 +34,11 @@ async def create_order(request: Request):
     data = await request.json()
     amount = data.get("amount")
 
-    if not amount:
-        raise HTTPException(status_code=400, detail="Amount required")
+    if not amount or float(amount) <= 0:
+        raise HTTPException(status_code=400, detail="Valid amount required")
 
     order = client.order.create({
-        "amount": int(amount) * 100,  # rupees → paise
+        "amount": int(float(amount) * 100),  # rupees → paise
         "currency": "INR",
         "payment_capture": 1
     })
@@ -48,7 +50,7 @@ async def create_order(request: Request):
         "key": os.getenv("RAZORPAY_KEY_ID")
     }
 
-# 2️⃣ Verify Payment
+# 2️⃣ Verify Payment (Frontend triggered)
 @app.post("/verify-payment")
 async def verify_payment(request: Request):
     data = await request.json()
@@ -62,3 +64,36 @@ async def verify_payment(request: Request):
         return {"status": "success"}
     except:
         raise HTTPException(status_code=400, detail="Payment verification failed")
+
+# 3️⃣ Webhook (Razorpay server-to-server)
+@app.post("/razorpay-webhook")
+async def razorpay_webhook(request: Request):
+    webhook_secret = os.getenv("RAZORPAY_WEBHOOK_SECRET")  # Razorpay Dashboard me generate karke add karo
+    body = await request.body()
+    signature = request.headers.get("X-Razorpay-Signature")
+
+    # Verify signature
+    expected_signature = hmac.new(
+        webhook_secret.encode(),
+        body,
+        hashlib.sha256
+    ).hexdigest()
+
+    if signature != expected_signature:
+        return JSONResponse({"status": "invalid signature"}, status_code=400)
+
+    payload = await request.json()
+    event = payload.get("event")
+    data = payload.get("payload")
+
+    # Example: Payment captured
+    if event == "payment.captured":
+        payment_id = data["payment"]["entity"]["id"]
+        order_id = data["payment"]["entity"]["order_id"]
+        amount = data["payment"]["entity"]["amount"]
+        print(f"[Webhook] Payment captured: Payment ID: {payment_id}, Order ID: {order_id}, Amount: {amount}")
+
+        # Example:
+        # db.update_payment(order_id=order_id, payment_id=payment_id, status="captured")
+
+    return {"status": "ok"}
