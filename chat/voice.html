@@ -1,221 +1,155 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>4-User Voice Room</title>
 <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-
 <style>
-body { font-family:sans-serif; background:#111; color:#eee; padding:15px }
-button { padding:6px 10px; margin-left:5px }
-#users div { margin-top:6px; padding:6px; background:#222; border-radius:4px }
-#status { margin-top:10px; font-weight:bold }
+body{font-family:sans-serif;background:#111;color:#eee;padding:15px}
+button{padding:6px 10px;margin-left:5px}
+#users div{margin-top:6px;padding:6px;background:#222;border-radius:4px}
+#status{margin-top:10px;font-weight:bold}
 </style>
 </head>
 <body>
 
 <h3>4-User Voice Room</h3>
-
-<input id="roomId" placeholder="Room ID" />
+<input id="roomId" placeholder="Room ID">
 <button id="joinBtn">Join</button>
-
 <div id="status">Idle</div>
-
 <h4>Users</h4>
 <div id="users"></div>
 
 <script>
-/* ---------------- CONFIG ---------------- */
-const MAX_USERS = 4;
-const RECONNECT_MAX = 3;
-const RECONNECT_DELAY = 2000;
+const MAX_USERS=4
+let peer,localStream,isHost=false
+const peers=new Set()
+const calls=new Map()
+const dataConns=new Map()
+const statusEl=document.getElementById("status")
+const usersEl=document.getElementById("users")
 
-/* ---------------- STATE ---------------- */
-let peer;
-let localStream;
-let roomHostId;
-let isHost = false;
-let reconnectAttempts = 0;
+function setStatus(t){statusEl.textContent=t}
 
-const peers = new Set();
-const calls = new Map();
-const dataConns = new Map();
-
-/* ---------------- UI ---------------- */
-const statusEl = document.getElementById("status");
-const usersEl = document.getElementById("users");
-
-function setStatus(msg) {
-  statusEl.textContent = msg;
-}
-
-function renderUsers() {
-  usersEl.innerHTML = "";
-  [...peers].forEach(id => {
-    const row = document.createElement("div");
-    row.textContent = id === peer.id ? `${id} (You)` : id;
-
-    if (id !== peer.id) {
-      const btn = document.createElement("button");
-      btn.textContent = "Kick";
-      btn.onclick = () => requestKick(id);
-      row.appendChild(btn);
+function renderUsers(){
+  usersEl.innerHTML=""
+  peers.forEach(id=>{
+    const d=document.createElement("div")
+    d.textContent=id===peer.id?`${id} (You)`:id
+    if(isHost && id!==peer.id){
+      const b=document.createElement("button")
+      b.textContent="Kick"
+      b.onclick=()=>kick(id)
+      d.appendChild(b)
     }
-    usersEl.appendChild(row);
-  });
+    usersEl.appendChild(d)
+  })
 }
 
-/* ---------------- MEDIA ---------------- */
-async function getAudio() {
-  return navigator.mediaDevices.getUserMedia({
-    audio: { echoCancellation:true, noiseSuppression:true }
-  });
+async function getAudio(){
+  return navigator.mediaDevices.getUserMedia({audio:true})
 }
 
-/* ---------------- JOIN ---------------- */
-document.getElementById("joinBtn").onclick = async () => {
-  const roomId = document.getElementById("roomId").value.trim();
-  if (!roomId) return alert("Room ID required");
+document.getElementById("joinBtn").onclick=async()=>{
+  const roomId=document.getElementById("roomId").value.trim()
+  if(!roomId)return
 
-  setStatus("Connecting…");
+  peer=new Peer(roomId)
+  isHost=true
 
-  peer = new Peer(undefined, { debug: 0 });
+  peer.on("error",()=>{
+    peer.destroy()
+    peer=new Peer()
+    isHost=false
 
-  peer.on("open", async id => {
-    try {
-      localStream = await getAudio();
-      connectToRoom(roomId, id);
-    } catch {
-      exitRoom("Mic permission denied");
+    peer.on("open",async()=>{
+      localStream=await getAudio()
+      const c=peer.connect(roomId)
+      registerDataConn(c)
+      setStatus("Connected")
+    })
+  })
+
+  peer.on("open",async()=>{
+    localStream=await getAudio()
+    peers.add(peer.id)
+    renderUsers()
+    setStatus("Connected (Host)")
+  })
+
+  peer.on("call",call=>{
+    call.answer(localStream)
+    registerCall(call)
+  })
+
+  peer.on("connection",registerDataConn)
+}
+
+function registerDataConn(conn){
+  conn.on("open",()=>{
+    dataConns.set(conn.peer,conn)
+    conn.on("data",m=>handleData(conn.peer,m))
+    if(!isHost)conn.send({type:"join"})
+  })
+}
+
+function handleData(from,msg){
+  if(msg.type==="peers"){
+    peers.clear()
+    msg.list.forEach(p=>peers.add(p))
+    renderUsers()
+    msg.list.forEach(p=>p!==peer.id && connectAudio(p))
+  }
+
+  if(isHost && msg.type==="join"){
+    if(peers.size>=MAX_USERS){
+      dataConns.get(from).send({type:"kick"})
+      return
     }
-  });
+    peers.add(from)
+    broadcast()
+  }
 
-  peer.on("call", call => {
-    call.answer(localStream);
-    registerCall(call);
-  });
-
-  peer.on("connection", registerDataConn);
-
-  peer.on("disconnected", handleDisconnect);
-  peer.on("close", () => exitRoom("Connection closed"));
-  peer.on("error", () => exitRoom("Peer error"));
-};
-
-/* ---------------- ROOM ---------------- */
-function connectToRoom(roomId, myId) {
-  roomHostId = roomId;
-
-  if (myId === roomId) {
-    isHost = true;
-    peers.add(myId);
-    renderUsers();
-    setStatus("Connected (Host)");
-  } else {
-    registerDataConn(peer.connect(roomHostId));
+  if(msg.type==="kick"){
+    cleanup()
+    setStatus("Kicked")
   }
 }
 
-/* ---------------- DATA ---------------- */
-function registerDataConn(conn) {
-  conn.on("open", () => {
-    dataConns.set(conn.peer, conn);
-    conn.on("data", msg => handleData(conn.peer, msg));
-    conn.on("close", () => exitRoom("Peer disconnected"));
-    conn.on("error", () => exitRoom("Peer error"));
-    if (!isHost) conn.send({ type:"join" });
-  });
+function broadcast(){
+  const list=[...peers]
+  renderUsers()
+  dataConns.forEach(c=>c.send({type:"peers",list}))
 }
 
-function handleData(from, msg) {
-  if (msg.type === "full") exitRoom("Room full");
-
-  if (!isHost && msg.type === "peers") {
-    peers.clear();
-    msg.list.forEach(p => peers.add(p));
-    renderUsers();
-    msg.list.forEach(p => p !== peer.id && connectAudio(p));
-  }
-
-  if (isHost && msg.type === "join") {
-    if (peers.size >= MAX_USERS) {
-      dataConns.get(from)?.send({ type:"full" });
-      return;
-    }
-    peers.add(from);
-    broadcastPeers();
-  }
-
-  /* ---- KICK ---- */
-  if (isHost && msg.type === "kick-request") {
-    if (peers.has(msg.target)) {
-      dataConns.get(msg.target)?.send({ type:"kick" });
-      peers.delete(msg.target);
-      broadcastPeers();
-    }
-  }
-
-  if (msg.type === "kick") exitRoom("You were kicked");
+function connectAudio(id){
+  if(calls.has(id))return
+  registerCall(peer.call(id,localStream))
 }
 
-function broadcastPeers() {
-  const list = [...peers];
-  renderUsers();
-  dataConns.forEach(c => c.send({ type:"peers", list }));
+function registerCall(call){
+  calls.set(call.peer,call)
+  call.on("stream",s=>{
+    const a=document.createElement("audio")
+    a.srcObject=s
+    a.autoplay=true
+    document.body.appendChild(a)
+  })
 }
 
-/* ---------------- AUDIO ---------------- */
-function connectAudio(peerId) {
-  if (calls.has(peerId)) return;
-  registerCall(peer.call(peerId, localStream));
+function kick(id){
+  dataConns.get(id)?.send({type:"kick"})
+  peers.delete(id)
+  broadcast()
 }
 
-function registerCall(call) {
-  calls.set(call.peer, call);
-  call.on("stream", s => {
-    const a = document.createElement("audio");
-    a.srcObject = s;
-    a.autoplay = true;
-    document.body.appendChild(a);
-  });
-  call.on("close", () => exitRoom("Peer call closed"));
-  call.on("error", () => exitRoom("Call error"));
-}
-
-/* ---------------- KICK UI ---------------- */
-function requestKick(target) {
-  if (isHost) {
-    dataConns.get(target)?.send({ type:"kick" });
-    peers.delete(target);
-    broadcastPeers();
-  } else {
-    dataConns.get(roomHostId)?.send({ type:"kick-request", target });
-  }
-}
-
-/* ---------------- RECONNECT ---------------- */
-function handleDisconnect() {
-  if (++reconnectAttempts > RECONNECT_MAX)
-    return exitRoom("Connection lost – exited");
-
-  setStatus("Reconnecting…");
-  setTimeout(() => peer.reconnect(), RECONNECT_DELAY);
-}
-
-/* ---------------- CLEANUP ---------------- */
-function exitRoom(reason) {
-  setStatus(reason);
-
-  calls.forEach(c => c.close());
-  dataConns.forEach(c => c.close());
-  calls.clear(); dataConns.clear(); peers.clear();
-
-  document.querySelectorAll("audio").forEach(a => a.remove());
-
-  localStream?.getTracks().forEach(t => t.stop());
-  if (peer && !peer.destroyed) peer.destroy();
+function cleanup(){
+  calls.forEach(c=>c.close())
+  dataConns.forEach(c=>c.close())
+  document.querySelectorAll("audio").forEach(a=>a.remove())
+  localStream?.getTracks().forEach(t=>t.stop())
+  peer?.destroy()
 }
 </script>
 </body>
