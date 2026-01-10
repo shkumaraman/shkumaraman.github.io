@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>4-User Voice Room (PeerJS)</title>
+<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+<style>
+body { font-family: sans-serif; background:#111; color:#eee; padding:20px }
+button { padding:10px; margin-top:10px }
+#status { margin-top:15px; font-weight:bold }
+</style>
+</head>
+<body>
+
+<h2>4-User Voice Room</h2>
+
+<input id="roomId" placeholder="Room ID" />
+<br />
+<button id="joinBtn">Join</button>
+
+<div id="status">Idle</div>
+
+<script>
+/* ---------------- CONFIG ---------------- */
+const MAX_USERS = 4;
+const RECONNECT_MAX = 3;
+const RECONNECT_DELAY = 2000;
+
+/* ---------------- STATE ---------------- */
+let peer;
+let localStream;
+let roomHostId;
+let isHost = false;
+let reconnectAttempts = 0;
+
+const peers = new Set();          // connected peer IDs
+const calls = new Map();          // peerId -> MediaConnection
+const dataConns = new Map();      // peerId -> DataConnection
+
+/* ---------------- UI ---------------- */
+const statusEl = document.getElementById("status");
+const joinBtn = document.getElementById("joinBtn");
+
+function setStatus(msg) {
+  statusEl.textContent = msg;
+}
+
+/* ---------------- MEDIA ---------------- */
+async function getAudio() {
+  return navigator.mediaDevices.getUserMedia({
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true
+    }
+  });
+}
+
+/* ---------------- JOIN FLOW ---------------- */
+joinBtn.onclick = async () => {
+  const roomId = document.getElementById("roomId").value.trim();
+  if (!roomId) return alert("Room ID required");
+
+  setStatus("Connecting…");
+
+  peer = new Peer(undefined, { debug: 0 });
+
+  peer.on("open", async id => {
+    try {
+      localStream = await getAudio();
+      connectToRoom(roomId, id);
+    } catch {
+      exitRoom("Microphone access denied");
+    }
+  });
+
+  peer.on("call", call => {
+    // Incoming audio call
+    call.answer(localStream);
+    registerCall(call);
+  });
+
+  peer.on("connection", conn => {
+    // Incoming data connection (host logic)
+    registerDataConn(conn);
+  });
+
+  peer.on("disconnected", handleDisconnect);
+  peer.on("close", () => exitRoom("Connection closed"));
+  peer.on("error", () => exitRoom("Peer error"));
+};
+
+/* ---------------- ROOM LOGIC ---------------- */
+function connectToRoom(roomId, myId) {
+  roomHostId = roomId;
+
+  if (myId === roomId) {
+    // First peer becomes host
+    isHost = true;
+    peers.add(myId);
+    setStatus("Connected (Host)");
+  } else {
+    // Connect to host
+    const conn = peer.connect(roomHostId);
+    registerDataConn(conn);
+  }
+}
+
+/* ---------------- DATA CONNECTION ---------------- */
+function registerDataConn(conn) {
+  conn.on("open", () => {
+    dataConns.set(conn.peer, conn);
+
+    conn.on("data", msg => handleData(conn.peer, msg));
+    conn.on("close", () => exitRoom("Peer disconnected"));
+    conn.on("error", () => exitRoom("Peer connection failed"));
+
+    if (!isHost) {
+      conn.send({ type: "join" });
+    }
+  });
+}
+
+/* ---------------- DATA MESSAGES ---------------- */
+function handleData(from, msg) {
+  if (!isHost && msg.type === "peers") {
+    msg.list.forEach(pid => pid !== peer.id && connectAudio(pid));
+  }
+
+  if (isHost && msg.type === "join") {
+    if (peers.size >= MAX_USERS) {
+      dataConns.get(from)?.send({ type: "full" });
+      dataConns.get(from)?.close();
+      return;
+    }
+
+    peers.add(from);
+
+    // Broadcast updated peer list
+    for (const conn of dataConns.values()) {
+      conn.send({ type: "peers", list: [...peers] });
+    }
+  }
+
+  if (msg.type === "full") {
+    exitRoom("Room full");
+  }
+}
+
+/* ---------------- AUDIO CALLS ---------------- */
+function connectAudio(peerId) {
+  if (calls.has(peerId)) return; // prevent duplicates
+
+  const call = peer.call(peerId, localStream);
+  registerCall(call);
+}
+
+function registerCall(call) {
+  calls.set(call.peer, call);
+
+  call.on("stream", stream => {
+    const audio = document.createElement("audio");
+    audio.srcObject = stream;
+    audio.autoplay = true;
+    audio.dataset.peer = call.peer;
+    document.body.appendChild(audio);
+  });
+
+  call.on("close", () => exitRoom("Peer call closed"));
+  call.on("error", () => exitRoom("Call error"));
+}
+
+/* ---------------- AUTO EXIT RULES ---------------- */
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) exitRoom("App backgrounded");
+});
+
+window.addEventListener("blur", () => exitRoom("App minimized"));
+
+/* ---------------- RECONNECT ---------------- */
+function handleDisconnect() {
+  if (reconnectAttempts >= RECONNECT_MAX) {
+    exitRoom("Connection lost – exited");
+    return;
+  }
+
+  reconnectAttempts++;
+  setStatus("Reconnecting…");
+
+  setTimeout(() => {
+    peer.reconnect();
+  }, RECONNECT_DELAY);
+}
+
+/* ---------------- CLEANUP ---------------- */
+function exitRoom(reason) {
+  setStatus(reason);
+
+  calls.forEach(c => c.close());
+  dataConns.forEach(c => c.close());
+
+  calls.clear();
+  dataConns.clear();
+  peers.clear();
+
+  document.querySelectorAll("audio").forEach(a => a.remove());
+
+  if (localStream) {
+    localStream.getTracks().forEach(t => t.stop());
+    localStream = null;
+  }
+
+  if (peer && !peer.destroyed) peer.destroy();
+}
+</script>
+
+</body>
+</html>
