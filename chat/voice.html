@@ -5,30 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
 <title>4-User Voice Room</title>
-
 <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 
 <style>
-body {
-  font-family: sans-serif;
-  background:#111;
-  color:#eee;
-  padding:15px;
-}
-button {
-  padding:6px 10px;
-  margin-left:5px;
-}
-#users div {
-  margin-top:6px;
-  padding:6px;
-  background:#222;
-  border-radius:4px;
-}
-#status {
-  margin-top:10px;
-  font-weight:bold;
-}
+body { font-family:sans-serif; background:#111; color:#eee; padding:15px }
+button { padding:6px 10px; margin-left:5px }
+#users div { margin-top:6px; padding:6px; background:#222; border-radius:4px }
+#status { margin-top:10px; font-weight:bold }
 </style>
 </head>
 <body>
@@ -80,7 +63,6 @@ function renderUsers() {
       btn.onclick = () => requestKick(id);
       row.appendChild(btn);
     }
-
     usersEl.appendChild(row);
   });
 }
@@ -88,10 +70,7 @@ function renderUsers() {
 /* ---------------- MEDIA ---------------- */
 async function getAudio() {
   return navigator.mediaDevices.getUserMedia({
-    audio: {
-      echoCancellation: true,
-      noiseSuppression: true
-    }
+    audio: { echoCancellation:true, noiseSuppression:true }
   });
 }
 
@@ -135,8 +114,7 @@ function connectToRoom(roomId, myId) {
     renderUsers();
     setStatus("Connected (Host)");
   } else {
-    const conn = peer.connect(roomHostId);
-    registerDataConn(conn);
+    registerDataConn(peer.connect(roomHostId));
   }
 }
 
@@ -144,12 +122,10 @@ function connectToRoom(roomId, myId) {
 function registerDataConn(conn) {
   conn.on("open", () => {
     dataConns.set(conn.peer, conn);
-
     conn.on("data", msg => handleData(conn.peer, msg));
     conn.on("close", () => exitRoom("Peer disconnected"));
     conn.on("error", () => exitRoom("Peer error"));
-
-    if (!isHost) conn.send({ type: "join" });
+    if (!isHost) conn.send({ type:"join" });
   });
 }
 
@@ -165,53 +141,45 @@ function handleData(from, msg) {
 
   if (isHost && msg.type === "join") {
     if (peers.size >= MAX_USERS) {
-      dataConns.get(from)?.send({ type: "full" });
-      dataConns.get(from)?.close();
+      dataConns.get(from)?.send({ type:"full" });
       return;
     }
-
     peers.add(from);
     broadcastPeers();
   }
 
-  /* -------- KICK -------- */
+  /* ---- KICK ---- */
   if (isHost && msg.type === "kick-request") {
     if (peers.has(msg.target)) {
-      dataConns.get(msg.target)?.send({ type: "kick" });
+      dataConns.get(msg.target)?.send({ type:"kick" });
       peers.delete(msg.target);
       broadcastPeers();
     }
   }
 
-  if (msg.type === "kick") {
-    exitRoom("You were kicked");
-  }
+  if (msg.type === "kick") exitRoom("You were kicked");
 }
 
 function broadcastPeers() {
   const list = [...peers];
   renderUsers();
-  dataConns.forEach(c => c.send({ type: "peers", list }));
+  dataConns.forEach(c => c.send({ type:"peers", list }));
 }
 
 /* ---------------- AUDIO ---------------- */
 function connectAudio(peerId) {
   if (calls.has(peerId)) return;
-  const call = peer.call(peerId, localStream);
-  registerCall(call);
+  registerCall(peer.call(peerId, localStream));
 }
 
 function registerCall(call) {
   calls.set(call.peer, call);
-
-  call.on("stream", stream => {
-    const audio = document.createElement("audio");
-    audio.srcObject = stream;
-    audio.autoplay = true;
-    audio.dataset.peer = call.peer;
-    document.body.appendChild(audio);
+  call.on("stream", s => {
+    const a = document.createElement("audio");
+    a.srcObject = s;
+    a.autoplay = true;
+    document.body.appendChild(a);
   });
-
   call.on("close", () => exitRoom("Peer call closed"));
   call.on("error", () => exitRoom("Call error"));
 }
@@ -219,31 +187,19 @@ function registerCall(call) {
 /* ---------------- KICK UI ---------------- */
 function requestKick(target) {
   if (isHost) {
-    dataConns.get(target)?.send({ type: "kick" });
+    dataConns.get(target)?.send({ type:"kick" });
     peers.delete(target);
     broadcastPeers();
   } else {
-    dataConns.get(roomHostId)?.send({
-      type: "kick-request",
-      target
-    });
+    dataConns.get(roomHostId)?.send({ type:"kick-request", target });
   }
 }
 
-/* ---------------- AUTO EXIT ---------------- */
-document.addEventListener("visibilitychange", () => {
-  if (document.hidden) exitRoom("App backgrounded");
-});
-
-window.addEventListener("blur", () => exitRoom("App minimized"));
-
 /* ---------------- RECONNECT ---------------- */
 function handleDisconnect() {
-  if (reconnectAttempts >= RECONNECT_MAX) {
-    exitRoom("Connection lost – exited");
-    return;
-  }
-  reconnectAttempts++;
+  if (++reconnectAttempts > RECONNECT_MAX)
+    return exitRoom("Connection lost – exited");
+
   setStatus("Reconnecting…");
   setTimeout(() => peer.reconnect(), RECONNECT_DELAY);
 }
@@ -254,21 +210,13 @@ function exitRoom(reason) {
 
   calls.forEach(c => c.close());
   dataConns.forEach(c => c.close());
-
-  calls.clear();
-  dataConns.clear();
-  peers.clear();
+  calls.clear(); dataConns.clear(); peers.clear();
 
   document.querySelectorAll("audio").forEach(a => a.remove());
 
-  if (localStream) {
-    localStream.getTracks().forEach(t => t.stop());
-    localStream = null;
-  }
-
+  localStream?.getTracks().forEach(t => t.stop());
   if (peer && !peer.destroyed) peer.destroy();
 }
 </script>
-
 </body>
 </html>
