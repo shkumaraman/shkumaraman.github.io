@@ -1,0 +1,129 @@
+<!-- =========================
+     FRIEND ACTIONS UI
+========================= -->
+<div id="friendActions" style="margin-top:12px;text-align:center;">
+
+  <button id="addFriendBtn" style="display:none;">
+    ➕ Add Friend
+  </button>
+
+  <div id="friendRequestBox"
+       style="display:none;border:1px solid #ccc;padding:10px;margin-top:8px;">
+    <p>👋 This person wants to add you as a friend</p>
+    <button id="acceptFriendBtn">Accept</button>
+  </div>
+
+</div>
+
+<script>
+/* =========================
+   FRIEND SYSTEM LOGIC
+========================= */
+
+(function () {
+
+  const addFriendBtn = document.getElementById("addFriendBtn");
+  const friendRequestBox = document.getElementById("friendRequestBox");
+  const acceptFriendBtn = document.getElementById("acceptFriendBtn");
+
+  let currentFriendPeer = null;
+  let requestSent = false;
+
+  /* =========================
+     SEND FRIEND REQUEST
+  ========================= */
+  addFriendBtn.onclick = () => {
+    if (!state.myConn || requestSent) return;
+
+    state.myConn.send({
+      type: "friend-request",
+      from: state.myId
+    });
+
+    requestSent = true;
+    addFriendBtn.innerText = "Request Sent";
+  };
+
+  /* =========================
+     ACCEPT FRIEND REQUEST
+  ========================= */
+  acceptFriendBtn.onclick = async () => {
+    if (!currentFriendPeer) return;
+
+    const friendId = "friend_" + Date.now();
+
+    const friendData = {
+      peer1: state.myId,
+      peer2: currentFriendPeer,
+      timestamp: Date.now()
+    };
+
+    // Firebase save
+    await db.ref("friends/" + friendId).set(friendData);
+
+    // Local save
+    let friends = JSON.parse(localStorage.getItem("friends")) || [];
+    friends.push(friendData);
+    localStorage.setItem("friends", JSON.stringify(friends));
+
+    // Notify other peer
+    state.myConn.send({
+      type: "friend-accepted",
+      friendData
+    });
+
+    friendRequestBox.style.display = "none";
+    addFriendBtn.style.display = "none";
+
+    messageHandler.logSystem("Friend added ❤️");
+  };
+
+  /* =========================
+     INTERCEPT PEER DATA
+  ========================= */
+  const originalHandleData = connectionManager.handleData;
+
+  connectionManager.handleData = (data) => {
+
+    if (data?.type === "friend-request") {
+      currentFriendPeer = data.from;
+      friendRequestBox.style.display = "block";
+      return;
+    }
+
+    if (data?.type === "friend-accepted") {
+      let friends = JSON.parse(localStorage.getItem("friends")) || [];
+      friends.push(data.friendData);
+      localStorage.setItem("friends", JSON.stringify(friends));
+
+      messageHandler.logSystem("You are now friends ❤️");
+      addFriendBtn.style.display = "none";
+      return;
+    }
+
+    originalHandleData(data);
+  };
+
+  /* =========================
+     HOOK CHAT CONNECT / END
+  ========================= */
+  const originalSetupConnection = connectionManager.setupConnection;
+  connectionManager.setupConnection = (conn) => {
+    originalSetupConnection(conn);
+    currentFriendPeer = conn.peer;
+    requestSent = false;
+    addFriendBtn.innerText = "Add Friend";
+    addFriendBtn.style.display = "inline-block";
+  };
+
+  const originalEndConnection = connectionManager.endConnection;
+  connectionManager.endConnection = (msg) => {
+    addFriendBtn.style.display = "none";
+    friendRequestBox.style.display = "none";
+    currentFriendPeer = null;
+    requestSent = false;
+    originalEndConnection(msg);
+  };
+
+})();
+</script>
