@@ -12,6 +12,8 @@ description: "View your chat history and messages with friends."
   --dark-card-bg: #1e1e1e;
   --dark-text: #fff;
   --dark-secondary-text: #aaa;
+  --dark-icon-color: #ccc;
+  --dark-icon-hover-bg: rgba(255,255,255,0.1);
   --dark-hover-bg: rgba(255,255,255,0.05);
 
   --light-bg: #f5f5f5;
@@ -20,6 +22,8 @@ description: "View your chat history and messages with friends."
   --light-card-bg: #ffffff;
   --light-text: #333;
   --light-secondary-text: #666;
+  --light-icon-color: #666;
+  --light-icon-hover-bg: rgba(0,0,0,0.05);
   --light-hover-bg: rgba(0,0,0,0.05);
 
   --accent-color: #4a90e2;
@@ -46,7 +50,6 @@ body.light-mode {
   color: var(--light-text);
 }
 
-/* Header - Same as index.html */
 .app-header {
   position: fixed !important;
   top: 0;
@@ -124,24 +127,12 @@ body.light-mode {
   background: var(--light-icon-hover-bg);
 }
 
-/* Main Content */
 .container {
   padding: 60px 15px 20px;
   max-width: 800px;
   margin: 0 auto;
 }
 
-.page-title {
-  font-size: 1.8em;
-  margin-bottom: 20px;
-  color: var(--dark-text);
-}
-
-.light-mode .page-title {
-  color: var(--light-text);
-}
-
-/* Friend List */
 .friend-list {
   display: flex;
   flex-direction: column;
@@ -247,7 +238,6 @@ body.light-mode {
   background-color: rgba(255, 71, 87, 0.1);
 }
 
-/* Empty State */
 .empty-state {
   text-align: center;
   padding: 50px 20px;
@@ -271,7 +261,7 @@ body.light-mode {
 }
 
 .start-chat-btn {
-  background: var(--accent-color);
+  background: #000000;
   color: white;
   border: none;
   padding: 12px 30px;
@@ -282,17 +272,15 @@ body.light-mode {
 }
 
 .start-chat-btn:hover {
-  background: var(--accent-hover);
+  background: #333333;
 }
 
-/* Loading State */
 .loading {
   text-align: center;
   padding: 40px;
   color: var(--dark-secondary-text);
 }
 
-/* Responsive */
 @media (max-width: 600px) {
   .container {
     padding: 60px 10px 20px;
@@ -311,7 +299,7 @@ body.light-mode {
   }
   
   .unfriend-btn {
-    opacity: 1; /* Always show on mobile */
+    opacity: 1;
   }
 }
 </style>
@@ -334,8 +322,6 @@ body.light-mode {
   </header>
 
   <div class="container">
-    <h1 class="page-title">Your Conversations</h1>
-    
     <div id="loading" class="loading">
       <p>Loading your conversations...</p>
     </div>
@@ -347,9 +333,7 @@ body.light-mode {
       <button class="start-chat-btn" onclick="startNewChat()">Start New Chat</button>
     </div>
     
-    <div id="friendList" class="friend-list" style="display: none;">
-      <!-- Friend items will be dynamically inserted here -->
-    </div>
+    <div id="friendList" class="friend-list" style="display: none;"></div>
   </div>
 </div>
 
@@ -357,27 +341,18 @@ body.light-mode {
 {% include scripts.html %}
 
 <script>
-// Firebase configuration
 const firebaseConfig = {
   databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
 };
 
-// Initialize Firebase
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
-// Get current user ID from localStorage
 let currentUserId = localStorage.getItem('talkrush_user_id');
 let currentNickname = localStorage.getItem('talkrush_nickname') || 'Guest';
 
-// GIPHY API Key (same as index.html)
-const GIPHY_API_KEY = 'EKvv5S1CcXqYuHgxPNVKiNuiuNHRTzFk';
-
-// Initialize when page loads
 document.addEventListener('DOMContentLoaded', () => {
-  // Check if user ID exists
   if (!currentUserId) {
-    // If no user ID, redirect to main page
     window.location.href = 'index.html';
     return;
   }
@@ -386,7 +361,6 @@ document.addEventListener('DOMContentLoaded', () => {
   setupThemeToggle();
 });
 
-// Theme toggle function (same as index.html)
 function setupThemeToggle() {
   const themeToggle = document.getElementById('themeToggle');
   const isLight = localStorage.getItem('talkrush_theme') === 'light';
@@ -405,7 +379,6 @@ function setupThemeToggle() {
   };
 }
 
-// Load friends list from Firebase
 function loadFriendsList() {
   const friendsRef = db.ref('friends');
   
@@ -425,14 +398,9 @@ function loadFriendsList() {
     
     const myFriends = [];
     
-    // Find all friends where currentUserId is involved
     Object.entries(friendsData).forEach(([friendId, friendData]) => {
       if (friendData.peer1 === currentUserId || friendData.peer2 === currentUserId) {
-        // Check if the friend data has all required fields
-        if (!friendData.nickname) {
-          console.warn(`Friend ${friendId} has no nickname, skipping`);
-          return;
-        }
+        if (!friendData.nickname) return;
         
         const otherUserId = friendData.peer1 === currentUserId ? 
           friendData.peer2 : friendData.peer1;
@@ -457,20 +425,15 @@ function loadFriendsList() {
     friendListElement.style.display = 'flex';
     friendListElement.innerHTML = '';
     
-    // Sort by timestamp (newest first)
     myFriends.sort((a, b) => b.timestamp - a.timestamp);
     
-    // Create friend items
     myFriends.forEach(friend => {
       const friendElement = document.createElement('div');
       friendElement.className = 'friend-item';
       friendElement.dataset.friendId = friend.id;
       friendElement.dataset.userId = friend.friendUserId;
       
-      // Get first letter for avatar
       const firstLetter = friend.nickname.charAt(0).toUpperCase();
-      
-      // Format time
       const timeStr = formatTime(friend.timestamp);
       
       friendElement.innerHTML = `
@@ -486,7 +449,6 @@ function loadFriendsList() {
       `;
       
       friendElement.onclick = (e) => {
-        // Don't trigger if clicking the unfriend button
         if (!e.target.closest('.unfriend-btn')) {
           startChatWithFriend(friend.id, friend.friendUserId, friend.nickname);
         }
@@ -497,20 +459,15 @@ function loadFriendsList() {
   });
 }
 
-// Start chat with selected friend
 function startChatWithFriend(friendId, friendUserId, nickname) {
-  // Store the selected friend info in localStorage for main page
   localStorage.setItem('selected_friend_id', friendId);
   localStorage.setItem('selected_friend_userId', friendUserId);
   localStorage.setItem('selected_friend_nickname', nickname);
-  
-  // Redirect to main chat page
   window.location.href = 'index.html';
 }
 
-// Unfriend function
 function unfriend(event, friendId) {
-  event.stopPropagation(); // Prevent triggering the friend item click
+  event.stopPropagation();
   
   if (confirm('Are you sure you want to remove this friend?')) {
     const friendRef = db.ref(`friends/${friendId}`);
@@ -518,7 +475,6 @@ function unfriend(event, friendId) {
     friendRef.remove()
       .then(() => {
         console.log('Friend removed successfully');
-        // The list will automatically update due to Firebase listener
       })
       .catch((error) => {
         console.error('Error removing friend:', error);
@@ -527,7 +483,6 @@ function unfriend(event, friendId) {
   }
 }
 
-// Helper functions (same as index.html)
 function formatTime(timestamp) {
   const date = new Date(timestamp);
   const now = new Date();
