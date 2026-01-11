@@ -46,7 +46,7 @@ body.light-mode {
   color: var(--light-text);
 }
 
-/* Header - Same as index.html */
+/* Header */
 .app-header {
   position: fixed !important;
   top: 0;
@@ -314,11 +314,43 @@ body.light-mode {
     opacity: 1; /* Always show on mobile */
   }
 }
+
+/* Back Button */
+.back-btn {
+  background: none;
+  border: none;
+  color: var(--dark-text);
+  font-size: 1.1em;
+  cursor: pointer;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.3s;
+  margin-right: 10px;
+}
+
+.back-btn:hover {
+  background: var(--dark-hover-bg);
+}
+
+.light-mode .back-btn {
+  color: var(--light-text);
+}
+
+.light-mode .back-btn:hover {
+  background: var(--light-hover-bg);
+}
 </style>
 
 <div class="chat-container">
   <header class="app-header">
     <div class="header-left">
+      <button class="back-btn" onclick="window.location.href='index.html'" title="Go Back">
+        <i class="fas fa-arrow-left"></i>
+      </button>
       <img src="logo.png" alt="TalkRush Logo" class="logo">
       <h1 class="app-title">TalkRush Messages</h1>
     </div>
@@ -349,30 +381,35 @@ body.light-mode {
   </div>
 </div>
 
+{% include menu.html %}
+{% include scripts.html %}
+
 <script>
-// Firebase config
+// Firebase configuration
 const firebaseConfig = {
   databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
 };
+
+// Initialize Firebase
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
-// Get current user ID (from localStorage - same as main chat page)
+// Get current user ID from localStorage
 let currentUserId = localStorage.getItem('talkrush_user_id');
 
 // Initialize when page loads
-window.addEventListener('load', () => {
+document.addEventListener('DOMContentLoaded', () => {
   if (!currentUserId) {
-    document.getElementById('loading').style.display = 'none';
-    document.getElementById('emptyState').style.display = 'block';
-    return;
+    // Generate a new user ID if none exists
+    currentUserId = 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    localStorage.setItem('talkrush_user_id', currentUserId);
   }
   
   loadFriendsList();
   setupThemeToggle();
 });
 
-// Theme toggle
+// Theme toggle function
 function setupThemeToggle() {
   const themeToggle = document.getElementById('themeToggle');
   const isLight = localStorage.getItem('talkrush_theme') === 'light';
@@ -468,7 +505,7 @@ function loadFriendsList() {
       friendElement.onclick = (e) => {
         // Don't trigger if clicking the unfriend button
         if (!e.target.closest('.unfriend-btn')) {
-          startChatWithFriend(friend.friendUserId);
+          startChatWithFriend(friend.id, friend.friendUserId, friend.nickname);
         }
       };
       
@@ -478,9 +515,13 @@ function loadFriendsList() {
 }
 
 // Start chat with selected friend
-function startChatWithFriend(friendUserId) {
-  // Simply go to main chat page
-  // The "Accept" button in main chat will handle the connection
+function startChatWithFriend(friendId, friendUserId, nickname) {
+  // Store the selected friend info in localStorage for main page
+  localStorage.setItem('selected_friend_id', friendId);
+  localStorage.setItem('selected_friend_userId', friendUserId);
+  localStorage.setItem('selected_friend_nickname', nickname);
+  
+  // Redirect to main chat page
   window.location.href = 'index.html';
 }
 
