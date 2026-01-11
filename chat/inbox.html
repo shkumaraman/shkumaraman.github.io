@@ -23,6 +23,7 @@ description: "View your chat history and messages with friends."
   --light-hover-bg: rgba(0,0,0,0.05);
 
   --accent-color: #4a90e2;
+  --danger-color: #ff4757;
 }
 
 * {
@@ -157,6 +158,7 @@ body.light-mode {
   cursor: pointer;
   transition: all 0.3s;
   border: 1px solid transparent;
+  position: relative;
 }
 
 .friend-item:hover {
@@ -183,10 +185,12 @@ body.light-mode {
   justify-content: center;
   font-size: 1.5em;
   color: white;
+  flex-shrink: 0;
 }
 
 .friend-info {
   flex: 1;
+  min-width: 0;
 }
 
 .friend-name {
@@ -207,12 +211,40 @@ body.light-mode {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 300px;
 }
 
 .message-time {
   font-size: 0.8em;
   color: var(--dark-secondary-text);
+  margin-left: auto;
+  padding-left: 10px;
+  flex-shrink: 0;
+}
+
+.unfriend-btn {
+  background: none;
+  border: none;
+  color: var(--danger-color);
+  cursor: pointer;
+  font-size: 1.2em;
+  padding: 5px;
+  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 10px;
+  opacity: 0;
+  transition: opacity 0.3s, background-color 0.3s;
+}
+
+.friend-item:hover .unfriend-btn {
+  opacity: 1;
+}
+
+.unfriend-btn:hover {
+  background-color: rgba(255, 71, 87, 0.1);
 }
 
 /* Empty State */
@@ -270,8 +302,16 @@ body.light-mode {
     padding: 12px;
   }
   
+  .friend-name {
+    font-size: 1em;
+  }
+  
   .last-message {
-    max-width: 200px;
+    font-size: 0.85em;
+  }
+  
+  .unfriend-btn {
+    opacity: 1; /* Always show on mobile */
   }
 }
 </style>
@@ -317,7 +357,7 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
-// Get current user ID (from localStorage)
+// Get current user ID (from localStorage - same as main chat page)
 let currentUserId = localStorage.getItem('talkrush_user_id');
 
 // Initialize when page loads
@@ -419,23 +459,48 @@ function loadFriendsList() {
           <h3 class="friend-name">${escapeHtml(friend.nickname)}</h3>
           <p class="last-message">${escapeHtml(friend.lastMessage)}</p>
         </div>
-        <div class="message-time">${timeStr}</div>
+        <span class="message-time">${timeStr}</span>
+        <button class="unfriend-btn" title="Remove Friend" onclick="unfriend(event, '${friend.id}')">
+          <i class="fas fa-times"></i>
+        </button>
       `;
       
-      friendElement.onclick = () => openChat(friend.id, friend.friendUserId);
+      friendElement.onclick = (e) => {
+        // Don't trigger if clicking the unfriend button
+        if (!e.target.closest('.unfriend-btn')) {
+          startChatWithFriend(friend.friendUserId);
+        }
+      };
+      
       friendListElement.appendChild(friendElement);
     });
   });
 }
 
-// Open chat with friend
-function openChat(friendId, friendUserId) {
-  // Store the friend info for chat page
-  localStorage.setItem('current_chat_friend_id', friendId);
-  localStorage.setItem('current_chat_user_id', friendUserId);
-  
-  // Redirect to main chat page
+// Start chat with selected friend
+function startChatWithFriend(friendUserId) {
+  // Simply go to main chat page
+  // The "Accept" button in main chat will handle the connection
   window.location.href = 'index.html';
+}
+
+// Unfriend function
+function unfriend(event, friendId) {
+  event.stopPropagation(); // Prevent triggering the friend item click
+  
+  if (confirm('Are you sure you want to remove this friend?')) {
+    const friendRef = db.ref(`friends/${friendId}`);
+    
+    friendRef.remove()
+      .then(() => {
+        console.log('Friend removed successfully');
+        // The list will automatically update due to Firebase listener
+      })
+      .catch((error) => {
+        console.error('Error removing friend:', error);
+        alert('Failed to remove friend. Please try again.');
+      });
+  }
 }
 
 // Helper functions
@@ -456,6 +521,7 @@ function formatTime(timestamp) {
 }
 
 function escapeHtml(text) {
+  if (!text) return '';
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
