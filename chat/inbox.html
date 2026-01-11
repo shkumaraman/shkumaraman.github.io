@@ -314,47 +314,19 @@ body.light-mode {
     opacity: 1; /* Always show on mobile */
   }
 }
-
-/* Back Button */
-.back-btn {
-  background: none;
-  border: none;
-  color: var(--dark-text);
-  font-size: 1.1em;
-  cursor: pointer;
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  transition: all 0.3s;
-  margin-right: 10px;
-}
-
-.back-btn:hover {
-  background: var(--dark-hover-bg);
-}
-
-.light-mode .back-btn {
-  color: var(--light-text);
-}
-
-.light-mode .back-btn:hover {
-  background: var(--light-hover-bg);
-}
 </style>
 
 <div class="chat-container">
   <header class="app-header">
     <div class="header-left">
-      <button class="back-btn" onclick="window.location.href='index.html'" title="Go Back">
-        <i class="fas fa-arrow-left"></i>
-      </button>
+      <button class="menu-btn" onclick="toggleMenu()">&#9776;</button>
       <img src="logo.png" alt="TalkRush Logo" class="logo">
       <h1 class="app-title">TalkRush Messages</h1>
     </div>
     <div class="header-right">
+      <button class="header-toggle" onclick="openPreferencesModal()" title="Edit Interest">
+        <i class="fas fa-pencil-alt"></i>
+      </button>
       <button class="header-toggle" id="themeToggle" title="Toggle Dark/Light Mode">
         <i class="fas fa-moon"></i>
       </button>
@@ -396,13 +368,15 @@ const db = firebase.database();
 
 // Get current user ID from localStorage
 let currentUserId = localStorage.getItem('talkrush_user_id');
+let currentNickname = localStorage.getItem('talkrush_nickname') || 'Guest';
 
 // Initialize when page loads
 document.addEventListener('DOMContentLoaded', () => {
+  // Check if user ID exists
   if (!currentUserId) {
-    // Generate a new user ID if none exists
-    currentUserId = 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-    localStorage.setItem('talkrush_user_id', currentUserId);
+    // If no user ID, redirect to main page
+    window.location.href = 'index.html';
+    return;
   }
   
   loadFriendsList();
@@ -451,13 +425,19 @@ function loadFriendsList() {
     // Find all friends where currentUserId is involved
     Object.entries(friendsData).forEach(([friendId, friendData]) => {
       if (friendData.peer1 === currentUserId || friendData.peer2 === currentUserId) {
+        // Check if the friend data has all required fields
+        if (!friendData.nickname) {
+          console.warn(`Friend ${friendId} has no nickname, skipping`);
+          return;
+        }
+        
         const otherUserId = friendData.peer1 === currentUserId ? 
           friendData.peer2 : friendData.peer1;
         
         myFriends.push({
           id: friendId,
           friendUserId: otherUserId,
-          nickname: friendData.nickname || 'Stranger',
+          nickname: friendData.nickname,
           lastMessage: friendData.lastMessage || 'Start a conversation',
           timestamp: friendData.timestamp || Date.now()
         });
@@ -544,7 +524,7 @@ function unfriend(event, friendId) {
   }
 }
 
-// Helper functions
+// Helper functions (same as index.html)
 function formatTime(timestamp) {
   const date = new Date(timestamp);
   const now = new Date();
