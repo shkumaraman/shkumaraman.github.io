@@ -804,6 +804,8 @@ function startPeer() {
 
   peer.on('open', (id) => {
     myId = id;
+    // SAVE: User's own peer ID to localStorage
+    localStorage.setItem("talkrush_peerid", myId);
     tryToFindMatch();
   });
 
@@ -919,21 +921,17 @@ function handleNewConnection(conn, sharedTags = []) {
     logSystem("🎯 You both like: " + sharedTags.join(", "));
   }
 
-  setupConnection(conn);
-
-  // Clean up waiting list and heartbeat
-  cleanUpWaitingList();
-  if (heartbeatInterval) {
-    clearInterval(heartbeatInterval);
-    heartbeatInterval = null;
-  }
+  setupConnection(conn, sharedTags);
 }
 
-function setupConnection(conn) {
+function setupConnection(conn, sharedTags = []) {
   if (myConn) myConn.close();
   myConn = conn;
   isConnected = true;
   hideNewChatButton();
+
+  // SAVE: Connected peer's ID to localStorage
+  localStorage.setItem("talkrush_connectedpeerid", conn.peer);
 
   conn.on("data", (data) => {
     if (typeof data === "string") {
@@ -955,11 +953,22 @@ function setupConnection(conn) {
     console.error("Data connection error:", err);
     endConnection("Connection error");
   });
+
+  // Clean up waiting list and heartbeat
+  cleanUpWaitingList();
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval);
+    heartbeatInterval = null;
+  }
 }
 
 function endConnection(message) {
   appendSystemImage("/assets/chat_end.png");
   logSystem(message);
+  
+  // CLEAR: Remove connected peer ID from localStorage
+  localStorage.removeItem("talkrush_connectedpeerid");
+  
   myConn = null;
   isConnected = false;
   showNewChatButton();
@@ -1106,6 +1115,8 @@ document.getElementById("skipBtn").onclick = () => {
   if (myConn) myConn.close();
   cleanUpWaitingList();
   isConnected = false;
+  // CLEAR: Remove connected peer ID from localStorage when skipping
+  localStorage.removeItem("talkrush_connectedpeerid");
   logSystem("Chat ended. Starting new search...");
   showNewChatButton();
 };
