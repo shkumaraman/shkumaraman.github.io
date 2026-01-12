@@ -336,6 +336,81 @@ body.light-mode {
   color: var(--light-secondary-text);
 }
 
+/* Friend Request Modal */
+.friend-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--dark-chat-bg);
+  color: var(--dark-text);
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+  z-index: 10010;
+  min-width: 320px;
+  max-width: 90%;
+  border: 1px solid var(--dark-header-border);
+  display: none;
+}
+
+.light-mode .friend-modal {
+  background: var(--light-chat-bg);
+  color: var(--light-text);
+  border: 1px solid var(--light-header-border);
+}
+
+.friend-modal h3 {
+  margin-top: 0;
+  margin-bottom: 15px;
+  color: inherit;
+}
+
+.friend-modal-buttons {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.friend-modal-btn {
+  flex: 1;
+  padding: 10px 15px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.3s;
+}
+
+.friend-modal-accept {
+  background: #4CAF50;
+  color: white;
+}
+
+.friend-modal-accept:hover {
+  background: #45a049;
+}
+
+.friend-modal-reject {
+  background: #f44336;
+  color: white;
+}
+
+.friend-modal-reject:hover {
+  background: #da190b;
+}
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.6);
+  z-index: 10009;
+  display: none;
+}
+
 /* Scrollbar styling */
 #chatLog::-webkit-scrollbar {
   width: 8px;
@@ -479,6 +554,10 @@ body.light-mode {
   .header-right {
     gap: 5px;
   }
+
+  .friend-modal {
+    min-width: 280px;
+  }
 }
 </style>
 
@@ -490,6 +569,9 @@ body.light-mode {
     <h1 class="app-title">TalkRush</h1>
   </div>
   <div class="header-right">
+    <button class="header-toggle" id="friendBtn" title="Add Friend" style="display:none;">
+      <i class="fas fa-user-plus"></i>
+    </button>
     <button class="header-toggle" onclick="openPreferencesModal()" title="Edit Interest">
       <i class="fas fa-pencil-alt"></i>
     </button>
@@ -523,6 +605,17 @@ body.light-mode {
   <div class="gif-modal" id="gifModal">
     <input type="text" class="gif-search" id="gifSearch" placeholder="Search GIFs..." />
     <div class="gif-results" id="gifResults"></div>
+  </div>
+
+  <!-- Friend Request Modal -->
+  <div class="modal-overlay" id="friendModalOverlay"></div>
+  <div class="friend-modal" id="friendModal">
+    <h3>Friend Request</h3>
+    <p id="friendRequestText">Stranger wants to add you as a friend!</p>
+    <div class="friend-modal-buttons">
+      <button id="acceptFriendBtn" class="friend-modal-btn friend-modal-accept">Accept</button>
+      <button id="rejectFriendBtn" class="friend-modal-btn friend-modal-reject">Reject</button>
+    </div>
   </div>
 </div>
 
@@ -723,6 +816,12 @@ let escPressedOnce = false;
 let escTimer = null;
 let heartbeatInterval;
 
+// Friend system variables
+let friendRequestPending = false;
+let friendRequestFrom = null;
+let pendingFriendRequestRef = null;
+let friendRequestTimeout = null;
+
 // GIPHY API Key
 const GIPHY_API_KEY = 'EKvv5S1CcXqYuHgxPNVKiNuiuNHRTzFk';
 
@@ -750,13 +849,16 @@ window.addEventListener('beforeunload', (e) => {
   } else {
     // Clean up waiting list entry when leaving page
     cleanUpWaitingList();
+    cleanUpPendingFriendRequests();
   }
 });
 
 // Additional event for better cleanup
 window.addEventListener('pagehide', () => {
   cleanUpWaitingList();
+  cleanUpPendingFriendRequests();
   if (heartbeatInterval) clearInterval(heartbeatInterval);
+  if (friendRequestTimeout) clearTimeout(friendRequestTimeout);
 });
 
 // Escape key functionality
@@ -774,6 +876,7 @@ document.addEventListener('keydown', (e) => {
       escPressedOnce = false;
       if (myConn) myConn.close();
       cleanUpWaitingList();
+      cleanUpPendingFriendRequests();
       isConnected = false;
       showNewChatButton();
       logSystem("Chat ended. Starting new search...");
@@ -783,10 +886,206 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+// Friend system UI elements
+const friendBtn = document.getElementById('friendBtn');
+const friendModal = document.getElementById('friendModal');
+const friendModalOverlay = document.getElementById('friendModalOverlay');
+const acceptFriendBtn = document.getElementById('acceptFriendBtn');
+const rejectFriendBtn = document.getElementById('rejectFriendBtn');
+const friendRequestText = document.getElementById('friendRequestText');
+
+// Friend request functions
+function showFriendButton() {
+  friendBtn.style.display = 'flex';
+}
+
+function hideFriendButton() {
+  friendBtn.style.display = 'none';
+}
+
+// Send friend request
+friendBtn.onclick = () => {
+  if (!myConn || !isConnected) return;
+  
+  friendRequestPending = true;
+  friendBtn.disabled = true;
+  friendBtn.innerHTML = '<i class="fas fa-clock"></i>';
+  friendBtn.title = "Friend request sent, waiting...";
+  
+  // Generate unique request ID
+  const requestId = Date.now().toString();
+  const myPeerId = localStorage.getItem('talkrush_peerid') || myId;
+  const otherPeerId = localStorage.getItem('talkrush_connectedpeerid') || myConn.peer;
+  
+  // Store pending request in Firebase with timeout
+  pendingFriendRequestRef = db.ref('friend_requests/' + requestId);
+  pendingFriendRequestRef.set({
+    from: myPeerId,
+    to: otherPeerId,
+    fromNickname: myNickname,
+    timestamp: Date.now(),
+    status: 'pending'
+  }).then(() => {
+    // Set timeout to delete if not accepted (2 minutes)
+    friendRequestTimeout = setTimeout(() => {
+      if (pendingFriendRequestRef) {
+        pendingFriendRequestRef.remove();
+        friendRequestPending = false;
+        resetFriendButton();
+        logSystem("Friend request timed out (not accepted)");
+      }
+    }, 120000); // 2 minutes timeout
+    
+    // Send request to other user
+    myConn.send({
+      type: 'friend_request',
+      requestId: requestId,
+      from: myPeerId,
+      fromNickname: myNickname,
+      timestamp: Date.now()
+    });
+    
+    logSystem("Friend request sent! Waiting for response...");
+  }).catch(error => {
+    console.error("Error sending friend request:", error);
+    resetFriendButton();
+    logSystem("Failed to send friend request");
+  });
+};
+
+// Handle incoming friend request
+function handleFriendRequest(data) {
+  friendRequestFrom = data;
+  friendRequestText.textContent = `${data.fromNickname || 'Stranger'} wants to add you as a friend!`;
+  
+  // Store the request in Firebase temporarily
+  const tempRequestRef = db.ref('temp_friend_requests/' + data.requestId);
+  tempRequestRef.set({
+    from: data.from,
+    to: localStorage.getItem('talkrush_peerid') || myId,
+    fromNickname: data.fromNickname,
+    timestamp: data.timestamp
+  }).then(() => {
+    // Set auto-delete timeout (2 minutes)
+    setTimeout(() => {
+      tempRequestRef.remove();
+    }, 120000);
+    
+    // Show modal
+    friendModal.style.display = 'block';
+    friendModalOverlay.style.display = 'block';
+  });
+}
+
+// Accept friend request
+acceptFriendBtn.onclick = async () => {
+  if (!friendRequestFrom || !myConn) return;
+  
+  try {
+    // Remove temporary request
+    const tempRequestRef = db.ref('temp_friend_requests/' + friendRequestFrom.requestId);
+    await tempRequestRef.remove();
+    
+    // Generate unique friend ID
+    const friendId = Date.now().toString().slice(-6);
+    const myPeerId = localStorage.getItem('talkrush_peerid') || myId;
+    const otherPeerId = friendRequestFrom.from;
+    
+    // Save to Firebase friends list
+    const friendRef = db.ref('friends/' + friendId);
+    await friendRef.set({
+      peer1: myPeerId,
+      peer2: otherPeerId,
+      nickname: friendRequestFrom.fromNickname || 'Friend',
+      lastMessage: '',
+      timestamp: Date.now()
+    });
+    
+    // Notify the other user
+    myConn.send({
+      type: 'friend_accepted',
+      friendId: friendId,
+      requestId: friendRequestFrom.requestId,
+      nickname: myNickname
+    });
+    
+    // Remove the pending request from sender's side
+    if (friendRequestFrom.requestId) {
+      const pendingRef = db.ref('friend_requests/' + friendRequestFrom.requestId);
+      await pendingRef.remove();
+    }
+    
+    logSystem(`🎉 You are now friends with ${friendRequestFrom.fromNickname || 'Stranger'}!`);
+    closeFriendModal();
+    
+  } catch (error) {
+    console.error('Error saving friend:', error);
+    logSystem('Failed to save friend. Please try again.');
+  }
+};
+
+// Reject friend request
+rejectFriendBtn.onclick = () => {
+  if (!friendRequestFrom) {
+    closeFriendModal();
+    return;
+  }
+  
+  // Remove temporary request
+  const tempRequestRef = db.ref('temp_friend_requests/' + friendRequestFrom.requestId);
+  tempRequestRef.remove();
+  
+  // Notify the other user
+  if (myConn) {
+    myConn.send({
+      type: 'friend_rejected',
+      requestId: friendRequestFrom.requestId
+    });
+  }
+  
+  // Remove pending request
+  if (friendRequestFrom.requestId) {
+    const pendingRef = db.ref('friend_requests/' + friendRequestFrom.requestId);
+    pendingRef.remove();
+  }
+  
+  logSystem('Friend request rejected.');
+  closeFriendModal();
+};
+
+function closeFriendModal() {
+  friendModal.style.display = 'none';
+  friendModalOverlay.style.display = 'none';
+  friendRequestFrom = null;
+}
+
+function resetFriendButton() {
+  friendBtn.disabled = false;
+  friendBtn.innerHTML = '<i class="fas fa-user-plus"></i>';
+  friendBtn.title = "Add Friend";
+}
+
+// Clean up pending friend requests
+function cleanUpPendingFriendRequests() {
+  if (pendingFriendRequestRef) {
+    pendingFriendRequestRef.remove();
+    pendingFriendRequestRef = null;
+  }
+  if (friendRequestTimeout) {
+    clearTimeout(friendRequestTimeout);
+    friendRequestTimeout = null;
+  }
+  friendRequestPending = false;
+}
+
 // PeerJS
 function startPeer() {
   clearSystemMessage();
   isConnected = false;
+  hideFriendButton();
+  resetFriendButton();
+  cleanUpPendingFriendRequests();
+  
   if (peer) peer.destroy();
   logSystem("🔍 Looking for a stranger...");
   
@@ -804,6 +1103,8 @@ function startPeer() {
 
   peer.on('open', (id) => {
     myId = id;
+    // Save to localStorage
+    localStorage.setItem('talkrush_peerid', id);
     tryToFindMatch();
   });
 
@@ -919,7 +1220,10 @@ function handleNewConnection(conn, sharedTags = []) {
     logSystem("🎯 You both like: " + sharedTags.join(", "));
   }
 
-  setupConnection(conn);
+  // Save connected peer ID
+  localStorage.setItem('talkrush_connectedpeerid', conn.peer);
+  
+  setupConnection(conn, sharedTags);
 
   // Clean up waiting list and heartbeat
   cleanUpWaitingList();
@@ -929,11 +1233,12 @@ function handleNewConnection(conn, sharedTags = []) {
   }
 }
 
-function setupConnection(conn) {
+function setupConnection(conn, sharedTags = []) {
   if (myConn) myConn.close();
   myConn = conn;
   isConnected = true;
   hideNewChatButton();
+  showFriendButton();
 
   conn.on("data", (data) => {
     if (typeof data === "string") {
@@ -944,6 +1249,26 @@ function setupConnection(conn) {
       appendGif("stranger", data.url);
     } else if (data.type === "typing") {
       showTypingIndicator();
+    } else if (data.type === "friend_request") {
+      handleFriendRequest(data);
+    } else if (data.type === "friend_accepted") {
+      // Remove pending request
+      if (data.requestId) {
+        const pendingRef = db.ref('friend_requests/' + data.requestId);
+        pendingRef.remove();
+      }
+      cleanUpPendingFriendRequests();
+      logSystem(`🎉 ${data.nickname || 'Stranger'} accepted your friend request! Friend ID: ${data.friendId}`);
+      resetFriendButton();
+    } else if (data.type === "friend_rejected") {
+      // Remove pending request
+      if (data.requestId) {
+        const pendingRef = db.ref('friend_requests/' + data.requestId);
+        pendingRef.remove();
+      }
+      cleanUpPendingFriendRequests();
+      logSystem('Friend request was rejected.');
+      resetFriendButton();
     }
   });
 
@@ -958,10 +1283,14 @@ function setupConnection(conn) {
 }
 
 function endConnection(message) {
+  // Clean up any pending friend requests
+  cleanUpPendingFriendRequests();
+  
   appendSystemImage("/assets/chat_end.png");
   logSystem(message);
   myConn = null;
   isConnected = false;
+  hideFriendButton();
   showNewChatButton();
 }
 
@@ -1105,6 +1434,7 @@ document.getElementById("imgInput").addEventListener("change", (e) => {
 document.getElementById("skipBtn").onclick = () => {
   if (myConn) myConn.close();
   cleanUpWaitingList();
+  cleanUpPendingFriendRequests();
   isConnected = false;
   logSystem("Chat ended. Starting new search...");
   showNewChatButton();
@@ -1112,9 +1442,14 @@ document.getElementById("skipBtn").onclick = () => {
 
 document.getElementById("newChatBtn").onclick = () => {
   document.getElementById("chatLog").innerHTML = "";
+  hideFriendButton();
+  resetFriendButton();
   hideNewChatButton();
   startPeer();
 };
+
+// Close friend modal when clicking overlay
+friendModalOverlay.onclick = closeFriendModal;
 
 // GIF Search
 const gifModal = document.getElementById("gifModal");
