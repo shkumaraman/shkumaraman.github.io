@@ -751,6 +751,8 @@ let currentFriendName = "";
 let peer = null;
 let myConn = null;
 let isConnected = false;
+let connectionAttempts = 0;
+const MAX_CONNECTION_ATTEMPTS = 3;
 
 // DOM Ready
 document.addEventListener("DOMContentLoaded", () => {
@@ -801,29 +803,34 @@ function startPeer(existingPeerId) {
 function handleNewConnection(conn) {
   console.log('New P2P connection from:', conn.peer);
   
-  if (myConn) {
+  if (myConn && myConn.peer !== conn.peer) {
     conn.close();
     return;
   }
   
   myConn = conn;
   isConnected = true;
+  connectionAttempts = 0;
   
   conn.on("data", (data) => {
+    console.log('Received data from friend:', data);
     if (typeof data === "string") {
       // Text message
       if (currentChatId && currentFriendId === conn.peer) {
         saveIncomingMessage(data, 'text', conn.peer);
+        displayMessageImmediately(data, 'text', conn.peer);
       }
     } else if (data.type === "image") {
       // Image message
       if (currentChatId && currentFriendId === conn.peer) {
         saveIncomingMessage(data.blob, 'image', conn.peer);
+        displayMessageImmediately(data.blob, 'image', conn.peer);
       }
     } else if (data.type === "gif") {
       // GIF message
       if (currentChatId && currentFriendId === conn.peer) {
         saveIncomingMessage(data.url, 'gif', conn.peer);
+        displayMessageImmediately(data.url, 'gif', conn.peer);
       }
     }
   });
@@ -934,7 +941,7 @@ function loadFriends() {
           <p class="last-message">${escapeHtml(displayMsg)}</p>
         </div>
         <span class="message-time">${formatTime(friend.timestamp)}</span>
-        <button class="unfriend-btn" onclick="unfriend(event,'${chatId}')" title="Remove friend">
+        <button class="unfriend-btn" onclick="unfriend('${chatId}')" title="Remove friend">
           <i class="fas fa-times"></i>
         </button>
       `;
@@ -987,29 +994,66 @@ function openChat(chatId, friendId, friendName) {
 }
 
 function connectToFriend(friendId) {
+  connectionAttempts++;
+  
+  if (connectionAttempts > MAX_CONNECTION_ATTEMPTS) {
+    Swal.fire({
+      title: 'Friend is Offline',
+      text: `${currentFriendName} is currently offline. Messages will be delivered when they come online.`,
+      icon: 'info',
+      confirmButtonText: 'OK'
+    });
+    return;
+  }
+  
+  if (myConn && myConn.peer === friendId && isConnected) {
+    return;
+  }
+  
   if (myConn) {
     myConn.close();
   }
   
-  const conn = peer.connect(friendId);
+  const conn = peer.connect(friendId, {
+    reliable: true
+  });
+  
+  let connectionTimeout = setTimeout(() => {
+    if (!isConnected) {
+      conn.close();
+      Swal.fire({
+        title: 'Connection Timeout',
+        text: `${currentFriendName} is not responding. They may be offline.`,
+        icon: 'warning',
+        confirmButtonText: 'OK'
+      });
+    }
+  }, 10000);
+  
   conn.on("open", () => {
     console.log('Connected to friend via P2P');
+    clearTimeout(connectionTimeout);
     myConn = conn;
     isConnected = true;
+    connectionAttempts = 0;
     
     // Set up connection handlers
     conn.on("data", (data) => {
+      console.log('Received data in chat:', data);
       if (typeof data === "string") {
         if (currentChatId && currentFriendId === friendId) {
           saveIncomingMessage(data, 'text', friendId);
+          displayMessageImmediately(data, 'text', friendId);
         }
       } else if (data.type === "image") {
         if (currentChatId && currentFriendId === friendId) {
           saveIncomingMessage(data.blob, 'image', friendId);
+          displayMessageImmediately(data.blob, 'image', friendId);
         }
       } else if (data.type === "gif") {
         if (currentChatId && currentFriendId === friendId) {
           saveIncomingMessage(data.url, 'gif', friendId);
+          displayMessageImmediately(data.url, 'gif', friendId);
         }
       }
     });
@@ -1031,8 +1075,21 @@ function connectToFriend(friendId) {
   
   conn.on("error", (err) => {
     console.error("Connection error:", err);
-    // Keep trying in background
-    setTimeout(() => connectToFriend(friendId), 5000);
+    clearTimeout(connectionTimeout);
+    myConn = null;
+    isConnected = false;
+    
+    if (connectionAttempts >= MAX_CONNECTION_ATTEMPTS) {
+      Swal.fire({
+        title: 'Friend is Offline',
+        text: `${currentFriendName} is currently offline. Messages will be delivered when they come online.`,
+        icon: 'info',
+        confirmButtonText: 'OK'
+      });
+    } else {
+      // Keep trying in background
+      setTimeout(() => connectToFriend(friendId), 5000);
+    }
   });
 }
 
@@ -1044,6 +1101,8 @@ function showFriendsList() {
     myConn = null;
     isConnected = false;
   }
+  
+  connectionAttempts = 0;
   
   document.getElementById('friendsContainer').style.display = 'block';
   document.getElementById('chatContainer').style.display = 'none';
@@ -1123,12 +1182,21 @@ function saveIncomingMessage(content, type, senderId) {
   }).catch(error => {
     console.error('Error updating last message:', error);
   });
+}
+
+// Display message immediately without reload
+function displayMessageImmediately(content, type, senderId) {
+  if (!currentChatId || !currentFriendId) return;
   
-  // Display message if in current chat
-  if (currentFriendId === senderId) {
-    const isMe = senderId === currentUserId;
-    appendMessageToChat(message, isMe);
-  }
+  const message = {
+    content: content,
+    senderId: senderId,
+    timestamp: Date.now(),
+    type: type
+  };
+  
+  const isMe = senderId === currentUserId;
+  appendMessageToChat(message, isMe);
 }
 
 // Append message to chat UI (same as main page)
@@ -1173,6 +1241,7 @@ function sendMessage() {
     };
     
     saveIncomingMessage(content, 'text', currentUserId);
+    displayMessageImmediately(content, 'text', currentUserId);
     
     // Update last message in friends node
     db.ref("friends/" + currentChatId).update({
@@ -1186,30 +1255,77 @@ function sendMessage() {
     input.value = '';
     // DO NOT auto-focus after sending
   } else {
-    alert('Not connected to friend. Trying to reconnect...');
+    Swal.fire({
+      title: 'Friend is Offline',
+      text: `${currentFriendName} is currently offline. Message will be delivered when they come online.`,
+      icon: 'info',
+      confirmButtonText: 'OK'
+    });
+    
+    // Still save message locally
+    const message = {
+      content: content,
+      senderId: currentUserId,
+      timestamp: Date.now(),
+      type: 'text'
+    };
+    
+    saveIncomingMessage(content, 'text', currentUserId);
+    displayMessageImmediately(content, 'text', currentUserId);
+    
+    // Update last message
+    db.ref("friends/" + currentChatId).update({
+      lastMessage: content,
+      timestamp: Date.now()
+    });
+    
+    // Clear input
+    input.value = '';
+    
+    // Try to reconnect in background
     connectToFriend(currentFriendId);
   }
 }
 
 // Send image via P2P
 function sendImage(imageData) {
-  if (!currentChatId || !currentFriendId || !myConn || !isConnected) {
-    alert('Not connected to friend. Please try again.');
-    return;
+  if (!currentChatId || !currentFriendId) return;
+  
+  if (myConn && isConnected) {
+    myConn.send({ type: "image", blob: imageData });
+    
+    // Save to localStorage and display immediately
+    saveIncomingMessage(imageData, 'image', currentUserId);
+    displayMessageImmediately(imageData, 'image', currentUserId);
+    
+    // Update last message in friends node
+    db.ref("friends/" + currentChatId).update({
+      lastMessage: '📷 Image',
+      timestamp: Date.now()
+    }).catch(error => {
+      console.error('Error updating last message:', error);
+    });
+  } else {
+    Swal.fire({
+      title: 'Friend is Offline',
+      text: `${currentFriendName} is currently offline. Image will be delivered when they come online.`,
+      icon: 'info',
+      confirmButtonText: 'OK'
+    });
+    
+    // Still save message locally
+    saveIncomingMessage(imageData, 'image', currentUserId);
+    displayMessageImmediately(imageData, 'image', currentUserId);
+    
+    // Update last message
+    db.ref("friends/" + currentChatId).update({
+      lastMessage: '📷 Image',
+      timestamp: Date.now()
+    });
+    
+    // Try to reconnect in background
+    connectToFriend(currentFriendId);
   }
-  
-  myConn.send({ type: "image", blob: imageData });
-  
-  // Save to localStorage
-  saveIncomingMessage(imageData, 'image', currentUserId);
-  
-  // Update last message in friends node
-  db.ref("friends/" + currentChatId).update({
-    lastMessage: '📷 Image',
-    timestamp: Date.now()
-  }).catch(error => {
-    console.error('Error updating last message:', error);
-  });
 }
 
 // Handle image upload (same as main page)
@@ -1219,7 +1335,12 @@ function handleImageUpload(e) {
   
   // Check file size (max 5MB)
   if (file.size > 5 * 1024 * 1024) {
-    alert('Image too large! Maximum size is 5MB.');
+    Swal.fire({
+      title: 'File Too Large',
+      text: 'Image too large! Maximum size is 5MB.',
+      icon: 'error',
+      confirmButtonText: 'OK'
+    });
     e.target.value = '';
     return;
   }
@@ -1232,38 +1353,54 @@ function handleImageUpload(e) {
   e.target.value = '';
 }
 
-// Remove friend
-function unfriend(e, chatId) {
-  e.stopPropagation();
-  e.preventDefault();
-  
-  if (confirm("Are you sure you want to remove this friend?")) {
-    // Remove from friends list in Firebase
-    db.ref("friends/" + chatId).remove()
-      .then(() => {
-        // Remove from localStorage
-        localStorage.removeItem(`talkrush_chat_${chatId}`);
-        
-        // Close P2P connection if this is the current chat
-        if (currentChatId === chatId && myConn) {
-          myConn.close();
-          myConn = null;
-          isConnected = false;
-        }
-        
-        // If currently viewing this chat, go back to list
-        if (currentChatId === chatId) {
-          showFriendsList();
-        }
-        
-        // Show notification
-        alert("Friend removed successfully");
-      })
-      .catch(error => {
-        console.error('Error removing friend:', error);
-        alert('Failed to remove friend. Please try again.');
-      });
-  }
+// Remove friend with SweetAlert
+function unfriend(chatId) {
+  Swal.fire({
+    title: 'Remove Friend?',
+    text: "Are you sure you want to remove this friend? All chat history will be deleted.",
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#3085d6',
+    cancelButtonColor: '#d33',
+    confirmButtonText: 'Yes, remove it!',
+    cancelButtonText: 'Cancel'
+  }).then((result) => {
+    if (result.isConfirmed) {
+      // Remove from friends list in Firebase
+      db.ref("friends/" + chatId).remove()
+        .then(() => {
+          // Remove from localStorage
+          localStorage.removeItem(`talkrush_chat_${chatId}`);
+          
+          // Close P2P connection if this is the current chat
+          if (currentChatId === chatId && myConn) {
+            myConn.close();
+            myConn = null;
+            isConnected = false;
+          }
+          
+          // If currently viewing this chat, go back to list
+          if (currentChatId === chatId) {
+            showFriendsList();
+          }
+          
+          // Show success notification
+          Swal.fire(
+            'Removed!',
+            'Friend has been removed successfully.',
+            'success'
+          );
+        })
+        .catch(error => {
+          console.error('Error removing friend:', error);
+          Swal.fire(
+            'Error!',
+            'Failed to remove friend. Please try again.',
+            'error'
+          );
+        });
+    }
+  });
 }
 
 // GIF Functions (same as main page)
@@ -1274,7 +1411,12 @@ async function fetchTrendingGifs() {
     displayGifs(data.data);
   } catch (error) {
     console.error("Error fetching GIFs:", error);
-    alert("Failed to load GIFs");
+    Swal.fire({
+      title: 'Error',
+      text: 'Failed to load GIFs',
+      icon: 'error',
+      confirmButtonText: 'OK'
+    });
   }
 }
 
@@ -1289,7 +1431,12 @@ async function searchGifs(query) {
     displayGifs(data.data);
   } catch (error) {
     console.error("Error searching GIFs:", error);
-    alert("Failed to search GIFs");
+    Swal.fire({
+      title: 'Error',
+      text: 'Failed to search GIFs',
+      icon: 'error',
+      confirmButtonText: 'OK'
+    });
   }
 }
 
@@ -1303,25 +1450,48 @@ function displayGifs(gifs) {
     img.src = gifUrl;
     img.className = "gif-item";
     img.onclick = () => {
-      if (!currentChatId || !currentFriendId || !myConn || !isConnected) {
-        alert('Not connected to friend. Please try again.');
-        return;
+      if (!currentChatId || !currentFriendId) return;
+      
+      if (myConn && isConnected) {
+        // Send via P2P
+        myConn.send({ type: "gif", url: gifUrl });
+        
+        // Save to localStorage and display immediately
+        saveIncomingMessage(gifUrl, 'gif', currentUserId);
+        displayMessageImmediately(gifUrl, 'gif', currentUserId);
+        
+        // Update last message in friends node
+        db.ref("friends/" + currentChatId).update({
+          lastMessage: '🎬 GIF',
+          timestamp: Date.now()
+        });
+        
+        // Close modal
+        document.getElementById('gifModal').style.display = 'none';
+      } else {
+        Swal.fire({
+          title: 'Friend is Offline',
+          text: `${currentFriendName} is currently offline. GIF will be delivered when they come online.`,
+          icon: 'info',
+          confirmButtonText: 'OK'
+        });
+        
+        // Still save message locally
+        saveIncomingMessage(gifUrl, 'gif', currentUserId);
+        displayMessageImmediately(gifUrl, 'gif', currentUserId);
+        
+        // Update last message
+        db.ref("friends/" + currentChatId).update({
+          lastMessage: '🎬 GIF',
+          timestamp: Date.now()
+        });
+        
+        // Close modal
+        document.getElementById('gifModal').style.display = 'none';
+        
+        // Try to reconnect in background
+        connectToFriend(currentFriendId);
       }
-      
-      // Send via P2P
-      myConn.send({ type: "gif", url: gifUrl });
-      
-      // Save to localStorage
-      saveIncomingMessage(gifUrl, 'gif', currentUserId);
-      
-      // Update last message in friends node
-      db.ref("friends/" + currentChatId).update({
-        lastMessage: '🎬 GIF',
-        timestamp: Date.now()
-      });
-      
-      // Close modal
-      document.getElementById('gifModal').style.display = 'none';
     };
     gifResults.appendChild(img);
   });
