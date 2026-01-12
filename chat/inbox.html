@@ -14,10 +14,13 @@ description: "View your chat history and messages with friends."
   --dark-text: #fff;
   --dark-secondary-text: #aaa;
   --dark-hover-bg: rgba(255,255,255,0.05);
-  --dark-input-bg: #2d2d2d;
+  --dark-input-bg: #333;
+  --dark-input-focus: #444;
   --dark-msg-bg: #2a2a2a;
   --dark-msg-me: #4a90e2;
   --dark-msg-them: #3a3a3a;
+  --dark-icon-color: #ccc;
+  --dark-icon-hover-bg: rgba(255,255,255,0.1);
   
   --light-bg: #f5f5f5;
   --light-header-bg: #ffffff;
@@ -27,14 +30,16 @@ description: "View your chat history and messages with friends."
   --light-text: #333;
   --light-secondary-text: #666;
   --light-hover-bg: rgba(0,0,0,0.05);
-  --light-input-bg: #f0f0f0;
+  --light-input-bg: #e0e0e0;
+  --light-input-focus: #d0d0d0;
   --light-msg-bg: #e9e9e9;
   --light-msg-me: #4a90e2;
   --light-msg-them: #ffffff;
+  --light-icon-color: #666;
+  --light-icon-hover-bg: rgba(0,0,0,0.05);
   
-  --accent-color: #4a90e2;
-  --danger-color: #ff4757;
   --send-btn: #4a90e2;
+  --danger-color: #ff4757;
 }
 
 * { box-sizing: border-box; }
@@ -55,7 +60,7 @@ body.light-mode {
 }
 
 .app-header {
-  position: fixed;
+  position: fixed !important;
   top: 0;
   left: 0;
   width: 100%;
@@ -68,7 +73,7 @@ body.light-mode {
   gap: 15px;
   box-shadow: 0 2px 4px rgba(0,0,0,0.4);
   border-bottom: 1px solid var(--dark-header-border);
-  z-index: 1000;
+  z-index: 10000;
 }
 
 .light-mode .app-header {
@@ -82,43 +87,53 @@ body.light-mode {
   gap: 10px;
 }
 
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .logo {
-  height: 38px;
-  width: 38px;
-  border-radius: 8px;
+  height: 40px;
+  width: 40px;
+  border-radius: 10px;
 }
 
 .app-title {
   font-size: 1em;
+  color: var(--dark-text);
   margin: 0;
 }
 
-.header-right {
-  display: flex;
-  gap: 10px;
+.light-mode .app-title {
+  color: var(--light-text);
 }
 
 .header-toggle {
   background: none;
   border: none;
+  color: var(--dark-icon-color);
   font-size: 1.1em;
   cursor: pointer;
-  color: inherit;
   width: 32px;
   height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  transition: background 0.3s;
+  transition: all 0.3s;
+}
+  
+.header-toggle:hover {
+  background: var(--dark-icon-hover-bg);
 }
 
-.header-toggle:hover {
-  background: var(--dark-hover-bg);
+.light-mode .header-toggle {
+  color: var(--light-icon-color);
 }
 
 .light-mode .header-toggle:hover {
-  background: var(--light-hover-bg);
+  background: var(--light-icon-hover-bg);
 }
 
 .container {
@@ -229,7 +244,7 @@ body.light-mode {
 }
 
 .start-chat-btn {
-  background: var(--accent-color);
+  background: var(--send-btn);
   color: #fff;
   border: none;
   padding: 12px 28px;
@@ -393,7 +408,7 @@ body.light-mode {
 .media-btn {
   background: none;
   border: none;
-  color: var(--dark-secondary-text);
+  color: var(--dark-icon-color);
   font-size: 1.2em;
   cursor: pointer;
   padding: 8px;
@@ -402,16 +417,16 @@ body.light-mode {
 }
 
 .media-btn:hover {
-  background: var(--dark-hover-bg);
+  background: var(--dark-icon-hover-bg);
   color: var(--dark-text);
 }
 
 .light-mode .media-btn {
-  color: var(--light-secondary-text);
+  color: var(--light-icon-color);
 }
 
 .light-mode .media-btn:hover {
-  background: var(--light-hover-bg);
+  background: var(--light-icon-hover-bg);
   color: var(--light-text);
 }
 
@@ -427,9 +442,17 @@ body.light-mode {
   min-height: 45px;
 }
 
+#messageInput:focus {
+  background: var(--dark-input-focus);
+}
+
 .light-mode #messageInput {
   background: var(--light-input-bg);
   color: var(--light-text);
+}
+
+.light-mode #messageInput:focus {
+  background: var(--light-input-focus);
 }
 
 .send-btn {
@@ -538,15 +561,25 @@ const firebaseConfig = {
   databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
 };
 
-// Initialize Firebase
 if (!firebase.apps.length) {
   firebase.initializeApp(firebaseConfig);
 }
 const db = firebase.database();
 
-// Get current user ID - Using the same peer ID as main chat
+// Auto-reconnect for Firebase
+function setupFirebaseReconnect() {
+  const connectedRef = db.ref(".info/connected");
+  connectedRef.on("value", snap => {
+    if (snap.val() === true) {
+      console.log("Firebase connected");
+    } else {
+      console.log("Firebase disconnected, reconnecting...");
+      setTimeout(() => loadFriends(), 2000);
+    }
+  });
+}
+
 function getCurrentUserId() {
-  // Get from localStorage (same as main page)
   return localStorage.getItem('talkrush_peerid');
 }
 
@@ -555,20 +588,18 @@ let currentChatId = null;
 let currentFriendId = null;
 let currentFriendName = "";
 
-// DOM Ready
 document.addEventListener("DOMContentLoaded", () => {
   if (!currentUserId) {
-    // If no peer ID found, redirect to main page
     window.location.href = 'index.html';
     return;
   }
   
   loadFriends();
   setupEventListeners();
+  setupFirebaseReconnect();
 });
 
 function setupEventListeners() {
-  // Enter key to send message
   document.getElementById('messageInput').addEventListener('keypress', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -576,14 +607,10 @@ function setupEventListeners() {
     }
   });
   
-  // Image upload
   document.getElementById('imgInput').addEventListener('change', handleImageUpload);
 }
 
-// Load friends list
 function loadFriends() {
-  console.log('Current User ID:', currentUserId);
-  
   if (!currentUserId) {
     document.getElementById("loading").style.display = "none";
     document.getElementById("emptyState").style.display = "block";
@@ -608,20 +635,17 @@ function loadFriends() {
     let count = 0;
 
     Object.entries(data).forEach(([chatId, friend]) => {
-      // Check if current user is part of this friendship
       const isUserInFriendship = friend.peer1 === currentUserId || friend.peer2 === currentUserId;
       
       if (!isUserInFriendship) return;
 
       count++;
       
-      // Determine friend's details
       const otherId = friend.peer1 === currentUserId ? friend.peer2 : friend.peer1;
       const friendNickname = friend.peer1 === currentUserId ? friend.nickname2 : friend.nickname1;
       const avatarLetter = friendNickname ? friendNickname.charAt(0).toUpperCase() : "?";
       const displayName = friendNickname || 'Stranger';
       
-      // Format last message
       let displayMsg = "Say Hi! 👋";
       if (friend.lastMessage) {
         if (friend.lastMessage.includes('data:image')) {
@@ -672,50 +696,41 @@ function loadFriends() {
   });
 }
 
-// Open chat with friend
 function openChat(chatId, friendId, friendName) {
   currentChatId = chatId;
   currentFriendId = friendId;
   currentFriendName = friendName;
   
-  // Update UI
   document.getElementById('chatAvatar').textContent = friendName.charAt(0).toUpperCase();
   document.getElementById('chatName').textContent = friendName;
   document.getElementById('pageTitle').textContent = friendName;
   
-  // Switch views
   document.getElementById('friendsContainer').style.display = 'none';
   document.getElementById('chatContainer').style.display = 'flex';
   
-  // Load messages from localStorage
   loadLocalChatMessages();
   
-  // Focus input
   setTimeout(() => {
     document.getElementById('messageInput').focus();
   }, 100);
 }
 
-// Go back to friends list
 function showFriendsList() {
   document.getElementById('friendsContainer').style.display = 'block';
   document.getElementById('chatContainer').style.display = 'none';
   document.getElementById('pageTitle').textContent = 'Messages';
   
-  // Clear current chat
   currentChatId = null;
   currentFriendId = null;
   currentFriendName = "";
 }
 
-// Load chat messages from localStorage
 function loadLocalChatMessages() {
   const chatDiv = document.getElementById('chatMessages');
   chatDiv.innerHTML = '';
   
   if (!currentChatId) return;
   
-  // Try to load from localStorage first
   const savedChats = localStorage.getItem(`talkrush_chat_${currentChatId}`);
   
   if (savedChats) {
@@ -731,12 +746,10 @@ function loadLocalChatMessages() {
       chatDiv.innerHTML = '<div style="text-align:center;padding:40px;color:var(--dark-secondary-text)">No messages yet. Start the conversation!</div>';
     }
   } else {
-    // Also check Firebase as backup
     checkFirebaseMessages();
   }
 }
 
-// Check Firebase for messages
 function checkFirebaseMessages() {
   const chatDiv = document.getElementById('chatMessages');
   
@@ -744,7 +757,6 @@ function checkFirebaseMessages() {
     const messages = snap.val();
     
     if (messages) {
-      // Convert to array and sort by timestamp
       const messagesArray = Object.values(messages).sort((a, b) => a.timestamp - b.timestamp);
       
       messagesArray.forEach(msg => {
@@ -752,7 +764,6 @@ function checkFirebaseMessages() {
         appendMessageToChat(msg, isMe);
       });
       
-      // Save to localStorage
       localStorage.setItem(`talkrush_chat_${currentChatId}`, JSON.stringify(messagesArray));
       
       scrollToBottom();
@@ -765,7 +776,6 @@ function checkFirebaseMessages() {
   });
 }
 
-// Append message to chat UI
 function appendMessageToChat(msg, isMe) {
   const chatDiv = document.getElementById('chatMessages');
   const div = document.createElement("div");
@@ -786,7 +796,6 @@ function appendMessageToChat(msg, isMe) {
   chatDiv.appendChild(div);
 }
 
-// Send text message
 function sendMessage() {
   const input = document.getElementById('messageInput');
   const content = input.value.trim();
@@ -800,25 +809,20 @@ function sendMessage() {
     type: 'text'
   };
   
-  // Save to Firebase
   db.ref("messages/" + currentChatId).push(message);
   
-  // Update last message in friends list
   db.ref("friends/" + currentChatId).update({
     lastMessage: content,
     timestamp: Date.now()
   });
   
-  // Save to localStorage
   saveMessageToLocalStorage(message);
   
-  // Clear input and scroll
   input.value = '';
   input.focus();
   scrollToBottom();
 }
 
-// Save message to localStorage
 function saveMessageToLocalStorage(message) {
   if (!currentChatId) return;
   
@@ -838,7 +842,6 @@ function saveMessageToLocalStorage(message) {
   localStorage.setItem(storageKey, JSON.stringify(existingMessages));
 }
 
-// Send image
 function sendImage(imageData) {
   if (!currentChatId) return;
   
@@ -849,27 +852,22 @@ function sendImage(imageData) {
     type: 'image'
   };
   
-  // Save to Firebase
   db.ref("messages/" + currentChatId).push(message);
   
-  // Update last message in friends list
   db.ref("friends/" + currentChatId).update({
     lastMessage: '📷 Image',
     timestamp: Date.now()
   });
   
-  // Save to localStorage
   saveMessageToLocalStorage(message);
   
   scrollToBottom();
 }
 
-// Handle image upload
 function handleImageUpload(e) {
   const file = e.target.files[0];
   if (!file) return;
   
-  // Check file size (max 5MB)
   if (file.size > 5 * 1024 * 1024) {
     alert('Image too large! Maximum size is 5MB.');
     e.target.value = '';
@@ -884,29 +882,23 @@ function handleImageUpload(e) {
   e.target.value = '';
 }
 
-// Remove friend
 function unfriend(e, chatId) {
   e.stopPropagation();
   e.preventDefault();
   
   if (confirm("Are you sure you want to remove this friend?")) {
-    // Remove from friends list in Firebase
     db.ref("friends/" + chatId).remove();
     
-    // Remove from localStorage
     localStorage.removeItem(`talkrush_chat_${chatId}`);
     
-    // If currently viewing this chat, go back to list
     if (currentChatId === chatId) {
       showFriendsList();
     }
     
-    // Show notification
     alert("Friend removed successfully");
   }
 }
 
-// Utility functions
 function scrollToBottom() {
   const chatDiv = document.getElementById('chatMessages');
   if (chatDiv) {
@@ -922,19 +914,15 @@ function formatTime(timestamp) {
   const now = new Date();
   const diff = now - date;
   
-  // Today
   if (diff < 86400000 && date.getDate() === now.getDate()) {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
-  // Yesterday
   else if (diff < 172800000) {
     return 'Yesterday';
   }
-  // This week
   else if (diff < 604800000) {
     return date.toLocaleDateString([], { weekday: 'short' });
   }
-  // Older
   else {
     return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
   }
