@@ -756,7 +756,6 @@ let myTags = JSON.parse(localStorage.getItem("talkrush_tags") || "[]");
 // Friend System Variables
 let friendRequestPending = false;
 let friendRequestFrom = null;
-let areFriendsAlready = false;
 
 // Friend System Elements
 const friendBtn = document.getElementById('friendBtn');
@@ -817,7 +816,6 @@ document.addEventListener('keydown', (e) => {
 function startPeer() {
   clearSystemMessage();
   isConnected = false;
-  areFriendsAlready = false;
   if (peer) peer.destroy();
   logSystem("🔍 Looking for a stranger...");
   
@@ -951,9 +949,6 @@ function handleNewConnection(conn, sharedTags = []) {
   // Save connected peer ID
   localStorage.setItem('talkrush_connectedpeerid', conn.peer);
   
-  // Check if already friends
-  checkIfAlreadyFriends(conn.peer);
-  
   logSystem("Stranger Connected! Say Hi 👋");
 
   if (sharedTags.length > 0) {
@@ -970,35 +965,14 @@ function handleNewConnection(conn, sharedTags = []) {
   }
 }
 
-function checkIfAlreadyFriends(otherPeerId) {
-  const myPeerId = localStorage.getItem('talkrush_peerid');
-  if (!myPeerId) return;
-  
-  db.ref('friends').once('value').then((snapshot) => {
-    const friends = snapshot.val();
-    if (!friends) return;
-    
-    for (const [friendId, friendData] of Object.entries(friends)) {
-      if ((friendData.peer1 === myPeerId && friendData.peer2 === otherPeerId) ||
-          (friendData.peer1 === otherPeerId && friendData.peer2 === myPeerId)) {
-        areFriendsAlready = true;
-        logSystem("👋 You're already friends with this person!");
-        return;
-      }
-    }
-  });
-}
-
 function setupConnection(conn) {
   if (myConn) myConn.close();
   myConn = conn;
   isConnected = true;
   hideNewChatButton();
   
-  // Show friend button if not already friends
-  if (!areFriendsAlready) {
-    showFriendButton();
-  }
+  // Show friend button
+  showFriendButton();
 
   conn.on("data", (data) => {
     if (typeof data === "string") {
@@ -1015,10 +989,6 @@ function setupConnection(conn) {
       handleFriendAccepted(data);
     } else if (data.type === "friend_rejected") {
       handleFriendRejected();
-    } else if (data.type === "already_friends") {
-      areFriendsAlready = true;
-      hideFriendButton();
-      logSystem("👋 You're already friends with this person!");
     }
   });
 
@@ -1037,7 +1007,6 @@ function endConnection(message) {
   logSystem(message);
   myConn = null;
   isConnected = false;
-  areFriendsAlready = false;
   showNewChatButton();
   hideFriendButton();
 }
@@ -1062,7 +1031,7 @@ function isGenderCompatible(me, other) {
 
 // Friend System Functions
 function showFriendButton() {
-  if (friendBtn && !areFriendsAlready) {
+  if (friendBtn) {
     friendBtn.style.display = 'flex';
     friendBtn.disabled = false;
   }
@@ -1077,7 +1046,7 @@ function hideFriendButton() {
 
 // Send friend request
 friendBtn.onclick = () => {
-  if (!myConn || !isConnected || areFriendsAlready) return;
+  if (!myConn || !isConnected) return;
   
   friendRequestPending = true;
   myConn.send({
@@ -1129,17 +1098,6 @@ acceptFriendBtn.onclick = async () => {
     const otherPeerId = friendRequestFrom.fromPeer;
     const otherNickname = friendRequestFrom.fromNickname;
     
-    // Check if already friends
-    const existingFriend = await checkExistingFriendship(myPeerId, otherPeerId);
-    if (existingFriend) {
-      areFriendsAlready = true;
-      hideFriendButton();
-      myConn.send({ type: 'already_friends' });
-      logSystem(`👋 You're already friends with ${otherNickname}!`);
-      closeFriendModal();
-      return;
-    }
-    
     // Save to Firebase with both nicknames
     const friendRef = db.ref('friends/' + friendId);
     await friendRef.set({
@@ -1158,7 +1116,6 @@ acceptFriendBtn.onclick = async () => {
       nickname: myNickname
     });
     
-    areFriendsAlready = true;
     hideFriendButton();
     logSystem(`🎉 You are now friends with ${otherNickname || 'Stranger'}!`);
     closeFriendModal();
@@ -1168,27 +1125,6 @@ acceptFriendBtn.onclick = async () => {
     logSystem('Failed to save friend. Please try again.');
   }
 };
-
-function checkExistingFriendship(peer1, peer2) {
-  return new Promise((resolve) => {
-    db.ref('friends').once('value').then((snapshot) => {
-      const friends = snapshot.val();
-      if (!friends) {
-        resolve(false);
-        return;
-      }
-      
-      for (const [friendId, friendData] of Object.entries(friends)) {
-        if ((friendData.peer1 === peer1 && friendData.peer2 === peer2) ||
-            (friendData.peer1 === peer2 && friendData.peer2 === peer1)) {
-          resolve(friendId);
-          return;
-        }
-      }
-      resolve(false);
-    });
-  });
-}
 
 // Handle friend request rejection
 rejectFriendBtn.onclick = () => {
@@ -1202,7 +1138,6 @@ rejectFriendBtn.onclick = () => {
 };
 
 function handleFriendAccepted(data) {
-  areFriendsAlready = true;
   hideFriendButton();
   logSystem(`🎉 ${data.nickname || 'Stranger'} accepted your friend request!`);
   friendBtn.disabled = false;
@@ -1345,7 +1280,6 @@ document.getElementById("skipBtn").onclick = () => {
   if (myConn) myConn.close();
   cleanUpWaitingList();
   isConnected = false;
-  areFriendsAlready = false;
   logSystem("Chat ended. Starting new search...");
   showNewChatButton();
   hideFriendButton();
