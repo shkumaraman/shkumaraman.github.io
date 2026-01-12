@@ -296,12 +296,86 @@ body.light-mode {
   padding: 50px 0 0 0; 
 }
 
+.chat-header {
+  position: fixed;
+  top: 50px;
+  left: 0;
+  width: 100%;
+  height: 60px;
+  background: var(--dark-header-bg);
+  display: flex;
+  align-items: center;
+  padding: 0 15px;
+  gap: 15px;
+  z-index: 9999;
+  border-bottom: 1px solid var(--dark-header-border);
+}
+
+.light-mode .chat-header {
+  background: var(--light-header-bg);
+  border-bottom: 1px solid var(--light-header-border);
+}
+
+.back-btn {
+  background: none;
+  border: none;
+  color: var(--dark-icon-color);
+  font-size: 1.5em;
+  cursor: pointer;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.3s;
+}
+
+.back-btn:hover {
+  background: var(--dark-icon-hover-bg);
+}
+
+.light-mode .back-btn {
+  color: var(--light-icon-color);
+}
+
+.light-mode .back-btn:hover {
+  background: var(--light-icon-hover-bg);
+}
+
+.chat-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(45deg, #4a90e2, #63b3ed);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 1.2em;
+  font-weight: bold;
+}
+
+.chat-name {
+  font-size: 1.1em;
+  font-weight: 500;
+  color: var(--dark-text);
+  margin: 0;
+}
+
+.light-mode .chat-name {
+  color: var(--light-text);
+}
+
 #chatLog {
   padding: 12px;
   overflow-y: auto;
   background: var(--dark-chat-bg);
   display: flex;
   flex-direction: column;
+  flex: 1;
+  margin-top: 60px;
+  margin-bottom: 70px;
 }
 
 .light-mode #chatLog {
@@ -346,6 +420,7 @@ body.light-mode {
   font-size: 0.7em;
   color: var(--dark-secondary-text);
   text-align: right;
+  margin-top: 2px;
 }
 
 .light-mode .timestamp {
@@ -369,6 +444,7 @@ body.light-mode {
 .chat-controls {
   position: fixed;
   bottom: 0;
+  left: 0;
   display: flex;
   align-items: center;
   padding: 5px;
@@ -662,6 +738,9 @@ const db = firebase.database();
 
 const GIPHY_API_KEY = 'EKvv5S1CcXqYuHgxPNVKiNuiuNHRTzFk';
 
+let firebaseListeners = [];
+let peerInstance = null;
+
 function getCurrentUserId() {
   return localStorage.getItem('talkrush_peerid');
 }
@@ -676,6 +755,157 @@ let isConnected = false;
 let connectionAttempts = 0;
 const MAX_CONNECTION_ATTEMPTS = 3;
 
+function cleanupOldMessages() {
+  const oneWeekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+  
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key.startsWith('talkrush_chat_')) {
+      try {
+        const messages = JSON.parse(localStorage.getItem(key));
+        if (messages && messages.length > 100) {
+          const recentMessages = messages.slice(-100);
+          localStorage.setItem(key, JSON.stringify(recentMessages));
+        }
+      } catch (e) {
+        localStorage.removeItem(key);
+      }
+    }
+  }
+}
+
+function cleanupAllConnections() {
+  firebaseListeners.forEach(ref => {
+    try {
+      ref.off();
+    } catch (e) {}
+  });
+  firebaseListeners = [];
+  
+  if (myConn) {
+    try {
+      myConn.close();
+    } catch (e) {}
+    myConn = null;
+  }
+  
+  if (peer) {
+    try {
+      peer.destroy();
+    } catch (e) {}
+    peer = null;
+  }
+  
+  if (peerInstance) {
+    try {
+      peerInstance.destroy();
+    } catch (e) {}
+    peerInstance = null;
+  }
+  
+  isConnected = false;
+  connectionAttempts = 0;
+}
+
+function startPeer(existingPeerId) {
+  cleanupAllConnections();
+  
+  const peerTimeout = setTimeout(() => {
+    if (peer && !peer.destroyed) {
+      peer.destroy();
+      peer = null;
+    }
+  }, 5000);
+  
+  peer = new Peer(existingPeerId, {
+    config: {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+      ]
+    },
+    debug: 0
+  });
+  
+  peerInstance = peer;
+
+  peer.on('open', (id) => {
+    clearTimeout(peerTimeout);
+    console.log('Peer initialized with ID:', id);
+  });
+
+  peer.on('connection', handleNewConnection);
+
+  peer.on('error', (err) => {
+    console.error('PeerJS error:', err);
+    clearTimeout(peerTimeout);
+    
+    if (window.location.pathname.includes('messages.html')) {
+      setTimeout(() => startPeer(currentUserId), 5000);
+    }
+  });
+
+  peer.on('disconnected', () => {
+    console.log('Peer disconnected');
+  });
+}
+
+function compressImage(file, maxSize) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target.result;
+      
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        let width = img.width;
+        let height = img.height;
+        const maxDimension = 800;
+        
+        if (width > height && width > maxDimension) {
+          height *= maxDimension / width;
+          width = maxDimension;
+        } else if (height > maxDimension) {
+          width *= maxDimension / height;
+          height = maxDimension;
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        let quality = 0.8;
+        let compressedDataUrl;
+        
+        for (let i = 0; i < 5; i++) {
+          compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+          if (compressedDataUrl.length <= maxSize) break;
+          quality -= 0.15;
+        }
+        
+        if (compressedDataUrl.length > maxSize) {
+          canvas.width = width * 0.7;
+          canvas.height = height * 0.7;
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          compressedDataUrl = canvas.toDataURL('image/jpeg', 0.6);
+        }
+        
+        resolve(compressedDataUrl);
+      };
+      
+      img.onerror = reject;
+    };
+    
+    reader.onerror = reject;
+  });
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   if (!currentUserId) {
     window.location.href = 'index.html';
@@ -684,37 +914,11 @@ document.addEventListener("DOMContentLoaded", () => {
   
   console.log('Using existing Peer ID:', currentUserId);
   
+  cleanupOldMessages();
   startPeer(currentUserId);
   loadFriends();
   setupEventListeners();
 });
-
-function startPeer(existingPeerId) {
-  if (peer) peer.destroy();
-  
-  peer = new Peer(existingPeerId, {
-    config: {
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
-        { urls: 'stun:stun3.l.google.com:19302' },
-        { urls: 'stun:stun4.l.google.com:19302' }
-      ]
-    }
-  });
-
-  peer.on('open', (id) => {
-    console.log('Peer initialized with ID:', id);
-  });
-
-  peer.on('connection', handleNewConnection);
-
-  peer.on('error', (err) => {
-    console.error('PeerJS error:', err);
-    setTimeout(() => startPeer(currentUserId), 3000);
-  });
-}
 
 function handleNewConnection(conn) {
   console.log('New P2P connection from:', conn.peer);
@@ -762,15 +966,12 @@ function handleNewConnection(conn) {
 }
 
 function setupEventListeners() {
-  // Enter key to send message
   document.getElementById('msgInput').addEventListener('keypress', (e) => {
     if (e.key === 'Enter') sendMessage();
   });
 
-  // Image upload
   document.getElementById('imgInput').addEventListener('change', handleImageUpload);
 
-  // GIF upload and search
   document.querySelector('[for="gifInput"]').onclick = (e) => {
     e.preventDefault();
     const gifModal = document.getElementById("gifModal");
@@ -782,10 +983,8 @@ function setupEventListeners() {
     if (e.key === 'Enter') searchGifs(document.getElementById('gifSearch').value);
   });
 
-  // Send button
   document.getElementById('sendBtn').onclick = sendMessage;
 
-  // Close GIF modal on outside click
   window.addEventListener("click", (e) => {
     if (e.target === document.getElementById('gifModal')) {
       document.getElementById('gifModal').style.display = 'none';
@@ -800,7 +999,13 @@ function loadFriends() {
     return;
   }
   
-  db.ref("friends").on("value", snap => {
+  firebaseListeners.forEach(ref => ref.off());
+  firebaseListeners = [];
+  
+  const friendsRef = db.ref("friends");
+  firebaseListeners.push(friendsRef);
+  
+  friendsRef.on("value", snap => {
     const data = snap.val();
     const list = document.getElementById("friendList");
     const loading = document.getElementById("loading");
@@ -880,16 +1085,14 @@ function openChat(chatId, friendId, friendName) {
   currentFriendId = friendId;
   currentFriendName = friendName;
   
+  history.pushState({ chatId, friendId, friendName }, '', `#chat-${chatId}`);
+  
   document.getElementById('chatAvatar').textContent = friendName.charAt(0).toUpperCase();
   document.getElementById('chatName').textContent = friendName;
   document.getElementById('pageTitle').textContent = friendName;
   
-  // Hide friends list, show chat
   document.getElementById('friendsContainer').style.display = 'none';
   document.getElementById('chatContainer').style.display = 'flex';
-  
-  // scripts.html का setChatLogHeight function automatically चलेगा
-  // क्योंकि chat अब visible है
   
   connectToFriend(friendId);
   loadLocalChatMessages();
@@ -989,13 +1192,7 @@ function connectToFriend(friendId) {
 }
 
 function showFriendsList() {
-  if (myConn) {
-    myConn.close();
-    myConn = null;
-    isConnected = false;
-  }
-  
-  connectionAttempts = 0;
+  cleanupAllConnections();
   
   document.getElementById('friendsContainer').style.display = 'block';
   document.getElementById('chatContainer').style.display = 'none';
@@ -1004,6 +1201,10 @@ function showFriendsList() {
   currentChatId = null;
   currentFriendId = null;
   currentFriendName = "";
+  
+  if (currentUserId) {
+    setTimeout(() => startPeer(currentUserId), 1000);
+  }
 }
 
 function loadLocalChatMessages() {
@@ -1192,10 +1393,10 @@ function handleImageUpload(e) {
   const file = e.target.files[0];
   if (!file) return;
   
-  if (file.size > 5 * 1024 * 1024) {
+  if (file.size > 500 * 1024) {
     Swal.fire({
       title: 'File Too Large',
-      text: 'Image too large! Maximum size is 5MB.',
+      text: 'Image too large! Maximum size is 500KB.',
       icon: 'error',
       confirmButtonText: 'OK'
     });
@@ -1203,11 +1404,18 @@ function handleImageUpload(e) {
     return;
   }
   
-  const reader = new FileReader();
-  reader.onload = () => {
-    sendImage(reader.result);
-  };
-  reader.readAsDataURL(file);
+  compressImage(file, 500 * 1024).then(compressedData => {
+    sendImage(compressedData);
+  }).catch(error => {
+    console.error('Image compression error:', error);
+    Swal.fire({
+      title: 'Error',
+      text: 'Failed to process image',
+      icon: 'error',
+      confirmButtonText: 'OK'
+    });
+  });
+  
   e.target.value = '';
 }
 
@@ -1226,6 +1434,9 @@ function unfriend(chatId) {
       db.ref("friends/" + chatId).remove()
         .then(() => {
           localStorage.removeItem(`talkrush_chat_${chatId}`);
+          
+          const messagesRef = db.ref(`messages/${chatId}`);
+          messagesRef.remove().catch(() => {});
           
           if (currentChatId === chatId && myConn) {
             myConn.close();
@@ -1384,11 +1595,21 @@ function escapeHtml(text) {
 }
 
 window.addEventListener('beforeunload', () => {
-  if (myConn) {
-    myConn.close();
+  cleanupAllConnections();
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    if (myConn) {
+      myConn.close();
+      myConn = null;
+    }
   }
-  if (peer) {
-    peer.destroy();
+});
+
+window.addEventListener('popstate', (event) => {
+  if (currentChatId) {
+    showFriendsList();
   }
 });
 </script>
