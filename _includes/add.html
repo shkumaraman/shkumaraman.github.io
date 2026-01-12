@@ -1,152 +1,110 @@
-<div id="friendActions">
-
-  <button id="addFriendBtn">
+<!-- ADD FRIEND BUTTON -->
+<div id="addFriendWrap">
+  <button id="addFriendBtn" style="display:none">
     ➕ Add Friend
   </button>
-
-  <div id="friendRequestBox">
-    <p>👋 This person wants to add you as a friend</p>
-    <button id="acceptFriendBtn">Accept</button>
-  </div>
-
+  <div id="addFriendStatus"></div>
 </div>
 
 <style>
-#friendActions {
+#addFriendBtn {
   position: fixed;
   top: 60px;
-  right: 20px;
-  z-index: 9999;
-  text-align: right;
-}
-
-#addFriendBtn {
-  display: none;
-  background: #4caf50;
+  right: 15px;
+  z-index: 1000;
+  background: #4a90e2;
   color: #fff;
   border: none;
-  padding: 8px 14px;
-  border-radius: 6px;
+  padding: 10px 16px;
+  border-radius: 20px;
   cursor: pointer;
   font-size: 14px;
 }
 
-#addFriendBtn:hover {
-  background: #43a047;
+#addFriendBtn.accept {
+  background: #2ecc71;
 }
 
-#friendRequestBox {
-  display: none;
-  margin-top: 8px;
-  padding: 10px;
-  background: #ffffff;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-}
-
-#acceptFriendBtn {
-  background: #2196f3;
-  color: #fff;
-  border: none;
-  padding: 6px 12px;
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-#acceptFriendBtn:hover {
-  background: #1e88e5;
+#addFriendStatus {
+  position: fixed;
+  top: 110px;
+  right: 15px;
+  font-size: 13px;
+  color: #ccc;
 }
 </style>
 
 <script>
-(function () {
+/* Firebase (assumes firebase already initialized globally) */
+const db = firebase.database();
 
-  const addFriendBtn = document.getElementById("addFriendBtn");
-  const friendRequestBox = document.getElementById("friendRequestBox");
-  const acceptFriendBtn = document.getElementById("acceptFriendBtn");
+/* LocalStorage IDs */
+const myPeerId = localStorage.getItem("talkrush_peerid");
+const connectedPeerId = localStorage.getItem("talkrush_connectedpeerid");
 
-  let currentFriendPeer = null;
-  let requestSent = false;
+const addBtn = document.getElementById("addFriendBtn");
+const statusBox = document.getElementById("addFriendStatus");
 
-  addFriendBtn.onclick = () => {
-    if (!state.myConn || requestSent) return;
+/* Short numeric chatId */
+function generateChatId() {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
 
-    state.myConn.send({
-      type: "friend-request",
-      from: state.myId
-    });
+/* Show Add button only if connected */
+if (myPeerId && connectedPeerId) {
+  addBtn.style.display = "block";
+}
 
-    requestSent = true;
-    addFriendBtn.innerText = "Request Sent";
+/* SEND FRIEND REQUEST */
+addBtn.onclick = () => {
+  const chatId = generateChatId();
+
+  db.ref("friend_requests/" + connectedPeerId).set({
+    from: myPeerId,
+    chatId: chatId,
+    timestamp: Date.now()
+  });
+
+  statusBox.textContent = "Friend request sent";
+};
+
+/* LISTEN FOR INCOMING REQUEST */
+db.ref("friend_requests/" + myPeerId).on("value", snap => {
+  if (!snap.exists()) return;
+
+  const data = snap.val();
+
+  addBtn.style.display = "block";
+  addBtn.textContent = "✅ Accept";
+  addBtn.classList.add("accept");
+
+  addBtn.onclick = () => acceptFriend(data);
+});
+
+/* ACCEPT FRIEND */
+function acceptFriend(data) {
+  const chatId = data.chatId;
+
+  const friendData = {
+    peer1: data.from,
+    peer2: myPeerId,
+    timestamp: Date.now()
   };
 
-  acceptFriendBtn.onclick = async () => {
-    if (!currentFriendPeer) return;
+  // Save to Firebase
+  db.ref("friends/" + chatId).set(friendData);
 
-    const friendData = {
-      peer1: state.myId,
-      peer2: currentFriendPeer,
-      timestamp: Date.now()
-    };
+  // Remove request
+  db.ref("friend_requests/" + myPeerId).remove();
 
-    const friendId = "friend_" + Date.now();
+  // Save locally
+  const localFriends =
+    JSON.parse(localStorage.getItem("talkrush_friends") || "{}");
 
-    await db.ref("friends/" + friendId).set(friendData);
+  localFriends[chatId] = friendData;
+  localStorage.setItem("talkrush_friends", JSON.stringify(localFriends));
 
-    let friends = JSON.parse(localStorage.getItem("friends")) || [];
-    friends.push(friendData);
-    localStorage.setItem("friends", JSON.stringify(friends));
-
-    state.myConn.send({
-      type: "friend-accepted",
-      friendData
-    });
-
-    friendRequestBox.style.display = "none";
-    addFriendBtn.style.display = "none";
-
-    messageHandler.logSystem("Friend added ❤️");
-  };
-
-  const originalHandleData = connectionManager.handleData;
-  connectionManager.handleData = (data) => {
-
-    if (data?.type === "friend-request") {
-      currentFriendPeer = data.from;
-      friendRequestBox.style.display = "block";
-      return;
-    }
-
-    if (data?.type === "friend-accepted") {
-      let friends = JSON.parse(localStorage.getItem("friends")) || [];
-      friends.push(data.friendData);
-      localStorage.setItem("friends", JSON.stringify(friends));
-
-      addFriendBtn.style.display = "none";
-      messageHandler.logSystem("You are now friends ❤️");
-      return;
-    }
-
-    originalHandleData(data);
-  };
-
-  const originalSetupConnection = connectionManager.setupConnection;
-  connectionManager.setupConnection = (conn) => {
-    originalSetupConnection(conn);
-    currentFriendPeer = conn.peer;
-    requestSent = false;
-    addFriendBtn.innerText = "➕ Add Friend";
-    addFriendBtn.style.display = "inline-block";
-  };
-
-  const originalEndConnection = connectionManager.endConnection;
-  connectionManager.endConnection = (msg) => {
-    addFriendBtn.style.display = "none";
-    friendRequestBox.style.display = "none";
-    currentFriendPeer = null;
-    requestSent = false;
-    originalEndConnection(msg);
-  };
-
-})();
+  addBtn.style.display = "none";
+  statusBox.textContent = "You are now friends";
+}
 </script>
