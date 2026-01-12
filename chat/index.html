@@ -726,7 +726,6 @@ body.light-mode {
 {% include scripts.html %}
 
 <script>
-// Firebase config
 const firebaseConfig = {
   databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
 };
@@ -740,54 +739,51 @@ let escPressedOnce = false;
 let escTimer = null;
 let heartbeatInterval;
 
-// GIPHY API Key
 const GIPHY_API_KEY = 'EKvv5S1CcXqYuHgxPNVKiNuiuNHRTzFk';
-
-// Typing indicator
 const typingIndicator = document.getElementById("typingIndicator");
 let typingTimeout;
 
-// Load localStorage preferences
 let myNickname = localStorage.getItem("talkrush_nickname") || "Guest";
 let myGenderInterest = localStorage.getItem("talkrush_gender_interest") || "everyone";
 let myTags = JSON.parse(localStorage.getItem("talkrush_tags") || "[]");
 
-// Friend System Variables
 let friendRequestPending = false;
 let friendRequestFrom = null;
 
-// Friend System Elements
 const friendBtn = document.getElementById('friendBtn');
 const friendModal = document.getElementById('friendModal');
 const acceptFriendBtn = document.getElementById('acceptFriendBtn');
 const rejectFriendBtn = document.getElementById('rejectFriendBtn');
 const friendRequestText = document.getElementById('friendRequestText');
 
-// Initialize when page loads - DON'T auto-connect
 window.addEventListener('load', () => {
+  const existingPeerId = localStorage.getItem('talkrush_peerid');
+  if (existingPeerId) {
+    myId = existingPeerId;
+    checkForFriendMessages();
+  }
   showNewChatButton();
   logSystem("Click 'Start New Chat' to begin chatting with a stranger!");
 });
 
-// Handle page refresh/close - Improved cleanup
 window.addEventListener('beforeunload', (e) => {
   if (isConnected) {
     e.preventDefault();
     e.returnValue = 'Are you sure you want to leave? Your chat will be disconnected.';
     return e.returnValue;
   } else {
-    // Clean up waiting list entry when leaving page
     cleanUpWaitingList();
   }
 });
 
-// Additional event for better cleanup
 window.addEventListener('pagehide', () => {
   cleanUpWaitingList();
   if (heartbeatInterval) clearInterval(heartbeatInterval);
+  if (peer && !peer.destroyed) {
+    peer.disconnect();
+  }
 });
 
-// Escape key functionality
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (!escPressedOnce) {
@@ -800,25 +796,43 @@ document.addEventListener('keydown', (e) => {
     } else {
       clearTimeout(escTimer);
       escPressedOnce = false;
-      if (myConn) myConn.close();
+      if (myConn) {
+        myConn.close();
+        myConn = null;
+      }
       cleanUpWaitingList();
       isConnected = false;
+      friendRequestPending = false;
+      friendRequestFrom = null;
       showNewChatButton();
       logSystem("Chat ended. Starting new search...");
-      // Start a new connection after skipping
-      startPeer();
+      startPeer(false);
     }
   }
 });
 
-// PeerJS
-function startPeer() {
+function startPeer(isNewSession = false) {
   clearSystemMessage();
   isConnected = false;
-  if (peer) peer.destroy();
+  
+  if (peer && isNewSession) {
+    try {
+      peer.destroy();
+      peer = null;
+    } catch (e) {}
+  }
+  
   logSystem("🔍 Looking for a stranger...");
   
-  peer = new Peer({
+  let existingPeerId = localStorage.getItem('talkrush_peerid');
+  
+  if (peer) {
+    try {
+      peer.destroy();
+    } catch (e) {}
+  }
+  
+  const peerOptions = {
     config: {
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
@@ -828,25 +842,65 @@ function startPeer() {
         { urls: 'stun:stun4.l.google.com:19302' }
       ]
     }
-  });
+  };
+  
+  if (existingPeerId && !isNewSession) {
+    peerOptions.id = existingPeerId;
+  }
+  
+  peer = new Peer(peerOptions);
 
   peer.on('open', (id) => {
-    myId = id;
-    // Save peer ID to localStorage
-    localStorage.setItem('talkrush_peerid', myId);
+    if (!existingPeerId || id !== existingPeerId) {
+      localStorage.setItem('talkrush_peerid', id);
+      myId = id;
+    } else {
+      myId = existingPeerId;
+    }
+    
+    cleanUpStaleConnections();
     tryToFindMatch();
   });
 
   peer.on('connection', handleNewConnection);
 
   peer.on('error', (err) => {
-    console.error('PeerJS error:', err);
-    // Only show button if not already connected
+    if (err.type === 'unavailable-id' || err.type === 'peer-unavailable') {
+      localStorage.removeItem('talkrush_peerid');
+      startPeer(true);
+      return;
+    }
+    
     if (!isConnected) {
       showNewChatButton();
       logSystem("Connection error. Click 'Start New Chat' to try again.");
     }
   });
+  
+  peer.on('disconnected', () => {
+    setTimeout(() => {
+      if (peer && peer.disconnected) {
+        peer.reconnect();
+      }
+    }, 1000);
+  });
+}
+
+function cleanUpStaleConnections() {
+  if (myId) {
+    const waitingRef = db.ref("waiting");
+    waitingRef.once('value').then((snapshot) => {
+      if (snapshot.exists()) {
+        snapshot.forEach((child) => {
+          const entry = child.val();
+          const isOld = entry.timestamp && (Date.now() - entry.timestamp) > 60000;
+          if (entry.id === myId || isOld) {
+            child.ref.remove();
+          }
+        });
+      }
+    });
+  }
 }
 
 function tryToFindMatch() {
@@ -858,7 +912,6 @@ function tryToFindMatch() {
 
     if (list) {
       for (let [key, entry] of Object.entries(list)) {
-        // Clean up stale entries (older than 30 seconds)
         if (entry.timestamp && (Date.now() - entry.timestamp) > 30000) {
           db.ref("waiting/" + key).remove();
           continue;
@@ -869,7 +922,7 @@ function tryToFindMatch() {
             const sharedTags = myTags.filter(tag => entry.tags && entry.tags.includes(tag));
             if (sharedTags.length > 0) {
               bestMatch = { key, otherId: entry.id, sharedTags };
-              break; // immediate match
+              break;
             } else if (!bestMatch) {
               bestMatch = { key, otherId: entry.id, sharedTags: [] };
             }
@@ -884,18 +937,16 @@ function tryToFindMatch() {
       return;
     }
 
-    // No immediate match → add self
     const newRef = waitingRef.push();
-    waitingEntryRef = newRef; // Store reference for cleanup
+    waitingEntryRef = newRef;
     newRef.set({
       id: myId,
       interest: myGenderInterest,
       tags: myTags,
       nickname: myNickname,
-      timestamp: Date.now() // Add timestamp for stale entry cleanup
+      timestamp: Date.now()
     });
 
-    // Start heartbeat to keep entry fresh
     if (heartbeatInterval) clearInterval(heartbeatInterval);
     heartbeatInterval = setInterval(() => {
       if (waitingEntryRef && !isConnected) {
@@ -903,18 +954,17 @@ function tryToFindMatch() {
       }
     }, 10000);
 
-    // Wait 5s, fallback to any gender-compatible user
     setTimeout(() => {
       if (!isConnected) {
         waitingRef.once('value', (snap) => {
-          if (isConnected) return; // Check again if connected
+          if (isConnected) return;
           
           snap.forEach(child => {
             const entry = child.val();
             if (entry.id !== myId && isGenderCompatible(myGenderInterest, entry.interest)) {
               child.ref.remove();
               connectToPeer(entry.id, []);
-              return true; // Break the loop
+              return true;
             }
           });
         });
@@ -930,7 +980,6 @@ function connectToPeer(otherId, sharedTags = []) {
   const conn = peer.connect(otherId);
   conn.on("open", () => handleNewConnection(conn, sharedTags));
   conn.on("error", (err) => {
-    console.error("Connection error:", err);
     if (!isConnected) {
       showNewChatButton();
       logSystem("Failed to connect. Click 'Start New Chat' to try again.");
@@ -945,7 +994,6 @@ function handleNewConnection(conn, sharedTags = []) {
   }
   clearSystemMessage();
   
-  // Save connected peer ID
   localStorage.setItem('talkrush_connectedpeerid', conn.peer);
   
   logSystem("Stranger Connected! Say Hi 👋");
@@ -955,8 +1003,6 @@ function handleNewConnection(conn, sharedTags = []) {
   }
 
   setupConnection(conn);
-
-  // Clean up waiting list and heartbeat
   cleanUpWaitingList();
   if (heartbeatInterval) {
     clearInterval(heartbeatInterval);
@@ -969,8 +1015,6 @@ function setupConnection(conn) {
   myConn = conn;
   isConnected = true;
   hideNewChatButton();
-  
-  // Show friend button
   showFriendButton();
 
   conn.on("data", (data) => {
@@ -996,7 +1040,6 @@ function setupConnection(conn) {
   });
 
   conn.on("error", (err) => {
-    console.error("Data connection error:", err);
     endConnection("Connection error");
   });
 }
@@ -1022,13 +1065,12 @@ function cleanUpWaitingList() {
 }
 
 function isGenderCompatible(me, other) {
-  if (me === "everyone" && other === "everyone") return true; // only everyone ↔ everyone
+  if (me === "everyone" && other === "everyone") return true;
   if (me === "male" && other === "female") return true;
   if (me === "female" && other === "male") return true;
   return false;
 }
 
-// Friend System Functions
 function showFriendButton() {
   if (friendBtn) {
     friendBtn.style.display = 'flex';
@@ -1043,16 +1085,23 @@ function hideFriendButton() {
   }
 }
 
-// Send friend request
 friendBtn.onclick = () => {
   if (!myConn || !isConnected) return;
+  
+  const myPersistentPeerId = localStorage.getItem('talkrush_peerid');
+  const connectedPeerId = localStorage.getItem('talkrush_connectedpeerid');
+  
+  if (!myPersistentPeerId) {
+    logSystem("Cannot send friend request: No persistent ID found");
+    return;
+  }
   
   friendRequestPending = true;
   myConn.send({
     type: 'friend_request',
-    fromPeer: localStorage.getItem('talkrush_peerid'),
+    fromPeer: myPersistentPeerId,
     fromNickname: myNickname,
-    toPeer: localStorage.getItem('talkrush_connectedpeerid'),
+    toPeer: connectedPeerId,
     timestamp: Date.now()
   });
   
@@ -1064,7 +1113,6 @@ function handleFriendRequest(data) {
   friendRequestFrom = data;
   friendRequestText.textContent = `${data.fromNickname || 'Stranger'} wants to add you as a friend!`;
   
-  // Show modal with overlay
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.id = 'friendModalOverlay';
@@ -1072,7 +1120,6 @@ function handleFriendRequest(data) {
   
   friendModal.style.display = 'block';
   
-  // Auto-reject after 30 seconds if no response
   setTimeout(() => {
     if (friendModal.style.display === 'block') {
       closeFriendModal();
@@ -1084,20 +1131,15 @@ function handleFriendRequest(data) {
   }, 30000);
 }
 
-// Handle friend request acceptance
 acceptFriendBtn.onclick = async () => {
   if (!friendRequestFrom || !myConn) return;
   
   try {
-    // Generate unique friend ID
     const friendId = Date.now().toString();
-    
-    // Get both peer IDs and nicknames
     const myPeerId = localStorage.getItem('talkrush_peerid');
     const otherPeerId = friendRequestFrom.fromPeer;
     const otherNickname = friendRequestFrom.fromNickname;
     
-    // Save to Firebase with both nicknames
     const friendRef = db.ref('friends/' + friendId);
     await friendRef.set({
       peer1: myPeerId,
@@ -1108,7 +1150,6 @@ acceptFriendBtn.onclick = async () => {
       timestamp: Date.now()
     });
     
-    // Notify the other user
     myConn.send({
       type: 'friend_accepted',
       friendId: friendId,
@@ -1120,12 +1161,10 @@ acceptFriendBtn.onclick = async () => {
     closeFriendModal();
     
   } catch (error) {
-    console.error('Error saving friend:', error);
     logSystem('Failed to save friend. Please try again.');
   }
 };
 
-// Handle friend request rejection
 rejectFriendBtn.onclick = () => {
   if (myConn) {
     myConn.send({
@@ -1156,7 +1195,24 @@ function closeFriendModal() {
   friendRequestFrom = null;
 }
 
-// UI functions
+async function checkForFriendMessages() {
+  const myPeerId = localStorage.getItem('talkrush_peerid');
+  if (!myPeerId) return;
+  
+  try {
+    const friendsRef = db.ref('friends');
+    friendsRef.once('value').then((snapshot) => {
+      if (snapshot.exists()) {
+        snapshot.forEach((child) => {
+          const friendData = child.val();
+          if (friendData.peer1 === myPeerId || friendData.peer2 === myPeerId) {
+          }
+        });
+      }
+    });
+  } catch (error) {}
+}
+
 function appendMessage(sender, content, type = "text") {
   const div = document.createElement("div");
   div.className = "msg " + sender;
@@ -1233,7 +1289,6 @@ function hideNewChatButton() {
   document.getElementById("newChatBtn").style.display = "none";
 }
 
-// Typing Indicator
 function showTypingIndicator() {
   typingIndicator.style.display = "block";
   clearTimeout(typingTimeout);
@@ -1242,7 +1297,6 @@ function showTypingIndicator() {
   }, 1000);
 }
 
-// Input + Buttons
 document.getElementById("msgInput").addEventListener("keypress", (e) => {
   if (e.key === "Enter") sendMessage();
 });
@@ -1276,22 +1330,32 @@ document.getElementById("imgInput").addEventListener("change", (e) => {
 });
 
 document.getElementById("skipBtn").onclick = () => {
-  if (myConn) myConn.close();
+  if (myConn) {
+    myConn.close();
+    myConn = null;
+  }
   cleanUpWaitingList();
   isConnected = false;
+  friendRequestPending = false;
+  friendRequestFrom = null;
   logSystem("Chat ended. Starting new search...");
   showNewChatButton();
   hideFriendButton();
+  startPeer(false);
 };
 
 document.getElementById("newChatBtn").onclick = () => {
   document.getElementById("chatLog").innerHTML = "";
   hideFriendButton();
   hideNewChatButton();
-  startPeer();
+  if (myConn) {
+    myConn.close();
+    myConn = null;
+  }
+  cleanUpWaitingList();
+  startPeer(false);
 };
 
-// GIF Search
 const gifModal = document.getElementById("gifModal");
 const gifSearch = document.getElementById("gifSearch");
 const gifResults = document.getElementById("gifResults");
@@ -1313,7 +1377,6 @@ async function fetchTrendingGifs() {
     const data = await response.json();
     displayGifs(data.data);
   } catch (error) {
-    console.error("Error fetching GIFs:", error);
     logSystem("Failed to load GIFs");
   }
 }
@@ -1328,7 +1391,6 @@ async function searchGifs(query) {
     const data = await response.json();
     displayGifs(data.data);
   } catch (error) {
-    console.error("Error searching GIFs:", error);
     logSystem("Failed to search GIFs");
   }
 }
