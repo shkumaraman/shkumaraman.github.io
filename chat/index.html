@@ -735,7 +735,7 @@ const db = firebase.database();
 let peer, myConn, myId, waitingRef, waitingEntryRef;
 let currentSystemMessage = null;
 let isConnected = false;
-let escPressCount = 0;
+let escPressedOnce = false;
 let escTimer = null;
 let heartbeatInterval;
 
@@ -786,19 +786,16 @@ window.addEventListener('pagehide', () => {
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
-    escPressCount++;
-    
-    if (escTimer) {
-      clearTimeout(escTimer);
-    }
-    
-    if (escPressCount === 1) {
-      logSystem("Press Esc again to skip this chat");
+    if (!escPressedOnce) {
+      escPressedOnce = true;
+      logSystem("Press Esc again to skip this chat and find someone new");
       escTimer = setTimeout(() => {
-        escPressCount = 0;
-      }, 2000);
-    } 
-    else if (escPressCount === 2) {
+        escPressedOnce = false;
+        clearSystemMessage();
+      }, 3000);
+    } else {
+      clearTimeout(escTimer);
+      escPressedOnce = false;
       if (myConn) {
         myConn.close();
         myConn = null;
@@ -808,34 +805,13 @@ document.addEventListener('keydown', (e) => {
       friendRequestPending = false;
       friendRequestFrom = null;
       showNewChatButton();
-      logSystem("Chat ended. Press Esc once more to find someone new.");
-      escTimer = setTimeout(() => {
-        escPressCount = 0;
-      }, 2000);
-    }
-    else if (escPressCount === 3) {
-      clearTimeout(escTimer);
-      escPressCount = 0;
-      
-      hideNewChatButton();
-      clearSystemMessage();
-      
-      if (myConn) myConn.close();
-      myConn = null;
-      cleanUpWaitingList();
-      isConnected = false;
-      friendRequestPending = false;
-      friendRequestFrom = null;
-      
-      document.getElementById("chatLog").innerHTML = "";
-      logSystem("🔍 Looking for a new stranger...");
+      logSystem("Chat ended. Starting new search...");
       startPeer(false);
     }
   }
 });
 
 function startPeer(isNewSession = false) {
-  hideNewChatButton();
   clearSystemMessage();
   isConnected = false;
   
@@ -845,6 +821,8 @@ function startPeer(isNewSession = false) {
       peer = null;
     } catch (e) {}
   }
+  
+  logSystem("🔍 Looking for a stranger...");
   
   let existingPeerId = localStorage.getItem('talkrush_peerid');
   
