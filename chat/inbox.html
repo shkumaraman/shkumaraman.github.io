@@ -431,56 +431,31 @@ body.light-mode {
   color: rgba(0,0,0,0.6);
 }
 
-.chat-input-area {
+.chat-controls {
   position: fixed;
   bottom: 0;
-  left: 0;
-  width: 100%;
   display: flex;
   align-items: center;
   padding: 5px;
   background: var(--dark-header-bg);
+  width: 100%;
   z-index: 1000;
   gap: 8px;
   border-top: 1px solid var(--dark-header-border);
 }
 
-.light-mode .chat-input-area {
+.light-mode .chat-controls {
   background: var(--light-header-bg);
   border-top: 1px solid var(--light-header-border);
 }
 
-.media-btn {
-  background: none;
-  border: none;
-  color: var(--dark-icon-color);
-  font-size: 1.1em;
-  cursor: pointer;
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  transition: all 0.3s;
-}
-
-.media-btn:hover {
-  color: var(--dark-text);
-  background: var(--dark-icon-hover-bg);
-}
-
-.light-mode .media-btn {
-  color: var(--light-icon-color);
-}
-
-.light-mode .media-btn:hover {
-  color: var(--light-text);
-  background: var(--light-icon-hover-bg);
+.input-area {
+  flex: 1;
+  position: relative;
 }
 
 #messageInput {
-  flex: 1;
+  width: 100%;
   padding: 12px 80px 12px 15px;
   border-radius: 25px;
   border: none;
@@ -503,28 +478,64 @@ body.light-mode {
   background: var(--light-input-focus);
 }
 
-.send-btn {
-  background: var(--send-btn);
+.input-icons {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+}
+
+.icon-btn {
+  background: none;
   border: none;
-  color: white;
-  width: 45px;
-  height: 45px;
-  border-radius: 50%;
+  color: var(--dark-icon-color);
+  font-size: 1.1em;
   cursor: pointer;
+  transition: color 0.2s;
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.1em;
+  border-radius: 50%;
+}
+
+.icon-btn:hover { 
+  color: var(--dark-text);
+  background: var(--dark-icon-hover-bg);
+}
+
+.light-mode .icon-btn {
+  color: var(--light-icon-color);
+}
+
+.light-mode .icon-btn:hover { 
+  color: var(--light-text);
+  background: var(--light-icon-hover-bg);
+}
+
+.send-btn {
+  background: var(--send-btn);
+  border: none;
+  padding: 12px;
+  border-radius: 25px;
+  color: white;
+  cursor: pointer;
+  font-size: 1em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transition: opacity 0.3s;
+  width: 45px;
+  height: 45px;
 }
 
 .send-btn:hover {
   opacity: 0.9;
 }
 
-#imgInput {
-  display: none;
-}
+#imgInput, #gifInput { display: none; }
 
 /* Scrollbar styling */
 #chatMessages::-webkit-scrollbar {
@@ -612,15 +623,6 @@ body.light-mode {
   transform: scale(1.05);
 }
 
-.input-icons {
-  position: absolute;
-  right: 8px;
-  top: 50%;
-  transform: translateY(-50%);
-  display: flex;
-  gap: 5px;
-}
-
 @media (max-width: 600px) {
   .container {
     padding: 50px 10px 80px;
@@ -660,9 +662,6 @@ body.light-mode {
     <h1 class="app-title" id="pageTitle">Messages</h1>
   </div>
   <div class="header-right">
-    <button class="header-toggle" onclick="window.location.href='index.html'">
-      <i class="fas fa-home"></i>
-    </button>
     <button class="header-toggle" id="themeToggle" title="Toggle Dark/Light Mode">
       <i class="fas fa-moon"></i>
     </button>
@@ -690,20 +689,18 @@ body.light-mode {
   
   <div id="chatMessages"></div>
   
-  <div class="chat-input-area">
-    <label for="imgInput" class="media-btn" title="Send Image">
-      <i class="fas fa-image"></i>
-    </label>
-    
-    <div class="input-area" style="flex: 1; position: relative;">
+  <div class="chat-controls">
+    <div class="input-area">
       <input type="text" id="messageInput" placeholder="Type your message...">
       <div class="input-icons">
-        <label for="gifInput" class="media-btn" title="Send GIF">
+        <label for="imgInput" class="icon-btn" title="Send Image">
+          <i class="fas fa-image"></i>
+        </label>
+        <label for="gifInput" class="icon-btn" title="Send GIF">
           <i class="fas fa-film"></i>
         </label>
       </div>
     </div>
-    
     <button class="send-btn" onclick="sendMessage()" title="Send">
       <i class="fas fa-paper-plane"></i>
     </button>
@@ -711,7 +708,7 @@ body.light-mode {
 </div>
 
 <input type="file" id="imgInput" accept="image/*">
-<input type="file" id="gifInput" accept="image/gif" style="display: none;">
+<input type="file" id="gifInput" accept="image/gif">
 
 <!-- GIF Search Modal -->
 <div class="gif-modal" id="gifModal">
@@ -747,7 +744,9 @@ let currentChatId = null;
 let currentFriendId = null;
 let currentFriendName = "";
 let messageListeners = {};
-let reconnectAttempts = {};
+let peer = null;
+let myConn = null;
+let isConnected = false;
 
 // DOM Ready
 document.addEventListener("DOMContentLoaded", () => {
@@ -757,10 +756,85 @@ document.addEventListener("DOMContentLoaded", () => {
     return;
   }
   
+  startPeer();
   loadFriends();
   setupEventListeners();
-  setupAutoReconnect();
 });
+
+function startPeer() {
+  if (peer) peer.destroy();
+  
+  peer = new Peer({
+    config: {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' },
+        { urls: 'stun:stun4.l.google.com:19302' }
+      ]
+    }
+  });
+
+  peer.on('open', (id) => {
+    console.log('Peer ID for messages:', id);
+    // Save peer ID if not already saved
+    if (!localStorage.getItem('talkrush_peerid')) {
+      localStorage.setItem('talkrush_peerid', id);
+    }
+  });
+
+  peer.on('connection', handleNewConnection);
+
+  peer.on('error', (err) => {
+    console.error('PeerJS error:', err);
+    // Auto-reconnect on error
+    setTimeout(startPeer, 3000);
+  });
+}
+
+function handleNewConnection(conn) {
+  console.log('New P2P connection from:', conn.peer);
+  
+  if (myConn) {
+    conn.close();
+    return;
+  }
+  
+  myConn = conn;
+  isConnected = true;
+  
+  conn.on("data", (data) => {
+    if (typeof data === "string") {
+      // Text message
+      if (currentChatId && currentFriendId === conn.peer) {
+        saveIncomingMessage(data, 'text', conn.peer);
+      }
+    } else if (data.type === "image") {
+      // Image message
+      if (currentChatId && currentFriendId === conn.peer) {
+        saveIncomingMessage(data.blob, 'image', conn.peer);
+      }
+    } else if (data.type === "gif") {
+      // GIF message
+      if (currentChatId && currentFriendId === conn.peer) {
+        saveIncomingMessage(data.url, 'gif', conn.peer);
+      }
+    }
+  });
+
+  conn.on("close", () => {
+    console.log('P2P connection closed');
+    myConn = null;
+    isConnected = false;
+  });
+
+  conn.on("error", (err) => {
+    console.error("P2P connection error:", err);
+    myConn = null;
+    isConnected = false;
+  });
+}
 
 function setupEventListeners() {
   // Enter key to send message (same as main page)
@@ -791,22 +865,7 @@ function setupEventListeners() {
   });
 }
 
-function setupAutoReconnect() {
-  // Auto-reconnect for Firebase listeners
-  firebase.database().ref(".info/connected").on("value", (snap) => {
-    if (snap.val() === true) {
-      console.log("Firebase connected");
-      // Re-establish listeners for current chat
-      if (currentChatId && messageListeners[currentChatId]) {
-        listenForNewMessages(currentChatId);
-      }
-    } else {
-      console.log("Firebase disconnected, will auto-reconnect");
-    }
-  });
-}
-
-// Load friends list
+// Load friends list - Direct from Firebase friends node (no message node)
 function loadFriends() {
   console.log('Current User ID:', currentUserId);
   
@@ -834,20 +893,20 @@ function loadFriends() {
     let count = 0;
 
     Object.entries(data).forEach(([chatId, friend]) => {
-      // Check if current user is part of this friendship (same as main page logic)
+      // Check if current user is part of this friendship
       const isUserInFriendship = friend.peer1 === currentUserId || friend.peer2 === currentUserId;
       
       if (!isUserInFriendship) return;
 
       count++;
       
-      // Determine friend's details (same as main page logic)
+      // Determine friend's details
       const otherId = friend.peer1 === currentUserId ? friend.peer2 : friend.peer1;
       const friendNickname = friend.peer1 === currentUserId ? friend.nickname2 : friend.nickname1;
       const avatarLetter = friendNickname ? friendNickname.charAt(0).toUpperCase() : "?";
       const displayName = friendNickname || 'Stranger';
       
-      // Format last message (same as main page)
+      // Format last message from friend data (not from separate messages node)
       let displayMsg = "Say Hi! 👋";
       if (friend.lastMessage) {
         if (friend.lastMessage.includes('data:image')) {
@@ -895,8 +954,6 @@ function loadFriends() {
     console.error('Error loading friends:', error);
     document.getElementById("loading").style.display = "none";
     document.getElementById("emptyState").style.display = "block";
-    // Auto-reconnect on error
-    setTimeout(loadFriends, 5000);
   });
 }
 
@@ -915,11 +972,11 @@ function openChat(chatId, friendId, friendName) {
   document.getElementById('friendsContainer').style.display = 'none';
   document.getElementById('chatContainer').style.display = 'flex';
   
-  // Load messages
-  loadChatMessages();
+  // Try to establish P2P connection
+  connectToFriend(friendId);
   
-  // Set up real-time listener for new messages
-  listenForNewMessages(chatId);
+  // Load messages from localStorage
+  loadLocalChatMessages();
   
   // Focus input (same as main page)
   setTimeout(() => {
@@ -927,12 +984,63 @@ function openChat(chatId, friendId, friendName) {
   }, 100);
 }
 
+function connectToFriend(friendId) {
+  if (myConn) {
+    myConn.close();
+  }
+  
+  const conn = peer.connect(friendId);
+  conn.on("open", () => {
+    console.log('Connected to friend via P2P');
+    myConn = conn;
+    isConnected = true;
+    
+    // Set up connection handlers
+    conn.on("data", (data) => {
+      if (typeof data === "string") {
+        if (currentChatId && currentFriendId === friendId) {
+          saveIncomingMessage(data, 'text', friendId);
+        }
+      } else if (data.type === "image") {
+        if (currentChatId && currentFriendId === friendId) {
+          saveIncomingMessage(data.blob, 'image', friendId);
+        }
+      } else if (data.type === "gif") {
+        if (currentChatId && currentFriendId === friendId) {
+          saveIncomingMessage(data.url, 'gif', friendId);
+        }
+      }
+    });
+
+    conn.on("close", () => {
+      console.log('P2P connection closed');
+      myConn = null;
+      isConnected = false;
+    });
+
+    conn.on("error", (err) => {
+      console.error("P2P connection error:", err);
+      myConn = null;
+      isConnected = false;
+      // Try to reconnect
+      setTimeout(() => connectToFriend(friendId), 3000);
+    });
+  });
+  
+  conn.on("error", (err) => {
+    console.error("Connection error:", err);
+    // Keep trying in background
+    setTimeout(() => connectToFriend(friendId), 5000);
+  });
+}
+
 // Go back to friends list
 function showFriendsList() {
-  // Remove listener for current chat
-  if (currentChatId && messageListeners[currentChatId]) {
-    db.ref("messages/" + currentChatId).off("child_added", messageListeners[currentChatId]);
-    delete messageListeners[currentChatId];
+  // Close P2P connection if exists
+  if (myConn) {
+    myConn.close();
+    myConn = null;
+    isConnected = false;
   }
   
   document.getElementById('friendsContainer').style.display = 'block';
@@ -945,14 +1053,14 @@ function showFriendsList() {
   currentFriendName = "";
 }
 
-// Load chat messages with auto-reconnect
-function loadChatMessages() {
+// Load chat messages from localStorage only
+function loadLocalChatMessages() {
   const chatDiv = document.getElementById('chatMessages');
   chatDiv.innerHTML = '';
   
   if (!currentChatId) return;
   
-  // Try to load from localStorage first (same as main page logic)
+  // Load from localStorage
   const savedChats = localStorage.getItem(`talkrush_chat_${currentChatId}`);
   
   if (savedChats) {
@@ -965,99 +1073,60 @@ function loadChatMessages() {
       scrollToBottom();
     } catch (e) {
       console.error('Error parsing saved chats:', e);
-      loadFromFirebase();
-    }
-  } else {
-    loadFromFirebase();
-  }
-}
-
-function loadFromFirebase() {
-  const chatDiv = document.getElementById('chatMessages');
-  
-  db.ref("messages/" + currentChatId).once("value").then(snap => {
-    const messages = snap.val();
-    
-    if (messages) {
-      // Convert to array and sort by timestamp
-      const messagesArray = Object.values(messages).sort((a, b) => a.timestamp - b.timestamp);
-      
-      messagesArray.forEach(msg => {
-        const isMe = msg.senderId === currentUserId;
-        appendMessageToChat(msg, isMe);
-      });
-      
-      // Save to localStorage (same as main page)
-      localStorage.setItem(`talkrush_chat_${currentChatId}`, JSON.stringify(messagesArray));
-      
-      scrollToBottom();
-    } else {
       chatDiv.innerHTML = '<div style="text-align:center;padding:40px;color:var(--dark-secondary-text)">No messages yet. Start the conversation!</div>';
     }
-  }).catch(error => {
-    console.error('Error loading messages:', error);
-    chatDiv.innerHTML = '<div style="text-align:center;padding:40px;color:var(--dark-secondary-text)">Connection error. Trying to reconnect...</div>';
-    // Auto-reconnect
-    setTimeout(loadFromFirebase, 3000);
-  });
+  } else {
+    chatDiv.innerHTML = '<div style="text-align:center;padding:40px;color:var(--dark-secondary-text)">No messages yet. Start the conversation!</div>';
+  }
 }
 
-// Listen for new messages with auto-reconnect
-function listenForNewMessages(chatId) {
-  if (messageListeners[chatId]) {
-    // Remove existing listener
-    db.ref("messages/" + chatId).off("child_added", messageListeners[chatId]);
-  }
+// Save incoming message to localStorage and display
+function saveIncomingMessage(content, type, senderId) {
+  if (!currentChatId || !currentFriendId) return;
   
-  messageListeners[chatId] = (snapshot) => {
-    const msg = snapshot.val();
-    const isMe = msg.senderId === currentUserId;
-    
-    // Only append if not already displayed (check timestamp)
-    const chatDiv = document.getElementById('chatMessages');
-    const existingTimestamps = Array.from(chatDiv.querySelectorAll('.timestamp')).map(t => t.textContent);
-    const msgTime = formatMessageTime(msg.timestamp);
-    
-    if (!existingTimestamps.includes(msgTime)) {
-      appendMessageToChat(msg, isMe);
-      scrollToBottom();
-      
-      // Save to localStorage (same as main page)
-      saveMessageToLocalStorage(msg);
-      
-      // Update last message in friends list
-      if (!isMe) {
-        let lastMsg = '📷 Image';
-        if (msg.type === 'gif') {
-          lastMsg = '🎬 GIF';
-        } else if (msg.type === 'text') {
-          lastMsg = msg.content;
-        }
-        
-        db.ref("friends/" + chatId).update({
-          lastMessage: lastMsg,
-          timestamp: msg.timestamp
-        }).catch(error => {
-          console.error('Error updating last message:', error);
-        });
-      }
-    }
+  const message = {
+    content: content,
+    senderId: senderId,
+    timestamp: Date.now(),
+    type: type
   };
   
-  // Set up listener with error handling
-  db.ref("messages/" + chatId).on("child_added", messageListeners[chatId], (error) => {
-    console.error('Message listener error:', error);
-    
-    // Attempt to reconnect
-    if (reconnectAttempts[chatId]) {
-      clearTimeout(reconnectAttempts[chatId]);
+  // Save to localStorage
+  const storageKey = `talkrush_chat_${currentChatId}`;
+  let existingMessages = [];
+  
+  try {
+    const saved = localStorage.getItem(storageKey);
+    if (saved) {
+      existingMessages = JSON.parse(saved);
     }
-    
-    reconnectAttempts[chatId] = setTimeout(() => {
-      console.log('Attempting to reconnect message listener for chat:', chatId);
-      listenForNewMessages(chatId);
-    }, 3000);
+  } catch (e) {
+    console.error('Error loading saved messages:', e);
+  }
+  
+  existingMessages.push(message);
+  localStorage.setItem(storageKey, JSON.stringify(existingMessages));
+  
+  // Update last message in friends node
+  let lastMsg = '📷 Image';
+  if (type === 'gif') {
+    lastMsg = '🎬 GIF';
+  } else if (type === 'text') {
+    lastMsg = content;
+  }
+  
+  db.ref("friends/" + currentChatId).update({
+    lastMessage: lastMsg,
+    timestamp: Date.now()
+  }).catch(error => {
+    console.error('Error updating last message:', error);
   });
+  
+  // Display message if in current chat
+  if (currentFriendId === senderId) {
+    const isMe = senderId === currentUserId;
+    appendMessageToChat(message, isMe);
+  }
 }
 
 // Append message to chat UI (same as main page)
@@ -1082,75 +1151,63 @@ function appendMessageToChat(msg, isMe) {
   scrollToBottom();
 }
 
-// Send text message (same as main page)
+// Send text message via P2P
 function sendMessage() {
   const input = document.getElementById('messageInput');
   const content = input.value.trim();
   
-  if (!content || !currentChatId) return;
+  if (!content || !currentChatId || !currentFriendId) return;
   
-  const message = {
-    content: content,
-    senderId: currentUserId,
-    timestamp: Date.now(),
-    type: 'text'
-  };
-  
-  // Save to Firebase with error handling
-  db.ref("messages/" + currentChatId).push(message)
-    .then(() => {
-      // Update last message in friends list
-      db.ref("friends/" + currentChatId).update({
-        lastMessage: content,
-        timestamp: Date.now()
-      }).catch(error => {
-        console.error('Error updating last message:', error);
-      });
-      
-      // Save to localStorage
-      saveMessageToLocalStorage(message);
-      
-      // Clear input and scroll
-      input.value = '';
-      input.focus();
-    })
-    .catch(error => {
-      console.error('Error sending message:', error);
-      alert('Failed to send message. Please try again.');
+  if (myConn && isConnected) {
+    // Send via P2P
+    myConn.send(content);
+    
+    // Save to localStorage
+    const message = {
+      content: content,
+      senderId: currentUserId,
+      timestamp: Date.now(),
+      type: 'text'
+    };
+    
+    saveIncomingMessage(content, 'text', currentUserId);
+    
+    // Update last message in friends node
+    db.ref("friends/" + currentChatId).update({
+      lastMessage: content,
+      timestamp: Date.now()
+    }).catch(error => {
+      console.error('Error updating last message:', error);
     });
+    
+    // Clear input
+    input.value = '';
+    input.focus();
+  } else {
+    alert('Not connected to friend. Trying to reconnect...');
+    connectToFriend(currentFriendId);
+  }
 }
 
-// Send image (same as main page)
+// Send image via P2P
 function sendImage(imageData) {
-  if (!currentChatId) return;
+  if (!currentChatId || !currentFriendId || !myConn || !isConnected) {
+    alert('Not connected to friend. Please try again.');
+    return;
+  }
   
-  const message = {
-    content: imageData,
-    senderId: currentUserId,
-    timestamp: Date.now(),
-    type: 'image'
-  };
+  myConn.send({ type: "image", blob: imageData });
   
-  // Save to Firebase with error handling
-  db.ref("messages/" + currentChatId).push(message)
-    .then(() => {
-      // Update last message in friends list
-      db.ref("friends/" + currentChatId).update({
-        lastMessage: '📷 Image',
-        timestamp: Date.now()
-      }).catch(error => {
-        console.error('Error updating last message:', error);
-      });
-      
-      // Save to localStorage
-      saveMessageToLocalStorage(message);
-      
-      scrollToBottom();
-    })
-    .catch(error => {
-      console.error('Error sending image:', error);
-      alert('Failed to send image. Please try again.');
-    });
+  // Save to localStorage
+  saveIncomingMessage(imageData, 'image', currentUserId);
+  
+  // Update last message in friends node
+  db.ref("friends/" + currentChatId).update({
+    lastMessage: '📷 Image',
+    timestamp: Date.now()
+  }).catch(error => {
+    console.error('Error updating last message:', error);
+  });
 }
 
 // Handle image upload (same as main page)
@@ -1173,26 +1230,6 @@ function handleImageUpload(e) {
   e.target.value = '';
 }
 
-// Save message to localStorage (same as main page)
-function saveMessageToLocalStorage(message) {
-  if (!currentChatId) return;
-  
-  const storageKey = `talkrush_chat_${currentChatId}`;
-  let existingMessages = [];
-  
-  try {
-    const saved = localStorage.getItem(storageKey);
-    if (saved) {
-      existingMessages = JSON.parse(saved);
-    }
-  } catch (e) {
-    console.error('Error loading saved messages:', e);
-  }
-  
-  existingMessages.push(message);
-  localStorage.setItem(storageKey, JSON.stringify(existingMessages));
-}
-
 // Remove friend
 function unfriend(e, chatId) {
   e.stopPropagation();
@@ -1205,14 +1242,12 @@ function unfriend(e, chatId) {
         // Remove from localStorage
         localStorage.removeItem(`talkrush_chat_${chatId}`);
         
-        // Remove message listener
-        if (messageListeners[chatId]) {
-          db.ref("messages/" + chatId).off("child_added", messageListeners[chatId]);
-          delete messageListeners[chatId];
+        // Close P2P connection if this is the current chat
+        if (currentChatId === chatId && myConn) {
+          myConn.close();
+          myConn = null;
+          isConnected = false;
         }
-        
-        // Remove messages from Firebase
-        db.ref("messages/" + chatId).remove();
         
         // If currently viewing this chat, go back to list
         if (currentChatId === chatId) {
@@ -1266,34 +1301,25 @@ function displayGifs(gifs) {
     img.src = gifUrl;
     img.className = "gif-item";
     img.onclick = () => {
-      if (!currentChatId) return;
+      if (!currentChatId || !currentFriendId || !myConn || !isConnected) {
+        alert('Not connected to friend. Please try again.');
+        return;
+      }
       
-      const message = {
-        content: gifUrl,
-        senderId: currentUserId,
-        timestamp: Date.now(),
-        type: 'gif'
-      };
+      // Send via P2P
+      myConn.send({ type: "gif", url: gifUrl });
       
-      // Save to Firebase
-      db.ref("messages/" + currentChatId).push(message)
-        .then(() => {
-          // Update last message
-          db.ref("friends/" + currentChatId).update({
-            lastMessage: '🎬 GIF',
-            timestamp: Date.now()
-          });
-          
-          // Save to localStorage
-          saveMessageToLocalStorage(message);
-          
-          // Close modal
-          document.getElementById('gifModal').style.display = 'none';
-        })
-        .catch(error => {
-          console.error('Error sending GIF:', error);
-          alert('Failed to send GIF. Please try again.');
-        });
+      // Save to localStorage
+      saveIncomingMessage(gifUrl, 'gif', currentUserId);
+      
+      // Update last message in friends node
+      db.ref("friends/" + currentChatId).update({
+        lastMessage: '🎬 GIF',
+        timestamp: Date.now()
+      });
+      
+      // Close modal
+      document.getElementById('gifModal').style.display = 'none';
     };
     gifResults.appendChild(img);
   });
@@ -1349,16 +1375,11 @@ function escapeHtml(text) {
 
 // Clean up on page unload
 window.addEventListener('beforeunload', () => {
-  // Remove all Firebase listeners
-  Object.keys(messageListeners).forEach(chatId => {
-    if (messageListeners[chatId]) {
-      db.ref("messages/" + chatId).off("child_added", messageListeners[chatId]);
-    }
-  });
-  
-  // Clear reconnect timeouts
-  Object.values(reconnectAttempts).forEach(timeout => {
-    clearTimeout(timeout);
-  });
+  if (myConn) {
+    myConn.close();
+  }
+  if (peer) {
+    peer.destroy();
+  }
 });
 </script>
