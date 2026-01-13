@@ -792,13 +792,11 @@ let chatVisible = false;
 
 // Init
 window.addEventListener('load', function() {
-  // Check if camera is available
   checkCameraAvailability();
   showNewChatButton();
   showSystemMessage("Click 'Start New Talk' to begin chatting with a stranger!");
   setupChatEvents();
   
-  // Check for existing peer ID and friend messages
   const existingPeerId = localStorage.getItem('talkrush_peerid');
   if (existingPeerId) {
     myId = existingPeerId;
@@ -825,22 +823,7 @@ async function checkCameraAvailability() {
   }
 }
 
-// Improved cleanup on page exit
-window.addEventListener('beforeunload', function(e) {
-  if (isConnected) {
-    e.preventDefault();
-    e.returnValue = 'Are you sure you want to leave? Your video talk will be disconnected.';
-    return e.returnValue;
-  }
-  // Clean up even if not connected
-  cleanUpAllResources();
-});
-
-// Additional cleanup for better reliability
-window.addEventListener('pagehide', function() {
-  cleanUpAllResources();
-});
-
+// Cleanup
 function cleanUpAllResources() {
   if (peer) peer.destroy();
   if (localStream) {
@@ -852,6 +835,19 @@ function cleanUpAllResources() {
   cleanUpWaitingList();
   if (heartbeatInterval) clearInterval(heartbeatInterval);
 }
+
+window.addEventListener('beforeunload', function(e) {
+  if (isConnected) {
+    e.preventDefault();
+    e.returnValue = 'Are you sure you want to leave? Your video talk will be disconnected.';
+    return e.returnValue;
+  }
+  cleanUpAllResources();
+});
+
+window.addEventListener('pagehide', function() {
+  cleanUpAllResources();
+});
 
 // Escape skip
 document.addEventListener('keydown', (e) => {
@@ -883,11 +879,73 @@ function setupChatEvents() {
   chatToggle.addEventListener('click', () => {
     chatVisible = !chatVisible;
     chatContainer.style.display = chatVisible ? 'flex' : 'none';
+    if (chatVisible) {
+      chatInput.focus();
+    }
   });
+  
   chatSendBtn.addEventListener('click', sendMessage);
+  
   chatInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') sendMessage();
   });
+}
+
+// Send message function - FIXED
+function sendMessage() {
+  const message = chatInput.value.trim();
+  if (!message) return;
+  
+  console.log("Sending message:", message, "Data channel state:", dataChannel ? dataChannel.readyState : "No data channel");
+  
+  if (dataChannel && dataChannel.readyState === 'open') {
+    try {
+      const messageData = {
+        type: 'message',
+        text: message,
+        timestamp: Date.now(),
+        sender: myNickname
+      };
+      
+      dataChannel.send(JSON.stringify(messageData));
+      addMessage(message, 'me');
+      chatInput.value = '';
+      chatInput.focus();
+    } catch (error) {
+      console.error("Error sending message:", error);
+      addMessage("Failed to send message. Try again.", 'system');
+    }
+  } else {
+    addMessage("Chat not connected. Wait for connection...", 'system');
+    console.log("Cannot send - data channel not ready. State:", dataChannel ? dataChannel.readyState : "undefined");
+  }
+}
+
+// Add message to chat
+function addMessage(text, sender) {
+  const messageDiv = document.createElement('div');
+  messageDiv.classList.add('chat-message');
+  
+  if (sender === 'me') {
+    messageDiv.classList.add('message-me');
+    messageDiv.textContent = `You: ${text}`;
+  } else if (sender === 'system') {
+    messageDiv.classList.add('message-system');
+    messageDiv.style.textAlign = 'center';
+    messageDiv.style.fontStyle = 'italic';
+    messageDiv.style.color = 'var(--dark-secondary-text)';
+    messageDiv.textContent = text;
+  } else {
+    messageDiv.classList.add('message-them');
+    messageDiv.textContent = `Stranger: ${text}`;
+  }
+  
+  chatMessages.appendChild(messageDiv);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function clearChat() {
+  chatMessages.innerHTML = '';
 }
 
 // Friend button event
@@ -902,22 +960,35 @@ friendBtn.onclick = () => {
     return;
   }
   
+  if (dataChannel.readyState !== 'open') {
+    addMessage("Chat connection not ready. Wait a moment...", 'system');
+    return;
+  }
+  
   friendRequestPending = true;
-  dataChannel.send(JSON.stringify({
+  
+  const requestData = {
     type: 'friend_request',
     fromPeer: myPersistentPeerId,
     fromNickname: myNickname,
     toPeer: connectedPeerId,
     timestamp: Date.now()
-  }));
+  };
   
-  addMessage("Friend request sent! Waiting for response...", 'system');
-  friendBtn.disabled = true;
+  try {
+    dataChannel.send(JSON.stringify(requestData));
+    addMessage("Friend request sent! Waiting for response...", 'system');
+    friendBtn.disabled = true;
+  } catch (error) {
+    console.error("Error sending friend request:", error);
+    addMessage("Failed to send friend request", 'system');
+    friendRequestPending = false;
+  }
 };
 
 // Friend modal handlers
 acceptFriendBtn.onclick = async () => {
-  if (!friendRequestFrom || !dataChannel) return;
+  if (!friendRequestFrom || !dataChannel || dataChannel.readyState !== 'open') return;
   
   try {
     const friendId = Date.now().toString();
@@ -936,23 +1007,25 @@ acceptFriendBtn.onclick = async () => {
       type: 'video'
     });
     
-    dataChannel.send(JSON.stringify({
+    const responseData = {
       type: 'friend_accepted',
       friendId: friendId,
       nickname: myNickname
-    }));
+    };
     
+    dataChannel.send(JSON.stringify(responseData));
     hideFriendButton();
     addMessage(`🎉 You are now friends with ${otherNickname || 'Stranger'}!`, 'system');
     closeFriendModal();
     
   } catch (error) {
+    console.error("Error accepting friend:", error);
     addMessage('Failed to save friend. Please try again.', 'system');
   }
 };
 
 rejectFriendBtn.onclick = () => {
-  if (dataChannel) {
+  if (dataChannel && dataChannel.readyState === 'open') {
     dataChannel.send(JSON.stringify({
       type: 'friend_rejected'
     }));
@@ -982,34 +1055,12 @@ function hideFriendButton() {
   }
 }
 
-function sendMessage() {
-  const message = chatInput.value.trim();
-  if (message && dataChannel && dataChannel.readyState === 'open') {
-    addMessage(message, 'me');
-    dataChannel.send(JSON.stringify({ type: 'message', text: message, timestamp: Date.now() }));
-    chatInput.value = '';
-  }
-}
-
-function addMessage(text, sender) {
-  const messageDiv = document.createElement('div');
-  messageDiv.classList.add('chat-message', sender === 'me' ? 'message-me' : sender === 'system' ? 'message-system' : 'message-them');
-  messageDiv.textContent = text;
-  chatMessages.appendChild(messageDiv);
-  chatMessages.scrollTop = chatMessages.scrollHeight;
-}
-
-function clearChat() {
-  chatMessages.innerHTML = '';
-}
-
 // Video chat init
 async function initVideoChat() {
   try {
     hideNewChatButton();
     showSystemMessage("Setting up your media...");
     
-    // Try to get media with video, but fall back to audio only if no camera
     try {
       localStream = await navigator.mediaDevices.getUserMedia({ 
         video: cameraAvailable, 
@@ -1017,7 +1068,6 @@ async function initVideoChat() {
       });
     } catch (error) {
       console.error('Error accessing camera, trying audio only:', error);
-      // If video fails, try audio only
       localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       cameraAvailable = false;
     }
@@ -1025,7 +1075,6 @@ async function initVideoChat() {
     localVideo.srcObject = localStream;
     localPlaceholder.style.display = 'none';
     
-    // If no camera available, show a placeholder image
     if (!cameraAvailable) {
       localVideo.style.display = 'none';
       const audioOnlyIndicator = document.createElement('div');
@@ -1050,7 +1099,7 @@ async function initVideoChat() {
   }
 }
 
-// PeerJS setup with ID reuse
+// PeerJS setup with ID reuse - FIXED DATA CHANNEL
 function startPeer(isNewSession = false) {
   hideSystemMessage();
   isConnected = false;
@@ -1061,6 +1110,7 @@ function startPeer(isNewSession = false) {
   remotePlaceholder.textContent = "Waiting for stranger to connect...";
   clearChat();
   hideFriendButton();
+  dataChannel = null; // Reset data channel
   
   if (peer && isNewSession) {
     try {
@@ -1124,26 +1174,10 @@ function startPeer(isNewSession = false) {
     }, 1000);
   });
 
+  // Handle incoming data connections (for chat)
   peer.on('connection', (conn) => {
-    dataChannel = conn;
-    conn.on('data', (data) => {
-      try {
-        const parsed = JSON.parse(data);
-        if (parsed.type === 'message') {
-          addMessage(parsed.text, 'them');
-        } else if (parsed.type === 'friend_request') {
-          handleFriendRequest(parsed);
-        } else if (parsed.type === 'friend_accepted') {
-          handleFriendAccepted(parsed);
-        } else if (parsed.type === 'friend_rejected') {
-          handleFriendRejected();
-        }
-      } catch (e) {
-        console.error("Error parsing incoming data:", e);
-      }
-    });
-    conn.on('open', () => addMessage("Chat connected", 'system'));
-    conn.on('close', () => addMessage("Chat disconnected", 'system'));
+    console.log("Incoming data connection received");
+    setupDataConnection(conn);
   });
 }
 
@@ -1162,6 +1196,63 @@ function cleanUpStaleConnections() {
       }
     });
   }
+}
+
+// Setup data connection for chat - FIXED
+function setupDataConnection(conn) {
+  dataChannel = conn;
+  
+  conn.on('open', () => {
+    console.log("Data channel opened successfully");
+    addMessage("Chat connected", 'system');
+    // Send a welcome message
+    setTimeout(() => {
+      if (dataChannel.readyState === 'open') {
+        const welcomeMsg = {
+          type: 'message',
+          text: "Hi! I'm connected now.",
+          timestamp: Date.now(),
+          sender: myNickname
+        };
+        dataChannel.send(JSON.stringify(welcomeMsg));
+        addMessage("Hi! I'm connected now.", 'me');
+      }
+    }, 1000);
+  });
+  
+  conn.on('data', (data) => {
+    try {
+      const parsed = JSON.parse(data);
+      console.log("Received data:", parsed);
+      
+      if (parsed.type === 'message') {
+        addMessage(parsed.text, 'them');
+      } else if (parsed.type === 'friend_request') {
+        handleFriendRequest(parsed);
+      } else if (parsed.type === 'friend_accepted') {
+        handleFriendAccepted(parsed);
+      } else if (parsed.type === 'friend_rejected') {
+        handleFriendRejected();
+      }
+    } catch (e) {
+      console.error("Error parsing incoming data:", e);
+      // Try to handle as plain text
+      if (typeof data === 'string') {
+        addMessage(data, 'them');
+      }
+    }
+  });
+  
+  conn.on('close', () => {
+    console.log("Data channel closed");
+    addMessage("Chat disconnected", 'system');
+    dataChannel = null;
+  });
+  
+  conn.on('error', (err) => {
+    console.error("Data channel error:", err);
+    addMessage("Chat error occurred", 'system');
+  });
 }
 
 function handleFriendRequest(data) {
@@ -1208,7 +1299,6 @@ function tryToFindMatch() {
 
     if (list) {
       for (let [key, entry] of Object.entries(list)) {
-        // Clean up stale entries (older than 30 seconds)
         if (entry.timestamp && (Date.now() - entry.timestamp) > 30000) {
           db.ref("videoWaiting/" + key).remove();
           continue;
@@ -1219,7 +1309,7 @@ function tryToFindMatch() {
             const sharedTags = myTags.filter(tag => entry.tags && entry.tags.includes(tag));
             if (sharedTags.length > 0) {
               bestMatch = { key, otherId: entry.id, sharedTags };
-              break; // 🎯 immediate tags+gender match
+              break;
             } else if (!bestMatch) {
               bestMatch = { key, otherId: entry.id, sharedTags: [] };
             }
@@ -1234,19 +1324,17 @@ function tryToFindMatch() {
       return;
     }
 
-    // No immediate match → add self
     const newRef = waitingRef.push();
-    waitingEntryRef = newRef; // Store reference for cleanup
+    waitingEntryRef = newRef;
     newRef.set({
       id: myId,
       interest: myGenderInterest,
       tags: myTags,
       nickname: myNickname,
-      timestamp: Date.now(), // Add timestamp for stale entry cleanup
-      hasCamera: cameraAvailable // Indicate if we have a camera
+      timestamp: Date.now(),
+      hasCamera: cameraAvailable
     });
 
-    // Start heartbeat to keep entry fresh
     if (heartbeatInterval) clearInterval(heartbeatInterval);
     heartbeatInterval = setInterval(() => {
       if (waitingEntryRef && !isConnected) {
@@ -1254,7 +1342,6 @@ function tryToFindMatch() {
       }
     }, 10000);
 
-    // Fallback after 5s → gender-only
     setTimeout(() => {
       if (!isConnected) {
         waitingRef.once('value', (snap) => {
@@ -1271,7 +1358,7 @@ function tryToFindMatch() {
     }, 5000);
   });
 
-  // Answer incoming call
+  // Answer incoming call AND setup data connection
   peer.on("call", (call) => {
     if (!isConnected && localStream) {
       hideSystemMessage();
@@ -1281,7 +1368,14 @@ function tryToFindMatch() {
       // Store connected peer ID
       localStorage.setItem('talkrush_connectedpeerid', call.peer);
       
-      // Clean up waiting list and heartbeat
+      // Also establish data connection for chat
+      setTimeout(() => {
+        if (!dataChannel && peer) {
+          const conn = peer.connect(call.peer);
+          setupDataConnection(conn);
+        }
+      }, 500);
+      
       cleanUpWaitingList();
       if (heartbeatInterval) {
         clearInterval(heartbeatInterval);
@@ -1295,26 +1389,17 @@ function tryToFindMatch() {
 function connectToPeer(otherId) {
   if (isConnected || !localStream) return;
   showSystemMessage("😍 Connecting to stranger...");
+  
+  // Make the video call
   const call = peer.call(otherId, localStream);
   setupCall(call);
 
-  const conn = peer.connect(otherId);
-  conn.on("open", () => {
-    dataChannel = conn;
-    addMessage("Chat connected", 'system');
+  // ALSO create data connection for chat
+  setTimeout(() => {
+    const conn = peer.connect(otherId);
+    setupDataConnection(conn);
     localStorage.setItem('talkrush_connectedpeerid', otherId);
-  });
-  conn.on("data", (data) => {
-    try {
-      const parsed = JSON.parse(data);
-      if (parsed.type === "message") addMessage(parsed.text, "them");
-      else if (parsed.type === 'friend_request') handleFriendRequest(parsed);
-      else if (parsed.type === 'friend_accepted') handleFriendAccepted(parsed);
-      else if (parsed.type === 'friend_rejected') handleFriendRejected();
-    } catch (e) {
-      console.error("Error parsing data:", e);
-    }
-  });
+  }, 500);
 }
 
 function setupCall(call) {
@@ -1333,7 +1418,11 @@ function setupCall(call) {
     remotePlaceholder.style.display = 'none';
     hideSystemMessage();
   });
-  call.on("close", () => endConnection("Stranger disconnected! 💔"));
+  
+  call.on("close", () => {
+    endConnection("Stranger disconnected! 💔");
+  });
+  
   call.on("error", (err) => {
     console.error("Call error:", err);
     endConnection("Connection error");
@@ -1346,9 +1435,18 @@ function endConnection(message) {
   remoteVideo.srcObject = null;
   remotePlaceholder.style.display = 'flex';
   remotePlaceholder.textContent = message;
-  myConn = null;
+  
+  if (myConn) {
+    myConn.close();
+    myConn = null;
+  }
+  
+  if (dataChannel) {
+    dataChannel.close();
+    dataChannel = null;
+  }
+  
   isConnected = false;
-  dataChannel = null;
   friendRequestPending = false;
   friendRequestFrom = null;
   showNewChatButton();
@@ -1404,6 +1502,7 @@ function hideNewChatButton() { newChatBtn.style.display = 'none'; }
 
 document.getElementById("skipBtn").onclick = () => {
   if (myConn) myConn.close();
+  if (dataChannel) dataChannel.close();
   cleanUpWaitingList();
   isConnected = false;
   friendRequestPending = false;
@@ -1412,6 +1511,7 @@ document.getElementById("skipBtn").onclick = () => {
   showNewChatButton();
   hideFriendButton();
 };
+
 document.getElementById("newChatBtn").onclick = () => {
   hideNewChatButton();
   initVideoChat();
