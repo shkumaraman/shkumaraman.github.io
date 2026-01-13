@@ -476,21 +476,18 @@ body.light-mode {
 
 .msg {
   margin: 5px 0;
-  padding: 8px 12px;
-  background: var(--dark-msg-bg);
-  color: var(--dark-text);
-  border: none;
-  border-radius: 18px;
-  max-width: 75%;
+  padding: 5px 8px;
+  background: var(--light-msg-bg);
+  color: var(--light-text);
+  border: 1px solid var(--dark-secondary-text);
+  border-radius: 15px;
+  max-width: 80%;
   word-wrap: break-word;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
-  position: relative;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
 }
   
 .me { 
   align-self: flex-end; 
-  background: var(--dark-msg-me);
-  color: white;
   border-bottom-right-radius: 5px;
 }
   
@@ -518,31 +515,9 @@ body.light-mode {
   font-size: 0.7em;
   color: var(--dark-secondary-text);
   text-align: right;
-  margin-top: 3px;
-  opacity: 0.8;
-}
-
-.delivery-status {
-  font-size: 0.7em;
-  color: var(--dark-secondary-text);
-  text-align: right;
-  margin-top: 2px;
-  font-style: italic;
-}
-
-.delivery-status.sent {
-  color: #4CAF50;
-}
-
-.delivery-status.offline {
-  color: var(--offline-color);
 }
 
 .light-mode .timestamp {
-  color: var(--light-secondary-text);
-}
-
-.light-mode .delivery-status {
   color: var(--light-secondary-text);
 }
 
@@ -880,15 +855,13 @@ body.light-mode {
 {% include scripts.html %}
 
 <script>
-// Configuration
 const firebaseConfig = {
   databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
 };
 
 const GIPHY_API_KEY = 'EKvv5S1CcXqYuHgxPNVKiNuiuNHRTzFk';
-const LOCAL_STORAGE_LIMIT = 100 * 1024; // 100KB limit
+const LOCAL_STORAGE_LIMIT = 100 * 1024;
 
-// Global variables
 let currentUserId = null;
 let currentChatId = null;
 let currentFriendId = null;
@@ -899,15 +872,13 @@ let myConn = null;
 let isConnected = false;
 let connectionAttempts = 0;
 const MAX_CONNECTION_ATTEMPTS = 3;
-let onlineFriends = new Set(); // Track which friends are online
+let onlineFriends = new Set();
 
-// Initialize Firebase only if not already initialized
 if (!firebase.apps.length) {
   firebase.initializeApp(firebaseConfig);
 }
 const db = firebase.database();
 
-// Utility Functions
 function getCurrentUserId() {
   return localStorage.getItem('talkrush_peerid');
 }
@@ -972,24 +943,19 @@ function enforceStorageLimit(chatId, newMessage) {
     console.error('Error loading messages:', e);
   }
   
-  // Add new message
   messages.push(newMessage);
   
-  // Calculate current size
   let currentSize = calculateStorageSize(JSON.stringify(messages));
   
-  // Remove oldest messages until under limit
   while (currentSize > LOCAL_STORAGE_LIMIT && messages.length > 1) {
-    messages.shift(); // Remove oldest message
+    messages.shift();
     currentSize = calculateStorageSize(JSON.stringify(messages));
   }
   
-  // Save trimmed messages
   localStorage.setItem(storageKey, JSON.stringify(messages));
   return messages;
 }
 
-// Main Application
 document.addEventListener("DOMContentLoaded", () => {
   currentUserId = getCurrentUserId();
   
@@ -998,21 +964,16 @@ document.addEventListener("DOMContentLoaded", () => {
     return;
   }
   
-  console.log('Messages page loaded with Peer ID:', currentUserId);
-  
-  // Initialize Peer connection for messages page
   initializePeerConnection();
   
   loadFriends();
   setupEventListeners();
   
-  // Set container height properly
   adjustContainerHeight();
   window.addEventListener('resize', adjustContainerHeight);
 });
 
 function initializePeerConnection() {
-  // Reuse the peer ID from localStorage
   const peerId = currentUserId;
   
   if (!peerId) {
@@ -1020,7 +981,6 @@ function initializePeerConnection() {
     return;
   }
   
-  // Create a new Peer instance for messages page
   peer = new Peer(peerId, {
     host: '0.peerjs.com',
     port: 443,
@@ -1030,21 +990,16 @@ function initializePeerConnection() {
   });
   
   peer.on('open', (id) => {
-    console.log('✅ Messages page Peer connected with ID:', id);
-    // Store peer in global scope for main page to use
     window.mainPeer = peer;
   });
   
   peer.on('connection', (conn) => {
-    console.log('📥 Incoming connection from:', conn.peer);
     
-    // Check if this is from a friend in our list
     if (currentFriendId === conn.peer) {
       myConn = conn;
       isConnected = true;
       connectionAttempts = 0;
       
-      // Update UI to show online status
       updateFriendOnlineStatus(conn.peer, true);
       
       if (currentChatId && currentFriendId === conn.peer) {
@@ -1052,16 +1007,13 @@ function initializePeerConnection() {
       }
       
       conn.on('data', (data) => {
-        console.log('📨 Received data from friend:', data);
         handleIncomingData(data);
       });
       
       conn.on('close', () => {
-        console.log('❌ Connection closed by friend');
         myConn = null;
         isConnected = false;
         
-        // Update UI to show offline status
         updateFriendOnlineStatus(conn.peer, false);
         
         if (currentChatId && currentFriendId === conn.peer) {
@@ -1078,7 +1030,6 @@ function initializePeerConnection() {
   peer.on('error', (err) => {
     console.error('Peer error:', err);
     if (err.type === 'unavailable-id') {
-      // Generate new ID if current one is unavailable
       const newPeer = new Peer({
         host: '0.peerjs.com',
         port: 443,
@@ -1088,7 +1039,6 @@ function initializePeerConnection() {
       });
       
       newPeer.on('open', (id) => {
-        console.log('New Peer ID generated:', id);
         localStorage.setItem('talkrush_peerid', id);
         currentUserId = id;
         peer = newPeer;
@@ -1098,7 +1048,6 @@ function initializePeerConnection() {
   });
   
   peer.on('disconnected', () => {
-    console.log('Peer disconnected, attempting reconnect...');
     peer.reconnect();
   });
 }
@@ -1113,7 +1062,6 @@ function adjustContainerHeight() {
 }
 
 function setupEventListeners() {
-  // Enter key to send message
   document.getElementById('msgInput').addEventListener('keypress', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -1121,10 +1069,8 @@ function setupEventListeners() {
     }
   });
 
-  // Image upload
   document.getElementById('imgInput').addEventListener('change', handleImageUpload);
 
-  // GIF modal
   document.getElementById('gifBtn').onclick = (e) => {
     e.preventDefault();
     const gifModal = document.getElementById("gifModal");
@@ -1132,22 +1078,18 @@ function setupEventListeners() {
     if (gifModal.style.display === "block") fetchTrendingGifs();
   };
 
-  // GIF search
   document.getElementById('gifSearch').addEventListener('keypress', (e) => {
     if (e.key === 'Enter') searchGifs(document.getElementById('gifSearch').value);
   });
 
-  // Send button
   document.getElementById('sendBtn').onclick = sendMessage;
 
-  // Close GIF modal on outside click
   window.addEventListener("click", (e) => {
     if (e.target === document.getElementById('gifModal')) {
       document.getElementById('gifModal').style.display = 'none';
     }
   });
   
-  // Disable image/gif buttons when offline
   updateSendButtonStatus();
 }
 
@@ -1175,7 +1117,6 @@ function updateSendButtonStatus() {
 function loadFriends() {
   if (!currentUserId) return;
   
-  // Remove existing listener to prevent memory leak
   if (friendListListener) {
     db.ref("friends").off("value", friendListListener);
   }
@@ -1207,7 +1148,6 @@ function loadFriends() {
       const avatarLetter = friendNickname ? friendNickname.charAt(0).toUpperCase() : "?";
       const displayName = friendNickname || 'Stranger';
       
-      // Check if friend is online
       const isOnline = onlineFriends.has(otherId);
       
       let displayMsg = "Say Hi! 👋";
@@ -1235,7 +1175,6 @@ function loadFriends() {
       });
     });
 
-    // Sort by timestamp (newest first)
     friendsArray.sort((a, b) => b.timestamp - a.timestamp);
 
     if (friendsArray.length === 0) {
@@ -1244,7 +1183,6 @@ function loadFriends() {
       return;
     }
 
-    // Display sorted friends
     friendsArray.forEach(friend => {
       const div = document.createElement("div");
       div.className = "friend-item";
@@ -1288,7 +1226,6 @@ function updateFriendOnlineStatus(friendId, isOnline) {
     onlineFriends.delete(friendId);
   }
   
-  // Update UI if friend is in list
   const friendItems = document.querySelectorAll('.friend-item');
   friendItems.forEach(item => {
     const friendInfo = item.querySelector('.friend-info .friend-name');
@@ -1323,35 +1260,27 @@ function openChat(chatId, friendId, friendName) {
   currentFriendId = friendId;
   currentFriendName = friendName;
   
-  // Update UI
   document.getElementById('chatAvatar').textContent = friendName.charAt(0).toUpperCase();
   document.getElementById('chatName').textContent = friendName;
   document.getElementById('pageTitle').textContent = friendName;
   
-  // Switch views
   document.getElementById('friendsContainer').style.display = 'none';
   document.getElementById('chatContainer').style.display = 'flex';
   
-  // Load messages
   loadLocalChatMessages();
   
-  // Attempt to connect to friend
   connectToFriend(friendId);
   
-  // Adjust UI
   setChatLogHeight();
 }
 
 function connectToFriend(friendId) {
   if (!peer || typeof peer !== 'object') {
-    console.log('Peer not available for connection');
     showOfflineStatus();
     return;
   }
   
-  // Check if peer is connected
   if (peer.disconnected) {
-    console.log('Peer is disconnected, reconnecting...');
     peer.reconnect();
     setTimeout(() => connectToFriend(friendId), 1000);
     return;
@@ -1360,23 +1289,18 @@ function connectToFriend(friendId) {
   connectionAttempts++;
   
   if (connectionAttempts > MAX_CONNECTION_ATTEMPTS) {
-    console.log(`${currentFriendName} appears to be offline`);
     showOfflineStatus();
     return;
   }
   
-  // Clear any existing connection to this friend
   if (myConn && myConn.peer === friendId) {
     if (isConnected) {
-      console.log('Already connected to this friend');
       showOnlineStatus();
       return;
     }
     myConn.close();
     myConn = null;
   }
-  
-  console.log(`Attempting to connect to ${friendId} (attempt ${connectionAttempts})`);
   
   try {
     const conn = peer.connect(friendId, {
@@ -1386,11 +1310,9 @@ function connectToFriend(friendId) {
     
     let connectionTimeout = setTimeout(() => {
       if (!isConnected) {
-        console.log('Connection timeout');
         conn.close();
         showOfflineStatus();
         
-        // Try again if under max attempts
         if (connectionAttempts < MAX_CONNECTION_ATTEMPTS) {
           setTimeout(() => connectToFriend(friendId), 2000);
         }
@@ -1398,21 +1320,17 @@ function connectToFriend(friendId) {
     }, 8000);
     
     conn.on("open", () => {
-      console.log('✅ Connected to friend via P2P');
       clearTimeout(connectionTimeout);
       myConn = conn;
       isConnected = true;
       connectionAttempts = 0;
       
-      // Update online status
       updateFriendOnlineStatus(friendId, true);
       showOnlineStatus();
       
-      // Setup event listeners
       conn.on("data", handleIncomingData);
       
       conn.on("close", () => {
-        console.log('❌ P2P connection closed');
         myConn = null;
         isConnected = false;
         updateFriendOnlineStatus(friendId, false);
@@ -1430,10 +1348,8 @@ function connectToFriend(friendId) {
     
     conn.on("error", (err) => {
       clearTimeout(connectionTimeout);
-      console.error('Connection error:', err);
       showOfflineStatus();
       
-      // Try again if under max attempts
       if (connectionAttempts < MAX_CONNECTION_ATTEMPTS) {
         setTimeout(() => connectToFriend(friendId), 3000);
       }
@@ -1461,7 +1377,6 @@ function showOnlineStatus() {
     chatStatus.className = 'chat-status online';
   }
   
-  // Enable sending
   msgInput.disabled = false;
   msgInput.placeholder = "Type your message...";
   sendBtn.disabled = false;
@@ -1487,7 +1402,6 @@ function showOfflineStatus() {
     chatStatus.className = 'chat-status offline';
   }
   
-  // Disable sending
   msgInput.disabled = true;
   msgInput.placeholder = "Friend is offline - connect to send messages";
   sendBtn.disabled = true;
@@ -1500,8 +1414,6 @@ function handleIncomingData(data) {
   if (!currentChatId || !currentFriendId) return;
   
   const senderId = myConn ? myConn.peer : currentFriendId;
-  
-  console.log('Processing incoming data:', data);
   
   if (typeof data === "string") {
     saveIncomingMessage(data, 'text', senderId);
@@ -1516,7 +1428,6 @@ function handleIncomingData(data) {
 }
 
 function showFriendsList() {
-  // Clean up connection
   if (myConn) {
     myConn.close();
     myConn = null;
@@ -1525,17 +1436,14 @@ function showFriendsList() {
   
   connectionAttempts = 0;
   
-  // Switch back to friends list
   document.getElementById('friendsContainer').style.display = 'block';
   document.getElementById('chatContainer').style.display = 'none';
   document.getElementById('pageTitle').textContent = 'Messages';
   
-  // Clear chat state
   currentChatId = null;
   currentFriendId = null;
   currentFriendName = "";
   
-  // Adjust height
   adjustContainerHeight();
 }
 
@@ -1568,14 +1476,11 @@ function saveIncomingMessage(content, type, senderId) {
     content: content,
     senderId: senderId,
     timestamp: Date.now(),
-    type: type,
-    delivered: senderId === currentUserId ? isConnected : true
+    type: type
   };
   
-  // Enforce storage limit
   const messages = enforceStorageLimit(currentChatId, message);
   
-  // Update last message in Firebase
   let lastMsg = '📷 Image';
   if (type === 'gif') {
     lastMsg = '🎬 GIF';
@@ -1583,7 +1488,6 @@ function saveIncomingMessage(content, type, senderId) {
     lastMsg = content.length > 50 ? content.substring(0, 50) + '...' : content;
   }
   
-  // Always update with latest timestamp
   db.ref("friends/" + currentChatId).update({
     lastMessage: lastMsg,
     timestamp: Date.now()
@@ -1601,8 +1505,7 @@ function displayMessageImmediately(content, type, senderId, isReceived = false) 
     content: content,
     senderId: senderId,
     timestamp: Date.now(),
-    type: type,
-    delivered: isReceived || isConnected
+    type: type
   };
   
   const isMe = senderId === currentUserId;
@@ -1623,17 +1526,8 @@ function appendMessageToChat(msg, isMe) {
     content = escapeHtml(msg.content);
   }
   
-  // Add delivery status for our messages
-  let deliveryStatus = '';
-  if (isMe) {
-    const statusClass = msg.delivered ? 'sent' : 'offline';
-    const statusText = msg.delivered ? 'Sent' : 'Offline - saved locally';
-    deliveryStatus = `<div class="delivery-status ${statusClass}">${statusText}</div>`;
-  }
-  
   div.innerHTML = content + 
-    `<div class="timestamp">${formatMessageTime(msg.timestamp)}</div>` +
-    deliveryStatus;
+    `<div class="timestamp">${formatMessageTime(msg.timestamp)}</div>`;
   
   chatDiv.appendChild(div);
   scrollToBottom();
@@ -1645,14 +1539,10 @@ function sendMessage() {
   
   if (!content || !currentChatId || !currentFriendId) return;
   
-  // Check if friend is online
   if (myConn && isConnected) {
-    // Send via P2P if connected
     try {
       myConn.send(content);
-      console.log('📤 Message sent via P2P');
       
-      // Save and display immediately
       saveIncomingMessage(content, 'text', currentUserId);
       displayMessageImmediately(content, 'text', currentUserId);
       
@@ -1661,7 +1551,6 @@ function sendMessage() {
       console.error('Failed to send via P2P:', error);
       showOfflineStatus();
       
-      // Still save locally
       Swal.fire({
         title: 'Connection Lost',
         text: 'Message saved locally. Will send when friend is online.',
@@ -1675,7 +1564,6 @@ function sendMessage() {
       input.value = '';
     }
   } else {
-    // Friend is offline - only save locally
     Swal.fire({
       title: 'Friend Offline',
       text: 'Your friend is currently offline. Message saved locally.',
@@ -1688,7 +1576,6 @@ function sendMessage() {
     displayMessageImmediately(content, 'text', currentUserId);
     input.value = '';
     
-    // Try to reconnect
     if (connectionAttempts < MAX_CONNECTION_ATTEMPTS) {
       setTimeout(() => connectToFriend(currentFriendId), 3000);
     }
@@ -1715,9 +1602,7 @@ function handleImageUpload(e) {
     if (myConn && isConnected) {
       try {
         myConn.send({ type: "image", blob: reader.result });
-        console.log('📤 Image sent via P2P');
         
-        // Save and display immediately
         saveIncomingMessage(reader.result, 'image', currentUserId);
         displayMessageImmediately(reader.result, 'image', currentUserId);
       } catch (error) {
@@ -1764,27 +1649,22 @@ function unfriend(chatId) {
     cancelButtonText: 'Cancel'
   }).then((result) => {
     if (result.isConfirmed) {
-      // Close connection if this is the current chat
       if (currentChatId === chatId && myConn) {
         myConn.close();
         myConn = null;
         isConnected = false;
       }
       
-      // Remove from Firebase
       db.ref("friends/" + chatId).remove()
         .then(() => {
-          // Remove from localStorage
           localStorage.removeItem(`talkrush_chat_${chatId}`);
           
-          // Remove from online friends set
           const friendItem = document.querySelector(`[onclick*="${chatId}"]`);
           if (friendItem) {
             const friendId = friendItem.dataset.friendId;
             if (friendId) onlineFriends.delete(friendId);
           }
           
-          // If currently viewing this chat, go back to list
           if (currentChatId === chatId) {
             showFriendsList();
           }
@@ -1846,7 +1726,6 @@ function displayGifs(gifs) {
       if (myConn && isConnected) {
         try {
           myConn.send({ type: "gif", url: gifUrl });
-          console.log('📤 GIF sent via P2P');
           
           saveIncomingMessage(gifUrl, 'gif', currentUserId);
           displayMessageImmediately(gifUrl, 'gif', currentUserId);
@@ -1880,7 +1759,6 @@ function displayGifs(gifs) {
       
       document.getElementById('gifModal').style.display = 'none';
       
-      // Try to reconnect if offline
       if (!isConnected && connectionAttempts < MAX_CONNECTION_ATTEMPTS) {
         setTimeout(() => connectToFriend(currentFriendId), 3000);
       }
@@ -1902,25 +1780,20 @@ function setChatLogHeight() {
   }
 }
 
-// Clean up on page unload
 window.addEventListener('beforeunload', () => {
-  // Remove Firebase listener
   if (friendListListener) {
     db.ref("friends").off("value", friendListListener);
   }
   
-  // Close connections
   if (myConn) {
     myConn.close();
   }
   
-  // Destroy peer connection
   if (peer && typeof peer.destroy === 'function') {
     peer.destroy();
   }
 });
 
-// Adjust chat log height when chat is opened
 setTimeout(setChatLogHeight, 100);
 window.addEventListener('resize', setChatLogHeight);
 </script>
