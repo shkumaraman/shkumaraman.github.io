@@ -760,8 +760,8 @@ window.addEventListener('load', () => {
   const existingPeerId = localStorage.getItem('talkrush_peerid');
   if (existingPeerId) {
     myId = existingPeerId;
+    checkForFriendMessages();
   }
-  checkForFriendMessages();
   showNewChatButton();
   logSystem("Click 'Start New Chat' to begin chatting with a stranger!");
 });
@@ -771,16 +771,24 @@ window.addEventListener('beforeunload', (e) => {
     e.preventDefault();
     e.returnValue = 'Are you sure you want to leave? Your chat will be disconnected.';
     return e.returnValue;
-  } else {
-    cleanUpWaitingList();
   }
+  cleanUpWaitingList();
 });
 
 window.addEventListener('pagehide', () => {
   cleanUpWaitingList();
   if (heartbeatInterval) clearInterval(heartbeatInterval);
-  if (peer && !peer.destroyed) {
-    peer.disconnect();
+  if (myConn) {
+    myConn.close();
+    myConn = null;
+  }
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    if (peer && peer.disconnected && !peer.destroyed) {
+      peer.reconnect();
+    }
   }
 });
 
@@ -806,36 +814,26 @@ document.addEventListener('keydown', (e) => {
       friendRequestFrom = null;
       showNewChatButton();
       logSystem("Chat ended. Starting new search...");
-      startPeer(false);
+      if (peer && !peer.destroyed) {
+        setTimeout(() => {
+          tryToFindMatch();
+        }, 500);
+      }
     }
   }
 });
 
-function startPeer(isNewSession = false) {
+function startPeer() {
   clearSystemMessage();
   isConnected = false;
-  
-  if (peer && !isNewSession) {
-    try {
-      peer.destroy();
-      peer = null;
-    } catch (e) {}
-  }
   
   logSystem("🔍 Looking for a stranger...");
   
   let existingPeerId = localStorage.getItem('talkrush_peerid');
   
-  if (isNewSession) {
-    localStorage.removeItem('talkrush_peerid');
-    existingPeerId = null;
-  }
-  
-  if (peer) {
-    try {
-      peer.destroy();
-      peer = null;
-    } catch (e) {}
+  if (peer && !peer.destroyed && peer.disconnected === false) {
+    tryToFindMatch();
+    return;
   }
   
   const peerOptions = {
@@ -850,26 +848,40 @@ function startPeer(isNewSession = false) {
     }
   };
   
-  if (existingPeerId && !isNewSession) {
+  if (existingPeerId) {
     peerOptions.id = existingPeerId;
   }
   
-  peer = new Peer(peerOptions);
+  if (peer && !peer.destroyed) {
+    try {
+      peer.destroy();
+    } catch (e) {}
+  }
+  
+  try {
+    peer = new Peer(peerOptions);
+  } catch (err) {
+    logSystem("Error creating connection. Click 'Start New Chat' to try again.");
+    showNewChatButton();
+    return;
+  }
 
   peer.on('open', (id) => {
     localStorage.setItem('talkrush_peerid', id);
     myId = id;
-    
     cleanUpStaleConnections();
     tryToFindMatch();
   });
 
-  peer.on('connection', handleNewConnection);
+  peer.on('connection', (conn) => {
+    handleNewConnection(conn, []);
+  });
 
   peer.on('error', (err) => {
     if (err.type === 'unavailable-id' || err.type === 'peer-unavailable') {
       localStorage.removeItem('talkrush_peerid');
-      setTimeout(() => startPeer(true), 1000);
+      peer = null;
+      startPeer();
       return;
     }
     
@@ -881,10 +893,10 @@ function startPeer(isNewSession = false) {
   
   peer.on('disconnected', () => {
     setTimeout(() => {
-      if (peer && peer.disconnected) {
+      if (peer && !peer.destroyed && peer.disconnected) {
         peer.reconnect();
       }
-    }, 1000);
+    }, 2000);
   });
 }
 
@@ -976,7 +988,7 @@ function tryToFindMatch() {
 }
 
 function connectToPeer(otherId, sharedTags = []) {
-  if (isConnected || !peer || peer.disconnected) return;
+  if (isConnected) return;
   clearSystemMessage();
   logSystem("😍 Connecting to stranger...");
   const conn = peer.connect(otherId);
@@ -1049,7 +1061,12 @@ function setupConnection(conn) {
 function endConnection(message) {
   appendSystemImage("/assets/chat_end.png");
   logSystem(message);
-  myConn = null;
+  
+  if (myConn) {
+    myConn.close();
+    myConn = null;
+  }
+  
   isConnected = false;
   showNewChatButton();
   hideFriendButton();
@@ -1336,25 +1353,43 @@ document.getElementById("skipBtn").onclick = () => {
     myConn.close();
     myConn = null;
   }
+  
   cleanUpWaitingList();
   isConnected = false;
   friendRequestPending = false;
   friendRequestFrom = null;
+  
   logSystem("Chat ended. Starting new search...");
   showNewChatButton();
   hideFriendButton();
+  
+  if (peer && !peer.destroyed) {
+    setTimeout(() => {
+      tryToFindMatch();
+    }, 500);
+  }
 };
 
 document.getElementById("newChatBtn").onclick = () => {
   document.getElementById("chatLog").innerHTML = "";
   hideFriendButton();
   hideNewChatButton();
+  
   if (myConn) {
     myConn.close();
     myConn = null;
   }
+  
   cleanUpWaitingList();
-  startPeer(false);
+  isConnected = false;
+  friendRequestPending = false;
+  friendRequestFrom = null;
+  
+  if (peer && !peer.destroyed) {
+    tryToFindMatch();
+  } else {
+    startPeer();
+  }
 };
 
 const gifModal = document.getElementById("gifModal");
