@@ -815,9 +815,7 @@ document.addEventListener('keydown', (e) => {
       showNewChatButton();
       logSystem("Chat ended. Starting new search...");
       if (peer && !peer.destroyed) {
-        setTimeout(() => {
-          tryToFindMatch();
-        }, 500);
+        tryToFindMatch();
       }
     }
   }
@@ -831,7 +829,10 @@ function startPeer() {
   
   let existingPeerId = localStorage.getItem('talkrush_peerid');
   
-  if (peer && !peer.destroyed && peer.disconnected === false) {
+  if (peer && !peer.destroyed) {
+    if (peer.disconnected) {
+      peer.reconnect();
+    }
     tryToFindMatch();
     return;
   }
@@ -852,19 +853,7 @@ function startPeer() {
     peerOptions.id = existingPeerId;
   }
   
-  if (peer && !peer.destroyed) {
-    try {
-      peer.destroy();
-    } catch (e) {}
-  }
-  
-  try {
-    peer = new Peer(peerOptions);
-  } catch (err) {
-    logSystem("Error creating connection. Click 'Start New Chat' to try again.");
-    showNewChatButton();
-    return;
-  }
+  peer = new Peer(peerOptions);
 
   peer.on('open', (id) => {
     localStorage.setItem('talkrush_peerid', id);
@@ -878,9 +867,12 @@ function startPeer() {
   });
 
   peer.on('error', (err) => {
-    if (err.type === 'unavailable-id' || err.type === 'peer-unavailable') {
+    if (err.type === 'unavailable-id') {
       localStorage.removeItem('talkrush_peerid');
-      peer = null;
+      if (peer && !peer.destroyed) {
+        peer.destroy();
+        peer = null;
+      }
       startPeer();
       return;
     }
@@ -896,7 +888,7 @@ function startPeer() {
       if (peer && !peer.destroyed && peer.disconnected) {
         peer.reconnect();
       }
-    }, 2000);
+    }, 1000);
   });
 }
 
@@ -1364,9 +1356,7 @@ document.getElementById("skipBtn").onclick = () => {
   hideFriendButton();
   
   if (peer && !peer.destroyed) {
-    setTimeout(() => {
-      tryToFindMatch();
-    }, 500);
+    tryToFindMatch();
   }
 };
 
@@ -1387,8 +1377,6 @@ document.getElementById("newChatBtn").onclick = () => {
   
   if (peer && !peer.destroyed) {
     tryToFindMatch();
-  } else {
-    startPeer();
   }
 };
 
