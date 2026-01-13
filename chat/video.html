@@ -701,9 +701,8 @@ let dataChannel;
 let heartbeatInterval;
 let cameraAvailable = true;
 
-// Friend request system - CRITICAL FIXES HERE
-let friendRequestSent = false; // Track if WE sent a request
-let friendRequestReceived = false; // Track if WE received a request
+// Friend request system - SIMPLIFIED LIKE TEXT VERSION
+let friendRequestPending = false;
 let friendRequestFrom = null;
 let friendRequestTimer = null;
 
@@ -799,6 +798,24 @@ function cleanUpAllResources() {
   if (friendRequestTimer) clearTimeout(friendRequestTimer);
 }
 
+// Clean up stale connections (FROM TEXT VERSION)
+function cleanUpStaleConnections() {
+  if (myId) {
+    const waitingRef = db.ref("videoWaiting");
+    waitingRef.once('value').then((snapshot) => {
+      if (snapshot.exists()) {
+        snapshot.forEach((child) => {
+          const entry = child.val();
+          const isOld = entry.timestamp && (Date.now() - entry.timestamp) > 60000;
+          if (entry.id === myId || isOld) {
+            child.ref.remove();
+          }
+        });
+      }
+    });
+  }
+}
+
 // Escape skip
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
@@ -815,11 +832,11 @@ document.addEventListener('keydown', (e) => {
       if (myConn) myConn.close();
       cleanUpWaitingList();
       isConnected = false;
-      resetFriendRequestState(); // Reset friend request state
+      resetFriendRequestState();
       hideNewChatButton();
       clearChat();
       hideFriendButton();
-      startPeer();
+      startPeer(false);
     }
   }
 });
@@ -835,7 +852,7 @@ function setupChatEvents() {
     if (e.key === 'Enter') sendMessage();
   });
   
-  // Friend request events - FIXED VERSION
+  // Friend request events - SIMPLIFIED LIKE TEXT VERSION
   friendBtn.onclick = () => {
     if (!myConn || !isConnected || !dataChannel || !dataChannel.open) {
       addMessage("Not connected to send friend request", 'system');
@@ -843,7 +860,7 @@ function setupChatEvents() {
     }
     
     // Don't send if we already sent one
-    if (friendRequestSent) {
+    if (friendRequestPending) {
       addMessage("Friend request already sent", 'system');
       return;
     }
@@ -851,13 +868,13 @@ function setupChatEvents() {
     const myPersistentPeerId = localStorage.getItem('talkrush_peerid');
     const connectedPeerId = localStorage.getItem('talkrush_connectedpeerid');
     
-    if (!myPersistentPeerId || !connectedPeerId) {
-      addMessage("Cannot send friend request: Missing connection info", 'system');
+    if (!myPersistentPeerId) {
+      addMessage("Cannot send friend request: No persistent ID found", 'system');
       return;
     }
     
     // Mark that we sent a request
-    friendRequestSent = true;
+    friendRequestPending = true;
     friendBtn.disabled = true;
     
     // Send friend request via data channel
@@ -873,8 +890,8 @@ function setupChatEvents() {
     
     // Auto-enable button after 30 seconds if no response
     friendRequestTimer = setTimeout(() => {
-      if (friendRequestSent) {
-        friendRequestSent = false;
+      if (friendRequestPending) {
+        friendRequestPending = false;
         friendBtn.disabled = false;
         addMessage("Friend request timed out", 'system');
       }
@@ -924,11 +941,15 @@ function setupChatEvents() {
     addMessage('Friend request rejected.', 'system');
     closeFriendModal();
   };
+  
+  // Modal close on overlay click (FROM TEXT VERSION)
+  window.addEventListener("click", (e) => {
+    if (e.target.id === 'friendModalOverlay') closeFriendModal();
+  });
 }
 
 function resetFriendRequestState() {
-  friendRequestSent = false;
-  friendRequestReceived = false;
+  friendRequestPending = false;
   friendRequestFrom = null;
   friendBtn.disabled = false;
   if (friendRequestTimer) {
@@ -999,7 +1020,7 @@ async function initVideoChat() {
       document.querySelector('.local-video-container').appendChild(audioOnlyIndicator);
     }
     
-    startPeer();
+    startPeer(true);
   } catch (error) {
     console.error('Error accessing media devices:', error);
     showSystemMessage("Could not access your microphone. Please check permissions.");
@@ -1008,16 +1029,23 @@ async function initVideoChat() {
   }
 }
 
-// PeerJS setup - USING LOCAL STORAGE PEER ID IF AVAILABLE
-function startPeer() {
+// PeerJS setup - IMPROVED LIKE TEXT VERSION
+function startPeer(isNewSession = false) {
   hideSystemMessage();
   isConnected = false;
   remoteVideo.srcObject = null;
   remotePlaceholder.style.display = 'flex';
   remotePlaceholder.textContent = "Waiting for stranger to connect...";
   clearChat();
-  resetFriendRequestState(); // Reset friend state
-  if (peer) peer.destroy();
+  resetFriendRequestState();
+  
+  if (peer && isNewSession) {
+    try {
+      peer.destroy();
+      peer = null;
+    } catch (e) {}
+  }
+  
   showSystemMessage("🔍 Looking for a stranger...");
 
   // Use existing peer ID from local storage if available
@@ -1035,8 +1063,8 @@ function startPeer() {
     }
   };
   
-  // Use existing ID if available
-  if (existingPeerId) {
+  // Use existing ID if available (FROM TEXT VERSION IMPROVEMENT)
+  if (existingPeerId && !isNewSession) {
     peerOptions.id = existingPeerId;
   }
   
@@ -1051,20 +1079,33 @@ function startPeer() {
       myId = existingPeerId;
     }
     
+    // Clean up stale connections (FROM TEXT VERSION)
+    cleanUpStaleConnections();
     tryToFindMatch();
   });
 
   peer.on('error', (err) => {
     console.error('PeerJS error:', err);
-    // If ID is unavailable, clear it and retry
+    // If ID is unavailable, clear it and retry (FROM TEXT VERSION)
     if (err.type === 'unavailable-id' || err.type === 'peer-unavailable') {
       localStorage.removeItem('talkrush_peerid');
-      startPeer();
+      startPeer(true);
       return;
     }
     
-    showSystemMessage("Connection error. Click 'Start New Talk' to try again.");
-    showNewChatButton();
+    if (!isConnected) {
+      showSystemMessage("Connection error. Click 'Start New Talk' to try again.");
+      showNewChatButton();
+    }
+  });
+
+  // Reconnection logic (FROM TEXT VERSION)
+  peer.on('disconnected', () => {
+    setTimeout(() => {
+      if (peer && peer.disconnected && !isConnected) {
+        peer.reconnect();
+      }
+    }, 1000);
   });
 
   peer.on('connection', (conn) => {
@@ -1076,7 +1117,7 @@ function startPeer() {
       const connectedPeerId = conn.peer;
       localStorage.setItem('talkrush_connectedpeerid', connectedPeerId);
       
-      // CRITICAL: ALWAYS show friend button for BOTH sides
+      // ALWAYS show friend button for BOTH sides
       showFriendButton();
     });
     
@@ -1094,7 +1135,7 @@ function startPeer() {
           handleFriendAccepted(parsed);
         }
         else if (parsed.type === 'friend_rejected') {
-          handleFriendRejected(parsed);
+          handleFriendRejected();
         }
       } catch (e) {
         console.error("Error parsing incoming data:", e);
@@ -1150,6 +1191,7 @@ function tryToFindMatch() {
       id: myId,
       interest: myGenderInterest,
       tags: myTags,
+      nickname: myNickname,
       timestamp: Date.now(), // Add timestamp for stale entry cleanup
       hasCamera: cameraAvailable // Indicate if we have a camera
     });
@@ -1157,7 +1199,7 @@ function tryToFindMatch() {
     // Start heartbeat to keep entry fresh
     if (heartbeatInterval) clearInterval(heartbeatInterval);
     heartbeatInterval = setInterval(() => {
-      if (waitingEntryRef) {
+      if (waitingEntryRef && !isConnected) {
         waitingEntryRef.update({ timestamp: Date.now() });
       }
     }, 10000);
@@ -1166,6 +1208,8 @@ function tryToFindMatch() {
     setTimeout(() => {
       if (!isConnected) {
         waitingRef.once('value', (snap) => {
+          if (isConnected) return;
+          
           snap.forEach(child => {
             const entry = child.val();
             if (entry.id !== myId && isGenderCompatible(myGenderInterest, entry.interest)) {
@@ -1210,7 +1254,7 @@ function connectToPeer(otherId) {
     // Store connected peer ID for friend requests
     localStorage.setItem('talkrush_connectedpeerid', otherId);
     
-    // CRITICAL: ALWAYS show friend button when connected
+    // ALWAYS show friend button when connected
     showFriendButton();
   });
   conn.on("data", (data) => {
@@ -1245,16 +1289,15 @@ function setupCall(call) {
   });
 }
 
-// Friend request handlers - UPDATED TO FIX BOTH ISSUES
+// Friend request handlers - SIMPLIFIED LIKE TEXT VERSION
 function handleFriendRequest(data) {
   // Don't show if we already sent a request
-  if (friendRequestSent) {
+  if (friendRequestPending) {
     addMessage("You already sent a friend request", 'system');
     return;
   }
   
   // Mark that we received a request
-  friendRequestReceived = true;
   friendRequestFrom = data;
   friendRequestText.textContent = `${data.fromNickname || 'Stranger'} wants to add you as a friend!`;
   
@@ -1284,38 +1327,35 @@ function handleFriendRequest(data) {
 
 function handleFriendAccepted(data) {
   // If we sent the request and it was accepted
-  if (friendRequestSent) {
+  if (friendRequestPending) {
     hideFriendButton();
     addMessage(`🎉 ${data.nickname || 'Stranger'} accepted your friend request!`, 'system');
+    friendRequestPending = false;
+    friendBtn.disabled = false;
   }
   // If we received the request and accepted it
-  else if (friendRequestReceived) {
+  else if (friendRequestFrom) {
     addMessage(`🎉 You are now friends with ${data.nickname || 'Stranger'}!`, 'system');
   }
-  
-  // Reset state
-  friendRequestSent = false;
-  friendRequestReceived = false;
-  friendBtn.disabled = false;
   
   // Don't show friend button after becoming friends
   hideFriendButton();
 }
 
-function handleFriendRejected(data) {
+function handleFriendRejected() {
   // If our request was rejected
-  if (friendRequestSent) {
+  if (friendRequestPending) {
     addMessage('Friend request was rejected.', 'system');
-    friendRequestSent = false;
+    friendRequestPending = false;
     friendBtn.disabled = false;
     
     // Show button again so we can send another request
     showFriendButton();
   }
   // If we rejected someone else's request
-  else if (friendRequestReceived) {
+  else if (friendRequestFrom) {
     addMessage('Friend request rejected.', 'system');
-    friendRequestReceived = false;
+    friendRequestFrom = null;
     
     // Show button again since we're not friends
     showFriendButton();
@@ -1328,8 +1368,8 @@ function closeFriendModal() {
   if (overlay) overlay.remove();
   
   // If we closed without accepting, show friend button again
-  if (friendRequestReceived) {
-    friendRequestReceived = false;
+  if (friendRequestFrom) {
+    friendRequestFrom = null;
     showFriendButton();
   }
 }
@@ -1365,7 +1405,7 @@ function endConnection(message) {
   myConn = null;
   isConnected = false;
   dataChannel = null;
-  resetFriendRequestState(); // Reset friend state
+  resetFriendRequestState();
   showNewChatButton();
   hideFriendButton();
   addMessage("Connection ended", 'system');
@@ -1389,7 +1429,7 @@ function isGenderCompatible(me, other) {
   return false;
 }
 
-// UI helpers - UPDATED showFriendButton
+// UI helpers - SIMPLIFIED LIKE TEXT VERSION
 function showSystemMessage(msg) {
   systemMsg.textContent = msg;
   systemMsg.style.display = 'block';
@@ -1398,7 +1438,7 @@ function hideSystemMessage() { systemMsg.style.display = 'none'; }
 function showNewChatButton() { newChatBtn.style.display = 'block'; }
 function hideNewChatButton() { newChatBtn.style.display = 'none'; }
 function showFriendButton() {
-  if (friendBtn && isConnected && !friendRequestReceived) {
+  if (friendBtn && isConnected && !friendRequestFrom) {
     friendBtn.style.display = 'flex';
     friendBtn.disabled = false;
   }
