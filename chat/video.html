@@ -709,20 +709,33 @@ const chatInput = document.getElementById('chatInput');
 const chatSendBtn = document.getElementById('chatSendBtn');
 let chatVisible = false;
 
+// Status display
+const connectionStatus = document.createElement('div');
+connectionStatus.id = 'connectionStatus';
+connectionStatus.style.cssText = 'position: fixed; bottom: 60px; right: 65px; background: rgba(0,0,0,0.8); color: white; padding: 5px 10px; border-radius: 4px; font-size: 12px; display: none; z-index: 10000; border-left: 3px solid gray;';
+connectionStatus.innerHTML = 'Chat: <span id="statusText">Disconnected</span>';
+document.body.appendChild(connectionStatus);
+
+// Debug function
+function debugLog(message, data = null) {
+  console.log(`[DEBUG] ${message}`, data || '');
+}
+
 // Init
 window.addEventListener('load', function() {
-  // Check if camera is available
   checkCameraAvailability();
   showNewChatButton();
   showSystemMessage("Click 'Start New Talk' to begin chatting with a stranger!");
   setupChatEvents();
   
-  // Check for existing peer ID and friend messages
   const existingPeerId = localStorage.getItem('talkrush_peerid');
   if (existingPeerId) {
     myId = existingPeerId;
     checkForFriendMessages();
   }
+  
+  // Start connection status monitor
+  setInterval(updateConnectionStatus, 1000);
 });
 
 // Check if camera is available
@@ -737,25 +750,22 @@ async function checkCameraAvailability() {
       localPlaceholder.style.fontSize = "14px";
     }
   } catch (error) {
-    console.error('Error checking camera availability:', error);
     cameraAvailable = false;
     localPlaceholder.textContent = "Camera access error - audio only mode";
     localPlaceholder.style.fontSize = "14px";
   }
 }
 
-// Improved cleanup on page exit
+// Improved cleanup
 window.addEventListener('beforeunload', function(e) {
   if (isConnected) {
     e.preventDefault();
     e.returnValue = 'Are you sure you want to leave? Your video talk will be disconnected.';
     return e.returnValue;
   }
-  // Clean up even if not connected
   cleanUpAllResources();
 });
 
-// Additional cleanup for better reliability
 window.addEventListener('pagehide', function() {
   cleanUpAllResources();
 });
@@ -797,15 +807,145 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// Chat setup
+// Fixed chat setup
 function setupChatEvents() {
   chatToggle.addEventListener('click', () => {
     chatVisible = !chatVisible;
     chatContainer.style.display = chatVisible ? 'flex' : 'none';
+    if (chatVisible) chatInput.focus();
   });
+  
   chatSendBtn.addEventListener('click', sendMessage);
+  
   chatInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') sendMessage();
+  });
+}
+
+// Fixed message sending function
+function sendMessage() {
+  const message = chatInput.value.trim();
+  
+  if (!message) return;
+  
+  debugLog('Attempting to send message:', message);
+  debugLog('Data channel state:', dataChannel?.readyState);
+  
+  if (!dataChannel) {
+    addMessage("❌ Chat not connected yet", 'system');
+    return;
+  }
+  
+  if (dataChannel.readyState !== 'open') {
+    addMessage("❌ Chat connection is closed", 'system');
+    return;
+  }
+  
+  try {
+    const messageData = JSON.stringify({ 
+      type: 'message', 
+      text: message, 
+      timestamp: Date.now(),
+      sender: myNickname || 'You'
+    });
+    
+    dataChannel.send(messageData);
+    addMessage(message, 'me');
+    chatInput.value = '';
+    chatInput.focus();
+    
+  } catch (error) {
+    console.error('Error sending message:', error);
+    addMessage("❌ Failed to send message", 'system');
+  }
+}
+
+// Fixed message handling
+function handleIncomingMessage(data) {
+  try {
+    if (data.type === 'message') {
+      addMessage(data.text, 'them');
+    } else if (data.type === 'friend_request') {
+      handleFriendRequest(data);
+    } else if (data.type === 'friend_accepted') {
+      handleFriendAccepted(data);
+    } else if (data.type === 'friend_rejected') {
+      handleFriendRejected();
+    } else if (data.type === 'chat_ready') {
+      addMessage("💬 Chat is now active", 'system');
+    } else if (data.type === 'ping') {
+      // Respond to ping
+      if (dataChannel && dataChannel.readyState === 'open') {
+        dataChannel.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
+      }
+    }
+  } catch (e) {
+    console.error("Error handling incoming data:", e);
+  }
+}
+
+// Setup outgoing data channel
+function setupOutgoingDataChannel(conn) {
+  dataChannel = conn;
+  
+  conn.on('open', () => {
+    debugLog('Data channel opened (outgoing)');
+    addMessage("💬 Chat connected!", 'system');
+    
+    // Send a ready signal
+    conn.send(JSON.stringify({ 
+      type: 'chat_ready',
+      timestamp: Date.now(),
+      nickname: myNickname
+    }));
+  });
+  
+  conn.on('data', (data) => {
+    try {
+      const parsed = JSON.parse(data);
+      handleIncomingMessage(parsed);
+    } catch (e) {
+      console.error('Error parsing data:', e);
+    }
+  });
+  
+  conn.on('close', () => {
+    addMessage("Chat disconnected", 'system');
+    dataChannel = null;
+  });
+  
+  conn.on('error', (err) => {
+    console.error('Data channel error:', err);
+    addMessage("Chat error occurred", 'system');
+  });
+}
+
+// Setup incoming data channel
+function setupIncomingDataChannel(conn) {
+  dataChannel = conn;
+  
+  conn.on('open', () => {
+    debugLog('Data channel opened (incoming)');
+    addMessage("💬 Chat connected!", 'system');
+  });
+  
+  conn.on('data', (data) => {
+    try {
+      const parsed = JSON.parse(data);
+      handleIncomingMessage(parsed);
+    } catch (e) {
+      console.error('Error parsing data:', e);
+    }
+  });
+  
+  conn.on('close', () => {
+    addMessage("Chat disconnected", 'system');
+    dataChannel = null;
+  });
+  
+  conn.on('error', (err) => {
+    console.error('Data channel error:', err);
+    addMessage("Chat error occurred", 'system');
   });
 }
 
@@ -822,16 +962,22 @@ friendBtn.onclick = () => {
   }
   
   friendRequestPending = true;
-  dataChannel.send(JSON.stringify({
+  
+  const requestData = JSON.stringify({
     type: 'friend_request',
     fromPeer: myPersistentPeerId,
     fromNickname: myNickname,
     toPeer: connectedPeerId,
     timestamp: Date.now()
-  }));
+  });
   
-  addMessage("Friend request sent! Waiting for response...", 'system');
-  friendBtn.disabled = true;
+  if (dataChannel.readyState === 'open') {
+    dataChannel.send(requestData);
+    addMessage("Friend request sent! Waiting for response...", 'system');
+    friendBtn.disabled = true;
+  } else {
+    addMessage("❌ Cannot send friend request - chat not connected", 'system');
+  }
 };
 
 // Friend modal handlers
@@ -855,11 +1001,13 @@ acceptFriendBtn.onclick = async () => {
       type: 'video'
     });
     
-    dataChannel.send(JSON.stringify({
-      type: 'friend_accepted',
-      friendId: friendId,
-      nickname: myNickname
-    }));
+    if (dataChannel.readyState === 'open') {
+      dataChannel.send(JSON.stringify({
+        type: 'friend_accepted',
+        friendId: friendId,
+        nickname: myNickname
+      }));
+    }
     
     hideFriendButton();
     addMessage(`🎉 You are now friends with ${otherNickname || 'Stranger'}!`, 'system');
@@ -871,7 +1019,7 @@ acceptFriendBtn.onclick = async () => {
 };
 
 rejectFriendBtn.onclick = () => {
-  if (dataChannel) {
+  if (dataChannel && dataChannel.readyState === 'open') {
     dataChannel.send(JSON.stringify({
       type: 'friend_rejected'
     }));
@@ -901,25 +1049,30 @@ function hideFriendButton() {
   }
 }
 
-function sendMessage() {
-  const message = chatInput.value.trim();
-  if (message && dataChannel && dataChannel.readyState === 'open') {
-    addMessage(message, 'me');
-    dataChannel.send(JSON.stringify({ type: 'message', text: message, timestamp: Date.now() }));
-    chatInput.value = '';
-  }
-}
-
 function addMessage(text, sender) {
   const messageDiv = document.createElement('div');
-  messageDiv.classList.add('chat-message', sender === 'me' ? 'message-me' : sender === 'system' ? 'message-system' : 'message-them');
-  messageDiv.textContent = text;
+  messageDiv.classList.add('chat-message');
+  
+  if (sender === 'me') {
+    messageDiv.classList.add('message-me');
+    messageDiv.textContent = `You: ${text}`;
+  } else if (sender === 'system') {
+    messageDiv.classList.add('message-system');
+    messageDiv.textContent = `💬 ${text}`;
+    messageDiv.style.fontStyle = 'italic';
+    messageDiv.style.color = '#888';
+  } else {
+    messageDiv.classList.add('message-them');
+    messageDiv.textContent = `Stranger: ${text}`;
+  }
+  
   chatMessages.appendChild(messageDiv);
   chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
 function clearChat() {
   chatMessages.innerHTML = '';
+  addMessage("Start chatting with the stranger...", 'system');
 }
 
 // Video chat init
@@ -928,15 +1081,12 @@ async function initVideoChat() {
     hideNewChatButton();
     showSystemMessage("Setting up your media...");
     
-    // Try to get media with video, but fall back to audio only if no camera
     try {
       localStream = await navigator.mediaDevices.getUserMedia({ 
         video: cameraAvailable, 
         audio: true 
       });
     } catch (error) {
-      console.error('Error accessing camera, trying audio only:', error);
-      // If video fails, try audio only
       localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       cameraAvailable = false;
     }
@@ -944,7 +1094,6 @@ async function initVideoChat() {
     localVideo.srcObject = localStream;
     localPlaceholder.style.display = 'none';
     
-    // If no camera available, show a placeholder image
     if (!cameraAvailable) {
       localVideo.style.display = 'none';
       const audioOnlyIndicator = document.createElement('div');
@@ -962,7 +1111,6 @@ async function initVideoChat() {
     
     startPeer(false);
   } catch (error) {
-    console.error('Error accessing media devices:', error);
     showSystemMessage("Could not access your microphone. Please check permissions.");
     localPlaceholder.textContent = "Microphone access denied";
     showNewChatButton();
@@ -980,6 +1128,7 @@ function startPeer(isNewSession = false) {
   remotePlaceholder.textContent = "Waiting for stranger to connect...";
   clearChat();
   hideFriendButton();
+  dataChannel = null;
   
   if (peer && isNewSession) {
     try {
@@ -1028,7 +1177,6 @@ function startPeer(isNewSession = false) {
       return;
     }
     
-    console.error('PeerJS error:', err);
     if (!isConnected) {
       showSystemMessage("Connection error. Click 'Start New Talk' to try again.");
       showNewChatButton();
@@ -1043,26 +1191,10 @@ function startPeer(isNewSession = false) {
     }, 1000);
   });
 
+  // Fixed: Handle incoming data connections
   peer.on('connection', (conn) => {
-    dataChannel = conn;
-    conn.on('data', (data) => {
-      try {
-        const parsed = JSON.parse(data);
-        if (parsed.type === 'message') {
-          addMessage(parsed.text, 'them');
-        } else if (parsed.type === 'friend_request') {
-          handleFriendRequest(parsed);
-        } else if (parsed.type === 'friend_accepted') {
-          handleFriendAccepted(parsed);
-        } else if (parsed.type === 'friend_rejected') {
-          handleFriendRejected();
-        }
-      } catch (e) {
-        console.error("Error parsing incoming data:", e);
-      }
-    });
-    conn.on('open', () => addMessage("Chat connected", 'system'));
-    conn.on('close', () => addMessage("Chat disconnected", 'system'));
+    debugLog('Incoming data connection');
+    setupIncomingDataChannel(conn);
   });
 }
 
@@ -1127,7 +1259,6 @@ function tryToFindMatch() {
 
     if (list) {
       for (let [key, entry] of Object.entries(list)) {
-        // Clean up stale entries (older than 30 seconds)
         if (entry.timestamp && (Date.now() - entry.timestamp) > 30000) {
           db.ref("videoWaiting/" + key).remove();
           continue;
@@ -1138,7 +1269,7 @@ function tryToFindMatch() {
             const sharedTags = myTags.filter(tag => entry.tags && entry.tags.includes(tag));
             if (sharedTags.length > 0) {
               bestMatch = { key, otherId: entry.id, sharedTags };
-              break; // 🎯 immediate tags+gender match
+              break;
             } else if (!bestMatch) {
               bestMatch = { key, otherId: entry.id, sharedTags: [] };
             }
@@ -1155,17 +1286,17 @@ function tryToFindMatch() {
 
     // No immediate match → add self
     const newRef = waitingRef.push();
-    waitingEntryRef = newRef; // Store reference for cleanup
+    waitingEntryRef = newRef;
     newRef.set({
       id: myId,
       interest: myGenderInterest,
       tags: myTags,
       nickname: myNickname,
-      timestamp: Date.now(), // Add timestamp for stale entry cleanup
-      hasCamera: cameraAvailable // Indicate if we have a camera
+      timestamp: Date.now(),
+      hasCamera: cameraAvailable
     });
 
-    // Start heartbeat to keep entry fresh
+    // Start heartbeat
     if (heartbeatInterval) clearInterval(heartbeatInterval);
     heartbeatInterval = setInterval(() => {
       if (waitingEntryRef && !isConnected) {
@@ -1197,10 +1328,8 @@ function tryToFindMatch() {
       call.answer(localStream);
       setupCall(call);
       
-      // Store connected peer ID
       localStorage.setItem('talkrush_connectedpeerid', call.peer);
       
-      // Clean up waiting list and heartbeat
       cleanUpWaitingList();
       if (heartbeatInterval) {
         clearInterval(heartbeatInterval);
@@ -1213,27 +1342,18 @@ function tryToFindMatch() {
 // Connect & call
 function connectToPeer(otherId) {
   if (isConnected || !localStream) return;
+  
   showSystemMessage("😍 Connecting to stranger...");
+  
+  // 1. Make the video call
   const call = peer.call(otherId, localStream);
   setupCall(call);
-
+  
+  // 2. Create data channel connection
   const conn = peer.connect(otherId);
-  conn.on("open", () => {
-    dataChannel = conn;
-    addMessage("Chat connected", 'system');
-    localStorage.setItem('talkrush_connectedpeerid', otherId);
-  });
-  conn.on("data", (data) => {
-    try {
-      const parsed = JSON.parse(data);
-      if (parsed.type === "message") addMessage(parsed.text, "them");
-      else if (parsed.type === 'friend_request') handleFriendRequest(parsed);
-      else if (parsed.type === 'friend_accepted') handleFriendAccepted(parsed);
-      else if (parsed.type === 'friend_rejected') handleFriendRejected();
-    } catch (e) {
-      console.error("Error parsing data:", e);
-    }
-  });
+  setupOutgoingDataChannel(conn);
+  
+  localStorage.setItem('talkrush_connectedpeerid', otherId);
 }
 
 function setupCall(call) {
@@ -1241,6 +1361,7 @@ function setupCall(call) {
     myConn.close();
     remoteVideo.srcObject = null;
   }
+  
   myConn = call;
   isConnected = true;
   hideNewChatButton();
@@ -1252,9 +1373,9 @@ function setupCall(call) {
     remotePlaceholder.style.display = 'none';
     hideSystemMessage();
   });
+  
   call.on("close", () => endConnection("Stranger disconnected! 💔"));
   call.on("error", (err) => {
-    console.error("Call error:", err);
     endConnection("Connection error");
   });
 }
@@ -1273,6 +1394,7 @@ function endConnection(message) {
   showNewChatButton();
   hideFriendButton();
   addMessage("Connection ended", 'system');
+  updateConnectionStatus();
 }
 
 function cleanUpWaitingList() {
@@ -1312,6 +1434,51 @@ async function checkForFriendMessages() {
   } catch (error) {}
 }
 
+// Connection status monitoring
+function updateConnectionStatus() {
+  const statusText = document.getElementById('statusText');
+  
+  if (!statusText) return;
+  
+  if (!dataChannel) {
+    statusText.textContent = 'Disconnected';
+    statusText.style.color = '#f44336';
+    connectionStatus.style.display = 'none';
+    return;
+  }
+  
+  let status = dataChannel.readyState;
+  let color = 'gray';
+  let display = 'none';
+  
+  switch(status) {
+    case 'open':
+      color = '#4CAF50';
+      display = 'block';
+      statusText.textContent = 'Connected ✓';
+      break;
+    case 'connecting':
+      color = '#FF9800';
+      display = 'block';
+      statusText.textContent = 'Connecting...';
+      break;
+    case 'closing':
+      color = '#FF9800';
+      display = 'block';
+      statusText.textContent = 'Closing...';
+      break;
+    case 'closed':
+      color = '#f44336';
+      display = 'none';
+      statusText.textContent = 'Disconnected';
+      break;
+  }
+  
+  statusText.style.color = color;
+  connectionStatus.style.borderLeft = `3px solid ${color}`;
+  connectionStatus.style.display = display;
+}
+
 // UI
 function showSystemMessage(msg) {
   systemMsg.textContent = msg;
@@ -1331,6 +1498,7 @@ document.getElementById("skipBtn").onclick = () => {
   showNewChatButton();
   hideFriendButton();
 };
+
 document.getElementById("newChatBtn").onclick = () => {
   hideNewChatButton();
   initVideoChat();
