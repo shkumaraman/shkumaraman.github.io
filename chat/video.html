@@ -147,7 +147,7 @@ body.light-mode {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background 0.3s;
+  transition: all 0.3s;
 }
 
 #friendBtn:hover {
@@ -701,9 +701,11 @@ let dataChannel;
 let heartbeatInterval;
 let cameraAvailable = true;
 
-// Friend request system
-let friendRequestPending = false;
+// Friend request system - CRITICAL FIXES HERE
+let friendRequestSent = false; // Track if WE sent a request
+let friendRequestReceived = false; // Track if WE received a request
 let friendRequestFrom = null;
+let friendRequestTimer = null;
 
 // Load preferences
 let myNickname = localStorage.getItem("talkrush_nickname") || "Guest";
@@ -794,6 +796,7 @@ function cleanUpAllResources() {
   }
   cleanUpWaitingList();
   if (heartbeatInterval) clearInterval(heartbeatInterval);
+  if (friendRequestTimer) clearTimeout(friendRequestTimer);
 }
 
 // Escape skip
@@ -812,8 +815,7 @@ document.addEventListener('keydown', (e) => {
       if (myConn) myConn.close();
       cleanUpWaitingList();
       isConnected = false;
-      friendRequestPending = false;
-      friendRequestFrom = null;
+      resetFriendRequestState(); // Reset friend request state
       hideNewChatButton();
       clearChat();
       hideFriendButton();
@@ -833,43 +835,60 @@ function setupChatEvents() {
     if (e.key === 'Enter') sendMessage();
   });
   
-  // Friend request events
+  // Friend request events - FIXED VERSION
   friendBtn.onclick = () => {
-    if (!myConn || !isConnected) return;
+    if (!myConn || !isConnected || !dataChannel || !dataChannel.open) {
+      addMessage("Not connected to send friend request", 'system');
+      return;
+    }
+    
+    // Don't send if we already sent one
+    if (friendRequestSent) {
+      addMessage("Friend request already sent", 'system');
+      return;
+    }
     
     const myPersistentPeerId = localStorage.getItem('talkrush_peerid');
     const connectedPeerId = localStorage.getItem('talkrush_connectedpeerid');
     
-    if (!myPersistentPeerId) {
-      addMessage("Cannot send friend request: No persistent ID found", 'system');
+    if (!myPersistentPeerId || !connectedPeerId) {
+      addMessage("Cannot send friend request: Missing connection info", 'system');
       return;
     }
     
-    friendRequestPending = true;
+    // Mark that we sent a request
+    friendRequestSent = true;
+    friendBtn.disabled = true;
     
     // Send friend request via data channel
-    if (dataChannel && dataChannel.open) {
-      dataChannel.send(JSON.stringify({
-        type: 'friend_request',
-        fromPeer: myPersistentPeerId,
-        fromNickname: myNickname,
-        toPeer: connectedPeerId,
-        timestamp: Date.now()
-      }));
-      
-      addMessage("Friend request sent! Waiting for response...", 'system');
-      friendBtn.disabled = true;
-    }
+    dataChannel.send(JSON.stringify({
+      type: 'friend_request',
+      fromPeer: myPersistentPeerId,
+      fromNickname: myNickname,
+      toPeer: connectedPeerId,
+      timestamp: Date.now()
+    }));
+    
+    addMessage("Friend request sent! Waiting for response...", 'system');
+    
+    // Auto-enable button after 30 seconds if no response
+    friendRequestTimer = setTimeout(() => {
+      if (friendRequestSent) {
+        friendRequestSent = false;
+        friendBtn.disabled = false;
+        addMessage("Friend request timed out", 'system');
+      }
+    }, 30000);
   };
   
   acceptFriendBtn.onclick = async () => {
-    if (!friendRequestFrom || !dataChannel) return;
+    if (!friendRequestFrom || !dataChannel || !dataChannel.open) return;
     
     try {
       const friendId = Date.now().toString();
       const myPeerId = localStorage.getItem('talkrush_peerid');
       const otherPeerId = friendRequestFrom.fromPeer;
-      const otherNickname = friendRequestFrom.fromNickname;
+      const otherNickname = friendRequestFrom.fromNickname || 'Stranger';
       
       const friendRef = db.ref('friends/' + friendId);
       await friendRef.set({
@@ -888,7 +907,7 @@ function setupChatEvents() {
       }));
       
       hideFriendButton();
-      addMessage(`🎉 You are now friends with ${otherNickname || 'Stranger'}!`, 'system');
+      addMessage(`🎉 You are now friends with ${otherNickname}!`, 'system');
       closeFriendModal();
       
     } catch (error) {
@@ -897,7 +916,7 @@ function setupChatEvents() {
   };
   
   rejectFriendBtn.onclick = () => {
-    if (dataChannel) {
+    if (dataChannel && dataChannel.open) {
       dataChannel.send(JSON.stringify({
         type: 'friend_rejected'
       }));
@@ -905,6 +924,17 @@ function setupChatEvents() {
     addMessage('Friend request rejected.', 'system');
     closeFriendModal();
   };
+}
+
+function resetFriendRequestState() {
+  friendRequestSent = false;
+  friendRequestReceived = false;
+  friendRequestFrom = null;
+  friendBtn.disabled = false;
+  if (friendRequestTimer) {
+    clearTimeout(friendRequestTimer);
+    friendRequestTimer = null;
+  }
 }
 
 function sendMessage() {
@@ -986,6 +1016,7 @@ function startPeer() {
   remotePlaceholder.style.display = 'flex';
   remotePlaceholder.textContent = "Waiting for stranger to connect...";
   clearChat();
+  resetFriendRequestState(); // Reset friend state
   if (peer) peer.destroy();
   showSystemMessage("🔍 Looking for a stranger...");
 
@@ -1040,6 +1071,13 @@ function startPeer() {
     dataChannel = conn;
     conn.on('open', () => {
       addMessage("Chat connected", 'system');
+      
+      // Store connected peer ID for friend requests
+      const connectedPeerId = conn.peer;
+      localStorage.setItem('talkrush_connectedpeerid', connectedPeerId);
+      
+      // CRITICAL: ALWAYS show friend button for BOTH sides
+      showFriendButton();
     });
     
     conn.on('data', (data) => {
@@ -1056,14 +1094,17 @@ function startPeer() {
           handleFriendAccepted(parsed);
         }
         else if (parsed.type === 'friend_rejected') {
-          handleFriendRejected();
+          handleFriendRejected(parsed);
         }
       } catch (e) {
         console.error("Error parsing incoming data:", e);
       }
     });
     
-    conn.on('close', () => addMessage("Chat disconnected", 'system'));
+    conn.on('close', () => {
+      addMessage("Chat disconnected", 'system');
+      hideFriendButton();
+    });
   });
 }
 
@@ -1169,7 +1210,7 @@ function connectToPeer(otherId) {
     // Store connected peer ID for friend requests
     localStorage.setItem('talkrush_connectedpeerid', otherId);
     
-    // Show friend button
+    // CRITICAL: ALWAYS show friend button when connected
     showFriendButton();
   });
   conn.on("data", (data) => {
@@ -1204,10 +1245,21 @@ function setupCall(call) {
   });
 }
 
-// Friend request handlers
+// Friend request handlers - UPDATED TO FIX BOTH ISSUES
 function handleFriendRequest(data) {
+  // Don't show if we already sent a request
+  if (friendRequestSent) {
+    addMessage("You already sent a friend request", 'system');
+    return;
+  }
+  
+  // Mark that we received a request
+  friendRequestReceived = true;
   friendRequestFrom = data;
   friendRequestText.textContent = `${data.fromNickname || 'Stranger'} wants to add you as a friend!`;
+  
+  // Hide friend button since we're receiving a request
+  hideFriendButton();
   
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -1216,35 +1268,70 @@ function handleFriendRequest(data) {
   
   friendModal.style.display = 'block';
   
-  setTimeout(() => {
+  // Auto-close after 30 seconds
+  if (friendRequestTimer) clearTimeout(friendRequestTimer);
+  friendRequestTimer = setTimeout(() => {
     if (friendModal.style.display === 'block') {
       closeFriendModal();
-      if (dataChannel) {
+      if (dataChannel && dataChannel.open) {
         dataChannel.send(JSON.stringify({ type: 'friend_rejected' }));
       }
       addMessage('Friend request expired.', 'system');
+      showFriendButton(); // Show button again after expiry
     }
   }, 30000);
 }
 
 function handleFriendAccepted(data) {
-  hideFriendButton();
-  addMessage(`🎉 ${data.nickname || 'Stranger'} accepted your friend request!`, 'system');
+  // If we sent the request and it was accepted
+  if (friendRequestSent) {
+    hideFriendButton();
+    addMessage(`🎉 ${data.nickname || 'Stranger'} accepted your friend request!`, 'system');
+  }
+  // If we received the request and accepted it
+  else if (friendRequestReceived) {
+    addMessage(`🎉 You are now friends with ${data.nickname || 'Stranger'}!`, 'system');
+  }
+  
+  // Reset state
+  friendRequestSent = false;
+  friendRequestReceived = false;
   friendBtn.disabled = false;
-  friendRequestPending = false;
+  
+  // Don't show friend button after becoming friends
+  hideFriendButton();
 }
 
-function handleFriendRejected() {
-  addMessage('Friend request was rejected.', 'system');
-  friendBtn.disabled = false;
-  friendRequestPending = false;
+function handleFriendRejected(data) {
+  // If our request was rejected
+  if (friendRequestSent) {
+    addMessage('Friend request was rejected.', 'system');
+    friendRequestSent = false;
+    friendBtn.disabled = false;
+    
+    // Show button again so we can send another request
+    showFriendButton();
+  }
+  // If we rejected someone else's request
+  else if (friendRequestReceived) {
+    addMessage('Friend request rejected.', 'system');
+    friendRequestReceived = false;
+    
+    // Show button again since we're not friends
+    showFriendButton();
+  }
 }
 
 function closeFriendModal() {
   friendModal.style.display = 'none';
   const overlay = document.getElementById('friendModalOverlay');
   if (overlay) overlay.remove();
-  friendRequestFrom = null;
+  
+  // If we closed without accepting, show friend button again
+  if (friendRequestReceived) {
+    friendRequestReceived = false;
+    showFriendButton();
+  }
 }
 
 // Check for existing friend messages (from text chat)
@@ -1278,8 +1365,7 @@ function endConnection(message) {
   myConn = null;
   isConnected = false;
   dataChannel = null;
-  friendRequestPending = false;
-  friendRequestFrom = null;
+  resetFriendRequestState(); // Reset friend state
   showNewChatButton();
   hideFriendButton();
   addMessage("Connection ended", 'system');
@@ -1303,7 +1389,7 @@ function isGenderCompatible(me, other) {
   return false;
 }
 
-// UI helpers
+// UI helpers - UPDATED showFriendButton
 function showSystemMessage(msg) {
   systemMsg.textContent = msg;
   systemMsg.style.display = 'block';
@@ -1312,7 +1398,7 @@ function hideSystemMessage() { systemMsg.style.display = 'none'; }
 function showNewChatButton() { newChatBtn.style.display = 'block'; }
 function hideNewChatButton() { newChatBtn.style.display = 'none'; }
 function showFriendButton() {
-  if (friendBtn) {
+  if (friendBtn && isConnected && !friendRequestReceived) {
     friendBtn.style.display = 'flex';
     friendBtn.disabled = false;
   }
@@ -1329,8 +1415,7 @@ document.getElementById("skipBtn").onclick = () => {
   if (myConn) myConn.close();
   cleanUpWaitingList();
   isConnected = false;
-  friendRequestPending = false;
-  friendRequestFrom = null;
+  resetFriendRequestState();
   showSystemMessage("Talk ended. Click 'Start New Talk' to find someone new.");
   showNewChatButton();
   hideFriendButton();
