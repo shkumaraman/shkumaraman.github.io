@@ -858,6 +858,7 @@ const firebaseConfig = {
 };
 
 const GIPHY_API_KEY = 'EKvv5S1CcXqYuHgxPNVKiNuiuNHRTzFk';
+const MAX_MESSAGES_PER_CHAT = 100;
 
 let currentUserId = null;
 let currentChatId = null;
@@ -918,6 +919,29 @@ function scrollToBottom() {
       chatDiv.scrollTop = chatDiv.scrollHeight;
     }, 100);
   }
+}
+
+function saveMessagesWithLimit(chatId, newMessage) {
+  const storageKey = `talkrush_chat_${chatId}`;
+  let messages = [];
+  
+  try {
+    const saved = localStorage.getItem(storageKey);
+    if (saved) {
+      messages = JSON.parse(saved);
+    }
+  } catch (e) {
+    console.error('Error loading messages:', e);
+  }
+  
+  messages.push(newMessage);
+  
+  if (messages.length > MAX_MESSAGES_PER_CHAT) {
+    messages = messages.slice(-MAX_MESSAGES_PER_CHAT);
+  }
+  
+  localStorage.setItem(storageKey, JSON.stringify(messages));
+  return messages;
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -1115,15 +1139,7 @@ function loadFriends() {
       
       let displayMsg = "Say Hi! 👋";
       if (friend.lastMessage) {
-        if (friend.lastMessage.includes('data:image')) {
-          displayMsg = '📷 Image';
-        } else if (friend.lastMessage.includes('giphy.com')) {
-          displayMsg = '🎬 GIF';
-        } else if (friend.lastMessage.trim() !== '') {
-          displayMsg = friend.lastMessage.length > 30 
-            ? friend.lastMessage.substring(0, 30) + '...' 
-            : friend.lastMessage;
-        }
+        displayMsg = friend.lastMessage;
       }
 
       friendsArray.push({
@@ -1317,15 +1333,40 @@ function handleIncomingData(data) {
   const senderId = myConn ? myConn.peer : currentFriendId;
   
   if (typeof data === "string") {
-    saveIncomingMessage(data, 'text', senderId);
+    const message = saveIncomingMessage(data, 'text', senderId);
     displayMessageImmediately(data, 'text', senderId, true);
+    updateLastMessageInFirebase(data);
   } else if (data.type === "image") {
-    saveIncomingMessage(data.blob, 'image', senderId);
+    const message = saveIncomingMessage(data.blob, 'image', senderId);
     displayMessageImmediately(data.blob, 'image', senderId, true);
+    updateLastMessageInFirebase('📷 Image');
   } else if (data.type === "gif") {
-    saveIncomingMessage(data.url, 'gif', senderId);
+    const message = saveIncomingMessage(data.url, 'gif', senderId);
     displayMessageImmediately(data.url, 'gif', senderId, true);
+    updateLastMessageInFirebase('🎬 GIF');
   }
+}
+
+function updateLastMessageInFirebase(content) {
+  if (!currentChatId) return;
+  
+  let displayMsg = '';
+  if (content.includes('data:image')) {
+    displayMsg = '📷 Image';
+  } else if (content.includes('giphy.com')) {
+    displayMsg = '🎬 GIF';
+  } else if (content.length > 50) {
+    displayMsg = content.substring(0, 50) + '...';
+  } else {
+    displayMsg = content;
+  }
+  
+  db.ref("friends/" + currentChatId).update({
+    lastMessage: displayMsg,
+    timestamp: Date.now()
+  }).catch(error => {
+    console.error('Error updating last message:', error);
+  });
 }
 
 function showFriendsList() {
@@ -1379,35 +1420,7 @@ function saveIncomingMessage(content, type, senderId) {
     delivered: senderId === currentUserId ? isConnected : true
   };
   
-  const storageKey = `talkrush_chat_${currentChatId}`;
-  let messages = [];
-  
-  try {
-    const saved = localStorage.getItem(storageKey);
-    if (saved) {
-      messages = JSON.parse(saved);
-    }
-  } catch (e) {
-    console.error('Error loading messages:', e);
-  }
-  
-  messages.push(message);
-  localStorage.setItem(storageKey, JSON.stringify(messages));
-  
-  let lastMsg = '📷 Image';
-  if (type === 'gif') {
-    lastMsg = '🎬 GIF';
-  } else if (type === 'text') {
-    lastMsg = content.length > 50 ? content.substring(0, 50) + '...' : content;
-  }
-  
-  db.ref("friends/" + currentChatId).update({
-    lastMessage: lastMsg,
-    timestamp: Date.now()
-  }).catch(error => {
-    console.error('Error updating last message:', error);
-  });
-  
+  saveMessagesWithLimit(currentChatId, message);
   return message;
 }
 
@@ -1440,16 +1453,8 @@ function appendMessageToChat(msg, isMe) {
     content = escapeHtml(msg.content);
   }
   
-  let deliveryStatus = '';
-  if (isMe) {
-    const statusClass = msg.delivered ? 'sent' : 'offline';
-    const statusText = msg.delivered ? 'Sent' : 'Offline - saved locally';
-    deliveryStatus = `<div class="delivery-status ${statusClass}">${statusText}</div>`;
-  }
-  
   div.innerHTML = content + 
-    `<div class="timestamp">${formatMessageTime(msg.timestamp)}</div>` +
-    deliveryStatus;
+    `<div class="timestamp">${formatMessageTime(msg.timestamp)}</div>`;
   
   chatDiv.appendChild(div);
   scrollToBottom();
@@ -1467,6 +1472,7 @@ function sendMessage() {
       
       saveIncomingMessage(content, 'text', currentUserId);
       displayMessageImmediately(content, 'text', currentUserId);
+      updateLastMessageInFirebase(content);
       
       input.value = '';
     } catch (error) {
@@ -1483,6 +1489,7 @@ function sendMessage() {
       
       saveIncomingMessage(content, 'text', currentUserId);
       displayMessageImmediately(content, 'text', currentUserId);
+      updateLastMessageInFirebase(content);
       input.value = '';
     }
   } else {
@@ -1496,6 +1503,7 @@ function sendMessage() {
     
     saveIncomingMessage(content, 'text', currentUserId);
     displayMessageImmediately(content, 'text', currentUserId);
+    updateLastMessageInFirebase(content);
     input.value = '';
   }
 }
@@ -1523,6 +1531,7 @@ function handleImageUpload(e) {
         
         saveIncomingMessage(reader.result, 'image', currentUserId);
         displayMessageImmediately(reader.result, 'image', currentUserId);
+        updateLastMessageInFirebase('📷 Image');
       } catch (error) {
         console.error('Failed to send image:', error);
         showOfflineStatus();
@@ -1537,6 +1546,7 @@ function handleImageUpload(e) {
         
         saveIncomingMessage(reader.result, 'image', currentUserId);
         displayMessageImmediately(reader.result, 'image', currentUserId);
+        updateLastMessageInFirebase('📷 Image');
       }
     } else {
       Swal.fire({
@@ -1549,6 +1559,7 @@ function handleImageUpload(e) {
       
       saveIncomingMessage(reader.result, 'image', currentUserId);
       displayMessageImmediately(reader.result, 'image', currentUserId);
+      updateLastMessageInFirebase('📷 Image');
     }
   };
   reader.readAsDataURL(file);
@@ -1641,6 +1652,7 @@ function displayGifs(gifs) {
           
           saveIncomingMessage(gifUrl, 'gif', currentUserId);
           displayMessageImmediately(gifUrl, 'gif', currentUserId);
+          updateLastMessageInFirebase('🎬 GIF');
         } catch (error) {
           console.error('Failed to send GIF:', error);
           showOfflineStatus();
@@ -1655,6 +1667,7 @@ function displayGifs(gifs) {
           
           saveIncomingMessage(gifUrl, 'gif', currentUserId);
           displayMessageImmediately(gifUrl, 'gif', currentUserId);
+          updateLastMessageInFirebase('🎬 GIF');
         }
       } else {
         Swal.fire({
@@ -1667,6 +1680,7 @@ function displayGifs(gifs) {
         
         saveIncomingMessage(gifUrl, 'gif', currentUserId);
         displayMessageImmediately(gifUrl, 'gif', currentUserId);
+        updateLastMessageInFirebase('🎬 GIF');
       }
       
       document.getElementById('gifModal').style.display = 'none';
