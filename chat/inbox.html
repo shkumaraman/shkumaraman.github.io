@@ -858,7 +858,7 @@ const firebaseConfig = {
 };
 
 const GIPHY_API_KEY = 'EKvv5S1CcXqYuHgxPNVKiNuiuNHRTzFk';
-const MESSAGE_LIMIT = 100; // 100 messages limit per chat
+const MESSAGE_LIMIT = 100;
 
 let currentUserId = null;
 let currentChatId = null;
@@ -868,6 +868,7 @@ let friendListListener = null;
 let peer = null;
 let myConn = null;
 let isConnected = false;
+let myNickname = null;
 
 if (!firebase.apps.length) {
   firebase.initializeApp(firebaseConfig);
@@ -875,7 +876,7 @@ if (!firebase.apps.length) {
 const db = firebase.database();
 
 function getCurrentUserId() {
-  return localStorage.getItem('talkrush_peerid');
+  return currentUserId;
 }
 
 function escapeHtml(text) {
@@ -922,14 +923,9 @@ function scrollToBottom() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-  currentUserId = getCurrentUserId();
+  myNickname = localStorage.getItem("talkrush_nickname") || "Guest";
   
-  if (!currentUserId) {
-    window.location.href = 'index.html';
-    return;
-  }
-  
-  console.log('Messages page loaded with Peer ID:', currentUserId);
+  console.log('Messages page loaded');
   
   initializePeerConnection();
   
@@ -941,13 +937,6 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 function initializePeerConnection() {
-  const peerId = currentUserId;
-  
-  if (!peerId) {
-    console.error('No peer ID found in localStorage');
-    return;
-  }
-  
   const peerOptions = {
     config: {
       iceServers: [
@@ -960,14 +949,11 @@ function initializePeerConnection() {
     }
   };
   
-  if (peerId) {
-    peerOptions.id = peerId;
-  }
-  
   peer = new Peer(peerOptions);
 
   peer.on('open', (id) => {
     console.log('✅ Messages page Peer connected with ID:', id);
+    currentUserId = id;
   });
   
   peer.on('connection', (conn) => {
@@ -1005,8 +991,7 @@ function initializePeerConnection() {
   peer.on('error', (err) => {
     console.error('Peer error:', err);
     
-    if (err.type === 'unavailable-id' || err.type === 'peer-unavailable') {
-      localStorage.removeItem('talkrush_peerid');
+    if (err.type === 'unavailable-id' || err.type === 'socket-error') {
       setTimeout(() => {
         location.href = 'index.html';
       }, 1000);
@@ -1081,8 +1066,6 @@ function updateSendButtonStatus() {
 }
 
 function loadFriends() {
-  if (!currentUserId) return;
-  
   if (friendListListener) {
     db.ref("friends").off("value", friendListListener);
   }
@@ -1196,6 +1179,12 @@ function connectToFriend(friendId) {
   if (!peer) {
     console.log('Peer not available for connection');
     showOfflineStatus();
+    return;
+  }
+  
+  if (!currentUserId) {
+    console.log('Waiting for Peer ID...');
+    setTimeout(() => connectToFriend(friendId), 500);
     return;
   }
   
@@ -1384,29 +1373,23 @@ function saveIncomingMessage(content, type, senderId) {
     console.error('Error loading messages:', e);
   }
   
-  // Add new message
   messages.push(message);
   
-  // Apply 100 message limit - remove oldest messages if over limit
   if (messages.length > MESSAGE_LIMIT) {
-    messages = messages.slice(-MESSAGE_LIMIT); // Keep only last 100 messages
+    messages = messages.slice(-MESSAGE_LIMIT);
   }
   
-  // Save to localStorage
   localStorage.setItem(storageKey, JSON.stringify(messages));
   
-  // Prepare last message for Firebase
   let lastMsg = '';
   if (type === 'image') {
     lastMsg = '📷 Image';
   } else if (type === 'gif') {
     lastMsg = '🎬 GIF';
   } else if (type === 'text') {
-    // Store actual message content for Firebase
     lastMsg = content;
   }
   
-  // Update Firebase with last message
   db.ref("friends/" + currentChatId).update({
     lastMessage: lastMsg,
     timestamp: Date.now()
@@ -1443,7 +1426,6 @@ function appendMessageToChat(msg, isMe) {
   } else if (msg.type === 'gif') {
     content = `<img src="${msg.content}" alt="GIF">`;
   } else {
-    // Show the actual message content from Firebase/localStorage
     content = escapeHtml(msg.content);
   }
   
