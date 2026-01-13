@@ -760,8 +760,8 @@ window.addEventListener('load', () => {
   const existingPeerId = localStorage.getItem('talkrush_peerid');
   if (existingPeerId) {
     myId = existingPeerId;
-    checkForFriendMessages();
   }
+  checkForFriendMessages();
   showNewChatButton();
   logSystem("Click 'Start New Chat' to begin chatting with a stranger!");
 });
@@ -815,7 +815,7 @@ function startPeer(isNewSession = false) {
   clearSystemMessage();
   isConnected = false;
   
-  if (peer && isNewSession) {
+  if (peer && !isNewSession) {
     try {
       peer.destroy();
       peer = null;
@@ -826,9 +826,15 @@ function startPeer(isNewSession = false) {
   
   let existingPeerId = localStorage.getItem('talkrush_peerid');
   
+  if (isNewSession) {
+    localStorage.removeItem('talkrush_peerid');
+    existingPeerId = null;
+  }
+  
   if (peer) {
     try {
       peer.destroy();
+      peer = null;
     } catch (e) {}
   }
   
@@ -851,12 +857,8 @@ function startPeer(isNewSession = false) {
   peer = new Peer(peerOptions);
 
   peer.on('open', (id) => {
-    if (!existingPeerId || id !== existingPeerId) {
-      localStorage.setItem('talkrush_peerid', id);
-      myId = id;
-    } else {
-      myId = existingPeerId;
-    }
+    localStorage.setItem('talkrush_peerid', id);
+    myId = id;
     
     cleanUpStaleConnections();
     tryToFindMatch();
@@ -867,7 +869,7 @@ function startPeer(isNewSession = false) {
   peer.on('error', (err) => {
     if (err.type === 'unavailable-id' || err.type === 'peer-unavailable') {
       localStorage.removeItem('talkrush_peerid');
-      startPeer(true);
+      setTimeout(() => startPeer(true), 1000);
       return;
     }
     
@@ -974,7 +976,7 @@ function tryToFindMatch() {
 }
 
 function connectToPeer(otherId, sharedTags = []) {
-  if (isConnected) return;
+  if (isConnected || !peer || peer.disconnected) return;
   clearSystemMessage();
   logSystem("😍 Connecting to stranger...");
   const conn = peer.connect(otherId);
