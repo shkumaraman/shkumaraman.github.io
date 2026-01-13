@@ -503,22 +503,6 @@ body.light-mode {
   opacity: 0.8;
 }
 
-.delivery-status {
-  font-size: 0.7em;
-  color: var(--dark-secondary-text);
-  text-align: right;
-  margin-top: 2px;
-  font-style: italic;
-}
-
-.delivery-status.sent {
-  color: #4CAF50;
-}
-
-.delivery-status.offline {
-  color: var(--offline-color);
-}
-
 #typingIndicator {
   position: fixed;
   bottom: 60px;
@@ -745,6 +729,96 @@ body.light-mode {
   transform: scale(1.05);
 }
 
+/* Notification Popup */
+.notification-popup {
+  position: fixed;
+  top: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--dark-header-bg);
+  color: var(--dark-text);
+  padding: 12px 20px;
+  border-radius: 10px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+  z-index: 10004;
+  display: none;
+  align-items: center;
+  gap: 12px;
+  max-width: 90%;
+  width: auto;
+  border-left: 4px solid var(--accent-color);
+  animation: slideInDown 0.3s ease-out;
+}
+
+.light-mode .notification-popup {
+  background: var(--light-header-bg);
+  color: var(--light-text);
+  border-left: 4px solid var(--accent-color);
+}
+
+.notification-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(45deg, #4a90e2, #63b3ed);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 1.1em;
+  font-weight: bold;
+}
+
+.notification-content {
+  flex: 1;
+}
+
+.notification-title {
+  margin: 0;
+  font-size: 1em;
+  font-weight: 600;
+}
+
+.notification-message {
+  margin: 3px 0 0;
+  font-size: 0.85em;
+  color: var(--dark-secondary-text);
+  max-width: 300px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.light-mode .notification-message {
+  color: var(--light-secondary-text);
+}
+
+.notification-close {
+  background: none;
+  border: none;
+  color: var(--dark-icon-color);
+  cursor: pointer;
+  font-size: 1.2em;
+  padding: 5px;
+  opacity: 0.7;
+  transition: opacity 0.3s;
+}
+
+.notification-close:hover {
+  opacity: 1;
+}
+
+@keyframes slideInDown {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -20px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
 @media (max-width: 600px) {
   .container {
     padding: 50px 10px 80px;
@@ -779,6 +853,16 @@ body.light-mode {
   .chat-controls {
     padding: 10px;
   }
+  
+  .notification-popup {
+    top: 55px;
+    padding: 10px 15px;
+    max-width: 95%;
+  }
+  
+  .notification-message {
+    max-width: 200px;
+  }
 }
 </style>
 
@@ -794,6 +878,16 @@ body.light-mode {
     </button>
   </div>
 </header>
+
+<!-- Notification Popup -->
+<div class="notification-popup" id="notificationPopup">
+  <div class="notification-avatar" id="notificationAvatar">?</div>
+  <div class="notification-content">
+    <h4 class="notification-title" id="notificationTitle">New Message</h4>
+    <p class="notification-message" id="notificationMessage">Message content here</p>
+  </div>
+  <button class="notification-close" onclick="closeNotification()">&times;</button>
+</div>
 
 <div class="container" id="friendsContainer">
   <div id="loading" class="loading">Loading your conversations...</div>
@@ -870,6 +964,7 @@ let myConn = null;
 let isConnected = false;
 let myNickname = null;
 let myFriendsData = {};
+let notificationTimer = null;
 
 if (!firebase.apps.length) {
   firebase.initializeApp(firebaseConfig);
@@ -1343,12 +1438,83 @@ function handleIncomingData(data) {
   if (typeof data === "string") {
     saveIncomingMessage(data, 'text', senderId);
     displayMessageImmediately(data, 'text', senderId, true);
+    
+    // Show notification if not in chat
+    if (!isInChatView()) {
+      showNotification(currentFriendName, data, 'text');
+    }
   } else if (data.type === "image") {
     saveIncomingMessage(data.blob, 'image', senderId);
     displayMessageImmediately(data.blob, 'image', senderId, true);
+    
+    if (!isInChatView()) {
+      showNotification(currentFriendName, '📷 Image', 'image');
+    }
   } else if (data.type === "gif") {
     saveIncomingMessage(data.url, 'gif', senderId);
     displayMessageImmediately(data.url, 'gif', senderId, true);
+    
+    if (!isInChatView()) {
+      showNotification(currentFriendName, '🎬 GIF', 'gif');
+    }
+  }
+}
+
+function isInChatView() {
+  return document.getElementById('chatContainer').style.display === 'flex';
+}
+
+function showNotification(senderName, message, type) {
+  const notificationPopup = document.getElementById('notificationPopup');
+  const notificationAvatar = document.getElementById('notificationAvatar');
+  const notificationTitle = document.getElementById('notificationTitle');
+  const notificationMessage = document.getElementById('notificationMessage');
+  
+  if (!notificationPopup || !senderName) return;
+  
+  // Set notification content
+  notificationAvatar.textContent = senderName.charAt(0).toUpperCase();
+  notificationTitle.textContent = senderName;
+  
+  // Truncate long messages
+  let displayMessage = message;
+  if (type === 'text' && message.length > 50) {
+    displayMessage = message.substring(0, 50) + '...';
+  }
+  notificationMessage.textContent = displayMessage;
+  
+  // Show notification
+  notificationPopup.style.display = 'flex';
+  
+  // Auto-close after 5 seconds
+  if (notificationTimer) {
+    clearTimeout(notificationTimer);
+  }
+  
+  notificationTimer = setTimeout(() => {
+    closeNotification();
+  }, 5000);
+  
+  // Make notification clickable to open chat
+  notificationPopup.onclick = () => {
+    if (currentChatId && currentFriendId) {
+      closeNotification();
+      // Already in the correct chat, just bring it to front
+      if (!isInChatView()) {
+        openChat(currentChatId, currentFriendId, currentFriendName);
+      }
+    }
+  };
+}
+
+function closeNotification() {
+  const notificationPopup = document.getElementById('notificationPopup');
+  if (notificationPopup) {
+    notificationPopup.style.display = 'none';
+  }
+  if (notificationTimer) {
+    clearTimeout(notificationTimer);
+    notificationTimer = null;
   }
 }
 
@@ -1471,16 +1637,8 @@ function appendMessageToChat(msg, isMe) {
     content = escapeHtml(msg.content);
   }
   
-  let deliveryStatus = '';
-  if (isMe) {
-    const statusClass = msg.delivered ? 'sent' : 'offline';
-    const statusText = msg.delivered ? 'Sent' : 'Offline - saved locally';
-    deliveryStatus = `<div class="delivery-status ${statusClass}">${statusText}</div>`;
-  }
-  
   div.innerHTML = content + 
-    `<div class="timestamp">${formatMessageTime(msg.timestamp)}</div>` +
-    deliveryStatus;
+    `<div class="timestamp">${formatMessageTime(msg.timestamp)}</div>`;
   
   chatDiv.appendChild(div);
   scrollToBottom();
@@ -1732,6 +1890,8 @@ window.addEventListener('beforeunload', () => {
   if (peer && typeof peer.destroy === 'function') {
     peer.destroy();
   }
+  
+  closeNotification();
 });
 
 setTimeout(setChatLogHeight, 100);
