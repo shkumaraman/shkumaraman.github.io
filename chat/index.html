@@ -725,7 +725,7 @@ body.light-mode {
 {% include menu.html %}
 {% include scripts.html %}
 
-<script>
+ <script>
 const firebaseConfig = {
   databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
 };
@@ -778,17 +778,13 @@ window.addEventListener('beforeunload', (e) => {
 window.addEventListener('pagehide', () => {
   cleanUpWaitingList();
   if (heartbeatInterval) clearInterval(heartbeatInterval);
+  
   if (myConn) {
     myConn.close();
-    myConn = null;
   }
-});
-
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') {
-    if (peer && peer.disconnected && !peer.destroyed) {
-      peer.reconnect();
-    }
+  
+  if (peer && !peer.destroyed) {
+    peer.disconnect();
   }
 });
 
@@ -814,8 +810,10 @@ document.addEventListener('keydown', (e) => {
       friendRequestFrom = null;
       showNewChatButton();
       logSystem("Chat ended. Starting new search...");
-      if (peer && !peer.destroyed) {
+      if (peer && peer.id && !peer.destroyed) {
         tryToFindMatch();
+      } else {
+        startPeer();
       }
     }
   }
@@ -827,12 +825,10 @@ function startPeer() {
   
   logSystem("🔍 Looking for a stranger...");
   
-  let existingPeerId = localStorage.getItem('talkrush_peerid');
+  const existingPeerId = localStorage.getItem('talkrush_peerid');
   
-  if (peer && !peer.destroyed) {
-    if (peer.disconnected) {
-      peer.reconnect();
-    }
+  if (peer && peer.id && !peer.destroyed && !peer.disconnected) {
+    cleanUpStaleConnections();
     tryToFindMatch();
     return;
   }
@@ -853,27 +849,38 @@ function startPeer() {
     peerOptions.id = existingPeerId;
   }
   
-  peer = new Peer(peerOptions);
+  try {
+    peer = new Peer(peerOptions);
+  } catch (err) {
+    logSystem("Failed to start. Click 'Start New Chat' to try again.");
+    showNewChatButton();
+    return;
+  }
 
   peer.on('open', (id) => {
-    localStorage.setItem('talkrush_peerid', id);
+    if (!existingPeerId || id !== existingPeerId) {
+      localStorage.setItem('talkrush_peerid', id);
+    }
     myId = id;
+    
     cleanUpStaleConnections();
     tryToFindMatch();
   });
 
-  peer.on('connection', (conn) => {
-    handleNewConnection(conn, []);
-  });
+  peer.on('connection', handleNewConnection);
 
   peer.on('error', (err) => {
-    if (err.type === 'unavailable-id') {
+    if (err.type === 'unavailable-id' || err.type === 'socket-error') {
       localStorage.removeItem('talkrush_peerid');
-      if (peer && !peer.destroyed) {
-        peer.destroy();
+      
+      if (peer) {
+        try {
+          peer.destroy();
+        } catch (e) {}
         peer = null;
       }
-      startPeer();
+      
+      setTimeout(() => startPeer(), 1000);
       return;
     }
     
@@ -885,10 +892,14 @@ function startPeer() {
   
   peer.on('disconnected', () => {
     setTimeout(() => {
-      if (peer && !peer.destroyed && peer.disconnected) {
-        peer.reconnect();
+      if (peer && peer.disconnected && !peer.destroyed) {
+        try {
+          peer.reconnect();
+        } catch (e) {
+          startPeer();
+        }
       }
-    }, 1000);
+    }, 2000);
   });
 }
 
@@ -1053,12 +1064,10 @@ function setupConnection(conn) {
 function endConnection(message) {
   appendSystemImage("/assets/chat_end.png");
   logSystem(message);
-  
   if (myConn) {
     myConn.close();
     myConn = null;
   }
-  
   isConnected = false;
   showNewChatButton();
   hideFriendButton();
@@ -1355,8 +1364,10 @@ document.getElementById("skipBtn").onclick = () => {
   showNewChatButton();
   hideFriendButton();
   
-  if (peer && !peer.destroyed) {
+  if (peer && peer.id && !peer.destroyed) {
     tryToFindMatch();
+  } else {
+    startPeer();
   }
 };
 
@@ -1372,11 +1383,11 @@ document.getElementById("newChatBtn").onclick = () => {
   
   cleanUpWaitingList();
   isConnected = false;
-  friendRequestPending = false;
-  friendRequestFrom = null;
   
-  if (peer && !peer.destroyed) {
+  if (peer && peer.id && !peer.destroyed) {
     tryToFindMatch();
+  } else {
+    startPeer();
   }
 };
 
