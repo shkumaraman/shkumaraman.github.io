@@ -869,6 +869,7 @@ let peer = null;
 let myConn = null;
 let isConnected = false;
 let myNickname = null;
+let myFriendsData = {};
 
 if (!firebase.apps.length) {
   firebase.initializeApp(firebaseConfig);
@@ -929,7 +930,6 @@ document.addEventListener("DOMContentLoaded", () => {
   
   initializePeerConnection();
   
-  loadFriends();
   setupEventListeners();
   
   adjustContainerHeight();
@@ -954,6 +954,7 @@ function initializePeerConnection() {
   peer.on('open', (id) => {
     console.log('✅ Messages page Peer connected with ID:', id);
     currentUserId = id;
+    loadFriends();
   });
   
   peer.on('connection', (conn) => {
@@ -1081,6 +1082,7 @@ function loadFriends() {
     if (!data) {
       empty.style.display = "block";
       list.style.display = "none";
+      myFriendsData = {};
       return;
     }
 
@@ -1088,14 +1090,14 @@ function loadFriends() {
     const friendsArray = [];
 
     Object.entries(data).forEach(([chatId, friend]) => {
-      const isUserInFriendship = friend.peer1 === currentUserId || friend.peer2 === currentUserId;
+      const friendNickname = friend.nickname2 === myNickname ? friend.nickname1 : 
+                           friend.nickname1 === myNickname ? friend.nickname2 : null;
       
-      if (!isUserInFriendship) return;
+      if (!friendNickname) return;
 
-      const otherId = friend.peer1 === currentUserId ? friend.peer2 : friend.peer1;
-      const friendNickname = friend.peer1 === currentUserId ? friend.nickname2 : friend.nickname1;
-      const avatarLetter = friendNickname ? friendNickname.charAt(0).toUpperCase() : "?";
-      const displayName = friendNickname || 'Stranger';
+      const otherId = friendNickname === friend.nickname1 ? friend.peer1 : friend.peer2;
+      const avatarLetter = friendNickname.charAt(0).toUpperCase();
+      const displayName = friendNickname;
       
       let displayMsg = "Say Hi! 👋";
       if (friend.lastMessage) {
@@ -1105,12 +1107,19 @@ function loadFriends() {
       friendsArray.push({
         chatId,
         otherId,
-        displayName,
+        displayName: friendNickname,
         avatarLetter,
         displayMsg,
         timestamp: friend.timestamp || Date.now(),
         friendData: friend
       });
+      
+      myFriendsData[chatId] = {
+        otherId: otherId,
+        displayName: friendNickname,
+        myPeerId: friendNickname === friend.nickname1 ? friend.peer2 : friend.peer1,
+        friendPeerId: otherId
+      };
     });
 
     friendsArray.sort((a, b) => b.timestamp - a.timestamp);
@@ -1118,6 +1127,7 @@ function loadFriends() {
     if (friendsArray.length === 0) {
       empty.style.display = "block";
       list.style.display = "none";
+      myFriendsData = {};
       return;
     }
 
@@ -1149,10 +1159,42 @@ function loadFriends() {
 
     empty.style.display = "none";
     list.style.display = "flex";
+    
+    updateMyPeerIdInFirebase();
   }, error => {
     console.error('Error loading friends:', error);
     document.getElementById("loading").style.display = "none";
     document.getElementById("emptyState").style.display = "block";
+  });
+}
+
+function updateMyPeerIdInFirebase() {
+  if (!currentUserId || !myNickname) return;
+  
+  db.ref("friends").once('value').then(snap => {
+    const data = snap.val();
+    if (!data) return;
+    
+    const updates = {};
+    
+    Object.entries(data).forEach(([chatId, friend]) => {
+      if (friend.nickname1 === myNickname && friend.peer1 !== currentUserId) {
+        updates[`${chatId}/peer1`] = currentUserId;
+      }
+      else if (friend.nickname2 === myNickname && friend.peer2 !== currentUserId) {
+        updates[`${chatId}/peer2`] = currentUserId;
+      }
+    });
+    
+    if (Object.keys(updates).length > 0) {
+      db.ref("friends").update(updates)
+        .then(() => {
+          console.log('Updated my Peer ID in Firebase');
+        })
+        .catch(error => {
+          console.error('Error updating Peer ID:', error);
+        });
+    }
   });
 }
 
@@ -1565,6 +1607,7 @@ function unfriend(chatId) {
       db.ref("friends/" + chatId).remove()
         .then(() => {
           localStorage.removeItem(`talkrush_chat_${chatId}`);
+          delete myFriendsData[chatId];
           
           if (currentChatId === chatId) {
             showFriendsList();
