@@ -743,9 +743,9 @@ const GIPHY_API_KEY = 'EKvv5S1CcXqYuHgxPNVKiNuiuNHRTzFk';
 const typingIndicator = document.getElementById("typingIndicator");
 let typingTimeout;
 
-let myNickname = localStorage.getItem("talkrush_nickname") || "Guest";
-let myGenderInterest = localStorage.getItem("talkrush_gender_interest") || "everyone";
-let myTags = JSON.parse(localStorage.getItem("talkrush_tags") || "[]");
+let myNickname = "Guest";
+let myGenderInterest = "everyone";
+let myTags = [];
 
 let friendRequestPending = false;
 let friendRequestFrom = null;
@@ -757,11 +757,6 @@ const rejectFriendBtn = document.getElementById('rejectFriendBtn');
 const friendRequestText = document.getElementById('friendRequestText');
 
 window.addEventListener('load', () => {
-  const existingPeerId = localStorage.getItem('talkrush_peerid');
-  if (existingPeerId) {
-    myId = existingPeerId;
-    checkForFriendMessages();
-  }
   showNewChatButton();
   logSystem("Click 'Start New Chat' to begin chatting with a stranger!");
 });
@@ -820,14 +815,6 @@ function startPeer() {
   
   logSystem("🔍 Looking for a stranger...");
   
-  const existingPeerId = localStorage.getItem('talkrush_peerid');
-  
-  if (peer && peer.id && !peer.destroyed && !peer.disconnected) {
-    cleanUpStaleConnections();
-    tryToFindMatch();
-    return;
-  }
-  
   const peerOptions = {
     config: {
       iceServers: [
@@ -840,10 +827,6 @@ function startPeer() {
     }
   };
   
-  if (existingPeerId) {
-    peerOptions.id = existingPeerId;
-  }
-  
   try {
     peer = new Peer(peerOptions);
   } catch (err) {
@@ -853,11 +836,7 @@ function startPeer() {
   }
 
   peer.on('open', (id) => {
-    if (!existingPeerId || id !== existingPeerId) {
-      localStorage.setItem('talkrush_peerid', id);
-    }
     myId = id;
-    
     cleanUpStaleConnections();
     tryToFindMatch();
   });
@@ -866,8 +845,6 @@ function startPeer() {
 
   peer.on('error', (err) => {
     if (err.type === 'unavailable-id' || err.type === 'socket-error') {
-      localStorage.removeItem('talkrush_peerid');
-      
       if (peer) {
         try {
           peer.destroy();
@@ -1006,8 +983,6 @@ function handleNewConnection(conn, sharedTags = []) {
   }
   clearSystemMessage();
   
-  localStorage.setItem('talkrush_connectedpeerid', conn.peer);
-  
   logSystem("Stranger Connected! Say Hi 👋");
 
   if (sharedTags.length > 0) {
@@ -1104,20 +1079,16 @@ function hideFriendButton() {
 friendBtn.onclick = () => {
   if (!myConn || !isConnected) return;
   
-  const myPersistentPeerId = localStorage.getItem('talkrush_peerid');
-  const connectedPeerId = localStorage.getItem('talkrush_connectedpeerid');
-  
-  if (!myPersistentPeerId) {
-    logSystem("Cannot send friend request: No persistent ID found");
+  if (!myId) {
+    logSystem("Cannot send friend request: No ID found");
     return;
   }
   
   friendRequestPending = true;
   myConn.send({
     type: 'friend_request',
-    fromPeer: myPersistentPeerId,
+    fromPeer: myId,
     fromNickname: myNickname,
-    toPeer: connectedPeerId,
     timestamp: Date.now()
   });
   
@@ -1152,13 +1123,12 @@ acceptFriendBtn.onclick = async () => {
   
   try {
     const friendId = Date.now().toString();
-    const myPeerId = localStorage.getItem('talkrush_peerid');
     const otherPeerId = friendRequestFrom.fromPeer;
     const otherNickname = friendRequestFrom.fromNickname;
     
     const friendRef = db.ref('friends/' + friendId);
     await friendRef.set({
-      peer1: myPeerId,
+      peer1: myId,
       peer2: otherPeerId,
       nickname1: myNickname,
       nickname2: otherNickname,
@@ -1209,24 +1179,6 @@ function closeFriendModal() {
   const overlay = document.getElementById('friendModalOverlay');
   if (overlay) overlay.remove();
   friendRequestFrom = null;
-}
-
-async function checkForFriendMessages() {
-  const myPeerId = localStorage.getItem('talkrush_peerid');
-  if (!myPeerId) return;
-  
-  try {
-    const friendsRef = db.ref('friends');
-    friendsRef.once('value').then((snapshot) => {
-      if (snapshot.exists()) {
-        snapshot.forEach((child) => {
-          const friendData = child.val();
-          if (friendData.peer1 === myPeerId || friendData.peer2 === myPeerId) {
-          }
-        });
-      }
-    });
-  } catch (error) {}
 }
 
 function appendMessage(sender, content, type = "text") {
