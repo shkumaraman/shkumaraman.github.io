@@ -743,9 +743,10 @@ const GIPHY_API_KEY = 'EKvv5S1CcXqYuHgxPNVKiNuiuNHRTzFk';
 const typingIndicator = document.getElementById("typingIndicator");
 let typingTimeout;
 
-let myNickname = "Guest";
-let myGenderInterest = "everyone";
-let myTags = [];
+// Nickname aur preferences localStorage se load karein
+let myNickname = localStorage.getItem("talkrush_nickname") || "Guest";
+let myGenderInterest = localStorage.getItem("talkrush_gender_interest") || "everyone";
+let myTags = JSON.parse(localStorage.getItem("talkrush_tags") || "[]");
 
 let friendRequestPending = false;
 let friendRequestFrom = null;
@@ -916,10 +917,10 @@ function tryToFindMatch() {
           if (isGenderCompatible(myGenderInterest, entry.interest)) {
             const sharedTags = myTags.filter(tag => entry.tags && entry.tags.includes(tag));
             if (sharedTags.length > 0) {
-              bestMatch = { key, otherId: entry.id, sharedTags };
+              bestMatch = { key, otherId: entry.id, sharedTags, otherNickname: entry.nickname };
               break;
             } else if (!bestMatch) {
-              bestMatch = { key, otherId: entry.id, sharedTags: [] };
+              bestMatch = { key, otherId: entry.id, sharedTags: [], otherNickname: entry.nickname };
             }
           }
         }
@@ -928,7 +929,7 @@ function tryToFindMatch() {
 
     if (bestMatch) {
       db.ref("waiting/" + bestMatch.key).remove();
-      connectToPeer(bestMatch.otherId, bestMatch.sharedTags);
+      connectToPeer(bestMatch.otherId, bestMatch.sharedTags, bestMatch.otherNickname);
       return;
     }
 
@@ -958,7 +959,7 @@ function tryToFindMatch() {
             const entry = child.val();
             if (entry.id !== myId && isGenderCompatible(myGenderInterest, entry.interest)) {
               child.ref.remove();
-              connectToPeer(entry.id, []);
+              connectToPeer(entry.id, [], entry.nickname);
               return true;
             }
           });
@@ -968,12 +969,12 @@ function tryToFindMatch() {
   });
 }
 
-function connectToPeer(otherId, sharedTags = []) {
+function connectToPeer(otherId, sharedTags = [], otherNickname = null) {
   if (isConnected) return;
   clearSystemMessage();
   logSystem("😍 Connecting to stranger...");
   const conn = peer.connect(otherId);
-  conn.on("open", () => handleNewConnection(conn, sharedTags));
+  conn.on("open", () => handleNewConnection(conn, sharedTags, otherNickname));
   conn.on("error", (err) => {
     if (!isConnected) {
       showNewChatButton();
@@ -982,19 +983,27 @@ function connectToPeer(otherId, sharedTags = []) {
   });
 }
 
-function handleNewConnection(conn, sharedTags = []) {
+function handleNewConnection(conn, sharedTags = [], otherNickname = null) {
   if (isConnected) {
     conn.close(); 
     return;
   }
   clearSystemMessage();
   
-  logSystem("Stranger Connected! Say Hi 👋");
+  // Stranger ka nickname display karein
+  if (otherNickname && otherNickname !== "Guest") {
+    logSystem(`Connected with ${otherNickname}! Say Hi 👋`);
+  } else {
+    logSystem("Stranger Connected! Say Hi 👋");
+  }
 
   if (sharedTags.length > 0) {
     logSystem("🎯 You both like: " + sharedTags.join(", "));
   }
 
+  // Connection mein stranger ka nickname save karein
+  conn.otherNickname = otherNickname || "Stranger";
+  
   setupConnection(conn);
   cleanUpWaitingList();
   if (heartbeatInterval) {
@@ -1029,7 +1038,8 @@ function setupConnection(conn) {
   });
 
   conn.on("close", () => {
-    endConnection("Stranger disconnected! 💔");
+    const otherName = myConn.otherNickname || "Stranger";
+    endConnection(`${otherName} disconnected! 💔`);
   });
 
   conn.on("error", (err) => {
@@ -1087,6 +1097,7 @@ friendBtn.onclick = () => {
   if (!myConn || !isConnected) return;
   
   const myPersistentPeerId = peer ? peer.id : null;
+  const otherNickname = myConn.otherNickname || "Stranger";
   
   if (!myPersistentPeerId) {
     logSystem("Cannot send friend request: No persistent ID found");
@@ -1099,16 +1110,20 @@ friendBtn.onclick = () => {
     fromPeer: myPersistentPeerId,
     fromNickname: myNickname,
     toPeer: myConn.peer,
+    toNickname: otherNickname,
     timestamp: Date.now()
   });
   
-  logSystem("Friend request sent! Waiting for response...");
+  logSystem(`Friend request sent to ${otherNickname}! Waiting for response...`);
   friendBtn.disabled = true;
 };
 
 function handleFriendRequest(data) {
   friendRequestFrom = data;
   friendRequestText.textContent = `${data.fromNickname || 'Stranger'} wants to add you as a friend!`;
+  
+  // Friend request data mein stranger ka nickname save karein
+  friendRequestFrom.otherNickname = data.fromNickname;
   
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -1135,14 +1150,14 @@ acceptFriendBtn.onclick = async () => {
     const friendId = Date.now().toString();
     const myPeerId = peer ? peer.id : null;
     const otherPeerId = friendRequestFrom.fromPeer;
-    const otherNickname = friendRequestFrom.fromNickname;
+    const otherNickname = friendRequestFrom.fromNickname || "Stranger";
     
     const friendRef = db.ref('friends/' + friendId);
     await friendRef.set({
       peer1: myPeerId,
       peer2: otherPeerId,
-      nickname1: myNickname,
-      nickname2: otherNickname,
+      nickname1: myNickname,  // Mera nickname
+      nickname2: otherNickname, // Stranger ka nickname
       lastMessage: '',
       timestamp: Date.now()
     });
@@ -1154,7 +1169,7 @@ acceptFriendBtn.onclick = async () => {
     });
     
     hideFriendButton();
-    logSystem(`🎉 You are now friends with ${otherNickname || 'Stranger'}!`);
+    logSystem(`🎉 You are now friends with ${otherNickname}!`);
     closeFriendModal();
     
   } catch (error) {
@@ -1174,7 +1189,8 @@ rejectFriendBtn.onclick = () => {
 
 function handleFriendAccepted(data) {
   hideFriendButton();
-  logSystem(`🎉 ${data.nickname || 'Stranger'} accepted your friend request!`);
+  const otherNickname = myConn.otherNickname || "Stranger";
+  logSystem(`🎉 ${otherNickname} accepted your friend request!`);
   friendBtn.disabled = false;
   friendRequestPending = false;
 }
