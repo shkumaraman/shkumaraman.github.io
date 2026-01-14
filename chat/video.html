@@ -665,7 +665,6 @@ video {
 {% include scripts.html %}
 
 <script>
-// Firebase config
 const firebaseConfig = {
   databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
 };
@@ -742,7 +741,8 @@ function handleVisibilityChange() {
 
 function checkDataChannel() {
   if (!dataChannel) return false;
-  return dataChannel.readyState === 'open';
+  return dataChannel.readyState === 'open' || 
+         (typeof dataChannel.open !== 'undefined' && dataChannel.open);
 }
 
 async function checkCameraAvailability() {
@@ -829,7 +829,6 @@ friendBtn.onclick = () => {
   }
   
   const myPersistentPeerId = myId;
-  const otherNickname = myConn.otherNickname || "Stranger";
   
   if (!myPersistentPeerId) {
     addMessage("Cannot send friend request: No persistent ID found", 'system');
@@ -842,11 +841,10 @@ friendBtn.onclick = () => {
     fromPeer: myPersistentPeerId,
     fromNickname: myNickname,
     toPeer: myConn.peer,
-    toNickname: otherNickname,
     timestamp: Date.now()
   }));
   
-  addMessage(`Friend request sent to ${otherNickname}! Waiting for response...`, 'system');
+  addMessage("Friend request sent! Waiting for response...", 'system');
   friendBtn.disabled = true;
 };
 
@@ -857,7 +855,7 @@ acceptFriendBtn.onclick = async () => {
     const friendId = Date.now().toString();
     const myPeerId = myId;
     const otherPeerId = friendRequestFrom.fromPeer;
-    const otherNickname = friendRequestFrom.fromNickname || "Stranger";
+    const otherNickname = friendRequestFrom.fromNickname;
     
     const friendRef = db.ref('friends/' + friendId);
     await friendRef.set({
@@ -876,7 +874,7 @@ acceptFriendBtn.onclick = async () => {
     }));
     
     hideFriendButton();
-    addMessage(`🎉 You are now friends with ${otherNickname}!`, 'system');
+    addMessage(`🎉 You are now friends with ${otherNickname || 'Stranger'}!`, 'system');
     closeFriendModal();
     
   } catch (error) {
@@ -1123,7 +1121,7 @@ function cleanUpStaleConnections() {
 
 function handleFriendRequest(data) {
   friendRequestFrom = data;
-  friendRequestText.textContent = `${data.fromNickname || 'Stranger'} wants to add you as a friend!`;
+  friendRequestText.textContent = `Stranger wants to add you as a friend!`;
   
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -1145,8 +1143,7 @@ function handleFriendRequest(data) {
 
 function handleFriendAccepted(data) {
   hideFriendButton();
-  const otherNickname = myConn.otherNickname || "Stranger";
-  addMessage(`🎉 ${otherNickname} accepted your friend request!`, 'system');
+  addMessage(`🎉 Stranger accepted your friend request!`, 'system');
   friendBtn.disabled = false;
   friendRequestPending = false;
 }
@@ -1174,10 +1171,10 @@ function tryToFindMatch() {
           if (isGenderCompatible(myGenderInterest, entry.interest)) {
             const sharedTags = myTags.filter(tag => entry.tags && entry.tags.includes(tag));
             if (sharedTags.length > 0) {
-              bestMatch = { key, otherId: entry.id, sharedTags, otherNickname: entry.nickname };
+              bestMatch = { key, otherId: entry.id, sharedTags };
               break;
             } else if (!bestMatch) {
-              bestMatch = { key, otherId: entry.id, sharedTags: [], otherNickname: entry.nickname };
+              bestMatch = { key, otherId: entry.id, sharedTags: [] };
             }
           }
         }
@@ -1186,7 +1183,7 @@ function tryToFindMatch() {
 
     if (bestMatch) {
       db.ref("videoWaiting/" + bestMatch.key).remove();
-      connectToPeer(bestMatch.otherId, bestMatch.sharedTags, bestMatch.otherNickname);
+      connectToPeer(bestMatch.otherId);
       return;
     }
 
@@ -1215,7 +1212,7 @@ function tryToFindMatch() {
             const entry = child.val();
             if (entry.id !== myId && isGenderCompatible(myGenderInterest, entry.interest)) {
               child.ref.remove();
-              connectToPeer(entry.id, [], entry.nickname);
+              connectToPeer(entry.id);
               return true;
             }
           });
@@ -1225,13 +1222,13 @@ function tryToFindMatch() {
   });
 }
 
-function connectToPeer(otherId, sharedTags = [], otherNickname = null) {
+function connectToPeer(otherId) {
   if (isConnected || !localStream) return;
   
   showSystemMessage("😍 Connecting to stranger...");
   
   const call = peer.call(otherId, localStream);
-  setupCall(call, sharedTags, otherNickname);
+  setupCall(call);
   
   cleanUpWaitingList();
   if (heartbeatInterval) {
@@ -1240,7 +1237,7 @@ function connectToPeer(otherId, sharedTags = [], otherNickname = null) {
   }
 }
 
-function setupCall(call, sharedTags = [], otherNickname = null) {
+function setupCall(call) {
   if (myConn) {
     myConn.close();
     remoteVideo.srcObject = null;
@@ -1249,18 +1246,6 @@ function setupCall(call, sharedTags = [], otherNickname = null) {
   myConn = call;
   isConnected = true;
   hideNewChatButton();
-  
-  if (otherNickname && otherNickname !== "Guest") {
-    showSystemMessage(`Connected with ${otherNickname}! Say Hi 👋`);
-  } else {
-    showSystemMessage("Stranger Connected! Say Hi 👋");
-  }
-
-  if (sharedTags.length > 0) {
-    showSystemMessage("🎯 You both like: " + sharedTags.join(", "));
-  }
-
-  myConn.otherNickname = otherNickname || "Stranger";
   
   setTimeout(() => {
     if (!dataChannel && myId && call.peer) {
@@ -1275,22 +1260,20 @@ function setupCall(call, sharedTags = [], otherNickname = null) {
     remotePlaceholder.style.display = 'none';
     hideSystemMessage();
     showFriendButton();
+    showSystemMessage("Stranger Connected! Say Hi 👋");
   });
   
-  call.on("close", () => {
-    const otherName = myConn.otherNickname || "Stranger";
-    endConnection(`${otherName} disconnected! 💔`);
-  });
+  call.on("close", () => endConnection());
   call.on("error", (err) => {
-    endConnection("Connection error");
+    endConnection();
   });
 }
 
-function endConnection(message) {
-  showSystemMessage(message);
+function endConnection() {
+  showSystemMessage("Stranger disconnected! 💔");
   remoteVideo.srcObject = null;
   remotePlaceholder.style.display = 'flex';
-  remotePlaceholder.textContent = message;
+  remotePlaceholder.textContent = "Stranger disconnected! 💔";
   
   if (myConn) {
     myConn.close();
