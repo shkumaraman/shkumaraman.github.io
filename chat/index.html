@@ -815,6 +815,12 @@ function startPeer() {
   
   logSystem("🔍 Looking for a stranger...");
   
+  if (peer && peer.id && !peer.destroyed && !peer.disconnected) {
+    cleanUpStaleConnections();
+    tryToFindMatch();
+    return;
+  }
+  
   const peerOptions = {
     config: {
       iceServers: [
@@ -883,7 +889,7 @@ function cleanUpStaleConnections() {
         snapshot.forEach((child) => {
           const entry = child.val();
           const isOld = entry.timestamp && (Date.now() - entry.timestamp) > 60000;
-          if (entry.id === myId || isOld) {
+          if (isOld) {
             child.ref.remove();
           }
         });
@@ -1039,6 +1045,7 @@ function endConnection(message) {
     myConn = null;
   }
   isConnected = false;
+  
   showNewChatButton();
   hideFriendButton();
   cleanUpWaitingList();
@@ -1079,16 +1086,19 @@ function hideFriendButton() {
 friendBtn.onclick = () => {
   if (!myConn || !isConnected) return;
   
-  if (!myId) {
-    logSystem("Cannot send friend request: No ID found");
+  const myPersistentPeerId = peer ? peer.id : null;
+  
+  if (!myPersistentPeerId) {
+    logSystem("Cannot send friend request: No persistent ID found");
     return;
   }
   
   friendRequestPending = true;
   myConn.send({
     type: 'friend_request',
-    fromPeer: myId,
+    fromPeer: myPersistentPeerId,
     fromNickname: myNickname,
+    toPeer: myConn.peer,
     timestamp: Date.now()
   });
   
@@ -1123,12 +1133,13 @@ acceptFriendBtn.onclick = async () => {
   
   try {
     const friendId = Date.now().toString();
+    const myPeerId = peer ? peer.id : null;
     const otherPeerId = friendRequestFrom.fromPeer;
     const otherNickname = friendRequestFrom.fromNickname;
     
     const friendRef = db.ref('friends/' + friendId);
     await friendRef.set({
-      peer1: myId,
+      peer1: myPeerId,
       peer2: otherPeerId,
       nickname1: myNickname,
       nickname2: otherNickname,
