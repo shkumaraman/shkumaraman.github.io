@@ -989,18 +989,14 @@ function handleNewConnection(conn, sharedTags = [], otherNickname = null) {
   }
   clearSystemMessage();
   
-  if (otherNickname && otherNickname !== "Guest") {
-    logSystem(`Connected with ${otherNickname}! Say Hi 👋`);
-  } else {
-    logSystem("Stranger Connected! Say Hi 👋");
-  }
+  logSystem("Stranger Connected! Say Hi 👋");
 
   if (sharedTags.length > 0) {
     logSystem("🎯 You both like: " + sharedTags.join(", "));
   }
 
-  // Connection mein stranger ka nickname save karein
   conn.otherNickname = otherNickname || "Stranger";
+  conn.isFriend = false;
   
   setupConnection(conn);
   cleanUpWaitingList();
@@ -1047,7 +1043,11 @@ function setupConnection(conn) {
 
 function endConnection(message) {
   appendSystemImage("/assets/chat_end.png");
-  logSystem(message);
+  if (myConn && myConn.isFriend && myConn.otherNickname) {
+    logSystem(`${myConn.otherNickname} disconnected! 💔`);
+  } else {
+    logSystem("Stranger disconnected! 💔");
+  }
   if (myConn) {
     myConn.close();
     myConn = null;
@@ -1166,7 +1166,11 @@ acceptFriendBtn.onclick = async () => {
     });
     
     hideFriendButton();
-    logSystem(`🎉 You are now friends with ${otherNickname}!`);
+    if (myConn) {
+      myConn.isFriend = true;
+    }
+    const otherName = myConn.otherNickname || "Stranger";
+    logSystem(`🎉 You are now friends with ${otherName}!`);
     closeFriendModal();
     
   } catch (error) {
@@ -1186,6 +1190,9 @@ rejectFriendBtn.onclick = () => {
 
 function handleFriendAccepted(data) {
   hideFriendButton();
+  if (myConn) {
+    myConn.isFriend = true;
+  }
   const otherNickname = myConn.otherNickname || "Stranger";
   logSystem(`🎉 ${otherNickname} accepted your friend request!`);
   friendBtn.disabled = false;
