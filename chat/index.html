@@ -916,10 +916,10 @@ function tryToFindMatch() {
           if (isGenderCompatible(myGenderInterest, entry.interest)) {
             const sharedTags = myTags.filter(tag => entry.tags && entry.tags.includes(tag));
             if (sharedTags.length > 0) {
-              bestMatch = { key, otherId: entry.id, sharedTags, otherNickname: entry.nickname };
+              bestMatch = { key, otherId: entry.id, sharedTags };
               break;
             } else if (!bestMatch) {
-              bestMatch = { key, otherId: entry.id, sharedTags: [], otherNickname: entry.nickname };
+              bestMatch = { key, otherId: entry.id, sharedTags: [] };
             }
           }
         }
@@ -928,7 +928,7 @@ function tryToFindMatch() {
 
     if (bestMatch) {
       db.ref("waiting/" + bestMatch.key).remove();
-      connectToPeer(bestMatch.otherId, bestMatch.sharedTags, bestMatch.otherNickname);
+      connectToPeer(bestMatch.otherId, bestMatch.sharedTags);
       return;
     }
 
@@ -958,7 +958,7 @@ function tryToFindMatch() {
             const entry = child.val();
             if (entry.id !== myId && isGenderCompatible(myGenderInterest, entry.interest)) {
               child.ref.remove();
-              connectToPeer(entry.id, [], entry.nickname);
+              connectToPeer(entry.id, []);
               return true;
             }
           });
@@ -968,12 +968,12 @@ function tryToFindMatch() {
   });
 }
 
-function connectToPeer(otherId, sharedTags = [], otherNickname = null) {
+function connectToPeer(otherId, sharedTags = []) {
   if (isConnected) return;
   clearSystemMessage();
   logSystem("😍 Connecting to stranger...");
   const conn = peer.connect(otherId);
-  conn.on("open", () => handleNewConnection(conn, sharedTags, otherNickname));
+  conn.on("open", () => handleNewConnection(conn, sharedTags));
   conn.on("error", (err) => {
     if (!isConnected) {
       showNewChatButton();
@@ -982,7 +982,7 @@ function connectToPeer(otherId, sharedTags = [], otherNickname = null) {
   });
 }
 
-function handleNewConnection(conn, sharedTags = [], otherNickname = null) {
+function handleNewConnection(conn, sharedTags = []) {
   if (isConnected) {
     conn.close(); 
     return;
@@ -995,7 +995,7 @@ function handleNewConnection(conn, sharedTags = [], otherNickname = null) {
     logSystem("🎯 You both like: " + sharedTags.join(", "));
   }
 
-  conn.otherNickname = otherNickname || "Stranger";
+  conn.otherNickname = "Stranger";
   conn.isFriend = false;
   
   setupConnection(conn);
@@ -1032,22 +1032,17 @@ function setupConnection(conn) {
   });
 
   conn.on("close", () => {
-    const otherName = myConn.otherNickname || "Stranger";
-    endConnection(`${otherName} disconnected! 💔`);
+    endConnection();
   });
 
   conn.on("error", (err) => {
-    endConnection("Connection error");
+    endConnection();
   });
 }
 
-function endConnection(message) {
+function endConnection() {
   appendSystemImage("/assets/chat_end.png");
-  if (myConn && myConn.isFriend && myConn.otherNickname) {
-    logSystem(`${myConn.otherNickname} disconnected! 💔`);
-  } else {
-    logSystem("Stranger disconnected! 💔");
-  }
+  logSystem("Stranger disconnected! 💔");
   if (myConn) {
     myConn.close();
     myConn = null;
@@ -1095,7 +1090,6 @@ friendBtn.onclick = () => {
   if (!myConn || !isConnected) return;
   
   const myPersistentPeerId = peer ? peer.id : null;
-  const otherNickname = myConn.otherNickname || "Stranger";
   
   if (!myPersistentPeerId) {
     logSystem("Cannot send friend request: No persistent ID found");
@@ -1108,17 +1102,16 @@ friendBtn.onclick = () => {
     fromPeer: myPersistentPeerId,
     fromNickname: myNickname,
     toPeer: myConn.peer,
-    toNickname: otherNickname,
     timestamp: Date.now()
   });
   
-  logSystem(`Friend request sent to ${otherNickname}! Waiting for response...`);
+  logSystem(`Friend request sent! Waiting for response...`);
   friendBtn.disabled = true;
 };
 
 function handleFriendRequest(data) {
   friendRequestFrom = data;
-  friendRequestText.textContent = `${data.fromNickname || 'Stranger'} wants to add you as a friend!`;
+  friendRequestText.textContent = `Stranger wants to add you as a friend!`;
 
   friendRequestFrom.otherNickname = data.fromNickname;
   
@@ -1147,7 +1140,7 @@ acceptFriendBtn.onclick = async () => {
     const friendId = Date.now().toString();
     const myPeerId = peer ? peer.id : null;
     const otherPeerId = friendRequestFrom.fromPeer;
-    const otherNickname = friendRequestFrom.fromNickname || "Stranger";
+    const otherNickname = friendRequestFrom.fromNickname || "Friend";
     
     const friendRef = db.ref('friends/' + friendId);
     await friendRef.set({
@@ -1168,9 +1161,9 @@ acceptFriendBtn.onclick = async () => {
     hideFriendButton();
     if (myConn) {
       myConn.isFriend = true;
+      myConn.otherNickname = otherNickname;
     }
-    const otherName = myConn.otherNickname || "Stranger";
-    logSystem(`🎉 You are now friends with ${otherName}!`);
+    logSystem(`🎉 You are now friends with ${otherNickname}!`);
     closeFriendModal();
     
   } catch (error) {
@@ -1192,9 +1185,9 @@ function handleFriendAccepted(data) {
   hideFriendButton();
   if (myConn) {
     myConn.isFriend = true;
+    myConn.otherNickname = data.nickname || "Friend";
   }
-  const otherNickname = myConn.otherNickname || "Stranger";
-  logSystem(`🎉 ${otherNickname} accepted your friend request!`);
+  logSystem(`🎉 Stranger accepted your friend request!`);
   friendBtn.disabled = false;
   friendRequestPending = false;
 }
