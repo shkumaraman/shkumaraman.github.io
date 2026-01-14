@@ -477,6 +477,57 @@ video {
   background: rgba(0,0,0,0.5);
   z-index: 10009;
 }
+
+.searching-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+}
+
+.searching-dots {
+  display: flex;
+  gap: 8px;
+}
+
+.searching-dots .dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: #ff4757;
+  animation: pulse 1.5s infinite ease-in-out;
+}
+
+.searching-dots .dot:nth-child(1) {
+  animation-delay: -0.3s;
+}
+
+.searching-dots .dot:nth-child(2) {
+  animation-delay: -0.15s;
+}
+
+.searching-dots .dot:nth-child(3) {
+  animation-delay: 0s;
+}
+
+.searching-text {
+  color: white;
+  font-size: 16px;
+  font-weight: 500;
+  text-align: center;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(0.8);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 1;
+  }
+}
   
 /* Responsive adjustments */
 @media (max-width: 600px) {
@@ -705,6 +756,8 @@ const chatInput = document.getElementById('chatInput');
 const chatSendBtn = document.getElementById('chatSendBtn');
 let chatVisible = false;
 
+let connectionMessageTimer = null;
+
 document.addEventListener('visibilitychange', handleVisibilityChange);
 
 window.addEventListener('load', function() {
@@ -785,6 +838,7 @@ function cleanUpAllResources() {
   }
   cleanUpWaitingList();
   if (heartbeatInterval) clearInterval(heartbeatInterval);
+  if (connectionMessageTimer) clearTimeout(connectionMessageTimer);
 }
 
 document.addEventListener('keydown', (e) => {
@@ -994,9 +1048,6 @@ function startPeer(isNewSession = false) {
   friendRequestFrom = null;
   remoteVideo.srcObject = null;
   remotePlaceholder.style.display = 'flex';
-  remotePlaceholder.textContent = "Waiting for stranger to connect...";
-  clearChat();
-  hideFriendButton();
   
   if (peer && isNewSession) {
     try {
@@ -1006,6 +1057,7 @@ function startPeer(isNewSession = false) {
   }
   
   showSystemMessage("🔍 Looking for a stranger...");
+  showSearchingAnimation();
 
   const peerOptions = {
     config: {
@@ -1034,6 +1086,7 @@ function startPeer(isNewSession = false) {
     }
     
     if (!isConnected) {
+      hideSearchingAnimation();
       showSystemMessage("Connection error. Click 'Start New Talk' to try again.");
       showNewChatButton();
     }
@@ -1068,6 +1121,25 @@ function startPeer(isNewSession = false) {
       }
     }
   });
+}
+
+function showSearchingAnimation() {
+  remotePlaceholder.innerHTML = `
+    <div class="searching-container">
+      <div class="searching-dots">
+        <div class="dot"></div>
+        <div class="dot"></div>
+        <div class="dot"></div>
+      </div>
+      <div class="searching-text">Looking for a stranger...</div>
+    </div>
+  `;
+  remotePlaceholder.style.display = 'flex';
+}
+
+function hideSearchingAnimation() {
+  remotePlaceholder.innerHTML = '';
+  remotePlaceholder.textContent = "Waiting for stranger to connect...";
 }
 
 function setupDataConnection(conn) {
@@ -1225,6 +1297,7 @@ function tryToFindMatch() {
 function connectToPeer(otherId) {
   if (isConnected || !localStream) return;
   
+  hideSearchingAnimation();
   showSystemMessage("😍 Connecting to stranger...");
   
   const call = peer.call(otherId, localStream);
@@ -1260,7 +1333,15 @@ function setupCall(call) {
     remotePlaceholder.style.display = 'none';
     hideSystemMessage();
     showFriendButton();
+    
     showSystemMessage("Stranger Connected! Say Hi 👋");
+    
+    if (connectionMessageTimer) {
+      clearTimeout(connectionMessageTimer);
+    }
+    connectionMessageTimer = setTimeout(() => {
+      hideSystemMessage();
+    }, 3000);
   });
   
   call.on("close", () => endConnection());
