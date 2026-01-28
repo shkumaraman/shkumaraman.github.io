@@ -58,85 +58,66 @@
 </div>
 
 <script>
-/* Firebase Initialization */
-const firebaseConfig = {
-  databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
-};
+document.addEventListener("DOMContentLoaded", function () {
 
-if (!firebase.apps.length) {
-  firebase.initializeApp(firebaseConfig);
-}
+  /* Firebase Initialization */
+  const firebaseConfig = {
+    databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
+  };
 
-const db = firebase.database();
+  if (!firebase.apps.length) {
+    firebase.initializeApp(firebaseConfig);
+  }
 
-/* Local nickname */
-const myNickname = localStorage.getItem("talkrush_nickname");
-if (!myNickname) {
-  console.warn("No local nickname found");
-}
+  const db = firebase.database();
 
-/* Toast elements */
-const toast = document.getElementById("messageToast");
-const toastText = document.getElementById("toastText");
-const toastViewBtn = document.getElementById("toastViewBtn");
+  const myNickname = localStorage.getItem("talkrush_nickname");
+  if (!myNickname) return;
 
-/* Last notified timestamp */
-let lastNotified = localStorage.getItem("lastNotifiedMsgTime") || 0;
+  const toast = document.getElementById("messageToast");
+  const toastText = document.getElementById("toastText");
+  const toastViewBtn = document.getElementById("toastViewBtn");
 
-/* Firebase listener */
-db.ref("friends").on("value", snapshot => {
-  const data = snapshot.val();
-  if (!data || !myNickname) return;
+  if (!toast || !toastText || !toastViewBtn) {
+    console.warn("Toast DOM not found");
+    return;
+  }
 
-  Object.values(data).forEach(friend => {
-    if (!friend.timestamp || !friend.lastMessage) return;
+  let lastNotified = localStorage.getItem("lastNotifiedMsgTime") || 0;
 
-    /* Check if message is for me */
-    let senderName = null;
+  db.ref("friends").on("value", snapshot => {
+    const data = snapshot.val();
+    if (!data) return;
 
-    if (friend.nickname1 === myNickname) {
-      senderName = friend.nickname2;
-    } 
-    else if (friend.nickname2 === myNickname) {
-      senderName = friend.nickname1;
-    } 
-    else {
-      return; // not my chat
-    }
+    Object.values(data).forEach(friend => {
+      if (!friend.timestamp || !friend.lastMessage) return;
 
-    /* New message check */
-    if (friend.timestamp > lastNotified) {
-      showToast(senderName);
+      let senderName = null;
 
-      lastNotified = friend.timestamp;
-      localStorage.setItem("lastNotifiedMsgTime", lastNotified);
-    }
+      if (friend.nickname1 === myNickname) senderName = friend.nickname2;
+      else if (friend.nickname2 === myNickname) senderName = friend.nickname1;
+      else return;
+
+      if (friend.timestamp > lastNotified) {
+        showToast(senderName);
+        lastNotified = friend.timestamp;
+        localStorage.setItem("lastNotifiedMsgTime", lastNotified);
+      }
+    });
   });
+
+  function showToast(name) {
+    toastText.textContent = `${name} sent you a message`;
+    toast.style.top = "20px";
+
+    setTimeout(() => {
+      toast.style.top = "-120px";
+    }, 5000);
+  }
+
+  toastViewBtn.onclick = () => {
+    window.location.href = "/chat/inbox.html";
+  };
+
 });
-
-/* Show toast */
-function showToast(name) {
-  toastText.textContent = `${name} sent you a message`;
-  toast.style.top = "20px";
-
-  setTimeout(() => {
-    toast.style.top = "-120px";
-  }, 5000); // 5 seconds
-}
-
-/* View button hover effects */
-toastViewBtn.addEventListener('mouseenter', function() {
-  this.style.transform = 'translateY(-2px)';
-  this.style.boxShadow = '0 4px 8px rgba(0,0,0,0.2)';
-});
-
-toastViewBtn.addEventListener('mouseleave', function() {
-  this.style.transform = 'translateY(0)';
-  this.style.boxShadow = 'none';
-});
-
-/* View button click */
-toastViewBtn.onclick = () => {
-  window.location.href = "/chat/inbox.html";
-};
 </script>
