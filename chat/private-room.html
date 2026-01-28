@@ -1093,8 +1093,6 @@ const GIPHY_API_KEY = 'EKvv5S1CcXqYuHgxPNVKiNuiuNHRTzFk';
 const state = {
     peer: null,
     myConn: null,
-    myId: null,
-    currentSystemMessage: null,
     isConnected: false,
     escPressedOnce: false,
     escTimer: null,
@@ -1162,23 +1160,20 @@ const utils = {
 
 const storage = {
     save: () => {
-        const roomData = { roomCode: state.currentRoomCode };
-        localStorage.setItem('chatRoomData', JSON.stringify(roomData));
+        if (state.currentRoomCode) {
+            localStorage.setItem('talkrush_room', state.currentRoomCode);
+        }
     },
     load: () => {
         try {
-            const savedData = localStorage.getItem('chatRoomData');
-            if (!savedData) return null;
-            
-            const data = JSON.parse(savedData);
-            return data;
+            return localStorage.getItem('talkrush_room');
         } catch (error) {
             console.error('Error loading from storage:', error);
             return null;
         }
     },
     clear: () => {
-        localStorage.removeItem('chatRoomData');
+        localStorage.removeItem('talkrush_room');
         state.currentRoomCode = null;
         elements.roomCodeInput.value = '';
     }
@@ -1238,7 +1233,6 @@ const roomManager = {
         
         try {
             await db.ref("rooms/" + code).set({
-                participants: {},
                 createdAt: firebase.database.ServerValue.TIMESTAMP
             });
             
@@ -1248,7 +1242,7 @@ const roomManager = {
             messageHandler.logSystem(`Room created with code: ${code}. Share this code with someone to chat.`);
             utils.hide(elements.roomModal);
             utils.hide(elements.loadingScreen);
-            roomManager.setupParticipantListener(code);
+            roomManager.setupRoomListener(code);
             
         } catch (error) {
             console.error("Error creating room:", error);
@@ -1270,43 +1264,47 @@ const roomManager = {
             const snapshot = await db.ref("rooms/" + code).once('value');
             if (!snapshot.exists()) throw new Error("Room not found");
             
-            const roomData = snapshot.val();
-            const participants = Object.keys(roomData.participants || {});
-            
-            // Check if room has 2 active participants
-            const activeParticipants = participants.filter(id => roomData.participants[id] === "active");
-            if (activeParticipants.length >= 2) {
-                throw new Error("Room is full");
-            }
-            
             state.currentRoomCode = code;
             storage.save();
             
-            // Join the room (participant will be marked as active when Peer connection is established)
-            
+            messageHandler.logSystem(`Joined room: ${code}. Waiting for someone to join...`);
             utils.hide(elements.roomModal);
             utils.hide(elements.loadingScreen);
+            
+            roomManager.setupRoomListener(code);
             
         } catch (error) {
             console.error("Error joining room:", error);
             utils.hide(elements.loadingScreen);
-            roomManager.showJoinError(
-                error.message === "Room is full" 
-                    ? "Room is full. Only 2 participants allowed."
-                    : "Room not found. Please check the code."
-            );
+            roomManager.showJoinError("Room not found. Please check the code.");
         }
     },
-    setupParticipantListener: (roomCode) => {
-        const ref = db.ref("rooms/" + roomCode + "/participants");
-        ref.on("child_added", (snapshot) => {
-            if (snapshot.key !== state.myId && snapshot.val() === "active") {
-                connectionManager.connectToPeer(snapshot.key);
+    setupRoomListener: (roomCode) => {
+        const ref = db.ref("rooms/" + roomCode);
+        
+        ref.on("value", (snapshot) => {
+            if (!snapshot.exists()) {
+                messageHandler.logSystem("Room has been closed");
+                state.currentRoomCode = null;
+                storage.clear();
+                return;
             }
         });
-        ref.on("child_changed", (snapshot) => {
-            if (snapshot.key !== state.myId && snapshot.val() === "inactive") {
+        
+        const participantsRef = ref.child("participants");
+        participantsRef.on("child_added", (snapshot) => {
+            const peerId = snapshot.key;
+            const status = snapshot.val();
+            
+            if (status === "active" && !state.isConnected) {
+                connectionManager.connectToPeer(peerId);
+            }
+        });
+        
+        participantsRef.on("child_removed", (snapshot) => {
+            if (state.isConnected) {
                 messageHandler.logSystem("Participant left the room");
+                connectionManager.endConnection("Participant disconnected! 💔");
             }
         });
     },
@@ -1316,7 +1314,8 @@ const roomManager = {
         setTimeout(() => utils.hide(elements.joinError), 3000);
     },
     autoRejoinRoom: async () => {
-        if (!state.currentRoomCode || !state.myId) {
+        const savedRoomCode = storage.load();
+        if (!savedRoomCode) {
             utils.hide(elements.loadingScreen);
             utils.showBlock(elements.roomModal);
             return;
@@ -1326,63 +1325,45 @@ const roomManager = {
         elements.loadingText.textContent = "Reconnecting to room...";
         
         try {
-            const snapshot = await db.ref("rooms/" + state.currentRoomCode).once('value');
+            const snapshot = await db.ref("rooms/" + savedRoomCode).once('value');
             if (!snapshot.exists()) throw new Error("Room no longer exists");
             
-            const roomData = snapshot.val();
-            const participants = Object.keys(roomData.participants || {});
+            state.currentRoomCode = savedRoomCode;
+            elements.roomCodeInput.value = savedRoomCode;
             
-            // Check if room has 2 active participants
-            const activeParticipants = participants.filter(id => roomData.participants[id] === "active");
-            if (activeParticipants.length >= 2) {
-                throw new Error("Room is full");
-            }
-            
-            messageHandler.logSystem(`Reconnected to room: ${state.currentRoomCode}`);
-            
-            // Connect to active participants
-            for (const participantId of activeParticipants) {
-                if (participantId !== state.myId) {
-                    await connectionManager.connectToPeer(participantId);
-                }
-            }
-            
+            messageHandler.logSystem(`Reconnected to room: ${savedRoomCode}. Waiting for someone to join...`);
             utils.hide(elements.loadingScreen);
+            
+            roomManager.setupRoomListener(savedRoomCode);
             
         } catch (error) {
             console.error("Error rejoining room:", error);
             utils.hide(elements.loadingScreen);
             storage.clear();
-            messageHandler.logSystem(error.message === "Room is full" ? "Room is now full. Please create or join another room." : "Room no longer exists. Please create or join a new room.");
+            messageHandler.logSystem("Room no longer exists. Please create or join a new room.");
             utils.showBlock(elements.roomModal);
         }
     },
-    markParticipantActive: async () => {
-        if (state.currentRoomCode && state.myId) {
-            try {
-                await db.ref("rooms/" + state.currentRoomCode + "/participants/" + state.myId).set("active");
-            } catch (error) {
-                console.error("Error marking participant active:", error);
-            }
+    addParticipant: async (peerId) => {
+        if (!state.currentRoomCode) return;
+        try {
+            await db.ref(`rooms/${state.currentRoomCode}/participants/${peerId}`).set("active");
+        } catch (error) {
+            console.error("Error adding participant:", error);
         }
     },
-    markParticipantInactive: async () => {
-        if (state.currentRoomCode && state.myId) {
-            try {
-                await db.ref("rooms/" + state.currentRoomCode + "/participants/" + state.myId).set("inactive");
-                
-                // Check if we should remove the room
-                const snapshot = await db.ref("rooms/" + state.currentRoomCode + "/participants").once('value');
-                if (snapshot.exists()) {
-                    const participants = snapshot.val();
-                    const hasActiveParticipants = Object.values(participants).some(status => status === "active");
-                    if (!hasActiveParticipants) {
-                        await db.ref("rooms/" + state.currentRoomCode).remove();
-                    }
-                }
-            } catch (error) {
-                console.error("Error marking participant inactive:", error);
+    removeParticipant: async (peerId) => {
+        if (!state.currentRoomCode) return;
+        try {
+            await db.ref(`rooms/${state.currentRoomCode}/participants/${peerId}`).remove();
+            
+            // Check if room is empty and delete it
+            const snapshot = await db.ref(`rooms/${state.currentRoomCode}/participants`).once('value');
+            if (!snapshot.exists() || Object.keys(snapshot.val()).length === 0) {
+                await db.ref("rooms/" + state.currentRoomCode).remove();
             }
+        } catch (error) {
+            console.error("Error removing participant:", error);
         }
     }
 };
@@ -1393,7 +1374,7 @@ const connectionManager = {
         state.isConnected = false;
         if (state.peer) state.peer.destroy();
         
-        // Generate new Peer ID each time
+        // Always generate new peer ID
         state.peer = new Peer({
             config: {
                 iceServers: [
@@ -1407,18 +1388,21 @@ const connectionManager = {
         });
 
         state.peer.on('open', (id) => {
-            state.myId = id;
             utils.hide(elements.loadingScreen);
             roomManager.autoRejoinRoom();
+            
+            // Add self to room participants
+            if (state.currentRoomCode) {
+                roomManager.addParticipant(id);
+            }
         });
 
         state.peer.on('connection', connectionManager.handleNewConnection);
-        state.peer.on('error', connectionManager.handlePeerError);
-    },
-    handlePeerError: (err) => {
-        console.error('PeerJS error:', err);
-        utils.hide(elements.loadingScreen);
-        messageHandler.logSystem("Connection error. Please refresh the page to try again.");
+        state.peer.on('error', (err) => {
+            console.error('PeerJS error:', err);
+            utils.hide(elements.loadingScreen);
+            messageHandler.logSystem("Connection error. Please refresh the page to try again.");
+        });
     },
     handleNewConnection: (conn) => {
         if (state.isConnected) {
@@ -1426,7 +1410,6 @@ const connectionManager = {
             return;
         }
         connectionManager.setupConnection(conn);
-        roomManager.markParticipantActive();
         messageHandler.logSystem("Connected to room participant!");
     },
     connectToPeer: async (peerId) => {
@@ -1434,7 +1417,6 @@ const connectionManager = {
         const conn = state.peer.connect(peerId, { reliable: true });
         conn.on('open', () => {
             connectionManager.setupConnection(conn);
-            roomManager.markParticipantActive();
             messageHandler.logSystem("Connected to room participant!");
         });
         conn.on('error', (err) => {
@@ -1474,7 +1456,12 @@ const connectionManager = {
         state.myConn = null;
         state.isConnected = false;
         videoCallManager.endVideoCall();
-        roomManager.markParticipantInactive();
+        
+        // Remove self from room participants
+        if (state.peer && state.peer.id && state.currentRoomCode) {
+            roomManager.removeParticipant(state.peer.id);
+        }
+        
         setTimeout(connectionManager.startPeer, 1000);
     },
     sendMessage: () => {
@@ -1770,8 +1757,8 @@ const eventHandlers = {
     skipChat: () => {
         if (state.myConn) state.myConn.close();
         state.isConnected = false;
-        roomManager.markParticipantInactive();
-        messageHandler.logSystem("Skipped chat. Creating a new connection...");
+        storage.clear();
+        messageHandler.logSystem("Room destroyed. Creating a new connection...");
         setTimeout(() => {
             elements.chatLog.innerHTML = "";
             connectionManager.startPeer();
@@ -1790,10 +1777,10 @@ const eventHandlers = {
 };
 
 const init = () => {
-    const savedData = storage.load();
-    if (savedData) {
-        state.currentRoomCode = savedData.roomCode;
-        if (state.currentRoomCode) elements.roomCodeInput.value = state.currentRoomCode;
+    const savedRoomCode = storage.load();
+    if (savedRoomCode) {
+        state.currentRoomCode = savedRoomCode;
+        elements.roomCodeInput.value = savedRoomCode;
     }
     eventHandlers.setupEventListeners();
     connectionManager.startPeer();
