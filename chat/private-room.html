@@ -1169,11 +1169,9 @@ const storage = {
         try {
             const savedData = localStorage.getItem('chatRoomData');
             if (!savedData) return null;
-            
             const data = JSON.parse(savedData);
             return data;
         } catch (error) {
-            console.error('Error loading from storage:', error);
             return null;
         }
     },
@@ -1308,9 +1306,37 @@ const roomManager = {
                 connectionManager.connectToPeer(snapshot.key);
             }
         });
+        ref.on("child_changed", (snapshot) => {
+            if (snapshot.key !== state.myId && snapshot.val() === "active") {
+                connectionManager.connectToPeer(snapshot.key);
+            }
+        });
         ref.on("child_removed", (snapshot) => {
             if (snapshot.key !== state.myId) messageHandler.logSystem("Participant left the room");
         });
+    },
+    updateParticipantPeerId: async (oldPeerId, newPeerId) => {
+        if (!state.currentRoomCode) return;
+        
+        try {
+            const roomRef = db.ref("rooms/" + state.currentRoomCode + "/participants");
+            const snapshot = await roomRef.once('value');
+            const participants = snapshot.val() || {};
+            
+            if (participants[oldPeerId]) {
+                const updateData = {};
+                updateData[newPeerId] = "active";
+                
+                const updates = {
+                    [oldPeerId]: null,
+                    [newPeerId]: "active"
+                };
+                
+                await roomRef.update(updates);
+            }
+        } catch (error) {
+            console.error("Error updating participant peer ID:", error);
+        }
     },
     showJoinError: (message) => {
         elements.joinError.textContent = message;
@@ -1334,7 +1360,18 @@ const roomManager = {
             const roomData = snapshot.val();
             const participants = Object.keys(roomData.participants || {});
             
-            if (!participants.includes(state.myId)) {
+            let isParticipantExists = false;
+            for (const pid of participants) {
+                if (pid === state.myId) {
+                    isParticipantExists = true;
+                    break;
+                }
+            }
+            
+            if (!isParticipantExists) {
+                if (Object.keys(participants).length >= 2) {
+                    throw new Error("Room is full");
+                }
                 await db.ref("rooms/" + state.currentRoomCode + "/participants").update({ [state.myId]: "active" });
             }
             
@@ -1376,9 +1413,7 @@ const connectionManager = {
         state.isConnected = false;
         if (state.peer) state.peer.destroy();
         
-        // Pehle se saved peer ID ka use nahi karenge
-        // Naya peer ID hamesha generate hoga
-        state.peer = new Peer(null, { // null pass karenge taaki naya ID generate ho
+        state.peer = new Peer(null, {
             config: {
                 iceServers: [
                     { urls: 'stun:stun.l.google.com:19302' },
@@ -1390,9 +1425,12 @@ const connectionManager = {
             }
         });
 
-        state.peer.on('open', (id) => {
-            state.myId = id;
-            storage.save(); // sirf room code save hoga
+        state.peer.on('open', (newId) => {
+            if (state.myId && state.myId !== newId && state.currentRoomCode) {
+                roomManager.updateParticipantPeerId(state.myId, newId);
+            }
+            state.myId = newId;
+            storage.save();
             utils.hide(elements.loadingScreen);
             roomManager.autoRejoinRoom();
         });
@@ -1403,8 +1441,7 @@ const connectionManager = {
     handlePeerError: (err) => {
         console.error('PeerJS error:', err);
         if (err.type === 'unavailable-id') {
-            console.log('Peer ID unavailable, generating new one...');
-            connectionManager.startPeer(); // Naya peer start karenge
+            connectionManager.startPeer();
         } else {
             utils.hide(elements.loadingScreen);
             messageHandler.logSystem("Connection error. Please refresh the page to try again.");
@@ -1785,7 +1822,6 @@ const init = () => {
         state.currentRoomCode = savedData.roomCode;
         if (state.currentRoomCode) elements.roomCodeInput.value = state.currentRoomCode;
     }
-    // state.myId ko yahan set nahi karenge, wo peer.js se generate hoga
     eventHandlers.setupEventListeners();
     connectionManager.startPeer();
     eventHandlers.handleUrlRoomCode();
