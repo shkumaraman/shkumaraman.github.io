@@ -1,0 +1,100 @@
+<!-- Message Notification Toast -->
+<div id="messageToast" style="
+  position: fixed;
+  top: -100px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #222;
+  color: #fff;
+  padding: 12px 18px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  z-index: 9999;
+  transition: top 0.4s ease;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+">
+  <span id="toastText"></span>
+  <button id="toastViewBtn" style="
+    background:#4CAF50;
+    border:none;
+    color:#fff;
+    padding:6px 10px;
+    border-radius:4px;
+    cursor:pointer;
+  ">View</button>
+</div>
+
+<script>
+/* 🔹 Firebase Init */
+const firebaseConfig = {
+  databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
+};
+
+if (!firebase.apps.length) {
+  firebase.initializeApp(firebaseConfig);
+}
+
+const db = firebase.database();
+
+/* 🔹 Local nickname */
+const myNickname = localStorage.getItem("talkrush_nickname");
+if (!myNickname) {
+  console.warn("No local nickname found");
+}
+
+/* 🔹 Toast elements */
+const toast = document.getElementById("messageToast");
+const toastText = document.getElementById("toastText");
+const toastViewBtn = document.getElementById("toastViewBtn");
+
+/* 🔹 Last notified timestamp */
+let lastNotified = localStorage.getItem("lastNotifiedMsgTime") || 0;
+
+/* 🔹 Firebase listener */
+db.ref("friends").on("value", snapshot => {
+  const data = snapshot.val();
+  if (!data || !myNickname) return;
+
+  Object.values(data).forEach(friend => {
+    if (!friend.timestamp || !friend.lastMessage) return;
+
+    /* 🔸 Check: message mere liye hai ya nahi */
+    let senderName = null;
+
+    if (friend.nickname1 === myNickname) {
+      senderName = friend.nickname2;
+    } 
+    else if (friend.nickname2 === myNickname) {
+      senderName = friend.nickname1;
+    } 
+    else {
+      return; // not my chat
+    }
+
+    /* 🔸 New message check */
+    if (friend.timestamp > lastNotified) {
+      showToast(senderName);
+
+      lastNotified = friend.timestamp;
+      localStorage.setItem("lastNotifiedMsgTime", lastNotified);
+    }
+  });
+});
+
+/* 🔹 Show toast */
+function showToast(name) {
+  toastText.textContent = `${name} ne aapko message kiya hai`;
+  toast.style.top = "10px";
+
+  setTimeout(() => {
+    toast.style.top = "-100px";
+  }, 3000);
+}
+
+/* 🔹 View button */
+toastViewBtn.onclick = () => {
+  window.location.href = "/chat/inbox.html";
+};
+</script>
