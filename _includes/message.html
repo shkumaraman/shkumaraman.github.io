@@ -1,4 +1,3 @@
-<!-- Message Notification Toast -->
 <div id="messageToast" style="
   position: fixed;
   top: -120px;
@@ -31,7 +30,6 @@
       justify-content: center;
       flex-shrink: 0;
     ">
-      <!-- Message icon as SVG -->
       <svg style="width: 18px; height: 18px; fill: white;" viewBox="0 0 24 24">
         <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/>
       </svg>
@@ -60,7 +58,6 @@
 <script>
 document.addEventListener("DOMContentLoaded", function () {
 
-  /* Firebase Initialization */
   const firebaseConfig = {
     databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
   };
@@ -70,48 +67,54 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 
   const db = firebase.database();
-
   const myNickname = localStorage.getItem("talkrush_nickname");
   if (!myNickname) return;
 
   const toast = document.getElementById("messageToast");
   const toastText = document.getElementById("toastText");
   const toastViewBtn = document.getElementById("toastViewBtn");
-
-  if (!toast || !toastText || !toastViewBtn) {
-    console.warn("Toast DOM not found");
-    return;
-  }
+  if (!toast) return;
 
   let lastNotified = localStorage.getItem("lastNotifiedMsgTime") || 0;
+  let toastQueue = [];
+  let toastShowing = false;
 
   db.ref("friends").on("value", snapshot => {
     const data = snapshot.val();
     if (!data) return;
 
     Object.values(data).forEach(friend => {
-      if (!friend.timestamp || !friend.lastMessage) return;
+      if (!friend.timestamp) return;
 
       let senderName = null;
-
       if (friend.nickname1 === myNickname) senderName = friend.nickname2;
       else if (friend.nickname2 === myNickname) senderName = friend.nickname1;
       else return;
 
       if (friend.timestamp > lastNotified) {
-        showToast(senderName);
+        toastQueue.push(senderName);
+        processToastQueue();
         lastNotified = friend.timestamp;
         localStorage.setItem("lastNotifiedMsgTime", lastNotified);
       }
     });
   });
 
-  function showToast(name) {
+  function processToastQueue() {
+    if (toastShowing || toastQueue.length === 0) return;
+
+    toastShowing = true;
+    const name = toastQueue.shift();
+
     toastText.textContent = `${name} sent you a message`;
     toast.style.top = "20px";
 
     setTimeout(() => {
       toast.style.top = "-120px";
+      setTimeout(() => {
+        toastShowing = false;
+        processToastQueue();
+      }, 400);
     }, 5000);
   }
 
