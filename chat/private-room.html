@@ -1164,20 +1164,13 @@ const storage = {
     save: () => {
         const roomData = { roomCode: state.currentRoomCode };
         localStorage.setItem('chatRoomData', JSON.stringify(roomData));
-        if (state.myId) localStorage.setItem('talkrush_peerid', state.myId);
     },
     load: () => {
         try {
-            const savedPeerId = localStorage.getItem('talkrush_peerid');
-            if (savedPeerId) state.myId = savedPeerId;
-            
             const savedData = localStorage.getItem('chatRoomData');
             if (!savedData) return null;
             
             const data = JSON.parse(savedData);
-            if (savedPeerId) data.peerId = savedPeerId;
-            else if (data.peerId) localStorage.setItem('talkrush_peerid', data.peerId);
-            
             return data;
         } catch (error) {
             console.error('Error loading from storage:', error);
@@ -1188,10 +1181,6 @@ const storage = {
         localStorage.removeItem('chatRoomData');
         state.currentRoomCode = null;
         elements.roomCodeInput.value = '';
-    },
-    clearPeerId: () => {
-        localStorage.removeItem('talkrush_peerid');
-        state.myId = null;
     }
 };
 
@@ -1387,8 +1376,9 @@ const connectionManager = {
         state.isConnected = false;
         if (state.peer) state.peer.destroy();
         
-        const savedPeerId = state.myId;
-        state.peer = new Peer(savedPeerId, {
+        // Pehle se saved peer ID ka use nahi karenge
+        // Naya peer ID hamesha generate hoga
+        state.peer = new Peer(null, { // null pass karenge taaki naya ID generate ho
             config: {
                 iceServers: [
                     { urls: 'stun:stun.l.google.com:19302' },
@@ -1402,7 +1392,7 @@ const connectionManager = {
 
         state.peer.on('open', (id) => {
             state.myId = id;
-            storage.save();
+            storage.save(); // sirf room code save hoga
             utils.hide(elements.loadingScreen);
             roomManager.autoRejoinRoom();
         });
@@ -1414,8 +1404,7 @@ const connectionManager = {
         console.error('PeerJS error:', err);
         if (err.type === 'unavailable-id') {
             console.log('Peer ID unavailable, generating new one...');
-            storage.clearPeerId();
-            connectionManager.startPeer();
+            connectionManager.startPeer(); // Naya peer start karenge
         } else {
             utils.hide(elements.loadingScreen);
             messageHandler.logSystem("Connection error. Please refresh the page to try again.");
@@ -1794,9 +1783,9 @@ const init = () => {
     const savedData = storage.load();
     if (savedData) {
         state.currentRoomCode = savedData.roomCode;
-        state.myId = savedData.peerId;
         if (state.currentRoomCode) elements.roomCodeInput.value = state.currentRoomCode;
     }
+    // state.myId ko yahan set nahi karenge, wo peer.js se generate hoga
     eventHandlers.setupEventListeners();
     connectionManager.startPeer();
     eventHandlers.handleUrlRoomCode();
