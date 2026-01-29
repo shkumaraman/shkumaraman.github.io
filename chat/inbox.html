@@ -6,7 +6,6 @@ description: "View your chat history and messages with friends."
 
 <style>
 :root {
-  /* Dark Theme Colors */
   --dark-bg: #121212;
   --dark-header-bg: #181818;
   --dark-header-border: #2a2a2a;
@@ -22,7 +21,6 @@ description: "View your chat history and messages with friends."
   --dark-msg-bg: #3a3a3a;
   --dark-me-msg-bg: #4a90e2;
 
-  /* Light Theme Colors */
   --light-bg: #f5f5f5;
   --light-header-bg: #ffffff;
   --light-header-border: #e0e0e0;
@@ -777,6 +775,8 @@ let isConnected = false;
 let myNickname = null;
 let myFriendsData = {};
 let onlineStatusListeners = {};
+let typingTimeout;
+let isTyping = false;
 
 if (!firebase.apps.length) {
   firebase.initializeApp(firebaseConfig);
@@ -833,10 +833,7 @@ function scrollToBottom() {
 document.addEventListener("DOMContentLoaded", () => {
   myNickname = localStorage.getItem("talkrush_nickname") || "Guest";
   
-  console.log('Messages page loaded');
-  
   initializePeerConnection();
-  
   setupEventListeners();
 });
 
@@ -856,14 +853,11 @@ function initializePeerConnection() {
   peer = new Peer(peerOptions);
 
   peer.on('open', (id) => {
-    console.log('Messages page Peer connected with ID:', id);
     currentUserId = id;
     loadFriends();
   });
   
   peer.on('connection', (conn) => {
-    console.log('Incoming connection from:', conn.peer);
-    
     if (currentFriendId === conn.peer) {
       myConn = conn;
       isConnected = true;
@@ -873,14 +867,13 @@ function initializePeerConnection() {
       }
       
       conn.on('data', (data) => {
-        console.log('Received data from friend:', data);
         handleIncomingData(data);
       });
       
       conn.on('close', () => {
-        console.log('Connection closed by friend');
         myConn = null;
         isConnected = false;
+        hideTypingIndicator();
         
         if (currentChatId && currentFriendId === conn.peer) {
           showOfflineStatus();
@@ -894,8 +887,6 @@ function initializePeerConnection() {
   });
   
   peer.on('error', (err) => {
-    console.error('Peer error:', err);
-    
     if (err.type === 'unavailable-id' || err.type === 'socket-error') {
       setTimeout(() => {
         location.href = 'index.html';
@@ -915,6 +906,8 @@ function setupEventListeners() {
       sendMessage();
     }
   });
+
+  document.getElementById('msgInput').addEventListener('input', handleTypingIndicator);
 
   document.getElementById('imgInput').addEventListener('change', handleImageUpload);
 
@@ -938,6 +931,45 @@ function setupEventListeners() {
   });
   
   updateInputPlaceholder();
+}
+
+function handleTypingIndicator() {
+  if (!myConn || !isConnected) return;
+  
+  if (!isTyping) {
+    isTyping = true;
+    if (myConn && myConn.readyState === 'open') {
+      try {
+        myConn.send({ type: "typing" });
+      } catch (error) {
+        console.error('Failed to send typing indicator:', error);
+      }
+    }
+  }
+  
+  clearTimeout(typingTimeout);
+  typingTimeout = setTimeout(() => {
+    isTyping = false;
+  }, 1000);
+}
+
+function showTypingIndicator() {
+  const typingIndicator = document.getElementById('typingIndicator');
+  if (typingIndicator) {
+    typingIndicator.style.display = "block";
+    clearTimeout(typingIndicator.timeout);
+    typingIndicator.timeout = setTimeout(() => {
+      typingIndicator.style.display = "none";
+    }, 1500);
+  }
+}
+
+function hideTypingIndicator() {
+  const typingIndicator = document.getElementById('typingIndicator');
+  if (typingIndicator) {
+    typingIndicator.style.display = "none";
+    clearTimeout(typingIndicator.timeout);
+  }
 }
 
 function updateInputPlaceholder() {
@@ -1137,9 +1169,6 @@ function updateMyPeerIdInFirebase() {
     
     if (Object.keys(updates).length > 0) {
       db.ref("friends").update(updates)
-        .then(() => {
-          console.log('Updated my Peer ID in Firebase');
-        })
         .catch(error => {
           console.error('Error updating Peer ID:', error);
         });
@@ -1160,19 +1189,16 @@ function openChat(chatId, friendId, friendName) {
   document.getElementById('chatContainer').style.display = 'flex';
   
   loadLocalChatMessages();
-  
   connectToFriend(friendId);
 }
 
 function connectToFriend(friendId) {
   if (!peer) {
-    console.log('Peer not available for connection');
     showOfflineStatus();
     return;
   }
   
   if (!currentUserId) {
-    console.log('Waiting for Peer ID...');
     setTimeout(() => connectToFriend(friendId), 500);
     return;
   }
@@ -1185,15 +1211,12 @@ function connectToFriend(friendId) {
   
   if (myConn && myConn.peer === friendId) {
     if (isConnected) {
-      console.log('Already connected to this friend');
       showOnlineStatus();
       return;
     }
     myConn.close();
     myConn = null;
   }
-  
-  console.log(`Attempting to connect to ${friendId}`);
   
   try {
     const conn = peer.connect(friendId, {
@@ -1202,23 +1225,20 @@ function connectToFriend(friendId) {
     });
     
     conn.on("open", () => {
-      console.log('Connected to friend via P2P');
       myConn = conn;
       isConnected = true;
-      
       showOnlineStatus();
       
       conn.on("data", handleIncomingData);
       
       conn.on("close", () => {
-        console.log('P2P connection closed');
         myConn = null;
         isConnected = false;
+        hideTypingIndicator();
         showOfflineStatus();
       });
       
       conn.on("error", (err) => {
-        console.error('P2P connection error:', err);
         myConn = null;
         isConnected = false;
         showOfflineStatus();
@@ -1226,21 +1246,40 @@ function connectToFriend(friendId) {
     });
     
     conn.on("error", (err) => {
-      console.error('Connection error:', err);
       showOfflineStatus();
     });
     
     setTimeout(() => {
       if (!isConnected && conn.open) {
-        console.log('Connection timeout');
         conn.close();
         showOfflineStatus();
       }
     }, 5000);
     
   } catch (error) {
-    console.error('Failed to create connection:', error);
     showOfflineStatus();
+  }
+}
+
+function handleIncomingData(data) {
+  if (!currentChatId || !currentFriendId) return;
+  
+  const senderId = myConn ? myConn.peer : currentFriendId;
+  
+  if (typeof data === "string") {
+    hideTypingIndicator();
+    saveIncomingMessage(data, 'text', senderId);
+    displayMessageImmediately(data, 'text', senderId, true);
+  } else if (data.type === "image") {
+    hideTypingIndicator();
+    saveIncomingMessage(data.blob, 'image', senderId);
+    displayMessageImmediately(data.blob, 'image', senderId, true);
+  } else if (data.type === "gif") {
+    hideTypingIndicator();
+    saveIncomingMessage(data.url, 'gif', senderId);
+    displayMessageImmediately(data.url, 'gif', senderId, true);
+  } else if (data.type === "typing") {
+    showTypingIndicator();
   }
 }
 
@@ -1264,28 +1303,12 @@ function showOfflineStatus() {
   updateInputPlaceholder();
 }
 
-function handleIncomingData(data) {
-  if (!currentChatId || !currentFriendId) return;
-  
-  const senderId = myConn ? myConn.peer : currentFriendId;
-  
-  if (typeof data === "string") {
-    saveIncomingMessage(data, 'text', senderId);
-    displayMessageImmediately(data, 'text', senderId, true);
-  } else if (data.type === "image") {
-    saveIncomingMessage(data.blob, 'image', senderId);
-    displayMessageImmediately(data.blob, 'image', senderId, true);
-  } else if (data.type === "gif") {
-    saveIncomingMessage(data.url, 'gif', senderId);
-    displayMessageImmediately(data.url, 'gif', senderId, true);
-  }
-}
-
 function showFriendsList() {
   if (myConn) {
     myConn.close();
     myConn = null;
     isConnected = false;
+    hideTypingIndicator();
   }
   
   document.getElementById('friendsContainer').style.display = 'block';
@@ -1422,6 +1445,9 @@ function sendMessage() {
   
   if (!content || !currentChatId || !currentFriendId) return;
   
+  isTyping = false;
+  clearTimeout(typingTimeout);
+  
   if (myConn && isConnected) {
     try {
       myConn.send(content);
@@ -1431,7 +1457,6 @@ function sendMessage() {
       
       input.value = '';
     } catch (error) {
-      console.error('Failed to send via P2P:', error);
       showOfflineStatus();
       
       Swal.fire({
@@ -1485,7 +1510,6 @@ function handleImageUpload(e) {
         saveIncomingMessage(reader.result, 'image', currentUserId);
         displayMessageImmediately(reader.result, 'image', currentUserId);
       } catch (error) {
-        console.error('Failed to send image:', error);
         showOfflineStatus();
         
         Swal.fire({
@@ -1610,7 +1634,6 @@ function displayGifs(gifs) {
           saveIncomingMessage(gifUrl, 'gif', currentUserId);
           displayMessageImmediately(gifUrl, 'gif', currentUserId);
         } catch (error) {
-          console.error('Failed to send GIF:', error);
           showOfflineStatus();
           
           Swal.fire({
