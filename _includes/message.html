@@ -24,7 +24,7 @@
       width: 40px;
       height: 40px;
       border-radius: 50%;
-      background: #4CAF50;
+      background: #25D366;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -42,7 +42,7 @@
     "></span>
   </div>
   <button id="toastViewBtn" style="
-    background: #4CAF50;
+    background: #25D366;
     border: none;
     color: #fff;
     padding: 8px 16px;
@@ -77,9 +77,41 @@ document.addEventListener("DOMContentLoaded", function () {
   const notifySound = new Audio("/assets/notify.mp3");
   notifySound.preload = "auto";
 
-  let lastNotifiedTimestamps = JSON.parse(localStorage.getItem("lastNotifiedMsgTimes") || "{}");
+  let lastNotifiedMessages = JSON.parse(localStorage.getItem("lastNotifiedMessages") || "{}");
   let toastQueue = [];
   let toastShowing = false;
+
+  // Function to check if message is from friend (not me)
+  function isMessageFromFriend(friend, messageField) {
+    if (friend.nickname1 === myNickname) {
+      // मैं nickname1 हूँ, तो message2 friend का होना चाहिए
+      return messageField === 'message2';
+    } else if (friend.nickname2 === myNickname) {
+      // मैं nickname2 हूँ, तो message1 friend का होना चाहिए
+      return messageField === 'message1';
+    }
+    return false;
+  }
+
+  // Function to get friend's message field
+  function getFriendMessageField(friend) {
+    if (friend.nickname1 === myNickname) {
+      return 'message2'; // Friend's message
+    } else if (friend.nickname2 === myNickname) {
+      return 'message1'; // Friend's message
+    }
+    return null;
+  }
+
+  // Function to get friend's nickname
+  function getFriendNickname(friend) {
+    if (friend.nickname1 === myNickname) {
+      return friend.nickname2;
+    } else if (friend.nickname2 === myNickname) {
+      return friend.nickname1;
+    }
+    return null;
+  }
 
   db.ref("friends").on("value", snapshot => {
     const data = snapshot.val();
@@ -88,29 +120,29 @@ document.addEventListener("DOMContentLoaded", function () {
     Object.entries(data).forEach(([chatId, friend]) => {
       if (!friend.timestamp) return;
 
-      let senderName = null;
-      let lastMessage = "";
-      
-      if (friend.nickname1 === myNickname) {
-        senderName = friend.nickname2;
-        lastMessage = friend.message2 || "";
-      } else if (friend.nickname2 === myNickname) {
-        senderName = friend.nickname1;
-        lastMessage = friend.message1 || "";
-      } else return;
+      const friendNickname = getFriendNickname(friend);
+      if (!friendNickname) return;
 
-      if (!senderName) return;
+      const friendMessageField = getFriendMessageField(friend);
+      if (!friendMessageField) return;
 
-      const lastNotified = lastNotifiedTimestamps[chatId] || 0;
+      const friendMessage = friend[friendMessageField] || "";
+      if (!friendMessage.trim()) return; // Empty message ko ignore करो
+
+      // Check किया कि ये message friend का है और नया है
+      const lastNotifiedMessage = lastNotifiedMessages[chatId];
       
-      if (friend.timestamp > lastNotified && lastMessage) {
+      if (friendMessage !== lastNotifiedMessage && friendMessage.trim()) {
         toastQueue.push({
-          senderName: senderName,
-          message: lastMessage,
+          senderName: friendNickname,
+          message: friendMessage,
           chatId: chatId
         });
-        lastNotifiedTimestamps[chatId] = friend.timestamp;
-        localStorage.setItem("lastNotifiedMsgTimes", JSON.stringify(lastNotifiedTimestamps));
+        
+        // Store करो कि ये message notify कर दिया है
+        lastNotifiedMessages[chatId] = friendMessage;
+        localStorage.setItem("lastNotifiedMessages", JSON.stringify(lastNotifiedMessages));
+        
         processToastQueue();
       }
     });
@@ -131,7 +163,7 @@ document.addEventListener("DOMContentLoaded", function () {
     toast.style.top = "20px";
 
     toastViewBtn.onclick = () => {
-      window.location.href = "/chat/inbox.html";
+      window.location.href = "/chat/messages.html";
     };
 
     setTimeout(() => {
