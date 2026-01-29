@@ -1131,34 +1131,24 @@ const storage = {
     save: () => {
         const roomData = { roomCode: state.currentRoomCode };
         localStorage.setItem('chatRoomData', JSON.stringify(roomData));
-        if (state.myId) localStorage.setItem('talkrush_peerid', state.myId);
     },
+    
     load: () => {
         try {
-            const savedPeerId = localStorage.getItem('talkrush_peerid');
-            if (savedPeerId) state.myId = savedPeerId;
-            
             const savedData = localStorage.getItem('chatRoomData');
             if (!savedData) return null;
             
-            const data = JSON.parse(savedData);
-            if (savedPeerId) data.peerId = savedPeerId;
-            else if (data.peerId) localStorage.setItem('talkrush_peerid', data.peerId);
-            
-            return data;
+            return JSON.parse(savedData);
         } catch (error) {
             console.error('Error loading from storage:', error);
             return null;
         }
     },
+    
     clear: () => {
         localStorage.removeItem('chatRoomData');
         state.currentRoomCode = null;
         elements.roomCodeInput.value = '';
-    },
-    clearPeerId: () => {
-        localStorage.removeItem('talkrush_peerid');
-        state.myId = null;
     }
 };
 
@@ -1183,6 +1173,7 @@ const messageHandler = {
         elements.chatLog.appendChild(div);
         utils.scrollToBottom();
     },
+    
     logSystem: (msg) => {
         messageHandler.clearSystemMessage();
         const div = document.createElement("div");
@@ -1192,12 +1183,14 @@ const messageHandler = {
         state.currentSystemMessage = div;
         utils.scrollToBottom();
     },
+    
     clearSystemMessage: () => {
         if (state.currentSystemMessage?.parentNode) {
             state.currentSystemMessage.parentNode.removeChild(state.currentSystemMessage);
         }
         state.currentSystemMessage = null;
     },
+    
     showTypingIndicator: () => {
         elements.typingIndicator.style.display = "block";
         clearTimeout(state.typingTimeout);
@@ -1237,6 +1230,7 @@ const roomManager = {
             messageHandler.logSystem("Error creating room. Please try again.");
         }
     },
+    
     joinRoom: async () => {
         const code = elements.roomCodeInput.value.trim();
         if (code.length !== 5) {
@@ -1279,6 +1273,7 @@ const roomManager = {
             );
         }
     },
+    
     setupParticipantListener: (roomCode) => {
         const ref = db.ref("rooms/" + roomCode + "/participants");
         ref.on("child_added", (snapshot) => {
@@ -1290,11 +1285,13 @@ const roomManager = {
             if (snapshot.key !== state.myId) messageHandler.logSystem("Participant left the room");
         });
     },
+    
     showJoinError: (message) => {
         elements.joinError.textContent = message;
         utils.showBlock(elements.joinError);
         setTimeout(() => utils.hide(elements.joinError), 3000);
     },
+    
     autoRejoinRoom: async () => {
         if (!state.currentRoomCode || !state.myId) {
             utils.hide(elements.loadingScreen);
@@ -1332,6 +1329,7 @@ const roomManager = {
             utils.showBlock(elements.roomModal);
         }
     },
+    
     destroyRoom: async () => {
         if (state.currentRoomCode) {
             try {
@@ -1354,8 +1352,8 @@ const connectionManager = {
         state.isConnected = false;
         if (state.peer) state.peer.destroy();
         
-        const savedPeerId = state.myId;
-        state.peer = new Peer(savedPeerId, {
+        // Always generate new peer ID (remove saved ID logic)
+        state.peer = new Peer(null, {
             config: {
                 iceServers: [
                     { urls: 'stun:stun.l.google.com:19302' },
@@ -1369,25 +1367,25 @@ const connectionManager = {
 
         state.peer.on('open', (id) => {
             state.myId = id;
-            storage.save();
+            storage.save(); // Save only room code
             utils.hide(elements.loadingScreen);
             roomManager.autoRejoinRoom();
         });
 
         state.peer.on('connection', connectionManager.handleNewConnection);
-        state.peer.on('error', connectionManager.handlePeerError);
-    },
-    handlePeerError: (err) => {
-        console.error('PeerJS error:', err);
-        if (err.type === 'unavailable-id') {
-            console.log('Peer ID unavailable, generating new one...');
-            storage.clearPeerId();
-            connectionManager.startPeer();
-        } else {
+        
+        state.peer.on('error', (err) => {
+            console.error('PeerJS error:', err);
             utils.hide(elements.loadingScreen);
-            messageHandler.logSystem("Connection error. Please refresh the page to try again.");
-        }
+            if (err.type === 'unavailable-id') {
+                // Auto-retry with new ID
+                setTimeout(connectionManager.startPeer, 1000);
+            } else {
+                messageHandler.logSystem("Connection error. Please refresh the page to try again.");
+            }
+        });
     },
+    
     handleNewConnection: (conn) => {
         if (state.isConnected) {
             conn.close();
@@ -1396,6 +1394,7 @@ const connectionManager = {
         connectionManager.setupConnection(conn);
         messageHandler.logSystem("Connected to room participant!");
     },
+    
     connectToPeer: async (peerId) => {
         if (state.isConnected) return;
         const conn = state.peer.connect(peerId, { reliable: true });
@@ -1408,6 +1407,7 @@ const connectionManager = {
             messageHandler.logSystem("Failed to connect to participant");
         });
     },
+    
     setupConnection: (conn) => {
         if (state.myConn) state.myConn.close();
         state.myConn = conn;
@@ -1420,6 +1420,7 @@ const connectionManager = {
             connectionManager.endConnection("Connection error");
         });
     },
+    
     handleData: (data) => {
         const handlers = {
             string: () => messageHandler.appendMessage("stranger", data),
@@ -1435,6 +1436,7 @@ const connectionManager = {
         const handler = typeof data === 'string' ? handlers.string : handlers[data.type];
         handler?.();
     },
+    
     endConnection: (message) => {
         messageHandler.logSystem(message);
         state.myConn = null;
@@ -1445,6 +1447,7 @@ const connectionManager = {
         }
         setTimeout(connectionManager.startPeer, 1000);
     },
+    
     sendMessage: () => {
         const msg = elements.msgInput.value.trim();
         if (!msg || !state.myConn || !state.isConnected) return;
@@ -1452,6 +1455,7 @@ const connectionManager = {
         messageHandler.appendMessage("me", msg);
         elements.msgInput.value = "";
     },
+    
     sendFile: (file, type) => {
         if (!file || !state.myConn || !state.isConnected) return;
         const reader = new FileReader();
@@ -1496,6 +1500,7 @@ const videoCallManager = {
             messageHandler.logSystem("Could not access camera/microphone. Please check permissions.");
         }
     },
+    
     handleVideoCallRequest: () => {
         if (state.isVideoCallActive || state.isVideoCallRequestPending) {
             state.myConn.send({ type: "video-call-declined" });
@@ -1504,29 +1509,39 @@ const videoCallManager = {
         state.isVideoCallRequestPending = true;
         utils.show(elements.callRequestModal);
     },
+    
     acceptVideoCall: () => {
         utils.hide(elements.callRequestModal);
         state.isVideoCallRequestPending = false;
         state.myConn.send({ type: "video-call-accepted" });
         videoCallManager.startVideoCallStream();
     },
+    
     declineVideoCall: () => {
         utils.hide(elements.callRequestModal);
         state.isVideoCallRequestPending = false;
         state.myConn.send({ type: "video-call-declined" });
         messageHandler.logSystem("Video call declined");
     },
+    
     handleVideoCallAccepted: () => {
         if (!state.isVideoCallRequested) return;
         state.isVideoCallRequested = false;
         messageHandler.logSystem("Video call accepted! Starting call...");
         videoCallManager.startVideoCallStream();
     },
+    
     handleVideoCallDeclined: () => {
         state.isVideoCallRequested = false;
         messageHandler.logSystem("Video call was declined");
         videoCallManager.cleanupLocalStream();
     },
+    
+    handleVideoCallEnded: () => {
+        videoCallManager.endVideoCall();
+        messageHandler.logSystem("Stranger ended the video call");
+    },
+    
     startVideoCallStream: async () => {
         try {
             if (!state.localStream) {
@@ -1558,6 +1573,7 @@ const videoCallManager = {
             messageHandler.logSystem("Error starting video call");
         }
     },
+    
     endVideoCall: () => {
         if (state.isVideoCallActive && state.myConn) {
             state.myConn.send({ type: "video-call-ended" });
@@ -1569,10 +1585,7 @@ const videoCallManager = {
         utils.hide(elements.videoCallContainer);
         messageHandler.logSystem("Video call ended");
     },
-    handleVideoCallEnded: () => {
-        videoCallManager.endVideoCall();
-        messageHandler.logSystem("Stranger ended the video call");
-    },
+    
     toggleVideo: () => {
         if (!state.localStream) return;
         const videoTrack = state.localStream.getVideoTracks()[0];
@@ -1581,6 +1594,7 @@ const videoCallManager = {
             elements.toggleVideoBtn.innerHTML = videoTrack.enabled ? '<i class="fas fa-video"></i>' : '<i class="fas fa-video-slash"></i>';
         }
     },
+    
     toggleAudio: () => {
         if (!state.localStream) return;
         const audioTrack = state.localStream.getAudioTracks()[0];
@@ -1589,12 +1603,14 @@ const videoCallManager = {
             elements.toggleAudioBtn.innerHTML = audioTrack.enabled ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-microphone-slash"></i>';
         }
     },
+    
     cleanupLocalStream: () => {
         if (state.localStream) {
             state.localStream.getTracks().forEach(track => track.stop());
             state.localStream = null;
         }
     },
+    
     cleanupStreams: () => {
         videoCallManager.cleanupLocalStream();
         if (elements.remoteVideo.srcObject) {
@@ -1615,6 +1631,7 @@ const gifManager = {
             messageHandler.logSystem("Failed to load GIFs");
         }
     },
+    
     searchGifs: async (query) => {
         if (!query.trim()) {
             gifManager.fetchTrendingGifs();
@@ -1629,6 +1646,7 @@ const gifManager = {
             messageHandler.logSystem("Failed to search GIFs");
         }
     },
+    
     displayGifs: (gifs) => {
         elements.gifResults.innerHTML = "";
         gifs.forEach(gif => {
@@ -1735,6 +1753,7 @@ const eventHandlers = {
             }
         });
     },
+    
     skipChat: () => {
         if (state.myConn) state.myConn.close();
         state.isConnected = false;
@@ -1745,6 +1764,7 @@ const eventHandlers = {
             connectionManager.startPeer();
         }, 1000);
     },
+    
     handleUrlRoomCode: () => {
         const urlParams = new URLSearchParams(window.location.search);
         const roomCodeFromUrl = urlParams.get('room');
@@ -1761,7 +1781,6 @@ const init = () => {
     const savedData = storage.load();
     if (savedData) {
         state.currentRoomCode = savedData.roomCode;
-        state.myId = savedData.peerId;
         if (state.currentRoomCode) elements.roomCodeInput.value = state.currentRoomCode;
     }
     eventHandlers.setupEventListeners();
