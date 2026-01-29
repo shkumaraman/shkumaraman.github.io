@@ -1047,7 +1047,7 @@ body.light-mode {
 {% include scripts.html %}
 {% include menu.html %}
 
- <script>
+<script>
 const firebaseConfig = {
     databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
 };
@@ -1073,29 +1073,48 @@ const state = {
     isVideoCallRequestPending: false
 };
 
-// Get DOM elements once
-const elements = {};
-const elementIds = [
-    'loadingScreen', 'loadingText', 'roomModal', 'roomCodeDisplay', 'roomCodeInput',
-    'createRoomBtn', 'joinRoomBtn', 'copyRoomCode', 'joinError', 'roomBtn',
-    'videoCallBtn', 'callRequestModal', 'acceptCallBtn', 'declineCallBtn',
-    'videoCallContainer', 'localVideo', 'remoteVideo', 'toggleVideoBtn',
-    'toggleAudioBtn', 'endCallBtn', 'chatLog', 'msgInput', 'sendBtn',
-    'imgInput', 'gifInput', 'skipBtn', 'typingIndicator', 'gifModal',
-    'gifSearch', 'gifResults', 'shareRoom'
-];
-
-elementIds.forEach(id => {
-    elements[id] = document.getElementById(id);
-});
-elements.gifBtn = document.querySelector('[for="gifInput"]');
+const elements = {
+    loadingScreen: document.getElementById("loadingScreen"),
+    loadingText: document.getElementById("loadingText"),
+    roomModal: document.getElementById("roomModal"),
+    roomCodeDisplay: document.getElementById("roomCodeDisplay"),
+    roomCodeInput: document.getElementById("roomCodeInput"),
+    createRoomBtn: document.getElementById("createRoomBtn"),
+    joinRoomBtn: document.getElementById("joinRoomBtn"),
+    copyRoomCodeBtn: document.getElementById("copyRoomCode"),
+    joinError: document.getElementById("joinError"),
+    roomBtn: document.getElementById("roomBtn"),
+    videoCallBtn: document.getElementById("videoCallBtn"),
+    callRequestModal: document.getElementById("callRequestModal"),
+    acceptCallBtn: document.getElementById("acceptCallBtn"),
+    declineCallBtn: document.getElementById("declineCallBtn"),
+    videoCallContainer: document.getElementById("videoCallContainer"),
+    localVideo: document.getElementById("localVideo"),
+    remoteVideo: document.getElementById("remoteVideo"),
+    toggleVideoBtn: document.getElementById("toggleVideoBtn"),
+    toggleAudioBtn: document.getElementById("toggleAudioBtn"),
+    endCallBtn: document.getElementById("endCallBtn"),
+    chatLog: document.getElementById("chatLog"),
+    msgInput: document.getElementById("msgInput"),
+    sendBtn: document.getElementById("sendBtn"),
+    imgInput: document.getElementById("imgInput"),
+    gifInput: document.getElementById("gifInput"),
+    skipBtn: document.getElementById("skipBtn"),
+    typingIndicator: document.getElementById("typingIndicator"),
+    gifModal: document.getElementById("gifModal"),
+    gifSearch: document.getElementById("gifSearch"),
+    gifResults: document.getElementById("gifResults"),
+    gifBtn: document.querySelector('[for="gifInput"]'),
+    shareRoom: document.getElementById("shareRoom")
+};
 
 const utils = {
     generateRoomCode: () => Math.floor(10000 + Math.random() * 90000).toString(),
     scrollToBottom: () => elements.chatLog.scrollTop = elements.chatLog.scrollHeight,
     formatTime: () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    show: (element, displayType = 'flex') => element.style.display = displayType,
-    hide: (element) => element.style.display = 'none',
+    show: (element) => element.style.display = "flex",
+    showBlock: (element) => element.style.display = "block",
+    hide: (element) => element.style.display = "none",
     copyToClipboard: async (text) => {
         try {
             await navigator.clipboard.writeText(text);
@@ -1108,45 +1127,34 @@ const utils = {
 };
 
 const storage = {
-    getPeerIdKey: () => 'talkrush_peerid',
-    getRoomDataKey: () => 'chatRoomData',
-    
-    savePeerId: (peerId) => {
-        if (peerId) localStorage.setItem(storage.getPeerIdKey(), peerId);
+    saveRoomCode: () => {
+        const roomData = { roomCode: state.currentRoomCode };
+        localStorage.setItem('chatRoomData', JSON.stringify(roomData));
     },
-    
-    loadPeerId: () => {
-        return localStorage.getItem(storage.getPeerIdKey());
-    },
-    
-    clearPeerId: () => {
-        localStorage.removeItem(storage.getPeerIdKey());
-    },
-    
-    saveRoom: (roomCode) => {
-        const roomData = { roomCode };
-        localStorage.setItem(storage.getRoomDataKey(), JSON.stringify(roomData));
-    },
-    
-    loadRoom: () => {
+    loadRoomCode: () => {
         try {
-            const savedData = localStorage.getItem(storage.getRoomDataKey());
-            return savedData ? JSON.parse(savedData) : null;
+            const savedData = localStorage.getItem('chatRoomData');
+            if (!savedData) return null;
+            return JSON.parse(savedData);
         } catch (error) {
-            console.error('Error loading room data:', error);
+            console.error('Error loading from storage:', error);
             return null;
         }
     },
-    
-    clearRoom: () => {
-        localStorage.removeItem(storage.getRoomDataKey());
+    savePeerId: (peerId) => {
+        localStorage.setItem('talkrush_peerid', peerId);
+    },
+    loadPeerId: () => {
+        return localStorage.getItem('talkrush_peerid');
+    },
+    clearRoomCode: () => {
+        localStorage.removeItem('chatRoomData');
         state.currentRoomCode = null;
         elements.roomCodeInput.value = '';
     },
-    
-    clearAll: () => {
-        storage.clearPeerId();
-        storage.clearRoom();
+    clearPeerId: () => {
+        localStorage.removeItem('talkrush_peerid');
+        state.myId = null;
     }
 };
 
@@ -1172,7 +1180,6 @@ const messageHandler = {
         elements.chatLog.appendChild(div);
         utils.scrollToBottom();
     },
-    
     logSystem: (msg) => {
         messageHandler.clearSystemMessage();
         const div = document.createElement("div");
@@ -1182,19 +1189,17 @@ const messageHandler = {
         state.currentSystemMessage = div;
         utils.scrollToBottom();
     },
-    
     clearSystemMessage: () => {
         if (state.currentSystemMessage?.parentNode) {
             state.currentSystemMessage.parentNode.removeChild(state.currentSystemMessage);
         }
         state.currentSystemMessage = null;
     },
-    
     showTypingIndicator: () => {
-        utils.show(elements.typingIndicator, 'block');
+        elements.typingIndicator.style.display = "block";
         clearTimeout(state.typingTimeout);
         state.typingTimeout = setTimeout(() => {
-            utils.hide(elements.typingIndicator);
+            elements.typingIndicator.style.display = "none";
         }, 1000);
     }
 };
@@ -1208,12 +1213,12 @@ const roomManager = {
         
         try {
             await db.ref("rooms/" + code).set({
-                participants: { [state.myId]: "active" },
+                participants: [state.myId], // Array of participant IDs
                 createdAt: firebase.database.ServerValue.TIMESTAMP
             });
             
             state.currentRoomCode = code;
-            storage.saveRoom(code);
+            storage.saveRoomCode();
             
             messageHandler.logSystem(`Room created with code: ${code}. Share this code with someone to chat.`);
             utils.hide(elements.roomModal);
@@ -1242,18 +1247,24 @@ const roomManager = {
             if (!snapshot.exists()) throw new Error("Room not found");
             
             const roomData = snapshot.val();
-            if (roomData.participants && Object.keys(roomData.participants).length >= 2) {
+            if (roomData.participants && roomData.participants.length >= 2) {
                 throw new Error("Room is full");
             }
             
             state.currentRoomCode = code;
-            storage.saveRoom(code);
+            storage.saveRoomCode();
             
-            await db.ref("rooms/" + code + "/participants").update({ [state.myId]: "active" });
+            // Add participant ID to array
+            await db.ref("rooms/" + code + "/participants").set([
+                ...(roomData.participants || []),
+                state.myId
+            ]);
             
-            const participants = Object.keys(roomData.participants || {});
-            for (const participantId of participants) {
-                if (participantId !== state.myId) await connectionManager.connectToPeer(participantId);
+            // Connect to existing participants
+            for (const participantId of (roomData.participants || [])) {
+                if (participantId !== state.myId) {
+                    await connectionManager.connectToPeer(participantId);
+                }
             }
             
             utils.hide(elements.roomModal);
@@ -1271,27 +1282,33 @@ const roomManager = {
     },
     
     setupParticipantListener: (roomCode) => {
-        const ref = db.ref("rooms/" + roomCode + "/participants");
-        ref.on("child_added", (snapshot) => {
-            if (snapshot.key !== state.myId && snapshot.val() === "active") {
-                connectionManager.connectToPeer(snapshot.key);
+        const participantsRef = db.ref("rooms/" + roomCode + "/participants");
+        
+        participantsRef.on("child_added", (snapshot) => {
+            const participantId = snapshot.val();
+            if (participantId !== state.myId) {
+                connectionManager.connectToPeer(participantId);
             }
         });
-        ref.on("child_removed", (snapshot) => {
-            if (snapshot.key !== state.myId) messageHandler.logSystem("Participant left the room");
+        
+        participantsRef.on("child_removed", (snapshot) => {
+            const participantId = snapshot.val();
+            if (participantId !== state.myId) {
+                messageHandler.logSystem("Participant left the room");
+            }
         });
     },
     
     showJoinError: (message) => {
         elements.joinError.textContent = message;
-        utils.show(elements.joinError, 'block');
+        utils.showBlock(elements.joinError);
         setTimeout(() => utils.hide(elements.joinError), 3000);
     },
     
     autoRejoinRoom: async () => {
         if (!state.currentRoomCode || !state.myId) {
             utils.hide(elements.loadingScreen);
-            utils.show(elements.roomModal, 'block');
+            utils.showBlock(elements.roomModal);
             return;
         }
         
@@ -1303,16 +1320,23 @@ const roomManager = {
             if (!snapshot.exists()) throw new Error("Room no longer exists");
             
             const roomData = snapshot.val();
-            const participants = Object.keys(roomData.participants || {});
+            const participants = roomData.participants || [];
             
+            // If user not in participants, add them
             if (!participants.includes(state.myId)) {
-                await db.ref("rooms/" + state.currentRoomCode + "/participants").update({ [state.myId]: "active" });
+                await db.ref("rooms/" + state.currentRoomCode + "/participants").set([
+                    ...participants,
+                    state.myId
+                ]);
             }
             
             messageHandler.logSystem(`Reconnected to room: ${state.currentRoomCode}`);
             
+            // Connect to existing participants
             for (const participantId of participants) {
-                if (participantId !== state.myId) await connectionManager.connectToPeer(participantId);
+                if (participantId !== state.myId) {
+                    await connectionManager.connectToPeer(participantId);
+                }
             }
             
             utils.hide(elements.loadingScreen);
@@ -1320,25 +1344,34 @@ const roomManager = {
         } catch (error) {
             console.error("Error rejoining room:", error);
             utils.hide(elements.loadingScreen);
-            storage.clearRoom();
+            storage.clearRoomCode();
             messageHandler.logSystem("Room no longer exists. Please create or join a new room.");
-            utils.show(elements.roomModal, 'block');
+            utils.showBlock(elements.roomModal);
         }
     },
     
-    leaveRoom: async () => {
-        if (state.currentRoomCode) {
-            try {
-                await db.ref("rooms/" + state.currentRoomCode + "/participants/" + state.myId).remove();
-                const snapshot = await db.ref("rooms/" + state.currentRoomCode + "/participants").once('value');
-                if (!snapshot.exists() || Object.keys(snapshot.val()).length === 0) {
+    destroyRoom: async () => {
+        if (!state.currentRoomCode) return;
+        
+        try {
+            const snapshot = await db.ref("rooms/" + state.currentRoomCode + "/participants").once('value');
+            if (snapshot.exists()) {
+                const participants = snapshot.val() || [];
+                // Remove own ID from participants
+                const updatedParticipants = participants.filter(id => id !== state.myId);
+                
+                await db.ref("rooms/" + state.currentRoomCode + "/participants").set(updatedParticipants);
+                
+                // If no participants left, delete the room
+                if (updatedParticipants.length === 0) {
                     await db.ref("rooms/" + state.currentRoomCode).remove();
                 }
-            } catch (error) {
-                console.error("Error leaving room:", error);
             }
+        } catch (error) {
+            console.error("Error leaving room:", error);
         }
-        storage.clearRoom();
+        
+        storage.clearRoomCode();
     }
 };
 
@@ -1348,9 +1381,7 @@ const connectionManager = {
         state.isConnected = false;
         if (state.peer) state.peer.destroy();
         
-        // Load existing peer ID once
         const savedPeerId = storage.loadPeerId();
-        state.myId = savedPeerId;
         
         state.peer = new Peer(savedPeerId, {
             config: {
@@ -1366,7 +1397,6 @@ const connectionManager = {
 
         state.peer.on('open', (id) => {
             state.myId = id;
-            // Save peer ID only once when first generated
             storage.savePeerId(id);
             utils.hide(elements.loadingScreen);
             roomManager.autoRejoinRoom();
@@ -1398,7 +1428,7 @@ const connectionManager = {
     },
     
     connectToPeer: async (peerId) => {
-        if (state.isConnected) return;
+        if (state.isConnected || !state.peer) return;
         const conn = state.peer.connect(peerId, { reliable: true });
         conn.on('open', () => {
             connectionManager.setupConnection(conn);
@@ -1424,32 +1454,36 @@ const connectionManager = {
     },
     
     handleData: (data) => {
+        if (typeof data === 'string') {
+            messageHandler.appendMessage("stranger", data);
+            return;
+        }
+        
+        if (!data || !data.type) return;
+        
         const handlers = {
-            string: () => messageHandler.appendMessage("stranger", data),
-            image: () => messageHandler.appendMessage("stranger", data.blob, 'image'),
-            gif: () => messageHandler.appendMessage("stranger", data.url, 'gif'),
-            typing: () => messageHandler.showTypingIndicator(),
+            'image': () => messageHandler.appendMessage("stranger", data.blob, 'image'),
+            'gif': () => messageHandler.appendMessage("stranger", data.url, 'gif'),
+            'typing': () => messageHandler.showTypingIndicator(),
             'video-call-request': () => videoCallManager.handleVideoCallRequest(),
             'video-call-accepted': () => videoCallManager.handleVideoCallAccepted(),
             'video-call-declined': () => videoCallManager.handleVideoCallDeclined(),
             'video-call-ended': () => videoCallManager.handleVideoCallEnded()
         };
-
-        const handler = typeof data === 'string' ? handlers.string : handlers[data.type];
-        handler?.();
+        
+        handlers[data.type]?.();
     },
     
     endConnection: (message) => {
         messageHandler.logSystem(message);
-        state.myConn = null;
+        if (state.myConn) {
+            state.myConn.close();
+            state.myConn = null;
+        }
         state.isConnected = false;
         videoCallManager.endVideoCall();
-        setTimeout(() => {
-            if (state.currentRoomCode) {
-                db.ref("rooms/" + state.currentRoomCode + "/participants/" + state.myId).remove();
-            }
-            connectionManager.startPeer();
-        }, 1000);
+        
+        setTimeout(connectionManager.startPeer, 1000);
     },
     
     sendMessage: () => {
@@ -1487,7 +1521,10 @@ const videoCallManager = {
         }
         
         try {
-            state.localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            state.localStream = await navigator.mediaDevices.getUserMedia({ 
+                video: true, 
+                audio: true 
+            });
             state.myConn.send({ type: "video-call-request" });
             state.isVideoCallRequested = true;
             messageHandler.logSystem("Video call request sent. Waiting for response...");
@@ -1544,8 +1581,12 @@ const videoCallManager = {
     startVideoCallStream: async () => {
         try {
             if (!state.localStream) {
-                state.localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                state.localStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: true, 
+                    audio: true 
+                });
             }
+            
             elements.localVideo.srcObject = state.localStream;
             
             const call = state.peer.call(state.myConn.peer, state.localStream);
@@ -1595,8 +1636,9 @@ const videoCallManager = {
         const videoTrack = state.localStream.getVideoTracks()[0];
         if (videoTrack) {
             videoTrack.enabled = !videoTrack.enabled;
-            elements.toggleVideoBtn.innerHTML = videoTrack.enabled ? 
-                '<i class="fas fa-video"></i>' : '<i class="fas fa-video-slash"></i>';
+            elements.toggleVideoBtn.innerHTML = videoTrack.enabled 
+                ? '<i class="fas fa-video"></i>' 
+                : '<i class="fas fa-video-slash"></i>';
         }
     },
     
@@ -1605,8 +1647,9 @@ const videoCallManager = {
         const audioTrack = state.localStream.getAudioTracks()[0];
         if (audioTrack) {
             audioTrack.enabled = !audioTrack.enabled;
-            elements.toggleAudioBtn.innerHTML = audioTrack.enabled ? 
-                '<i class="fas fa-microphone"></i>' : '<i class="fas fa-microphone-slash"></i>';
+            elements.toggleAudioBtn.innerHTML = audioTrack.enabled 
+                ? '<i class="fas fa-microphone"></i>' 
+                : '<i class="fas fa-microphone-slash"></i>';
         }
     },
     
@@ -1644,9 +1687,7 @@ const gifManager = {
             return;
         }
         try {
-            const response = await fetch(
-                `https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_API_KEY}&q=${encodeURIComponent(query)}&limit=20`
-            );
+            const response = await fetch(`https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_API_KEY}&q=${encodeURIComponent(query)}&limit=20`);
             const data = await response.json();
             gifManager.displayGifs(data.data);
         } catch (error) {
@@ -1679,7 +1720,7 @@ const eventHandlers = {
     setupEventListeners: () => {
         elements.roomBtn.onclick = () => {
             const isVisible = elements.roomModal.style.display === "block";
-            utils[isVisible ? 'hide' : 'show'](elements.roomModal, 'block');
+            utils[isVisible ? 'hide' : 'showBlock'](elements.roomModal);
             if (!isVisible && state.currentRoomCode) {
                 elements.roomCodeInput.value = state.currentRoomCode;
             }
@@ -1693,7 +1734,9 @@ const eventHandlers = {
             if (code !== "-----" && await utils.copyToClipboard(code)) {
                 const originalHtml = elements.copyRoomCodeBtn.innerHTML;
                 elements.copyRoomCodeBtn.innerHTML = '<i class="fas fa-check"></i>';
-                setTimeout(() => { elements.copyRoomCodeBtn.innerHTML = originalHtml; }, 2000);
+                setTimeout(() => { 
+                    elements.copyRoomCodeBtn.innerHTML = originalHtml; 
+                }, 2000);
             }
         };
         
@@ -1702,22 +1745,27 @@ const eventHandlers = {
         });
         
         elements.msgInput.addEventListener("input", () => {
-            if (state.myConn && state.isConnected) state.myConn.send({ type: "typing" });
+            if (state.myConn && state.isConnected) {
+                state.myConn.send({ type: "typing" });
+            }
         });
         
         elements.sendBtn.onclick = connectionManager.sendMessage;
         
         elements.imgInput.addEventListener("change", (e) => {
-            connectionManager.sendFile(e.target.files[0], "image");
+            const file = e.target.files[0];
+            if (file) connectionManager.sendFile(file, "image");
             e.target.value = "";
         });
         
         elements.gifInput.addEventListener("change", (e) => {
-            connectionManager.sendFile(e.target.files[0], "image");
+            const file = e.target.files[0];
+            if (file) connectionManager.sendFile(file, "image");
             e.target.value = "";
         });
         
         elements.skipBtn.onclick = eventHandlers.skipChat;
+        
         elements.videoCallBtn.onclick = videoCallManager.startVideoCall;
         elements.acceptCallBtn.onclick = videoCallManager.acceptVideoCall;
         elements.declineCallBtn.onclick = videoCallManager.declineVideoCall;
@@ -1728,7 +1776,7 @@ const eventHandlers = {
         elements.gifBtn.onclick = (e) => {
             e.preventDefault();
             const isVisible = elements.gifModal.style.display === "block";
-            utils[isVisible ? 'hide' : 'show'](elements.gifModal, 'block');
+            utils[isVisible ? 'hide' : 'showBlock'](elements.gifModal);
             if (!isVisible) gifManager.fetchTrendingGifs();
         };
         
@@ -1779,7 +1827,7 @@ const eventHandlers = {
     skipChat: () => {
         if (state.myConn) state.myConn.close();
         state.isConnected = false;
-        roomManager.leaveRoom();
+        roomManager.destroyRoom();
         messageHandler.logSystem("Room destroyed. Creating a new connection...");
         setTimeout(() => {
             elements.chatLog.innerHTML = "";
@@ -1800,8 +1848,8 @@ const eventHandlers = {
 };
 
 const init = () => {
-    // Load room data
-    const savedRoomData = storage.loadRoom();
+    // Load saved data
+    const savedRoomData = storage.loadRoomCode();
     if (savedRoomData) {
         state.currentRoomCode = savedRoomData.roomCode;
         if (state.currentRoomCode) {
@@ -1809,8 +1857,11 @@ const init = () => {
         }
     }
     
-    // Load peer ID once
-    state.myId = storage.loadPeerId();
+    // Load saved peer ID
+    const savedPeerId = storage.loadPeerId();
+    if (savedPeerId) {
+        state.myId = savedPeerId;
+    }
     
     eventHandlers.setupEventListeners();
     connectionManager.startPeer();
