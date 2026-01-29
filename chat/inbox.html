@@ -758,7 +758,6 @@ body.light-mode {
 {% include menu.html %}
 {% include scripts.html %}
 
-
 <script>
 const firebaseConfig = {
   databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
@@ -984,22 +983,8 @@ function loadFriends() {
       const avatarLetter = friendNickname.charAt(0).toUpperCase();
       const displayName = friendNickname;
       
-      // Get the last message from message1 or message2
       let displayMsg = "Say Hi!";
-      if (friend.message1 && friend.message1.text) {
-        displayMsg = friend.message1.text;
-      } else if (friend.message2 && friend.message2.text) {
-        displayMsg = friend.message2.text;
-      }
-
-      // Get the latest timestamp from message1 or message2
-      let timestamp = Date.now();
-      if (friend.message1 && friend.message1.timestamp) {
-        timestamp = friend.message1.timestamp;
-      }
-      if (friend.message2 && friend.message2.timestamp && friend.message2.timestamp > timestamp) {
-        timestamp = friend.message2.timestamp;
-      }
+      let timestamp = friend.timestamp || Date.now();
 
       friendsArray.push({
         chatId,
@@ -1054,7 +1039,6 @@ function loadFriends() {
 
       list.appendChild(div);
       
-      // Setup online status monitoring for this friend
       setupOnlineStatusMonitoring(friend.otherId, statusId);
     });
 
@@ -1070,16 +1054,13 @@ function loadFriends() {
 }
 
 function setupOnlineStatusMonitoring(friendPeerId, statusElementId) {
-  // Clean up existing listener
   if (onlineStatusListeners[friendPeerId]) {
     onlineStatusListeners[friendPeerId]();
     delete onlineStatusListeners[friendPeerId];
   }
   
-  // Monitor peer connection status
   const checkConnectionStatus = async () => {
     try {
-      // Check if peer is online by attempting a temporary connection
       const tempConn = peer.connect(friendPeerId, { serialization: 'json' });
       
       const statusCheck = new Promise((resolve) => {
@@ -1107,13 +1088,10 @@ function setupOnlineStatusMonitoring(friendPeerId, statusElementId) {
     }
   };
   
-  // Initial check
   checkConnectionStatus();
   
-  // Set up periodic checks
   const intervalId = setInterval(checkConnectionStatus, 10000);
   
-  // Store cleanup function
   onlineStatusListeners[friendPeerId] = () => {
     clearInterval(intervalId);
   };
@@ -1196,7 +1174,6 @@ function connectToFriend(friendId) {
     return;
   }
   
-  // Check if we're already connected to this friend
   if (myConn && myConn.peer === friendId) {
     if (isConnected) {
       console.log('Already connected to this friend');
@@ -1244,7 +1221,6 @@ function connectToFriend(friendId) {
       showOfflineStatus();
     });
     
-    // Timeout if connection doesn't establish
     setTimeout(() => {
       if (!isConnected && conn.open) {
         console.log('Connection timeout');
@@ -1300,7 +1276,7 @@ function handleIncomingData(data) {
 }
 
 function updateLastMessageInFirebase(content, type) {
-  if (!currentChatId || !currentUserId) return;
+  if (!currentChatId || !currentUserId || !myNickname) return;
   
   db.ref("friends/" + currentChatId).once('value').then(snap => {
     const friend = snap.val();
@@ -1319,7 +1295,6 @@ function updateLastMessageInFirebase(content, type) {
       timestamp: Date.now()
     };
     
-    // Determine which message field to update based on who is sending
     if (friend.nickname1 === myNickname) {
       updateData.message1 = {
         text: lastMessageText,
@@ -1573,7 +1548,6 @@ function unfriend(chatId) {
         isConnected = false;
       }
       
-      // Clean up online status listener
       const friendData = myFriendsData[chatId];
       if (friendData && onlineStatusListeners[friendData.otherId]) {
         onlineStatusListeners[friendData.otherId]();
@@ -1691,7 +1665,6 @@ window.addEventListener('beforeunload', () => {
     db.ref("friends").off("value", friendListListener);
   }
   
-  // Clean up all online status listeners
   Object.values(onlineStatusListeners).forEach(cleanup => cleanup());
   onlineStatusListeners = {};
   
