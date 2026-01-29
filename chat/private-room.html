@@ -1213,7 +1213,7 @@ const roomManager = {
         
         try {
             await db.ref("rooms/" + code).set({
-                participants: [state.myId], // Array of participant IDs
+                participants: [state.myId],
                 createdAt: firebase.database.ServerValue.TIMESTAMP
             });
             
@@ -1254,13 +1254,11 @@ const roomManager = {
             state.currentRoomCode = code;
             storage.saveRoomCode();
             
-            // Add participant ID to array
             await db.ref("rooms/" + code + "/participants").set([
                 ...(roomData.participants || []),
                 state.myId
             ]);
             
-            // Connect to existing participants
             for (const participantId of (roomData.participants || [])) {
                 if (participantId !== state.myId) {
                     await connectionManager.connectToPeer(participantId);
@@ -1322,7 +1320,6 @@ const roomManager = {
             const roomData = snapshot.val();
             const participants = roomData.participants || [];
             
-            // If user not in participants, add them
             if (!participants.includes(state.myId)) {
                 await db.ref("rooms/" + state.currentRoomCode + "/participants").set([
                     ...participants,
@@ -1332,7 +1329,6 @@ const roomManager = {
             
             messageHandler.logSystem(`Reconnected to room: ${state.currentRoomCode}`);
             
-            // Connect to existing participants
             for (const participantId of participants) {
                 if (participantId !== state.myId) {
                     await connectionManager.connectToPeer(participantId);
@@ -1354,24 +1350,14 @@ const roomManager = {
         if (!state.currentRoomCode) return;
         
         try {
-            const snapshot = await db.ref("rooms/" + state.currentRoomCode + "/participants").once('value');
-            if (snapshot.exists()) {
-                const participants = snapshot.val() || [];
-                // Remove own ID from participants
-                const updatedParticipants = participants.filter(id => id !== state.myId);
-                
-                await db.ref("rooms/" + state.currentRoomCode + "/participants").set(updatedParticipants);
-                
-                // If no participants left, delete the room
-                if (updatedParticipants.length === 0) {
-                    await db.ref("rooms/" + state.currentRoomCode).remove();
-                }
-            }
+            await db.ref("rooms/" + state.currentRoomCode).remove();
+            console.log("Room deleted successfully from Firebase");
         } catch (error) {
-            console.error("Error leaving room:", error);
+            console.error("Error deleting room:", error);
         }
         
         storage.clearRoomCode();
+        state.currentRoomCode = null;
     }
 };
 
@@ -1824,11 +1810,16 @@ const eventHandlers = {
         });
     },
     
-    skipChat: () => {
+    skipChat: async () => {
         if (state.myConn) state.myConn.close();
         state.isConnected = false;
-        roomManager.destroyRoom();
-        messageHandler.logSystem("Room destroyed. Creating a new connection...");
+        
+        videoCallManager.endVideoCall();
+        
+        await roomManager.destroyRoom();
+        
+        messageHandler.logSystem("Finding someone new...");
+        
         setTimeout(() => {
             elements.chatLog.innerHTML = "";
             connectionManager.startPeer();
@@ -1848,7 +1839,6 @@ const eventHandlers = {
 };
 
 const init = () => {
-    // Load saved data
     const savedRoomData = storage.loadRoomCode();
     if (savedRoomData) {
         state.currentRoomCode = savedRoomData.roomCode;
@@ -1857,7 +1847,6 @@ const init = () => {
         }
     }
     
-    // Load saved peer ID
     const savedPeerId = storage.loadPeerId();
     if (savedPeerId) {
         state.myId = savedPeerId;
