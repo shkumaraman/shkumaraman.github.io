@@ -974,37 +974,32 @@ function loadFriends() {
     const friendsArray = [];
 
     Object.entries(data).forEach(([chatId, friend]) => {
-      const isMe1 = friend.nickname1 === myNickname;
-      const isMe2 = friend.nickname2 === myNickname;
+      const friendNickname = friend.nickname2 === myNickname ? friend.nickname1 : 
+                           friend.nickname1 === myNickname ? friend.nickname2 : null;
       
-      if (!isMe1 && !isMe2) return;
+      if (!friendNickname) return;
 
-      const friendNickname = isMe1 ? friend.nickname2 : friend.nickname1;
-      const otherId = isMe1 ? friend.peer2 : friend.peer1;
-      const myId = isMe1 ? friend.peer1 : friend.peer2;
+      const otherId = friendNickname === friend.nickname1 ? friend.peer1 : friend.peer2;
       const avatarLetter = friendNickname.charAt(0).toUpperCase();
+      const displayName = friendNickname;
       
       let displayMsg = "Say Hi!";
-      let lastMessageSender = null;
-      
-      if (friend.message1 && friend.message1.content) {
-        displayMsg = friend.message1.content;
-        lastMessageSender = friend.nickname1;
-      }
-      
-      if (friend.message2 && friend.message2.content) {
-        displayMsg = friend.message2.content;
-        lastMessageSender = friend.nickname2;
+      if (friend.message1 && friend.message2) {
+        if (myNickname === friend.nickname1) {
+          displayMsg = friend.message2 || friend.message1 || "Say Hi!";
+        } else {
+          displayMsg = friend.message1 || friend.message2 || "Say Hi!";
+        }
+      } else if (friend.message1 || friend.message2) {
+        displayMsg = friend.message1 || friend.message2 || "Say Hi!";
       }
 
       friendsArray.push({
         chatId,
         otherId,
-        myId,
         displayName: friendNickname,
         avatarLetter,
         displayMsg,
-        lastMessageSender,
         timestamp: friend.timestamp || Date.now(),
         friendData: friend
       });
@@ -1012,7 +1007,7 @@ function loadFriends() {
       myFriendsData[chatId] = {
         otherId: otherId,
         displayName: friendNickname,
-        myPeerId: myId,
+        myPeerId: friendNickname === friend.nickname1 ? friend.peer2 : friend.peer1,
         friendPeerId: otherId
       };
     });
@@ -1030,13 +1025,6 @@ function loadFriends() {
       const div = document.createElement("div");
       div.className = "friend-item";
       const statusId = `status_${friend.otherId}`;
-      
-      let messagePreview = friend.displayMsg;
-      if (friend.lastMessageSender) {
-        const prefix = friend.lastMessageSender === myNickname ? "You: " : "";
-        messagePreview = prefix + friend.displayMsg;
-      }
-      
       div.innerHTML = `
         <div class="friend-avatar">${friend.avatarLetter}
           <div class="friend-status offline" id="${statusId}"></div>
@@ -1045,7 +1033,7 @@ function loadFriends() {
           <h3 class="friend-name">
             ${escapeHtml(friend.displayName)}
           </h3>
-          <p class="last-message">${escapeHtml(messagePreview)}</p>
+          <p class="last-message">${escapeHtml(friend.displayMsg)}</p>
         </div>
         <span class="message-time">${formatTime(friend.timestamp)}</span>
         <button class="unfriend-btn" onclick="event.stopPropagation(); unfriend('${friend.chatId}')" title="Remove friend">
@@ -1370,30 +1358,23 @@ function saveIncomingMessage(content, type, senderId) {
     lastMsg = content;
   }
   
-  const isMe = senderId === currentUserId;
   const friendData = myFriendsData[currentChatId];
+  if (!friendData) return message;
   
-  if (!friendData) return;
+  const updateData = {
+    timestamp: Date.now()
+  };
   
-  const updates = {};
-  
-  if (isMe) {
-    updates[`${currentChatId}/message2`] = {
-      content: lastMsg,
-      timestamp: Date.now()
-    };
+  if (friendData.myPeerId === currentUserId) {
+    updateData.message1 = lastMsg;
   } else {
-    updates[`${currentChatId}/message1`] = {
-      content: lastMsg,
-      timestamp: Date.now()
-    };
+    updateData.message2 = lastMsg;
   }
   
-  updates[`${currentChatId}/timestamp`] = Date.now();
-  
-  db.ref("friends").update(updates).catch(error => {
-    console.error('Error updating last message:', error);
-  });
+  db.ref("friends/" + currentChatId).update(updateData)
+    .catch(error => {
+      console.error('Error updating last message:', error);
+    });
   
   return message;
 }
