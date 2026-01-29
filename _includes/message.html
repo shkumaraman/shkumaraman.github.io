@@ -77,51 +77,41 @@ document.addEventListener("DOMContentLoaded", function () {
   const notifySound = new Audio("/assets/notify.mp3");
   notifySound.preload = "auto";
 
-  let lastNotified = localStorage.getItem("lastNotifiedMsgTime") || 0;
+  let lastNotifiedTimestamps = JSON.parse(localStorage.getItem("lastNotifiedMsgTimes") || "{}");
   let toastQueue = [];
   let toastShowing = false;
 
-  // Listen for changes in friends data
   db.ref("friends").on("value", snapshot => {
     const data = snapshot.val();
     if (!data) return;
 
     Object.entries(data).forEach(([chatId, friend]) => {
-      // Check which nickname is mine
+      if (!friend.timestamp) return;
+
       let senderName = null;
-      let messageData = null;
-      let messageTimestamp = 0;
+      let lastMessage = "";
       
       if (friend.nickname1 === myNickname) {
-        // I am nickname1, so check message2 (friend's message)
         senderName = friend.nickname2;
-        if (friend.message2 && friend.message2.timestamp) {
-          messageData = friend.message2;
-          messageTimestamp = friend.message2.timestamp;
-        }
+        lastMessage = friend.message2 || "";
       } else if (friend.nickname2 === myNickname) {
-        // I am nickname2, so check message1 (friend's message)
         senderName = friend.nickname1;
-        if (friend.message1 && friend.message1.timestamp) {
-          messageData = friend.message1;
-          messageTimestamp = friend.message1.timestamp;
-        }
-      } else {
-        return; // Not my friend
-      }
-      
-      if (!senderName || !messageData) return;
+        lastMessage = friend.message1 || "";
+      } else return;
 
-      // Check if this message is newer than last notification
-      if (messageTimestamp > lastNotified) {
+      if (!senderName) return;
+
+      const lastNotified = lastNotifiedTimestamps[chatId] || 0;
+      
+      if (friend.timestamp > lastNotified && lastMessage) {
         toastQueue.push({
           senderName: senderName,
-          message: messageData.text,
-          timestamp: messageTimestamp
+          message: lastMessage,
+          chatId: chatId
         });
+        lastNotifiedTimestamps[chatId] = friend.timestamp;
+        localStorage.setItem("lastNotifiedMsgTimes", JSON.stringify(lastNotifiedTimestamps));
         processToastQueue();
-        lastNotified = messageTimestamp;
-        localStorage.setItem("lastNotifiedMsgTime", lastNotified);
       }
     });
   });
@@ -130,27 +120,20 @@ document.addEventListener("DOMContentLoaded", function () {
     if (toastShowing || toastQueue.length === 0) return;
 
     toastShowing = true;
-    const notification = toastQueue.shift();
+    const { senderName, message, chatId } = toastQueue.shift();
 
-    let messagePreview = notification.message;
-    if (notification.message === 'Image') {
-      messagePreview = 'sent an image';
-    } else if (notification.message === 'GIF') {
-      messagePreview = 'sent a GIF';
-    } else if (notification.message.length > 30) {
-      messagePreview = notification.message.substring(0, 30) + '...';
-    }
+    const displayMessage = message.length > 30 ? message.substring(0, 30) + "..." : message;
+    toastText.textContent = `${senderName}: ${displayMessage}`;
 
-    toastText.textContent = `${notification.senderName}: ${messagePreview}`;
-
-    // Play notification sound
     notifySound.currentTime = 0;
     notifySound.play().catch(() => {});
 
-    // Show toast
     toast.style.top = "20px";
 
-    // Hide toast after 5 seconds
+    toastViewBtn.onclick = () => {
+      window.location.href = "/chat/inbox.html";
+    };
+
     setTimeout(() => {
       toast.style.top = "-120px";
       setTimeout(() => {
@@ -159,21 +142,6 @@ document.addEventListener("DOMContentLoaded", function () {
       }, 400);
     }, 5000);
   }
-
-  toastViewBtn.onclick = () => {
-    window.location.href = "/chat/inbox.html";
-  };
-
-  // Reset last notified time if user visits inbox page directly
-  window.addEventListener('focus', () => {
-    // Update lastNotified to current time to prevent old notifications
-    lastNotified = Date.now();
-    localStorage.setItem("lastNotifiedMsgTime", lastNotified);
-  });
-
-  // Also reset when page loads
-  lastNotified = Date.now();
-  localStorage.setItem("lastNotifiedMsgTime", lastNotified);
 
 });
 </script>
