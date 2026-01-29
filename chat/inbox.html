@@ -974,32 +974,45 @@ function loadFriends() {
     const friendsArray = [];
 
     Object.entries(data).forEach(([chatId, friend]) => {
-      const friendNickname = friend.nickname2 === myNickname ? friend.nickname1 : 
-                           friend.nickname1 === myNickname ? friend.nickname2 : null;
+      const isMe1 = friend.nickname1 === myNickname;
+      const isMe2 = friend.nickname2 === myNickname;
       
-      if (!friendNickname) return;
+      if (!isMe1 && !isMe2) return;
 
-      const otherId = friendNickname === friend.nickname1 ? friend.peer1 : friend.peer2;
+      const friendNickname = isMe1 ? friend.nickname2 : friend.nickname1;
+      const otherId = isMe1 ? friend.peer2 : friend.peer1;
+      const myId = isMe1 ? friend.peer1 : friend.peer2;
       const avatarLetter = friendNickname.charAt(0).toUpperCase();
-      const displayName = friendNickname;
       
       let displayMsg = "Say Hi!";
-      let timestamp = friend.timestamp || Date.now();
+      let lastMessageSender = null;
+      
+      if (friend.message1 && friend.message1.content) {
+        displayMsg = friend.message1.content;
+        lastMessageSender = friend.nickname1;
+      }
+      
+      if (friend.message2 && friend.message2.content) {
+        displayMsg = friend.message2.content;
+        lastMessageSender = friend.nickname2;
+      }
 
       friendsArray.push({
         chatId,
         otherId,
+        myId,
         displayName: friendNickname,
         avatarLetter,
         displayMsg,
-        timestamp: timestamp,
+        lastMessageSender,
+        timestamp: friend.timestamp || Date.now(),
         friendData: friend
       });
       
       myFriendsData[chatId] = {
         otherId: otherId,
         displayName: friendNickname,
-        myPeerId: friendNickname === friend.nickname1 ? friend.peer2 : friend.peer1,
+        myPeerId: myId,
         friendPeerId: otherId
       };
     });
@@ -1017,6 +1030,13 @@ function loadFriends() {
       const div = document.createElement("div");
       div.className = "friend-item";
       const statusId = `status_${friend.otherId}`;
+      
+      let messagePreview = friend.displayMsg;
+      if (friend.lastMessageSender) {
+        const prefix = friend.lastMessageSender === myNickname ? "You: " : "";
+        messagePreview = prefix + friend.displayMsg;
+      }
+      
       div.innerHTML = `
         <div class="friend-avatar">${friend.avatarLetter}
           <div class="friend-status offline" id="${statusId}"></div>
@@ -1025,7 +1045,7 @@ function loadFriends() {
           <h3 class="friend-name">
             ${escapeHtml(friend.displayName)}
           </h3>
-          <p class="last-message">${escapeHtml(friend.displayMsg)}</p>
+          <p class="last-message">${escapeHtml(messagePreview)}</p>
         </div>
         <span class="message-time">${formatTime(friend.timestamp)}</span>
         <button class="unfriend-btn" onclick="event.stopPropagation(); unfriend('${friend.chatId}')" title="Remove friend">
@@ -1263,57 +1283,13 @@ function handleIncomingData(data) {
   if (typeof data === "string") {
     saveIncomingMessage(data, 'text', senderId);
     displayMessageImmediately(data, 'text', senderId, true);
-    updateLastMessageInFirebase(data, 'text');
   } else if (data.type === "image") {
     saveIncomingMessage(data.blob, 'image', senderId);
     displayMessageImmediately(data.blob, 'image', senderId, true);
-    updateLastMessageInFirebase('Image', 'image');
   } else if (data.type === "gif") {
     saveIncomingMessage(data.url, 'gif', senderId);
     displayMessageImmediately(data.url, 'gif', senderId, true);
-    updateLastMessageInFirebase('GIF', 'gif');
   }
-}
-
-function updateLastMessageInFirebase(content, type) {
-  if (!currentChatId || !currentUserId || !myNickname) return;
-  
-  db.ref("friends/" + currentChatId).once('value').then(snap => {
-    const friend = snap.val();
-    if (!friend) return;
-    
-    let lastMessageText = '';
-    if (type === 'image') {
-      lastMessageText = 'Image';
-    } else if (type === 'gif') {
-      lastMessageText = 'GIF';
-    } else {
-      lastMessageText = content;
-    }
-    
-    const updateData = {
-      timestamp: Date.now()
-    };
-    
-    if (friend.nickname1 === myNickname) {
-      updateData.message1 = {
-        text: lastMessageText,
-        timestamp: Date.now(),
-        type: type
-      };
-    } else if (friend.nickname2 === myNickname) {
-      updateData.message2 = {
-        text: lastMessageText,
-        timestamp: Date.now(),
-        type: type
-      };
-    }
-    
-    db.ref("friends/" + currentChatId).update(updateData)
-      .catch(error => {
-        console.error('Error updating last message in Firebase:', error);
-      });
-  });
 }
 
 function showFriendsList() {
@@ -1385,6 +1361,40 @@ function saveIncomingMessage(content, type, senderId) {
   
   localStorage.setItem(storageKey, JSON.stringify(messages));
   
+  let lastMsg = '';
+  if (type === 'image') {
+    lastMsg = 'Image';
+  } else if (type === 'gif') {
+    lastMsg = 'GIF';
+  } else if (type === 'text') {
+    lastMsg = content;
+  }
+  
+  const isMe = senderId === currentUserId;
+  const friendData = myFriendsData[currentChatId];
+  
+  if (!friendData) return;
+  
+  const updates = {};
+  
+  if (isMe) {
+    updates[`${currentChatId}/message2`] = {
+      content: lastMsg,
+      timestamp: Date.now()
+    };
+  } else {
+    updates[`${currentChatId}/message1`] = {
+      content: lastMsg,
+      timestamp: Date.now()
+    };
+  }
+  
+  updates[`${currentChatId}/timestamp`] = Date.now();
+  
+  db.ref("friends").update(updates).catch(error => {
+    console.error('Error updating last message:', error);
+  });
+  
   return message;
 }
 
@@ -1436,7 +1446,6 @@ function sendMessage() {
       
       saveIncomingMessage(content, 'text', currentUserId);
       displayMessageImmediately(content, 'text', currentUserId);
-      updateLastMessageInFirebase(content, 'text');
       
       input.value = '';
     } catch (error) {
@@ -1453,7 +1462,6 @@ function sendMessage() {
       
       saveIncomingMessage(content, 'text', currentUserId);
       displayMessageImmediately(content, 'text', currentUserId);
-      updateLastMessageInFirebase(content, 'text');
       input.value = '';
     }
   } else {
@@ -1467,7 +1475,6 @@ function sendMessage() {
     
     saveIncomingMessage(content, 'text', currentUserId);
     displayMessageImmediately(content, 'text', currentUserId);
-    updateLastMessageInFirebase(content, 'text');
     input.value = '';
   }
 }
@@ -1495,7 +1502,6 @@ function handleImageUpload(e) {
         
         saveIncomingMessage(reader.result, 'image', currentUserId);
         displayMessageImmediately(reader.result, 'image', currentUserId);
-        updateLastMessageInFirebase('Image', 'image');
       } catch (error) {
         console.error('Failed to send image:', error);
         showOfflineStatus();
@@ -1510,7 +1516,6 @@ function handleImageUpload(e) {
         
         saveIncomingMessage(reader.result, 'image', currentUserId);
         displayMessageImmediately(reader.result, 'image', currentUserId);
-        updateLastMessageInFirebase('Image', 'image');
       }
     } else {
       Swal.fire({
@@ -1523,7 +1528,6 @@ function handleImageUpload(e) {
       
       saveIncomingMessage(reader.result, 'image', currentUserId);
       displayMessageImmediately(reader.result, 'image', currentUserId);
-      updateLastMessageInFirebase('Image', 'image');
     }
   };
   reader.readAsDataURL(file);
@@ -1623,7 +1627,6 @@ function displayGifs(gifs) {
           
           saveIncomingMessage(gifUrl, 'gif', currentUserId);
           displayMessageImmediately(gifUrl, 'gif', currentUserId);
-          updateLastMessageInFirebase('GIF', 'gif');
         } catch (error) {
           console.error('Failed to send GIF:', error);
           showOfflineStatus();
@@ -1638,7 +1641,6 @@ function displayGifs(gifs) {
           
           saveIncomingMessage(gifUrl, 'gif', currentUserId);
           displayMessageImmediately(gifUrl, 'gif', currentUserId);
-          updateLastMessageInFirebase('GIF', 'gif');
         }
       } else {
         Swal.fire({
@@ -1651,7 +1653,6 @@ function displayGifs(gifs) {
         
         saveIncomingMessage(gifUrl, 'gif', currentUserId);
         displayMessageImmediately(gifUrl, 'gif', currentUserId);
-        updateLastMessageInFirebase('GIF', 'gif');
       }
       
       document.getElementById('gifModal').style.display = 'none';
@@ -1674,6 +1675,6 @@ window.addEventListener('beforeunload', () => {
   
   if (peer && typeof peer.destroy === 'function') {
     peer.destroy();
-  });
-}
+  }
+});
 </script>
