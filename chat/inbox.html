@@ -193,30 +193,6 @@ body.light-mode {
   color: #fff;
   font-size: 1.3em;
   font-weight: bold;
-  position: relative;
-}
-
-.friend-status {
-  position: absolute;
-  bottom: 2px;
-  right: 2px;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: 2px solid var(--dark-chat-bg);
-  transition: all 0.3s;
-}
-
-.friend-status.online {
-  background-color: #4CAF50;
-}
-
-.friend-status.offline {
-  background-color: #ff6b6b;
-}
-
-.light-mode .friend-status {
-  border-color: var(--light-header-bg);
 }
 
 .friend-info {
@@ -388,30 +364,6 @@ body.light-mode {
   color: #fff;
   font-size: 1.1em;
   font-weight: bold;
-  position: relative;
-}
-
-.chat-status {
-  position: absolute;
-  bottom: -2px;
-  right: -2px;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  border: 2px solid var(--dark-header-bg);
-  transition: all 0.3s;
-}
-
-.chat-status.online {
-  background-color: #4CAF50;
-}
-
-.chat-status.offline {
-  background-color: #ff6b6b;
-}
-
-.light-mode .chat-status {
-  border-color: var(--light-header-bg);
 }
 
 .chat-name {
@@ -712,9 +664,7 @@ body.light-mode {
 <div class="chat-container" id="chatContainer">
   <div class="chat-header">
     <button class="back-btn" onclick="showFriendsList()">&larr;</button>
-    <div class="chat-avatar" id="chatAvatar">?
-      <div class="chat-status offline" id="chatStatus"></div>
-    </div>
+    <div class="chat-avatar" id="chatAvatar">?</div>
     <h3 class="chat-name" id="chatName">
       Friend
     </h3>
@@ -862,7 +812,6 @@ function initializePeerConnection() {
   });
   
   peer.on('connection', (conn) => {
-    // Sirf current friend se hi connection accept karo
     if (currentFriendId && conn.peer === currentFriendId) {
       myConn = conn;
       isConnected = true;
@@ -888,7 +837,6 @@ function initializePeerConnection() {
         console.error('Connection error:', err);
       });
     } else {
-      // Dusre friends se connection ko reject karo
       conn.close();
     }
   });
@@ -985,7 +933,6 @@ function loadFriends() {
       const avatarLetter = friendNickname.charAt(0).toUpperCase();
       const displayName = friendNickname;
       
-      // FIREBASE SE LAST MESSAGE LE RAHE HAI
       let displayMsg = "Say Hi!";
       if (friend.message1 && friend.message2) {
         if (myNickname === friend.nickname1) {
@@ -1029,9 +976,7 @@ function loadFriends() {
       const div = document.createElement("div");
       div.className = "friend-item";
       div.innerHTML = `
-        <div class="friend-avatar">${friend.avatarLetter}
-          <div class="friend-status offline"></div>
-        </div>
+        <div class="friend-avatar">${friend.avatarLetter}</div>
         <div class="friend-info">
           <h3 class="friend-name">
             ${escapeHtml(friend.displayName)}
@@ -1090,7 +1035,6 @@ function updateMyPeerIdInFirebase() {
 }
 
 function openChat(chatId, friendId, friendName) {
-  // Pehle existing connection close karo
   if (myConn) {
     myConn.close();
     myConn = null;
@@ -1105,12 +1049,15 @@ function openChat(chatId, friendId, friendName) {
   document.getElementById('chatName').textContent = friendName;
   document.getElementById('pageTitle').textContent = friendName;
   
+  const chatAvatar = document.getElementById('chatAvatar');
+  chatAvatar.style.boxShadow = 'none';
+  chatAvatar.style.transition = 'box-shadow 0.3s ease';
+  
   document.getElementById('friendsContainer').style.display = 'none';
   document.getElementById('chatContainer').style.display = 'flex';
   
   loadLocalChatMessages();
   
-  // Sirf current friend se connect karo
   connectToFriend(friendId);
 }
 
@@ -1143,7 +1090,8 @@ function connectToFriend(friendId) {
   try {
     const conn = peer.connect(friendId, {
       reliable: true,
-      serialization: 'json'
+      serialization: 'json',
+      timeout: 10000
     });
     
     conn.on("open", () => {
@@ -1154,31 +1102,41 @@ function connectToFriend(friendId) {
       conn.on("data", handleIncomingData);
       
       conn.on("close", () => {
-        myConn = null;
-        isConnected = false;
-        showOfflineStatus();
+        setTimeout(() => {
+          myConn = null;
+          isConnected = false;
+          showOfflineStatus();
+        }, 2000);
       });
       
       conn.on("error", (err) => {
-        myConn = null;
-        isConnected = false;
-        showOfflineStatus();
+        setTimeout(() => {
+          myConn = null;
+          isConnected = false;
+          showOfflineStatus();
+        }, 1000);
       });
     });
     
     conn.on("error", (err) => {
-      showOfflineStatus();
+      setTimeout(() => {
+        showOfflineStatus();
+      }, 1000);
     });
     
     setTimeout(() => {
       if (!isConnected && conn.open) {
         conn.close();
-        showOfflineStatus();
+        setTimeout(() => {
+          showOfflineStatus();
+        }, 1000);
       }
-    }, 5000);
+    }, 8000);
     
   } catch (error) {
-    showOfflineStatus();
+    setTimeout(() => {
+      showOfflineStatus();
+    }, 1000);
   }
 }
 
@@ -1202,20 +1160,21 @@ function handleIncomingData(data) {
 }
 
 function showOnlineStatus() {
-  const chatStatus = document.getElementById('chatStatus');
+  const chatAvatar = document.getElementById('chatAvatar');
   
-  if (chatStatus) {
-    chatStatus.className = 'chat-status online';
+  if (chatAvatar) {
+    chatAvatar.style.boxShadow = '0 0 10px #4CAF50, 0 0 20px #4CAF50';
+    chatAvatar.style.transition = 'box-shadow 0.3s ease';
   }
   
   updateInputPlaceholder();
 }
 
 function showOfflineStatus() {
-  const chatStatus = document.getElementById('chatStatus');
+  const chatAvatar = document.getElementById('chatAvatar');
   
-  if (chatStatus) {
-    chatStatus.className = 'chat-status offline';
+  if (chatAvatar) {
+    chatAvatar.style.boxShadow = 'none';
   }
   
   updateInputPlaceholder();
@@ -1525,17 +1484,28 @@ function displayGifs(gifs) {
   });
 }
 
-window.addEventListener('beforeunload', () => {
-  if (friendListListener) {
-    db.ref("friends").off("value", friendListListener);
-  }
-  
-  if (myConn) {
-    myConn.close();
-  }
-  
-  if (peer && typeof peer.destroy === 'function') {
-    peer.destroy();
+let pageLeaveTimeout;
+
+window.addEventListener('beforeunload', (e) => {
+  pageLeaveTimeout = setTimeout(() => {
+    if (friendListListener) {
+      db.ref("friends").off("value", friendListListener);
+    }
+    
+    if (myConn) {
+      myConn.close();
+    }
+    
+    if (peer && typeof peer.destroy === 'function') {
+      peer.destroy();
+    }
+  }, 3000);
+});
+
+window.addEventListener('mouseenter', () => {
+  if (pageLeaveTimeout) {
+    clearTimeout(pageLeaveTimeout);
+    pageLeaveTimeout = null;
   }
 });
 </script>
