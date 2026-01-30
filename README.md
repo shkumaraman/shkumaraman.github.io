@@ -9,7 +9,7 @@
 
 **Text & Media Sharing** – Exchange messages, images, and more.  
 **Video Calls** – Connect face-to-face instantly.  
-**Private Room Group Chat** – Connect in rooms based on interests.  
+**Private Room & Chat Rooms** – Create a Personal Private Room or Join rooms based on interests.  
 **Gender & Tags Matching** – Find people who match your preferences.  
 **100% Anonymous** – No personal data required.  
 **Simple & Fast** – Start chatting in one click.  
