@@ -550,6 +550,10 @@ description: "Post anything anonymously without login. Confess, express, or spea
     let displayedPosts = [];
     let currentSearchTerm = '';
     let highlightPostId = null;
+    let searchTimeout = null;
+    let isNewPost = false;
+    let newPostId = null;
+    let hasRandomized = false;
 
     async function loadBannedWords() {
       try {
@@ -560,7 +564,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
           .filter(word => word.length > 0);
         bannedWordsLoaded = true;
       } catch (err) {
-        bannedWords = ['badword1', 'badword2', 'swearword'];
+        bannedWords = [];
         bannedWordsLoaded = true;
       }
     }
@@ -608,17 +612,14 @@ description: "Post anything anonymously without login. Confess, express, or spea
       }, type === 'success' ? 3000 : 5000);
     }
 
-    function extractURL(text) {
+    function makeTextClickable(text) {
+      if (!text) return '';
       const urlRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|([a-zA-Z0-9-]+\.[a-zA-Z]{2,}(\/[^\s]*)?)/g;
-      const matches = text.match(urlRegex);
-      return matches ? matches[0] : null;
-    }
-
-    function isImageURL(url) {
-      if (!url) return false;
-      const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg'];
-      const lowerUrl = url.toLowerCase();
-      return imageExtensions.some(ext => lowerUrl.includes(ext));
+      
+      return text.replace(urlRegex, (url) => {
+        const href = normalizeURL(url);
+        return `<a href="${href}" target="_blank" rel="noopener nofollow">${url}</a>`;
+      });
     }
 
     function normalizeURL(url) {
@@ -629,14 +630,21 @@ description: "Post anything anonymously without login. Confess, express, or spea
       return url;
     }
 
-    function makeTextClickable(text) {
-      if (!text) return '';
-      const urlRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|([a-zA-Z0-9-]+\.[a-zA-Z]{2,}(\/[^\s]*)?)/g;
+    function isImageURL(url) {
+      if (!url) return false;
+      const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg'];
+      const lowerUrl = url.toLowerCase();
+      return imageExtensions.some(ext => lowerUrl.includes(ext));
+    }
+
+    function extractFirstImageURL(text) {
+      if (!text) return null;
       
-      return text.replace(urlRegex, (url) => {
-        const href = normalizeURL(url);
-        return `<a href="${href}" target="_blank" rel="noopener nofollow">${url}</a>`;
-      });
+      const urlRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|([a-zA-Z0-9-]+\.[a-zA-Z]{2,}(\/[^\s]*)?)/g;
+      const urls = text.match(urlRegex) || [];
+      
+      const imageURL = urls.find(url => isImageURL(url));
+      return imageURL ? normalizeURL(imageURL) : null;
     }
 
     function searchPosts(searchTerm) {
@@ -659,11 +667,30 @@ description: "Post anything anonymously without login. Confess, express, or spea
       displayPosts();
     }
 
+    function handleSearch(inputValue) {
+      if (searchTimeout) {
+        clearTimeout(searchTimeout);
+      }
+      
+      searchTimeout = setTimeout(() => {
+        searchPosts(inputValue);
+      }, 500);
+    }
+
     function clearSearch() {
-      document.getElementById('searchInput').value = '';
+      const searchInput = document.getElementById('searchInput');
+      if (searchInput) {
+        searchInput.value = '';
+      }
+      
       currentSearchTerm = '';
       displayedPosts = [...allPosts];
       displayPosts();
+      
+      if (searchTimeout) {
+        clearTimeout(searchTimeout);
+        searchTimeout = null;
+      }
     }
 
     function createAdElement() {
@@ -707,6 +734,8 @@ description: "Post anything anonymously without login. Confess, express, or spea
       
       const newPostRef = db.ref("posts").push();
       const postId = newPostRef.key;
+      newPostId = postId;
+      isNewPost = true;
       
       const postData = {
         nickname: nickname,
@@ -721,11 +750,18 @@ description: "Post anything anonymously without login. Confess, express, or spea
         document.getElementById("postText").value = "";
         showAlert("Post published successfully!", 'success');
         
+        setTimeout(() => {
+          isNewPost = false;
+          newPostId = null;
+        }, 5000);
+        
         if (currentSearchTerm) {
           clearSearch();
         }
       } catch (error) {
         showAlert("Failed to publish post. Please try again.");
+        isNewPost = false;
+        newPostId = null;
       }
     }
 
@@ -849,14 +885,37 @@ description: "Post anything anonymously without login. Confess, express, or spea
         });
     }
 
-    function extractFirstImageURL(text) {
-      if (!text) return null;
+    function timeSince(ts) {
+      const seconds = Math.floor((Date.now() - ts) / 1000);
+      const intervals = [
+        [31536000, 'year'],
+        [2592000, 'month'],
+        [86400, 'day'],
+        [3600, 'hour'],
+        [60, 'minute'],
+        [1, 'second']
+      ];
+      for (const [unit, label] of intervals) {
+        const count = Math.floor(seconds / unit);
+        if (count >= 1) return `${count} ${label}${count > 1 ? 's' : ''} ago`;
+      }
+      return "just now";
+    }
+
+    function randomizePosts() {
+      if (allPosts.length <= 1) return;
       
-      const urlRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|([a-zA-Z0-9-]+\.[a-zA-Z]{2,}(\/[^\s]*)?)/g;
-      const urls = text.match(urlRegex) || [];
+      const postsToShuffle = [...allPosts];
       
-      const imageURL = urls.find(url => isImageURL(url));
-      return imageURL ? normalizeURL(imageURL) : null;
+      for (let i = postsToShuffle.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [postsToShuffle[i], postsToShuffle[j]] = [postsToShuffle[j], postsToShuffle[i]];
+      }
+      
+      allPosts = postsToShuffle;
+      displayedPosts = [...allPosts];
+      displayPosts();
+      hasRandomized = true;
     }
 
     function displayPosts() {
@@ -879,6 +938,10 @@ description: "Post anything anonymously without login. Confess, express, or spea
       if (!postsToShow || postsToShow.length === 0) {
         const noPostsMsg = document.createElement("div");
         noPostsMsg.className = "system-msg";
+        noPostsMsg.style.margin = "20px auto";
+        noPostsMsg.style.maxWidth = "600px";
+        noPostsMsg.style.textAlign = "center";
+        noPostsMsg.style.color = "var(--dark-secondary-text)";
         noPostsMsg.textContent = currentSearchTerm ? 
           "No posts found matching your search." : 
           "No posts yet. Be the first to post!";
@@ -893,7 +956,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
           return;
         }
 
-        // Show ad after every 2 posts
         if (postCounter > 0 && postCounter % 2 === 0) {
           const adElement = createAdElement();
           postsContainer.appendChild(adElement);
@@ -911,14 +973,19 @@ description: "Post anything anonymously without login. Confess, express, or spea
         
         div.className = "post";
         div.setAttribute("data-post-id", postId);
+        
+        if (isNewPost && postId === newPostId) {
+          div.classList.add('highlighted-post');
+          div.style.animation = "pulse 2s infinite";
+        }
 
         const displayText = containsBannedWords(post.text) 
           ? "This post was hidden due to inappropriate content"
           : makeTextClickable(post.text);
 
         const displayNickname = containsBannedWords(post.nickname)
-          ? "Anonymous"
-          : (post.nickname || 'Anonymous');
+          ? "Guest"
+          : (post.nickname || 'Guest');
 
         const imageURL = extractFirstImageURL(post.text);
         let imagePreviewHTML = '';
@@ -954,29 +1021,12 @@ description: "Post anything anonymously without login. Confess, express, or spea
         postsContainer.appendChild(div);
         postCounter++;
         
-        if (postId === highlightPostId) {
+        if (postId === highlightPostId && postId !== newPostId) {
           setTimeout(() => {
             highlightPost(postId);
           }, 100);
         }
       });
-    }
-
-    function timeSince(ts) {
-      const seconds = Math.floor((Date.now() - ts) / 1000);
-      const intervals = [
-        [31536000, 'year'],
-        [2592000, 'month'],
-        [86400, 'day'],
-        [3600, 'hour'],
-        [60, 'minute'],
-        [1, 'second']
-      ];
-      for (const [unit, label] of intervals) {
-        const count = Math.floor(seconds / unit);
-        if (count >= 1) return `${count} ${label}${count > 1 ? 's' : ''} ago`;
-      }
-      return "just now";
     }
 
     function initializeApp() {
@@ -996,7 +1046,16 @@ description: "Post anything anonymously without login. Confess, express, or spea
       
       if (searchInput) {
         searchInput.addEventListener('input', (e) => {
-          searchPosts(e.target.value);
+          handleSearch(e.target.value);
+        });
+        
+        searchInput.addEventListener('keypress', (e) => {
+          if (e.key === 'Enter') {
+            if (searchTimeout) {
+              clearTimeout(searchTimeout);
+            }
+            searchPosts(e.target.value);
+          }
         });
       }
       
@@ -1017,9 +1076,25 @@ description: "Post anything anonymously without login. Confess, express, or spea
         let postsArray = Object.entries(posts);
         
         if (allPosts.length === 0) {
-          for (let i = postsArray.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [postsArray[i], postsArray[j]] = [postsArray[j], postsArray[i]];
+          const sortedArray = [...postsArray].sort((a, b) => b[1].timestamp - a[1].timestamp);
+          
+          if (!hasRandomized) {
+            const shuffledArray = [];
+            const halfLength = Math.ceil(sortedArray.length / 2);
+            
+            for (let i = 0; i < sortedArray.length; i++) {
+              if (i === 0) {
+                shuffledArray.push(sortedArray[0]);
+              } else {
+                const randomIndex = Math.floor(Math.random() * (sortedArray.length - 1)) + 1;
+                shuffledArray.push(sortedArray[randomIndex]);
+              }
+            }
+            
+            postsArray = shuffledArray;
+            hasRandomized = true;
+          } else {
+            postsArray = sortedArray;
           }
         } else {
           const existingIds = new Set(allPosts.map(([id]) => id));
@@ -1027,7 +1102,18 @@ description: "Post anything anonymously without login. Confess, express, or spea
           const existingPosts = postsArray.filter(([id]) => existingIds.has(id));
           
           const orderedExisting = allPosts.filter(([id]) => existingIds.has(id));
-          postsArray = [...orderedExisting, ...newPosts];
+          
+          if (isNewPost && newPostId) {
+            postsArray = [...newPosts, ...orderedExisting];
+            
+            const newPostIndex = postsArray.findIndex(([id]) => id === newPostId);
+            if (newPostIndex > 0) {
+              const [newPost] = postsArray.splice(newPostIndex, 1);
+              postsArray.unshift(newPost);
+            }
+          } else {
+            postsArray = [...orderedExisting, ...newPosts];
+          }
         }
 
         allPosts = postsArray;
@@ -1065,5 +1151,5 @@ description: "Post anything anonymously without login. Confess, express, or spea
       });
     }
 
-    initializeApp();
+    document.addEventListener('DOMContentLoaded', initializeApp);
 </script>
