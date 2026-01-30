@@ -1358,22 +1358,49 @@ function handleImageUpload(e) {
   }
   
   const reader = new FileReader();
-  reader.onload = () => {
-    if (myConn && isConnected) {
-      try {
-        myConn.send({ type: "image", blob: reader.result });
-        
-        saveIncomingMessage(reader.result, 'image', currentUserId);
-        displayMessageImmediately(reader.result, 'image', currentUserId);
-      } catch (error) {
-        showOfflineStatus();
-        saveIncomingMessage(reader.result, 'image', currentUserId);
-        displayMessageImmediately(reader.result, 'image', currentUserId);
+  reader.onload = (event) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      
+      let width = img.width;
+      let height = img.height;
+      const maxDimension = 1024;
+      const quality = 0.7;
+      
+      if (width > height && width > maxDimension) {
+        height = (height * maxDimension) / width;
+        width = maxDimension;
+      } else if (height > maxDimension) {
+        width = (width * maxDimension) / height;
+        height = maxDimension;
       }
-    } else {
-      saveIncomingMessage(reader.result, 'image', currentUserId);
-      displayMessageImmediately(reader.result, 'image', currentUserId);
-    }
+      
+      canvas.width = width;
+      canvas.height = height;
+      
+      ctx.drawImage(img, 0, 0, width, height);
+      
+      const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+      
+      if (myConn && isConnected) {
+        try {
+          myConn.send({ type: "image", blob: compressedDataUrl });
+          
+          saveIncomingMessage(compressedDataUrl, 'image', currentUserId);
+          displayMessageImmediately(compressedDataUrl, 'image', currentUserId);
+        } catch (error) {
+          showOfflineStatus();
+          saveIncomingMessage(compressedDataUrl, 'image', currentUserId);
+          displayMessageImmediately(compressedDataUrl, 'image', currentUserId);
+        }
+      } else {
+        saveIncomingMessage(compressedDataUrl, 'image', currentUserId);
+        displayMessageImmediately(compressedDataUrl, 'image', currentUserId);
+      }
+    };
+    img.src = event.target.result;
   };
   reader.readAsDataURL(file);
   e.target.value = '';
