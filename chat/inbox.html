@@ -415,13 +415,13 @@ body.light-mode {
 }
 
 #typingIndicator {
-  position: absolute;
-  bottom: 0;
-  left: 12px;
-  font-style: italic;
+  position: fixed;
+  bottom: 50px;
+  left: 15px;
   color: var(--dark-secondary-text);
+  font-size: 0.85em;
   display: none;
-  pointer-events: none;
+  z-index: 100;
 }
 
 .light-mode #typingIndicator {
@@ -671,7 +671,7 @@ body.light-mode {
   </div>
   
   <div id="chatLog"></div>
-  <div id="typingIndicator">Friend is typing...</div>
+  <div id="typingIndicator"></div>
   
   <div class="chat-controls">
     <div class="input-area">
@@ -720,9 +720,7 @@ let myConn = null;
 let isConnected = false;
 let myNickname = null;
 let myFriendsData = {};
-
-const typingIndicator = document.getElementById("typingIndicator");
-let typingTimeout;
+let typingTimer = null;
 
 if (!firebase.apps.length) {
   firebase.initializeApp(firebaseConfig);
@@ -777,11 +775,38 @@ function scrollToBottom() {
 }
 
 function showTypingIndicator() {
-  typingIndicator.style.display = "block";
-  clearTimeout(typingTimeout);
-  typingTimeout = setTimeout(() => {
-    typingIndicator.style.display = "none";
-  }, 1000);
+  const indicator = document.getElementById('typingIndicator');
+  if (!indicator || !currentFriendName) return;
+  
+  // Show indicator
+  indicator.style.display = "block";
+  indicator.textContent = `${currentFriendName} is typing...`;
+  
+  // Clear any existing timer
+  if (typingTimer) {
+    clearTimeout(typingTimer);
+  }
+  
+  // Hide after 2 seconds
+  typingTimer = setTimeout(() => {
+    if (indicator) {
+      indicator.style.display = "none";
+      indicator.textContent = "";
+    }
+  }, 2000);
+}
+
+function hideTypingIndicator() {
+  const indicator = document.getElementById('typingIndicator');
+  if (indicator) {
+    indicator.style.display = "none";
+    indicator.textContent = "";
+  }
+  
+  if (typingTimer) {
+    clearTimeout(typingTimer);
+    typingTimer = null;
+  }
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -846,15 +871,34 @@ function handleFriendConnection(conn) {
 }
 
 function setupEventListeners() {
-  document.getElementById('msgInput').addEventListener('keypress', (e) => {
+  const msgInput = document.getElementById('msgInput');
+  
+  msgInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       sendMessage();
     }
   });
 
-  document.getElementById('msgInput').addEventListener('input', () => {
-    if (myConn && isConnected) myConn.send({ type: "typing" });
+  let typingDebounce;
+  msgInput.addEventListener('input', () => {
+    sendTypingIndicator();
+    
+    // Clear previous debounce
+    if (typingDebounce) {
+      clearTimeout(typingDebounce);
+    }
+    
+    // Send typing indicator after 300ms of no typing
+    typingDebounce = setTimeout(() => {
+      sendTypingIndicator();
+    }, 300);
+  });
+
+  msgInput.addEventListener('blur', () => {
+    if (typingDebounce) {
+      clearTimeout(typingDebounce);
+    }
   });
 
   document.getElementById('imgInput').addEventListener('change', handleImageUpload);
@@ -888,6 +932,16 @@ function updateInputPlaceholder() {
     msgInput.placeholder = "Friend is offline";
   } else {
     msgInput.placeholder = "Type your message...";
+  }
+}
+
+function sendTypingIndicator() {
+  if (myConn && isConnected) {
+    try {
+      myConn.send({ type: "typing" });
+    } catch (error) {
+      console.error('Failed to send typing indicator:', error);
+    }
   }
 }
 
@@ -1033,6 +1087,9 @@ function openChat(chatId, friendId, friendName) {
     isConnected = false;
   }
   
+  // Hide typing indicator
+  hideTypingIndicator();
+  
   currentChatId = chatId;
   currentFriendId = friendId;
   currentFriendName = friendName;
@@ -1102,6 +1159,12 @@ function connectToFriend(friendId) {
 function handleIncomingData(data) {
   if (!currentChatId || !currentFriendId) return;
   
+  // Check if it's a typing indicator
+  if (data && typeof data === "object" && data.type === "typing") {
+    showTypingIndicator();
+    return;
+  }
+  
   const senderId = myConn ? myConn.peer : currentFriendId;
   
   if (typeof data === "string") {
@@ -1113,8 +1176,6 @@ function handleIncomingData(data) {
   } else if (data.type === "gif") {
     saveIncomingMessage(data.url, 'gif', senderId);
     displayMessageImmediately(data.url, 'gif', senderId, true);
-  } else if (data.type === "typing") {
-    showTypingIndicator();
   }
 }
 
@@ -1144,6 +1205,9 @@ function showFriendsList() {
     myConn = null;
     isConnected = false;
   }
+  
+  // Hide typing indicator
+  hideTypingIndicator();
   
   document.getElementById('friendsContainer').style.display = 'block';
   document.getElementById('chatContainer').style.display = 'none';
