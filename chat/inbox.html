@@ -774,9 +774,9 @@ let myConn = null;
 let isConnected = false;
 let myNickname = null;
 let myFriendsData = {};
-let onlineStatusListeners = {};
+
+const typingIndicator = document.getElementById("typingIndicator");
 let typingTimeout;
-let isTyping = false;
 
 if (!firebase.apps.length) {
   firebase.initializeApp(firebaseConfig);
@@ -830,6 +830,14 @@ function scrollToBottom() {
   }
 }
 
+function showTypingIndicator() {
+  typingIndicator.style.display = "block";
+  clearTimeout(typingTimeout);
+  typingTimeout = setTimeout(() => {
+    typingIndicator.style.display = "none";
+  }, 1000);
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   myNickname = localStorage.getItem("talkrush_nickname") || "Guest";
   
@@ -858,7 +866,8 @@ function initializePeerConnection() {
   });
   
   peer.on('connection', (conn) => {
-    if (currentFriendId === conn.peer) {
+    // Sirf current friend se hi connection accept karo
+    if (currentFriendId && conn.peer === currentFriendId) {
       myConn = conn;
       isConnected = true;
       
@@ -873,7 +882,6 @@ function initializePeerConnection() {
       conn.on('close', () => {
         myConn = null;
         isConnected = false;
-        hideTypingIndicator();
         
         if (currentChatId && currentFriendId === conn.peer) {
           showOfflineStatus();
@@ -883,6 +891,9 @@ function initializePeerConnection() {
       conn.on('error', (err) => {
         console.error('Connection error:', err);
       });
+    } else {
+      // Dusre friends se connection ko reject karo
+      conn.close();
     }
   });
   
@@ -907,7 +918,9 @@ function setupEventListeners() {
     }
   });
 
-  document.getElementById('msgInput').addEventListener('input', handleTypingIndicator);
+  document.getElementById('msgInput').addEventListener('input', () => {
+    if (myConn && isConnected) myConn.send({ type: "typing" });
+  });
 
   document.getElementById('imgInput').addEventListener('change', handleImageUpload);
 
@@ -931,45 +944,6 @@ function setupEventListeners() {
   });
   
   updateInputPlaceholder();
-}
-
-function handleTypingIndicator() {
-  if (!myConn || !isConnected) return;
-  
-  if (!isTyping) {
-    isTyping = true;
-    if (myConn && myConn.readyState === 'open') {
-      try {
-        myConn.send({ type: "typing" });
-      } catch (error) {
-        console.error('Failed to send typing indicator:', error);
-      }
-    }
-  }
-  
-  clearTimeout(typingTimeout);
-  typingTimeout = setTimeout(() => {
-    isTyping = false;
-  }, 1000);
-}
-
-function showTypingIndicator() {
-  const typingIndicator = document.getElementById('typingIndicator');
-  if (typingIndicator) {
-    typingIndicator.style.display = "block";
-    clearTimeout(typingIndicator.timeout);
-    typingIndicator.timeout = setTimeout(() => {
-      typingIndicator.style.display = "none";
-    }, 1500);
-  }
-}
-
-function hideTypingIndicator() {
-  const typingIndicator = document.getElementById('typingIndicator');
-  if (typingIndicator) {
-    typingIndicator.style.display = "none";
-    clearTimeout(typingIndicator.timeout);
-  }
 }
 
 function updateInputPlaceholder() {
@@ -1015,6 +989,7 @@ function loadFriends() {
       const avatarLetter = friendNickname.charAt(0).toUpperCase();
       const displayName = friendNickname;
       
+      // FIREBASE SE LAST MESSAGE LE RAHE HAI
       let displayMsg = "Say Hi!";
       if (friend.message1 && friend.message2) {
         if (myNickname === friend.nickname1) {
@@ -1057,10 +1032,9 @@ function loadFriends() {
     friendsArray.forEach(friend => {
       const div = document.createElement("div");
       div.className = "friend-item";
-      const statusId = `status_${friend.otherId}`;
       div.innerHTML = `
         <div class="friend-avatar">${friend.avatarLetter}
-          <div class="friend-status offline" id="${statusId}"></div>
+          <div class="friend-status offline"></div>
         </div>
         <div class="friend-info">
           <h3 class="friend-name">
@@ -1079,8 +1053,6 @@ function loadFriends() {
       };
 
       list.appendChild(div);
-      
-      setupOnlineStatusMonitoring(friend.otherId, statusId);
     });
 
     empty.style.display = "none";
@@ -1092,61 +1064,6 @@ function loadFriends() {
     document.getElementById("loading").style.display = "none";
     document.getElementById("emptyState").style.display = "block";
   });
-}
-
-function setupOnlineStatusMonitoring(friendPeerId, statusElementId) {
-  if (onlineStatusListeners[friendPeerId]) {
-    onlineStatusListeners[friendPeerId]();
-    delete onlineStatusListeners[friendPeerId];
-  }
-  
-  const checkConnectionStatus = async () => {
-    try {
-      const tempConn = peer.connect(friendPeerId, { serialization: 'json' });
-      
-      const statusCheck = new Promise((resolve) => {
-        const timeout = setTimeout(() => {
-          resolve(false);
-        }, 2000);
-        
-        tempConn.on('open', () => {
-          clearTimeout(timeout);
-          tempConn.close();
-          resolve(true);
-        });
-        
-        tempConn.on('error', () => {
-          clearTimeout(timeout);
-          resolve(false);
-        });
-      });
-      
-      const isOnline = await statusCheck;
-      updateStatusDot(statusElementId, isOnline);
-      
-    } catch (error) {
-      updateStatusDot(statusElementId, false);
-    }
-  };
-  
-  checkConnectionStatus();
-  
-  const intervalId = setInterval(checkConnectionStatus, 10000);
-  
-  onlineStatusListeners[friendPeerId] = () => {
-    clearInterval(intervalId);
-  };
-}
-
-function updateStatusDot(elementId, isOnline) {
-  const statusElement = document.getElementById(elementId);
-  if (statusElement) {
-    if (isOnline) {
-      statusElement.className = 'friend-status online';
-    } else {
-      statusElement.className = 'friend-status offline';
-    }
-  }
 }
 
 function updateMyPeerIdInFirebase() {
@@ -1177,6 +1094,13 @@ function updateMyPeerIdInFirebase() {
 }
 
 function openChat(chatId, friendId, friendName) {
+  // Pehle existing connection close karo
+  if (myConn) {
+    myConn.close();
+    myConn = null;
+    isConnected = false;
+  }
+  
   currentChatId = chatId;
   currentFriendId = friendId;
   currentFriendName = friendName;
@@ -1189,6 +1113,8 @@ function openChat(chatId, friendId, friendName) {
   document.getElementById('chatContainer').style.display = 'flex';
   
   loadLocalChatMessages();
+  
+  // Sirf current friend se connect karo
   connectToFriend(friendId);
 }
 
@@ -1234,7 +1160,6 @@ function connectToFriend(friendId) {
       conn.on("close", () => {
         myConn = null;
         isConnected = false;
-        hideTypingIndicator();
         showOfflineStatus();
       });
       
@@ -1267,15 +1192,12 @@ function handleIncomingData(data) {
   const senderId = myConn ? myConn.peer : currentFriendId;
   
   if (typeof data === "string") {
-    hideTypingIndicator();
     saveIncomingMessage(data, 'text', senderId);
     displayMessageImmediately(data, 'text', senderId, true);
   } else if (data.type === "image") {
-    hideTypingIndicator();
     saveIncomingMessage(data.blob, 'image', senderId);
     displayMessageImmediately(data.blob, 'image', senderId, true);
   } else if (data.type === "gif") {
-    hideTypingIndicator();
     saveIncomingMessage(data.url, 'gif', senderId);
     displayMessageImmediately(data.url, 'gif', senderId, true);
   } else if (data.type === "typing") {
@@ -1308,7 +1230,6 @@ function showFriendsList() {
     myConn.close();
     myConn = null;
     isConnected = false;
-    hideTypingIndicator();
   }
   
   document.getElementById('friendsContainer').style.display = 'block';
@@ -1445,9 +1366,6 @@ function sendMessage() {
   
   if (!content || !currentChatId || !currentFriendId) return;
   
-  isTyping = false;
-  clearTimeout(typingTimeout);
-  
   if (myConn && isConnected) {
     try {
       myConn.send(content);
@@ -1525,10 +1443,6 @@ function unfriend(chatId) {
       }
       
       const friendData = myFriendsData[chatId];
-      if (friendData && onlineStatusListeners[friendData.otherId]) {
-        onlineStatusListeners[friendData.otherId]();
-        delete onlineStatusListeners[friendData.otherId];
-      }
       
       db.ref("friends/" + chatId).remove()
         .then(() => {
@@ -1619,9 +1533,6 @@ window.addEventListener('beforeunload', () => {
   if (friendListListener) {
     db.ref("friends").off("value", friendListListener);
   }
-  
-  Object.values(onlineStatusListeners).forEach(cleanup => cleanup());
-  onlineStatusListeners = {};
   
   if (myConn) {
     myConn.close();
