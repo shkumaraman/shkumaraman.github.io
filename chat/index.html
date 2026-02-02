@@ -593,6 +593,18 @@ body.light-mode {
   </div>
 </header>
 
+<!-- Loading Screen - बस यह add करें -->
+<div id="loadingScreen" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #121212; color: white; display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 10000;">
+    <div style="width: 50px; height: 50px; border: 5px solid rgba(255,255,255,0.3); border-radius: 50%; border-top-color: #25D366; animation: spin 1s linear infinite; margin-bottom: 20px;"></div>
+    <p>Initializing chat...</p>
+</div>
+
+<style>
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+</style>
+
   <div id="chatLog"></div>
   <div id="typingIndicator">Stranger is typing...</div>
 
@@ -741,7 +753,9 @@ let heartbeatInterval;
 const GIPHY_API_KEY = 'EKvv5S1CcXqYuHgxPNVKiNuiuNHRTzFk';
 const typingIndicator = document.getElementById("typingIndicator");
 let typingTimeout;
-  
+
+const loadingScreen = document.getElementById("loadingScreen");
+
 let myNickname = localStorage.getItem("talkrush_nickname") || "Guest";
 let myGenderInterest = localStorage.getItem("talkrush_gender_interest") || "everyone";
 let myTags = JSON.parse(localStorage.getItem("talkrush_tags") || "[]");
@@ -756,8 +770,13 @@ const rejectFriendBtn = document.getElementById('rejectFriendBtn');
 const friendRequestText = document.getElementById('friendRequestText');
 
 window.addEventListener('load', () => {
-  showNewChatButton();
-  logSystem("Click 'Start New Chat' to begin chatting with a stranger!");
+  if (loadingScreen) loadingScreen.style.display = "flex";
+  
+  setTimeout(() => {
+    showNewChatButton();
+    logSystem("Click 'Start New Chat' to begin chatting with a stranger!");
+    startPeerForInit();
+  }, 300);
 });
 
 window.addEventListener('beforeunload', (e) => {
@@ -772,11 +791,11 @@ window.addEventListener('beforeunload', (e) => {
 window.addEventListener('pagehide', () => {
   cleanUpWaitingList();
   if (heartbeatInterval) clearInterval(heartbeatInterval);
-  
+
   if (myConn) {
     myConn.close();
   }
-  
+
   if (peer && !peer.destroyed) {
     peer.disconnect();
   }
@@ -808,18 +827,7 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-function startPeer() {
-  clearSystemMessage();
-  isConnected = false;
-  
-  logSystem("🔍 Looking for a stranger...");
-  
-  if (peer && peer.id && !peer.destroyed && !peer.disconnected) {
-    cleanUpStaleConnections();
-    tryToFindMatch();
-    return;
-  }
-  
+function startPeerForInit() {
   const peerOptions = {
     config: {
       iceServers: [
@@ -831,7 +839,77 @@ function startPeer() {
       ]
     }
   };
-  
+
+  try {
+    peer = new Peer(peerOptions);
+  } catch (err) {
+    if (loadingScreen) loadingScreen.style.display = "none";
+    logSystem("Failed to start. Click 'Start New Chat' to try again.");
+    return;
+  }
+
+  peer.on('open', (id) => {
+    myId = id;
+    if (loadingScreen) loadingScreen.style.display = "none";
+    console.log("Peer ID ready:", id);
+  });
+
+  peer.on('connection', handleNewConnection);
+
+  peer.on('error', (err) => {
+    if (err.type === 'unavailable-id' || err.type === 'socket-error') {
+      if (peer) {
+        try {
+          peer.destroy();
+        } catch (e) {}
+        peer = null;
+      }
+      
+      setTimeout(() => startPeerForInit(), 1000);
+      return;
+    }
+    
+    if (loadingScreen) loadingScreen.style.display = "none";
+    logSystem("Connection error. Click 'Start New Chat' to try again.");
+  });
+
+  peer.on('disconnected', () => {
+    setTimeout(() => {
+      if (peer && peer.disconnected && !peer.destroyed) {
+        try {
+          peer.reconnect();
+        } catch (e) {
+          startPeer();
+        }
+      }
+    }, 2000);
+  });
+}
+
+function startPeer() {
+  clearSystemMessage();
+  isConnected = false;
+
+  logSystem("🔍 Looking for a stranger...");
+
+  if (peer && peer.id && !peer.destroyed && !peer.disconnected) {
+    cleanUpStaleConnections();
+    tryToFindMatch();
+    return;
+  }
+
+  const peerOptions = {
+    config: {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' },
+        { urls: 'stun:stun4.l.google.com:19302' }
+      ]
+    }
+  };
+
   try {
     peer = new Peer(peerOptions);
   } catch (err) {
@@ -856,17 +934,17 @@ function startPeer() {
         } catch (e) {}
         peer = null;
       }
-      
+
       setTimeout(() => startPeer(), 1000);
       return;
     }
-    
+
     if (!isConnected) {
       showNewChatButton();
       logSystem("Connection error. Click 'Start New Chat' to try again.");
     }
   });
-  
+
   peer.on('disconnected', () => {
     setTimeout(() => {
       if (peer && peer.disconnected && !peer.destroyed) {
@@ -910,7 +988,7 @@ function tryToFindMatch() {
           db.ref("waiting/" + key).remove();
           continue;
         }
-        
+
         if (entry.id !== myId && !isConnected) {
           if (isGenderCompatible(myGenderInterest, entry.interest)) {
             const sharedTags = myTags.filter(tag => entry.tags && entry.tags.includes(tag));
@@ -952,7 +1030,7 @@ function tryToFindMatch() {
       if (!isConnected) {
         waitingRef.once('value', (snap) => {
           if (isConnected) return;
-          
+
           snap.forEach(child => {
             const entry = child.val();
             if (entry.id !== myId && isGenderCompatible(myGenderInterest, entry.interest)) {
@@ -987,7 +1065,7 @@ function handleNewConnection(conn, sharedTags = []) {
     return;
   }
   clearSystemMessage();
-  
+
   logSystem("Stranger Connected! Say Hi 👋");
 
   if (sharedTags.length > 0) {
@@ -996,7 +1074,7 @@ function handleNewConnection(conn, sharedTags = []) {
 
   conn.otherNickname = "Stranger";
   conn.isFriend = false;
-  
+
   setupConnection(conn);
   cleanUpWaitingList();
   if (heartbeatInterval) {
@@ -1047,7 +1125,7 @@ function endConnection() {
     myConn = null;
   }
   isConnected = false;
-  
+
   showNewChatButton();
   hideFriendButton();
   cleanUpWaitingList();
@@ -1087,14 +1165,14 @@ function hideFriendButton() {
 
 friendBtn.onclick = () => {
   if (!myConn || !isConnected) return;
-  
+
   const myPersistentPeerId = peer ? peer.id : null;
-  
+
   if (!myPersistentPeerId) {
     logSystem("Cannot send friend request: No persistent ID found");
     return;
   }
-  
+
   friendRequestPending = true;
   myConn.send({
     type: 'friend_request',
@@ -1103,7 +1181,7 @@ friendBtn.onclick = () => {
     toPeer: myConn.peer,
     timestamp: Date.now()
   });
-  
+
   logSystem(`Friend request sent! Waiting for response...`);
   friendBtn.disabled = true;
 };
@@ -1113,14 +1191,14 @@ function handleFriendRequest(data) {
   friendRequestText.textContent = `Stranger wants to add you as a friend!`;
 
   friendRequestFrom.otherNickname = data.fromNickname;
-  
+
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.id = 'friendModalOverlay';
   document.body.appendChild(overlay);
-  
+
   friendModal.style.display = 'block';
-  
+
   setTimeout(() => {
     if (friendModal.style.display === 'block') {
       closeFriendModal();
@@ -1134,13 +1212,13 @@ function handleFriendRequest(data) {
 
 acceptFriendBtn.onclick = async () => {
   if (!friendRequestFrom || !myConn) return;
-  
+
   try {
     const friendId = Date.now().toString();
     const myPeerId = peer ? peer.id : null;
     const otherPeerId = friendRequestFrom.fromPeer;
     const otherNickname = friendRequestFrom.fromNickname || "Friend";
-    
+
     const friendRef = db.ref('friends/' + friendId);
     await friendRef.set({
       peer1: myPeerId,
@@ -1149,13 +1227,13 @@ acceptFriendBtn.onclick = async () => {
       nickname2: otherNickname,
       timestamp: Date.now()
     });
-    
+
     myConn.send({
       type: 'friend_accepted',
       friendId: friendId,
       nickname: myNickname
     });
-    
+
     hideFriendButton();
     if (myConn) {
       myConn.isFriend = true;
@@ -1163,7 +1241,7 @@ acceptFriendBtn.onclick = async () => {
     }
     logSystem(`🎉 You are now friends with ${otherNickname}!`);
     closeFriendModal();
-    
+
   } catch (error) {
     logSystem('Failed to save friend. Please try again.');
   }
@@ -1206,7 +1284,7 @@ function closeFriendModal() {
 function appendMessage(sender, content, type = "text") {
   const div = document.createElement("div");
   div.className = "msg " + sender;
-  
+
   if (type === "text") {
     div.textContent = content;
   } 
@@ -1215,7 +1293,7 @@ function appendMessage(sender, content, type = "text") {
     img.src = content;
     div.appendChild(img);
   }
-  
+
   const time = document.createElement("div");
   time.className = "timestamp";
   time.textContent = new Date().toLocaleTimeString([], { 
@@ -1223,11 +1301,11 @@ function appendMessage(sender, content, type = "text") {
     minute: '2-digit' 
   });
   div.appendChild(time);
-  
+
   document.getElementById("chatLog").appendChild(div);
   scrollToBottom();
 }
-  
+
 function appendImage(sender, blob) {
   appendMessage(sender, blob, "image");
 }
@@ -1324,12 +1402,12 @@ document.getElementById("skipBtn").onclick = () => {
     myConn.close();
     myConn = null;
   }
-  
+
   cleanUpWaitingList();
   isConnected = false;
   friendRequestPending = false;
   friendRequestFrom = null;
-  
+
   logSystem("Chat ended. Click 'Start New Chat' to find someone new.");
   showNewChatButton();
   hideFriendButton();
@@ -1339,15 +1417,15 @@ document.getElementById("newChatBtn").onclick = () => {
   document.getElementById("chatLog").innerHTML = "";
   hideFriendButton();
   hideNewChatButton();
-  
+
   if (myConn) {
     myConn.close();
     myConn = null;
   }
-  
+
   cleanUpWaitingList();
   isConnected = false;
-  
+
   startPeer();
 };
 
