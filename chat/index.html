@@ -545,6 +545,47 @@ body.light-mode {
   z-index: 10009;
 }
   
+/* Loading Screen */
+.loading-screen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: var(--dark-bg);
+    color: var(--dark-text);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    transition: opacity 0.3s;
+}
+
+.light-mode .loading-screen {
+    background: var(--light-bg);
+    color: var(--light-text);
+}
+
+.loading-spinner {
+    width: 50px;
+    height: 50px;
+    border: 5px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    border-top-color: #25D366;
+    animation: spin 1s ease-in-out infinite;
+    margin-bottom: 20px;
+}
+
+.light-mode .loading-spinner {
+    border: 5px solid rgba(0, 0, 0, 0.1);
+    border-top-color: #25D366;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
 /* Responsive adjustments */
 @media (max-width: 600px) {
   .msg {
@@ -592,6 +633,11 @@ body.light-mode {
     </button>
   </div>
 </header>
+
+<!-- Loading Screen -->
+<div id="loadingScreen" class="loading-screen">
+    <div class="loading-spinner"></div>
+</div>
 
   <div id="chatLog"></div>
   <div id="typingIndicator">Stranger is typing...</div>
@@ -741,6 +787,9 @@ let heartbeatInterval;
 const GIPHY_API_KEY = 'EKvv5S1CcXqYuHgxPNVKiNuiuNHRTzFk';
 const typingIndicator = document.getElementById("typingIndicator");
 let typingTimeout;
+
+// Loading screen element
+const loadingScreen = document.getElementById("loadingScreen");
   
 let myNickname = localStorage.getItem("talkrush_nickname") || "Guest";
 let myGenderInterest = localStorage.getItem("talkrush_gender_interest") || "everyone";
@@ -755,10 +804,32 @@ const acceptFriendBtn = document.getElementById('acceptFriendBtn');
 const rejectFriendBtn = document.getElementById('rejectFriendBtn');
 const friendRequestText = document.getElementById('friendRequestText');
 
+// Utility functions for loading screen
+function showLoading() {
+  loadingScreen.style.display = "flex";
+}
+
+function hideLoading() {
+  loadingScreen.style.display = "none";
+}
+
 window.addEventListener('load', () => {
+  // Show loading screen immediately
+  showLoading();
+  
+  // Initialize chat after a short delay
+  setTimeout(() => {
+    initializeChat();
+  }, 500);
+});
+
+function initializeChat() {
   showNewChatButton();
   logSystem("Click 'Start New Chat' to begin chatting with a stranger!");
-});
+  
+  // Hide loading after initialization
+  hideLoading();
+}
 
 window.addEventListener('beforeunload', (e) => {
   if (isConnected) {
@@ -1340,6 +1411,9 @@ document.getElementById("newChatBtn").onclick = () => {
   hideFriendButton();
   hideNewChatButton();
   
+  // Show loading when starting new chat
+  showLoading();
+  
   if (myConn) {
     myConn.close();
     myConn = null;
@@ -1348,7 +1422,11 @@ document.getElementById("newChatBtn").onclick = () => {
   cleanUpWaitingList();
   isConnected = false;
   
-  startPeer();
+  // Hide loading after peer initialization
+  setTimeout(() => {
+    startPeer();
+    hideLoading();
+  }, 1000);
 };
 
 const gifModal = document.getElementById("gifModal");
@@ -1412,4 +1490,28 @@ window.addEventListener("click", (e) => {
   if (e.target === gifModal) gifModal.style.display = "none";
   if (e.target.id === 'friendModalOverlay') closeFriendModal();
 });
+
+// Theme toggle functionality
+const themeToggle = document.getElementById('themeToggle');
+if (themeToggle) {
+  themeToggle.onclick = () => {
+    document.body.classList.toggle('light-mode');
+    const icon = themeToggle.querySelector('i');
+    if (document.body.classList.contains('light-mode')) {
+      icon.className = 'fas fa-sun';
+      localStorage.setItem('talkrush_theme', 'light');
+    } else {
+      icon.className = 'fas fa-moon';
+      localStorage.setItem('talkrush_theme', 'dark');
+    }
+  };
+  
+  // Load saved theme
+  const savedTheme = localStorage.getItem('talkrush_theme');
+  if (savedTheme === 'light') {
+    document.body.classList.add('light-mode');
+    const icon = themeToggle.querySelector('i');
+    icon.className = 'fas fa-sun';
+  }
+}
 </script>
