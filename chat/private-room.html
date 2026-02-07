@@ -614,47 +614,6 @@ body.light-mode {
     color: var(--light-secondary-text);
 }
 
-/* Loading Screen */
-.loading-screen {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: var(--dark-bg);
-    color: var(--dark-text);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    z-index: 10000;
-    transition: opacity 0.3s;
-}
-
-.light-mode .loading-screen {
-    background: var(--light-bg);
-    color: var(--light-text);
-}
-
-.loading-spinner {
-    width: 50px;
-    height: 50px;
-    border: 5px solid rgba(255, 255, 255, 0.3);
-    border-radius: 50%;
-    border-top-color: var(--dark-btn-primary);
-    animation: spin 1s ease-in-out infinite;
-    margin-bottom: 20px;
-}
-
-.light-mode .loading-spinner {
-    border: 5px solid rgba(0, 0, 0, 0.1);
-    border-top-color: var(--dark-btn-primary);
-}
-
-@keyframes spin {
-    to { transform: rotate(360deg); }
-}
-
 /* Video Call Styles */
 .video-call-container {
     display: none;
@@ -903,11 +862,6 @@ body.light-mode {
 }
 </style>
 
-<!-- Loading Screen -->
-<div id="loadingScreen" class="loading-screen">
-    <div class="loading-spinner"></div>
-</div>
-
 <!-- Room Code Modal -->
 <div id="roomModal" class="modal">
     <div class="modal-content">
@@ -1067,7 +1021,6 @@ const state = {
 };
 
 const elements = {
-    loadingScreen: document.getElementById("loadingScreen"),
     roomModal: document.getElementById("roomModal"),
     roomCodeDisplay: document.getElementById("roomCodeDisplay"),
     roomCodeInput: document.getElementById("roomCodeInput"),
@@ -1200,7 +1153,6 @@ const roomManager = {
     createRoom: async () => {
         const code = utils.generateRoomCode();
         elements.roomCodeDisplay.textContent = code;
-        utils.show(elements.loadingScreen);
         
         try {
             await db.ref("rooms/" + code).set({
@@ -1213,12 +1165,10 @@ const roomManager = {
             
             messageHandler.logSystem(`Room created with code: ${code}. Share this code with someone to chat.`);
             utils.hide(elements.roomModal);
-            utils.hide(elements.loadingScreen);
             roomManager.setupParticipantListener(code);
             
         } catch (error) {
             console.error("Error creating room:", error);
-            utils.hide(elements.loadingScreen);
             messageHandler.logSystem("Error creating room. Please try again.");
         }
     },
@@ -1229,8 +1179,6 @@ const roomManager = {
             roomManager.showJoinError("Room code must be 5 digits");
             return;
         }
-        
-        utils.show(elements.loadingScreen);
         
         try {
             const snapshot = await db.ref("rooms/" + code).once('value');
@@ -1256,11 +1204,9 @@ const roomManager = {
             }
             
             utils.hide(elements.roomModal);
-            utils.hide(elements.loadingScreen);
             
         } catch (error) {
             console.error("Error joining room:", error);
-            utils.hide(elements.loadingScreen);
             roomManager.showJoinError(
                 error.message === "Room is full" 
                     ? "Room is full. Only 2 participants allowed."
@@ -1295,12 +1241,9 @@ const roomManager = {
     
     autoRejoinRoom: async () => {
         if (!state.currentRoomCode || !state.myId) {
-            utils.hide(elements.loadingScreen);
             utils.showBlock(elements.roomModal);
             return;
         }
-        
-        utils.show(elements.loadingScreen);
         
         try {
             const snapshot = await db.ref("rooms/" + state.currentRoomCode).once('value');
@@ -1324,11 +1267,8 @@ const roomManager = {
                 }
             }
             
-            utils.hide(elements.loadingScreen);
-            
         } catch (error) {
             console.error("Error rejoining room:", error);
-            utils.hide(elements.loadingScreen);
             storage.clearRoomCode();
             messageHandler.logSystem("Please create or join a new room.");
             utils.showBlock(elements.roomModal);
@@ -1373,7 +1313,6 @@ const connectionManager = {
         state.peer.on('open', (id) => {
             state.myId = id;
             storage.savePeerId(id);
-            utils.hide(elements.loadingScreen);
             roomManager.autoRejoinRoom();
         });
 
@@ -1388,7 +1327,6 @@ const connectionManager = {
             storage.clearPeerId();
             connectionManager.startPeer();
         } else {
-            utils.hide(elements.loadingScreen);
             messageHandler.logSystem("Connection error. Please refresh the page to try again.");
         }
     },
