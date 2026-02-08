@@ -1,3 +1,4 @@
+<!-- TOAST UI -->
 <div id="messageToast" style="
   position: fixed;
   top: -120px;
@@ -19,7 +20,11 @@
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
 ">
+
+  <!-- LEFT CONTENT -->
   <div style="display: flex; align-items: center; gap: 14px; flex: 1;">
+    
+    <!-- ICON -->
     <div style="
       width: 40px;
       height: 40px;
@@ -34,13 +39,25 @@
         <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/>
       </svg>
     </div>
-    <span id="toastText" style="
-      font-size: 15px;
-      font-weight: 500;
-      line-height: 1.4;
-      color: #f0f0f0;
-    "></span>
+
+    <!-- TEXT -->
+    <div style="display: flex; flex-direction: column;">
+      <span id="toastName" style="
+        font-size: 14px;
+        font-weight: 600;
+        color: #ffffff;
+      "></span>
+
+      <span id="toastMessage" style="
+        font-size: 13px;
+        color: #cccccc;
+        margin-top: 2px;
+        line-height: 1.3;
+      "></span>
+    </div>
   </div>
+
+  <!-- VIEW BUTTON -->
   <button id="toastViewBtn" style="
     background: #25D366;
     border: none;
@@ -54,6 +71,7 @@
   ">View</button>
 </div>
 
+<!-- SCRIPT -->
 <script>
 document.addEventListener("DOMContentLoaded", function () {
 
@@ -70,44 +88,30 @@ document.addEventListener("DOMContentLoaded", function () {
   if (!myNickname) return;
 
   const toast = document.getElementById("messageToast");
-  const toastText = document.getElementById("toastText");
+  const toastName = document.getElementById("toastName");
+  const toastMessage = document.getElementById("toastMessage");
   const toastViewBtn = document.getElementById("toastViewBtn");
   if (!toast) return;
 
   const notifySound = new Audio("/assets/notify.mp3");
   notifySound.preload = "auto";
 
-  let lastNotifiedMessages = JSON.parse(localStorage.getItem("lastNotifiedMessages") || "{}");
+  let lastNotifiedMessages = JSON.parse(
+    localStorage.getItem("lastNotifiedMessages") || "{}"
+  );
+
   let toastQueue = [];
   let toastShowing = false;
 
-  // Function to check if message is from friend (not me)
-  function isMessageFromFriend(friend, messageField) {
-    if (friend.nickname1 === myNickname) {
-      return messageField === 'message2';
-    } else if (friend.nickname2 === myNickname) {
-      return messageField === 'message1';
-    }
-    return false;
-  }
-
-  // Function to get friend's message field
   function getFriendMessageField(friend) {
-    if (friend.nickname1 === myNickname) {
-      return 'message2'; // Friend's message
-    } else if (friend.nickname2 === myNickname) {
-      return 'message1'; // Friend's message
-    }
+    if (friend.nickname1 === myNickname) return "message2";
+    if (friend.nickname2 === myNickname) return "message1";
     return null;
   }
 
-  // Function to get friend's nickname
   function getFriendNickname(friend) {
-    if (friend.nickname1 === myNickname) {
-      return friend.nickname2;
-    } else if (friend.nickname2 === myNickname) {
-      return friend.nickname1;
-    }
+    if (friend.nickname1 === myNickname) return friend.nickname2;
+    if (friend.nickname2 === myNickname) return friend.nickname1;
     return null;
   }
 
@@ -119,26 +123,25 @@ document.addEventListener("DOMContentLoaded", function () {
       if (!friend.timestamp) return;
 
       const friendNickname = getFriendNickname(friend);
-      if (!friendNickname) return;
+      const messageField = getFriendMessageField(friend);
+      if (!friendNickname || !messageField) return;
 
-      const friendMessageField = getFriendMessageField(friend);
-      if (!friendMessageField) return;
+      const message = friend[messageField] || "";
+      if (!message.trim()) return;
 
-      const friendMessage = friend[friendMessageField] || "";
-      if (!friendMessage.trim()) return;
-
-      const lastNotifiedMessage = lastNotifiedMessages[chatId];
-      
-      if (friendMessage !== lastNotifiedMessage && friendMessage.trim()) {
+      if (lastNotifiedMessages[chatId] !== message) {
         toastQueue.push({
           senderName: friendNickname,
-          message: friendMessage,
+          message: message,
           chatId: chatId
         });
-        
-        lastNotifiedMessages[chatId] = friendMessage;
-        localStorage.setItem("lastNotifiedMessages", JSON.stringify(lastNotifiedMessages));
-        
+
+        lastNotifiedMessages[chatId] = message;
+        localStorage.setItem(
+          "lastNotifiedMessages",
+          JSON.stringify(lastNotifiedMessages)
+        );
+
         processToastQueue();
       }
     });
@@ -148,10 +151,13 @@ document.addEventListener("DOMContentLoaded", function () {
     if (toastShowing || toastQueue.length === 0) return;
 
     toastShowing = true;
-    const { senderName, message, chatId } = toastQueue.shift();
+    const { senderName, message } = toastQueue.shift();
 
-    const displayMessage = message.length > 30 ? message.substring(0, 30) + "..." : message;
-    toastText.textContent = `${senderName}: ${displayMessage}`;
+    const shortMessage =
+      message.length > 40 ? message.substring(0, 40) + "..." : message;
+
+    toastName.textContent = senderName;
+    toastMessage.textContent = shortMessage;
 
     notifySound.currentTime = 0;
     notifySound.play().catch(() => {});
