@@ -33,6 +33,7 @@ description: "Join TalkRush public group chat room — anonymous, fast, and fun.
   --light-scroll-hover: #aaa;
   --keyword-bubble: #f1f1f1;
   --keyword-border: #ccc;
+  --error-color: #ff6b6b;
 }
 
 * {
@@ -315,7 +316,7 @@ body.light-mode {
   right: 20px;
   width: 300px;
   max-height: 400px;
-  background: var(--dark-msg-bg);
+  background: var(--dark-header-bg);
   border-radius: 10px;
   box-shadow: 0 4px 8px rgba(0,0,0,0.3);
   z-index: 1001;
@@ -324,7 +325,7 @@ body.light-mode {
 }
 
 .light-mode .gif-modal {
-  background: var(--light-msg-bg);
+  background: var(--light-header-bg);
 }
 
 .gif-search {
@@ -389,20 +390,11 @@ body.light-mode {
   display: none;
 }
 
-.nickname-wrapper {
-  display: inline-flex;
-  align-items: center;
-  vertical-align: middle;
-  line-height: 1;
-}
-
 .verified-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  display: inline-block;
   width: 16px;
   height: 16px;
-  margin-left: 4px;
+  margin-left: 5px;
   vertical-align: middle;
 }
 
@@ -410,7 +402,6 @@ body.light-mode {
   width: 100%;
   height: 100%;
   object-fit: contain;
-  display: block;
 }
 
 .password-modal {
@@ -470,8 +461,9 @@ body.light-mode {
 }
 
 .password-error {
-  color: #ff6b6b;
+  color: var(--error-color);
   margin-top: 10px;
+  font-size: 0.9em;
   display: none;
 }
 </style>
@@ -480,7 +472,7 @@ body.light-mode {
   <div class="password-modal-content">
     <h3>Enter Group Password</h3>
     <input type="password" id="passwordInput" placeholder="Password" autocomplete="off">
-    <div id="passwordError" class="password-error">Incorrect password</div>
+    <div id="passwordErrorMessage" class="password-error">Incorrect password. Please try again.</div>
     <div>
       <button onclick="submitPassword()">Submit</button>
       <button onclick="cancelPassword()">Cancel</button>
@@ -665,14 +657,24 @@ async function checkGroupPassword() {
   
   if (storedPassword) {
     groupPassword = storedPassword;
+    currentGroup = group;
+    
+    if (passwordVerified) {
+      return true;
+    }
+    
     const verified = localStorage.getItem(`talkrush_pwd_${group}`);
     if (verified === 'true') {
       passwordVerified = true;
       return true;
     }
+    
     return new Promise((resolve) => {
       pendingPasswordResolve = resolve;
       document.getElementById('passwordModal').style.display = 'flex';
+      document.getElementById('passwordErrorMessage').style.display = 'none';
+      document.getElementById('passwordInput').value = '';
+      document.getElementById('passwordInput').focus();
     });
   }
   return true;
@@ -680,32 +682,48 @@ async function checkGroupPassword() {
 
 function submitPassword() {
   const input = document.getElementById('passwordInput');
-  const errorEl = document.getElementById('passwordError');
+  const errorElement = document.getElementById('passwordErrorMessage');
+  
   if (input.value === groupPassword) {
     passwordVerified = true;
     localStorage.setItem(`talkrush_pwd_${currentGroup}`, 'true');
     document.getElementById('passwordModal').style.display = 'none';
-    errorEl.style.display = 'none';
+    errorElement.style.display = 'none';
+    
     if (pendingPasswordResolve) {
       pendingPasswordResolve(true);
       pendingPasswordResolve = null;
     }
     initializeChat();
   } else {
-    errorEl.style.display = 'block';
+    errorElement.style.display = 'block';
+    input.value = '';
+    input.focus();
   }
-  input.value = '';
 }
 
 function cancelPassword() {
   document.getElementById('passwordModal').style.display = 'none';
-  document.getElementById('passwordError').style.display = 'none';
+  document.getElementById('passwordErrorMessage').style.display = 'none';
+  document.getElementById('passwordInput').value = '';
+  
   if (pendingPasswordResolve) {
     pendingPasswordResolve(false);
     pendingPasswordResolve = null;
   }
   window.location.href = '/';
 }
+
+document.addEventListener('DOMContentLoaded', function() {
+  const passwordInput = document.getElementById('passwordInput');
+  if (passwordInput) {
+    passwordInput.addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') {
+        submitPassword();
+      }
+    });
+  }
+});
 
 async function initializeChat() {
   myId = 'user_' + Math.random().toString(36).substr(2, 9);
@@ -728,6 +746,10 @@ async function initializeChat() {
 }
 
 function joinGroupChat() {
+  if (!passwordVerified && groupPassword) {
+    return;
+  }
+  
   messagesRef = db.ref(`groups/${currentGroup}/messages`).orderByChild("timestamp").limitToLast(messageLimit);
   
   if (!initialMessagesLoaded) {
@@ -919,26 +941,26 @@ async function displayMessage(msg) {
   div.className = "msg " + (isMyMessage ? "me" : "stranger");
   div.setAttribute('data-id', msg.timestamp);
   
-  const nicknameWrapper = document.createElement("div");
-  nicknameWrapper.style.display = "flex";
-  nicknameWrapper.style.alignItems = "center";
-  nicknameWrapper.style.marginBottom = "4px";
-  nicknameWrapper.style.lineHeight = "1";
+  const nicknameContainer = document.createElement("div");
+  nicknameContainer.style.display = "flex";
+  nicknameContainer.style.alignItems = "center";
+  nicknameContainer.style.marginBottom = "2px";
   
   const nicknameEl = document.createElement("span");
   nicknameEl.style.fontWeight = "bold";
+  nicknameEl.style.lineHeight = "1";
   nicknameEl.textContent = msg.nickname || 'Guest';
-  nicknameWrapper.appendChild(nicknameEl);
+  nicknameContainer.appendChild(nicknameEl);
   
   const isAdmin = await checkAdminStatus(msg.nickname);
   if (isAdmin) {
     const badge = document.createElement("span");
     badge.className = "verified-badge";
     badge.innerHTML = '<img src="/assets/verify.png" alt="Verified">';
-    nicknameWrapper.appendChild(badge);
+    nicknameContainer.appendChild(badge);
   }
   
-  div.appendChild(nicknameWrapper);
+  div.appendChild(nicknameContainer);
   
   if (msg.type === "image") {
     const img = document.createElement("img");
@@ -956,9 +978,7 @@ async function displayMessage(msg) {
       filteredMsg.style.fontStyle = "italic";
       div.appendChild(filteredMsg);
     } else {
-      const textDiv = document.createElement("div");
-      textDiv.textContent = msg.text;
-      div.appendChild(textDiv);
+      div.appendChild(document.createTextNode(msg.text));
     }
   }
   
