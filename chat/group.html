@@ -544,6 +544,9 @@ let isSendingGif = false;
 let isSendingMessage = false;
 let initialMessagesLoaded = false;
 let messagesRef;
+let adminNickname = null;
+let passwordRequired = false;
+let passwordEntered = false;
 
 // GIPHY API Key
 const GIPHY_API_KEY = 'EKvv5S1CcXqYuHgxPNVKiNuiuNHRTzFk';
@@ -585,10 +588,41 @@ function getGroupFromURL() {
   return urlParams.get('group') || 'general';
 }
 
-function initializeChat() {
+async function checkGroupSettings() {
+  const groupRef = db.ref(`groups/${currentGroup}`);
+  const snapshot = await groupRef.once('value');
+  const data = snapshot.val();
+  if (data) {
+    if (data.admin) {
+      adminNickname = data.admin;
+    }
+    if (data.password && data.password === "Example@123.") {
+      passwordRequired = true;
+      const storedPassword = localStorage.getItem(`talkrush_password_${currentGroup}`);
+      if (storedPassword === data.password) {
+        passwordEntered = true;
+      } else {
+        const enteredPassword = prompt("Enter password to join this group:");
+        if (enteredPassword === data.password) {
+          localStorage.setItem(`talkrush_password_${currentGroup}`, enteredPassword);
+          passwordEntered = true;
+        } else {
+          alert("Incorrect password. Access denied.");
+          return false;
+        }
+      }
+    }
+  }
+  return true;
+}
+
+async function initializeChat() {
   myId = 'user_' + Math.random().toString(36).substr(2, 9);
   currentGroup = getGroupFromURL();
   loadBannedWords();
+
+  const accessGranted = await checkGroupSettings();
+  if (!accessGranted) return;
 
   const savedNickname = localStorage.getItem('talkrush_nickname');
   if (savedNickname) {
@@ -826,7 +860,19 @@ function displayMessage(msg) {
   nicknameEl.style.fontWeight = "bold";
   nicknameEl.style.marginBottom = "2px";
   nicknameEl.style.lineHeight = "1";
+  nicknameEl.style.display = "flex";
+  nicknameEl.style.alignItems = "center";
+  nicknameEl.style.gap = "5px";
   nicknameEl.textContent = msg.nickname || 'Guest';
+  
+  if (adminNickname && msg.nickname === adminNickname) {
+    const badge = document.createElement("img");
+    badge.src = "/assets/verify.png";
+    badge.style.width = "16px";
+    badge.style.height = "16px";
+    nicknameEl.appendChild(badge);
+  }
+  
   div.appendChild(nicknameEl);
   
   if (msg.type === "image") {
