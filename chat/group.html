@@ -645,6 +645,7 @@ body.light-mode {
 {% include scripts.html %}
 
 <script>
+// Firebase config
 const firebaseConfig = {
   databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
 };
@@ -665,8 +666,10 @@ let groupPassword = null;
 let passwordVerified = false;
 let pendingPasswordResolve = null;
 
+// GIPHY API Key
 const GIPHY_API_KEY = 'EKvv5S1CcXqYuHgxPNVKiNuiuNHRTzFk';
 
+// Bad word filter system
 let bannedWords = [];
 let bannedWordsLoaded = false;
 
@@ -742,7 +745,6 @@ function submitPassword() {
     }
     initializeChat();
   } else {
-    // Show error in modal instead of alert
     document.getElementById('passwordError').style.display = 'block';
     input.value = '';
     input.focus();
@@ -781,24 +783,30 @@ async function initializeChat() {
 function joinGroupChat() {
   messagesRef = db.ref(`groups/${currentGroup}/messages`).orderByChild("timestamp").limitToLast(messageLimit);
   
-  if (!initialMessagesLoaded) {
-    messagesRef.once('value', (snapshot) => {
-      const messages = snapshot.val();
-      if (messages) {
-        Object.values(messages).forEach(msg => {
-          if (msg.timestamp > lastMessageTimestamp) {
-            displayMessage(msg);
-            lastMessageTimestamp = msg.timestamp;
-          }
-        });
-      }
-      scrollToBottom();
-      initialMessagesLoaded = true;
-    });
-  }
+  // Load initial messages in correct order
+  messagesRef.once('value', (snapshot) => {
+    const messages = snapshot.val();
+    if (messages) {
+      // Convert to array and sort by timestamp
+      const messageArray = Object.values(messages);
+      messageArray.sort((a, b) => a.timestamp - b.timestamp);
+      
+      messageArray.forEach(msg => {
+        if (msg.timestamp > lastMessageTimestamp) {
+          displayMessage(msg);
+          lastMessageTimestamp = msg.timestamp;
+        }
+      });
+    }
+    scrollToBottom();
+    initialMessagesLoaded = true;
+  });
   
+  // Listen for new messages
   messagesRef.on('child_added', (snapshot) => {
     const msg = snapshot.val();
+    
+    // Only process if this is a new message
     if (msg.timestamp > lastMessageTimestamp) {
       displayMessage(msg);
       lastMessageTimestamp = msg.timestamp;
@@ -827,11 +835,14 @@ async function checkAdminStatus(nickname) {
 
 function sendMessageToGroup(text) {
   if (!text.trim() || isSendingMessage) return;
+  
   if (containsBannedWords(text)) {
     logSystem("Your message contains inappropriate content and cannot be sent.");
     return;
   }
+  
   isSendingMessage = true;
+  
   const timestamp = Date.now();
   const message = {
     text: text,
@@ -839,6 +850,7 @@ function sendMessageToGroup(text) {
     nickname: myNickname,
     type: "text"
   };
+  
   const newMsgRef = db.ref(`groups/${currentGroup}/messages`).push();
   newMsgRef.set(message)
     .then(() => {
@@ -921,6 +933,7 @@ function compressImage(file, callback) {
 function sendImageToGroup(blob) {
   if (isSendingMessage) return;
   isSendingMessage = true;
+  
   const timestamp = Date.now();
   const message = {
     type: "image",
@@ -928,6 +941,7 @@ function sendImageToGroup(blob) {
     blob: blob,
     nickname: myNickname
   };
+  
   const newMsgRef = db.ref(`groups/${currentGroup}/messages`).push();
   newMsgRef.set(message)
     .then(() => {
@@ -943,6 +957,7 @@ function sendGifToGroup(url) {
   if (isSendingGif || isSendingMessage) return;
   isSendingGif = true;
   isSendingMessage = true;
+  
   const timestamp = Date.now();
   const message = {
     type: "gif",
@@ -950,6 +965,7 @@ function sendGifToGroup(url) {
     url: url,
     nickname: myNickname
   };
+  
   const newMsgRef = db.ref(`groups/${currentGroup}/messages`).push();
   newMsgRef.set(message)
     .then(() => {
@@ -965,6 +981,7 @@ function sendGifToGroup(url) {
 
 async function displayMessage(msg) {
   if (document.querySelector(`[data-id="${msg.timestamp}"]`)) return;
+  
   const div = document.createElement("div");
   const isMyMessage = msg.nickname === myNickname;
   div.className = "msg " + (isMyMessage ? "me" : "stranger");
@@ -1016,7 +1033,6 @@ async function displayMessage(msg) {
   time.textContent = formatTimestamp(msg.timestamp);
   div.appendChild(time);
   document.getElementById("chatLog").appendChild(div);
-  scrollToBottom();
 }
 
 function formatTimestamp(timestamp) {
@@ -1049,6 +1065,7 @@ document.getElementById("sendBtn").onclick = sendMessage;
 function sendMessage() {
   const input = document.getElementById("msgInput");
   const msg = input.value.trim();
+  
   if (msg) {
     if (containsBannedWords(msg)) {
       logSystem("Your message contains inappropriate content and cannot be sent.");
