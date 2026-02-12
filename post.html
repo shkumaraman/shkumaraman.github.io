@@ -589,15 +589,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
       return null;
     }
 
-    function getUserId() {
-      let userId = localStorage.getItem("talkrush_user_id");
-      if (!userId) {
-        userId = 'user_' + Math.random().toString(36).substr(2, 9);
-        localStorage.setItem("talkrush_user_id", userId);
-      }
-      return userId;
-    }
-
     function showAlert(message, type = 'error') {
       const alertContainer = document.getElementById("alertContainer");
       const alertDiv = document.createElement("div");
@@ -729,8 +720,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
         showAlert("Your post contains inappropriate content and cannot be sent.");
         return;
       }
-
-      const userId = getUserId();
       
       const newPostRef = db.ref("posts").push();
       const postId = newPostRef.key;
@@ -741,7 +730,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
         nickname: nickname,
         text: text,
         timestamp: Date.now(),
-        userId: userId,
         postId: postId
       };
 
@@ -765,9 +753,15 @@ description: "Post anything anonymously without login. Confess, express, or spea
       }
     }
 
-    function deletePost(postId, userId) {
-      const currentUserId = getUserId();
-      if (userId !== currentUserId) {
+    function deletePost(postId, postNickname) {
+      const currentNickname = getNickname();
+      
+      if (!currentNickname) {
+        showAlert("Please set your nickname first!");
+        return;
+      }
+      
+      if (postNickname !== currentNickname) {
         showAlert("You can only delete your own posts!");
         return;
       }
@@ -968,8 +962,8 @@ description: "Post anything anonymously without login. Confess, express, or spea
         }
 
         const div = document.createElement("div");
-        const currentUserId = getUserId();
-        const isMyPost = post.userId === currentUserId;
+        const currentNickname = getNickname();
+        const isMyPost = currentNickname && post.nickname === currentNickname;
         
         div.className = "post";
         div.setAttribute("data-post-id", postId);
@@ -1007,11 +1001,11 @@ description: "Post anything anonymously without login. Confess, express, or spea
           ${imagePreviewHTML}
           <div class="timestamp">${timeSince(post.timestamp)}</div>
           <div class="buttons">
-            <button class="share-btn-post" onclick="sharePost(${JSON.stringify({...post, postId}).replace(/"/g, '&quot;')})">
+            <button class="share-btn-post" onclick='sharePost(${JSON.stringify({...post, postId}).replace(/'/g, "\\'")})'>
               <i class="fas fa-share"></i> Share
             </button>
             ${isMyPost ? `
-              <button class="delete-btn" onclick="deletePost('${postId}', '${post.userId}')">
+              <button class="delete-btn" onclick="deletePost('${postId}', '${post.nickname.replace(/'/g, "\\'")}')">
                 <i class="fas fa-trash"></i> Delete
               </button>
             ` : ''}
