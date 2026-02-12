@@ -374,12 +374,6 @@ main {
   border-left: 3px solid #ffc107;
 }
 
-.loading {
-  text-align: center;
-  padding: 40px;
-  color: var(--dark-secondary-text);
-}
-
 @media (max-width: 600px) {
   .room-card {
     padding: 14px;
@@ -419,8 +413,7 @@ main {
   }
 }
 
-/* Modal styles */
-.modal {
+.chatrooms-password-modal {
   display: none;
   position: fixed;
   top: 0;
@@ -433,7 +426,7 @@ main {
   justify-content: center;
 }
 
-.modal-content {
+.chatrooms-modal-content {
   background: var(--dark-modal-bg);
   border-radius: 10px;
   padding: 25px;
@@ -441,23 +434,23 @@ main {
   width: 90%;
 }
 
-.light-mode .modal-content {
+.light-mode .chatrooms-modal-content {
   background: var(--light-modal-bg);
 }
 
-.modal-header {
+.chatrooms-modal-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
 }
 
-.modal-title {
+.chatrooms-modal-title {
   margin: 0;
   font-size: 1.3em;
 }
 
-.close-modal {
+.chatrooms-close-modal {
   background: none;
   border: none;
   color: var(--dark-secondary-text);
@@ -465,11 +458,11 @@ main {
   cursor: pointer;
 }
 
-.light-mode .close-modal {
+.light-mode .chatrooms-close-modal {
   color: var(--light-secondary-text);
 }
 
-.modal-footer {
+.chatrooms-modal-footer {
   margin-top: 20px;
   display: flex;
   gap: 10px;
@@ -500,18 +493,14 @@ main {
       <button class="tab-btn" onclick="switchTab('create', this)">Create</button>
     </div>
 
-    <!-- Rooms Tab -->
     <div id="rooms-tab" class="tab-content active">
-      <!-- Permanent Rooms Section -->
       <h2 style="font-size: 1.2em; margin-bottom: 15px;">Featured Rooms</h2>
       <div class="rooms-grid" id="permanentRooms"></div>
       
-      <!-- Dynamic Rooms Section -->
       <h2 style="font-size: 1.2em; margin-bottom: 15px; margin-top: 25px;">Community Rooms</h2>
       <div id="dynamicRooms" class="rooms-grid"></div>
     </div>
 
-    <!-- Create Room Tab -->
     <div id="create-tab" class="tab-content">
       <div class="create-room-form">
         <h2 style="margin-top: 0; margin-bottom: 20px; font-size: 1.3em;">Create New Room</h2>
@@ -544,7 +533,6 @@ main {
     </div>
   </div>
 
-  <!-- Display Ads -->
   <ins class="adsbygoogle"
        style="display:block; margin-top: 30px;"
        data-ad-client="ca-pub-7059052735946479"
@@ -555,20 +543,19 @@ main {
        (adsbygoogle = window.adsbygoogle || []).push({});
   </script>
 
-  <!-- Password Modal -->
-  <div id="passwordModal" class="modal">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h3 class="modal-title">Password Required</h3>
-        <button class="close-modal" onclick="closePasswordModal()">&times;</button>
+  <div id="chatroomsPasswordModal" class="chatrooms-password-modal">
+    <div class="chatrooms-modal-content">
+      <div class="chatrooms-modal-header">
+        <h3 class="chatrooms-modal-title">Password Required</h3>
+        <button class="chatrooms-close-modal" onclick="closeChatroomsPasswordModal()">&times;</button>
       </div>
       <div class="form-group">
-        <label for="roomPasswordInput">Enter Room Password</label>
-        <input type="password" id="roomPasswordInput" class="form-control" placeholder="Password">
+        <label for="chatroomsRoomPasswordInput">Enter Room Password</label>
+        <input type="password" id="chatroomsRoomPasswordInput" class="form-control" placeholder="Password">
       </div>
-      <div class="modal-footer">
-        <button class="btn btn-secondary" onclick="closePasswordModal()">Cancel</button>
-        <button class="btn btn-primary" onclick="verifyPassword()">Join</button>
+      <div class="chatrooms-modal-footer">
+        <button class="btn btn-secondary" onclick="closeChatroomsPasswordModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="verifyChatroomsPassword()">Join</button>
       </div>
     </div>
   </div>
@@ -577,107 +564,90 @@ main {
 {% include menu.html %}
 {% include scripts.html %}
 
-<!-- Firebase SDK -->
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 
 <script>
-// Firebase config - Same database as group.html
 const firebaseConfig = {
   databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
 };
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
-// State
-let pendingRoomId = null;
-const defaultRoomImage = '/assets/chat-default.jpg';
+let pendingChatroomsRoomId = null;
+const defaultChatroomsImage = '/assets/chat-default.jpg';
 
-// Permanent rooms data - No badges
-const permanentRooms = [
+const permanentChatroomsRooms = [
   {
     id: 'general',
     title: 'General Chat Room',
     description: 'Meet and chat with people from around the world. Make new friends and have casual conversations.',
-    image: defaultRoomImage
+    image: defaultChatroomsImage
   },
   {
     id: 'dating',
     title: 'Dating Chat Room',
     description: 'A cozy space for dating-minded individuals to connect, flirt, and find potential partners.',
-    image: defaultRoomImage
+    image: defaultChatroomsImage
   },
   {
     id: 'singles',
     title: 'Singles Chat Room',
     description: 'Connect with other singles looking for friendship, dating, or meaningful conversations.',
-    image: defaultRoomImage
+    image: defaultChatroomsImage
   }
 ];
 
-// Initialize page
 document.addEventListener('DOMContentLoaded', function() {
-  loadPermanentRooms();
-  loadDynamicRooms();
+  loadPermanentChatroomsRooms();
+  loadDynamicChatroomsRooms();
   
-  // Listen for new rooms - Using groups node (same as group.html)
   db.ref('groups').on('child_added', function(snapshot) {
     const roomId = snapshot.key;
-    // Skip permanent rooms
-    if (!isPermanentRoom(roomId)) {
-      loadDynamicRooms();
+    if (!isPermanentChatroomsRoom(roomId)) {
+      loadDynamicChatroomsRooms();
     }
   });
   
-  // Listen for room deletions
   db.ref('groups').on('child_removed', function(snapshot) {
-    loadDynamicRooms();
+    loadDynamicChatroomsRooms();
   });
 });
 
-function isPermanentRoom(roomId) {
+function isPermanentChatroomsRoom(roomId) {
   return ['general', 'dating', 'singles'].includes(roomId);
 }
 
-function loadPermanentRooms() {
+function loadPermanentChatroomsRooms() {
   const container = document.getElementById('permanentRooms');
   container.innerHTML = '';
   
-  permanentRooms.forEach(room => {
-    container.appendChild(createRoomCard(room, true));
+  permanentChatroomsRooms.forEach(room => {
+    container.appendChild(createChatroomsRoomCard(room, true));
   });
 }
 
-function loadDynamicRooms() {
+function loadDynamicChatroomsRooms() {
   db.ref('groups').once('value', function(snapshot) {
     const rooms = [];
     
     snapshot.forEach(function(childSnapshot) {
       const roomId = childSnapshot.key;
       
-      // Skip permanent rooms
-      if (!isPermanentRoom(roomId)) {
-        // Get room info from first message or use defaults
-        const messages = childSnapshot.val().messages;
+      if (!isPermanentChatroomsRoom(roomId)) {
         let roomInfo = {
           id: roomId,
-          title: formatRoomTitle(roomId),
+          title: formatChatroomsRoomTitle(roomId),
           description: 'Join this community room!',
           hasPassword: false,
           timestamp: Date.now()
         };
         
-        // Check if room has password (store in separate node)
-        db.ref(`roomPasswords/${roomId}`).once('value', function(pwSnapshot) {
-          roomInfo.hasPassword = pwSnapshot.exists();
-        });
-        
         rooms.push(roomInfo);
       }
     });
     
-    // Shuffle array for random order
-    const shuffledRooms = shuffleArray(rooms);
+    const shuffledRooms = shuffleChatroomsArray(rooms);
     
     const container = document.getElementById('dynamicRooms');
     container.innerHTML = '';
@@ -686,20 +656,22 @@ function loadDynamicRooms() {
       container.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: var(--dark-secondary-text); padding: 30px;">No community rooms yet. Create one!</p>';
     } else {
       shuffledRooms.forEach(room => {
-        container.appendChild(createRoomCard(room, false));
+        db.ref(`roomPasswords/${room.id}`).once('value', function(pwSnapshot) {
+          room.hasPassword = pwSnapshot.exists();
+          container.appendChild(createChatroomsRoomCard(room, false));
+        });
       });
     }
   });
 }
 
-function formatRoomTitle(roomId) {
-  // Convert room-id to Room Title
+function formatChatroomsRoomTitle(roomId) {
   return roomId.split('-').map(word => 
     word.charAt(0).toUpperCase() + word.slice(1)
   ).join(' ');
 }
 
-function shuffleArray(array) {
+function shuffleChatroomsArray(array) {
   const shuffled = [...array];
   for (let i = shuffled.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -708,7 +680,7 @@ function shuffleArray(array) {
   return shuffled;
 }
 
-function createRoomCard(room, isPermanent = false) {
+function createChatroomsRoomCard(room, isPermanent = false) {
   const card = document.createElement('div');
   card.className = 'room-card' + (room.hasPassword || room.password ? ' password-protected' : '');
   
@@ -716,7 +688,7 @@ function createRoomCard(room, isPermanent = false) {
   
   card.innerHTML = `
     <div class="room-header">
-      <img src="${defaultRoomImage}" alt="${room.title}" class="room-image" onerror="this.src='/assets/chat-default.jpg'">
+      <img src="${defaultChatroomsImage}" alt="${room.title}" class="room-image" onerror="this.src='/assets/chat-default.jpg'">
       <div class="room-info">
         <h2 class="room-title">
           ${room.title}
@@ -726,15 +698,15 @@ function createRoomCard(room, isPermanent = false) {
       </div>
     </div>
     <div class="room-actions">
-      <a href="javascript:void(0)" onclick="joinRoom('${room.id}', ${hasPassword})" class="btn btn-primary">
+      <a href="javascript:void(0)" onclick="joinChatroomsRoom('${room.id}', ${hasPassword})" class="btn btn-primary">
         <i class="fas fa-sign-in-alt"></i>
         Join
       </a>
-      <button class="btn btn-secondary" onclick="copyRoomLink('${room.id}')" title="Copy Link">
+      <button class="btn btn-secondary" onclick="copyChatroomsRoomLink('${room.id}')" title="Copy Link">
         <i class="fas fa-link"></i>
       </button>
       ${!isPermanent ? `
-        <button class="btn btn-danger" onclick="deleteRoom('${room.id}')" title="Delete Room">
+        <button class="btn btn-danger" onclick="deleteChatroomsRoom('${room.id}')" title="Delete Room">
           <i class="fas fa-trash"></i>
         </button>
       ` : ''}
@@ -754,7 +726,6 @@ function createNewRoom() {
     return;
   }
   
-  // Generate room ID from title
   const roomId = title.toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '');
@@ -764,14 +735,12 @@ function createNewRoom() {
     return;
   }
   
-  // Check if room already exists
   db.ref(`groups/${roomId}`).once('value', function(snapshot) {
-    if (snapshot.exists() || isPermanentRoom(roomId)) {
+    if (snapshot.exists() || isPermanentChatroomsRoom(roomId)) {
       alert('A room with this name already exists. Please choose a different title.');
       return;
     }
     
-    // Create initial system message in the group
     const initialMessage = {
       text: `🎉 Room created! Welcome to ${title}!`,
       timestamp: Date.now(),
@@ -781,19 +750,13 @@ function createNewRoom() {
     
     db.ref(`groups/${roomId}/messages`).push().set(initialMessage)
       .then(() => {
-        // Save password if provided
         if (password) {
           return db.ref(`roomPasswords/${roomId}`).set(password);
         }
       })
       .then(() => {
-        // Clear form
         clearCreateForm();
-        
-        // Switch to rooms tab
         switchTab('rooms', document.querySelector('.tab-btn'));
-        
-        // Show success message
         alert('Room created successfully!');
       })
       .catch(error => {
@@ -809,12 +772,11 @@ function clearCreateForm() {
   document.getElementById('roomPassword').value = '';
 }
 
-function joinRoom(roomId, hasPassword) {
+function joinChatroomsRoom(roomId, hasPassword) {
   if (hasPassword) {
-    pendingRoomId = roomId;
-    document.getElementById('passwordModal').style.display = 'flex';
+    pendingChatroomsRoomId = roomId;
+    document.getElementById('chatroomsPasswordModal').style.display = 'flex';
   } else {
-    // Direct join for public rooms
     if (roomId === 'general') {
       window.location.href = '/chat/group.html';
     } else {
@@ -823,39 +785,36 @@ function joinRoom(roomId, hasPassword) {
   }
 }
 
-function verifyPassword() {
-  const password = document.getElementById('roomPasswordInput').value;
+function verifyChatroomsPassword() {
+  const password = document.getElementById('chatroomsRoomPasswordInput').value;
   
-  if (!pendingRoomId) {
-    closePasswordModal();
+  if (!pendingChatroomsRoomId) {
+    closeChatroomsPasswordModal();
     return;
   }
   
-  db.ref(`roomPasswords/${pendingRoomId}`).once('value', function(snapshot) {
+  db.ref(`roomPasswords/${pendingChatroomsRoomId}`).once('value', function(snapshot) {
     const storedPassword = snapshot.val();
     
     if (storedPassword && storedPassword === password) {
-      // Password correct
-      closePasswordModal();
-      window.location.href = `/chat/group.html?group=${pendingRoomId}`;
+      closeChatroomsPasswordModal();
+      window.location.href = `/chat/group.html?group=${pendingChatroomsRoomId}`;
     } else {
       alert('Incorrect password!');
     }
   });
 }
 
-function closePasswordModal() {
-  document.getElementById('passwordModal').style.display = 'none';
-  document.getElementById('roomPasswordInput').value = '';
-  pendingRoomId = null;
+function closeChatroomsPasswordModal() {
+  document.getElementById('chatroomsPasswordModal').style.display = 'none';
+  document.getElementById('chatroomsRoomPasswordInput').value = '';
+  pendingChatroomsRoomId = null;
 }
 
-function deleteRoom(roomId) {
+function deleteChatroomsRoom(roomId) {
   if (confirm('Delete this room? This cannot be undone.')) {
-    // Delete room messages
     db.ref(`groups/${roomId}`).remove()
       .then(() => {
-        // Delete password if exists
         return db.ref(`roomPasswords/${roomId}`).remove();
       })
       .then(() => {
@@ -868,7 +827,7 @@ function deleteRoom(roomId) {
   }
 }
 
-function copyRoomLink(roomId) {
+function copyChatroomsRoomLink(roomId) {
   let url;
   
   if (roomId === 'general') {
@@ -887,13 +846,11 @@ function copyRoomLink(roomId) {
 }
 
 function switchTab(tabName, btn) {
-  // Update tab buttons
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.classList.remove('active');
   });
   btn.classList.add('active');
   
-  // Show selected tab
   document.getElementById('rooms-tab').classList.remove('active');
   document.getElementById('create-tab').classList.remove('active');
   
@@ -904,11 +861,10 @@ function switchTab(tabName, btn) {
   }
 }
 
-// Click outside modal to close
 window.onclick = function(event) {
-  const modal = document.getElementById('passwordModal');
+  const modal = document.getElementById('chatroomsPasswordModal');
   if (event.target === modal) {
-    closePasswordModal();
+    closeChatroomsPasswordModal();
   }
 }
 </script>
