@@ -133,9 +133,9 @@ body.light-mode {
 
 .tab-btn {
   flex: 1;
-  padding: 14px 0;
+  padding: 8px 0;
   text-align: center;
-  font-size: 1.2em;
+  font-size: 1.1em;
   font-weight: 600;
   background: transparent;
   border: none;
@@ -287,20 +287,7 @@ main {
 }
 
 .room-meta {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 8px;
-  font-size: 0.85em;
-  color: var(--dark-secondary-text);
-}
-
-.light-mode .room-meta {
-  color: var(--light-secondary-text);
-}
-
-.room-meta i {
-  margin-right: 4px;
+  display: none;
 }
 
 .room-description {
@@ -552,6 +539,20 @@ main {
   color: #25D366;
 }
 
+.error-message {
+  background: rgba(255, 69, 58, 0.1);
+  color: #ff453a;
+  padding: 12px 16px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 69, 58, 0.3);
+  margin-bottom: 20px;
+  display: none;
+}
+
+.error-message.visible {
+  display: block;
+}
+
 @media (max-width: 600px) {
   .room-card {
     padding: 14px;
@@ -585,8 +586,8 @@ main {
   }
   
   .tab-btn {
-    padding: 12px 0;
-    font-size: 1.1em;
+    padding: 5px 0;
+    font-size: 1em;
   }
   
   .create-container {
@@ -664,6 +665,8 @@ main {
     <div class="create-container">
       <h2 class="create-title">Create New Chat Room</h2>
       
+      <div id="createError" class="error-message"></div>
+      
       <div class="form-group">
         <label class="form-label">Room Name</label>
         <input type="text" id="roomNameInput" class="form-input" placeholder="Enter room name">
@@ -702,6 +705,8 @@ main {
 {% include menu.html %}
 {% include scripts.html %}
 
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
 <script>
 const firebaseConfig = {
   databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
@@ -725,6 +730,7 @@ document.addEventListener('DOMContentLoaded', function() {
   const roomsGrid = document.getElementById('roomsGrid');
   const myRoomsGrid = document.getElementById('myRoomsGrid');
   const myRoomsSection = document.getElementById('myRoomsSection');
+  const createError = document.getElementById('createError');
   
   const passwordCheckbox = document.getElementById('passwordCheckbox');
   const passwordField = document.getElementById('passwordField');
@@ -750,6 +756,7 @@ document.addEventListener('DOMContentLoaded', function() {
     tabCreate.classList.remove('active');
     roomsSection.classList.remove('hidden');
     createSection.classList.add('hidden');
+    createError.classList.remove('visible');
   });
 
   tabCreate.addEventListener('click', function() {
@@ -757,16 +764,47 @@ document.addEventListener('DOMContentLoaded', function() {
     tabRooms.classList.remove('active');
     createSection.classList.remove('hidden');
     roomsSection.classList.add('hidden');
+    createError.classList.remove('visible');
   });
   
-  function deleteRoom(roomName) {
-    if (confirm(`Are you sure you want to delete "${roomName}"?`)) {
-      db.ref('groups/' + roomName).remove()
-        .catch((error) => {
-          alert('Error deleting room: ' + error.message);
-        });
-    }
-  }
+  window.deleteRoom = function(roomName) {
+    Swal.fire({
+      title: 'Delete Room?',
+      text: `Are you sure you want to delete "${roomName}"? This action cannot be undone.`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#ff453a',
+      cancelButtonColor: '#25D366',
+      confirmButtonText: 'Yes, delete it!',
+      cancelButtonText: 'Cancel',
+      background: document.body.classList.contains('light-mode') ? '#fff' : '#1e1e1e',
+      color: document.body.classList.contains('light-mode') ? '#333' : '#fff'
+    }).then((result) => {
+      if (result.isConfirmed) {
+        db.ref('groups/' + roomName).remove()
+          .then(() => {
+            Swal.fire({
+              title: 'Deleted!',
+              text: 'Room has been deleted successfully.',
+              icon: 'success',
+              confirmButtonColor: '#25D366',
+              background: document.body.classList.contains('light-mode') ? '#fff' : '#1e1e1e',
+              color: document.body.classList.contains('light-mode') ? '#333' : '#fff'
+            });
+          })
+          .catch((error) => {
+            Swal.fire({
+              title: 'Error!',
+              text: 'Failed to delete room: ' + error.message,
+              icon: 'error',
+              confirmButtonColor: '#25D366',
+              background: document.body.classList.contains('light-mode') ? '#fff' : '#1e1e1e',
+              color: document.body.classList.contains('light-mode') ? '#333' : '#fff'
+            });
+          });
+      }
+    });
+  };
   
   function loadRooms() {
     const groupsRef = db.ref('groups');
@@ -834,7 +872,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const isAdmin = roomData.admin === myNickname;
     
     let adminBadge = '';
-    if (roomData.admin) {
+    if (roomData.admin && showDelete) {
       adminBadge = `
         <div class="admin-badge">
           <i class="fas fa-crown"></i>
@@ -846,7 +884,7 @@ document.addEventListener('DOMContentLoaded', function() {
     let deleteButton = '';
     if (showDelete && isAdmin) {
       deleteButton = `
-        <button class="delete-btn" onclick="deleteRoom('${roomName}')">
+        <button class="delete-btn" onclick="deleteRoom('${roomName.replace(/'/g, "\\'")}')">
           <i class="fas fa-trash"></i>
           Delete
         </button>
@@ -861,10 +899,6 @@ document.addEventListener('DOMContentLoaded', function() {
           <h2 class="room-title">
             ${roomName} ${passwordIcon}
           </h2>
-          <div class="room-meta">
-            <span><i class="fas fa-user"></i> ${roomData.admin || 'Unknown'}</span>
-            ${roomData.password ? '<span><i class="fas fa-lock"></i> Password protected</span>' : ''}
-          </div>
           <p class="room-description">${roomData.description || 'No description provided.'}</p>
         </div>
       </div>
@@ -873,7 +907,7 @@ document.addEventListener('DOMContentLoaded', function() {
           <i class="fas fa-sign-in-alt"></i>
           Join Room
         </a>
-        <button class="btn btn-secondary" onclick="copyRoomLink('${roomName}')" title="Copy Link">
+        <button class="btn btn-secondary" onclick="copyRoomLink('${roomName.replace(/'/g, "\\'")}')" title="Copy Link">
           <i class="fas fa-link"></i>
         </button>
         ${deleteButton}
@@ -883,50 +917,77 @@ document.addEventListener('DOMContentLoaded', function() {
     return roomCard;
   }
   
-  function createRoom() {
+  function checkRoomExists(roomName) {
+    return new Promise((resolve) => {
+      db.ref('groups/' + roomName).once('value', (snapshot) => {
+        resolve(snapshot.exists());
+      });
+    });
+  }
+  
+  async function createRoom() {
     const roomName = document.getElementById('roomNameInput').value.trim();
     const description = document.getElementById('roomDescriptionInput').value.trim();
     const passwordCheckbox = document.getElementById('passwordCheckbox');
     const password = document.getElementById('roomPasswordInput').value.trim();
+    const createError = document.getElementById('createError');
+    
+    createError.classList.remove('visible');
     
     if (!roomName) {
-      alert('Please enter a room name');
+      createError.textContent = 'Please enter a room name';
+      createError.classList.add('visible');
       return;
     }
     
     if (!myNickname || myNickname === 'Guest') {
-      alert('Please set your nickname first');
+      createError.textContent = 'Please set your nickname first';
+      createError.classList.add('visible');
       return;
     }
     
-    const roomData = {
-      description: description || 'No description provided',
-      admin: myNickname
-    };
-    
-    if (passwordCheckbox.checked && password) {
-      roomData.password = password;
+    if (passwordCheckbox.checked && !password) {
+      createError.textContent = 'Please enter a password';
+      createError.classList.add('visible');
+      return;
     }
     
-    const roomRef = db.ref('groups/' + roomName);
-    roomRef.set(roomData)
-      .then(() => {
-        document.getElementById('roomNameInput').value = '';
-        document.getElementById('roomDescriptionInput').value = '';
-        document.getElementById('passwordCheckbox').checked = false;
-        document.getElementById('roomPasswordInput').value = '';
-        passwordField.classList.remove('visible');
-        
-        tabRooms.click();
-      })
-      .catch((error) => {
-        alert('Error creating room: ' + error.message);
-      });
+    try {
+      const roomExists = await checkRoomExists(roomName);
+      
+      if (roomExists) {
+        createError.textContent = 'A room with this name already exists. Please choose a different name.';
+        createError.classList.add('visible');
+        return;
+      }
+      
+      const roomData = {
+        description: description || 'No description provided',
+        admin: myNickname
+      };
+      
+      if (passwordCheckbox.checked && password) {
+        roomData.password = password;
+      }
+      
+      const roomRef = db.ref('groups/' + roomName);
+      await roomRef.set(roomData);
+      
+      document.getElementById('roomNameInput').value = '';
+      document.getElementById('roomDescriptionInput').value = '';
+      document.getElementById('passwordCheckbox').checked = false;
+      document.getElementById('roomPasswordInput').value = '';
+      passwordField.classList.remove('visible');
+      
+      tabRooms.click();
+      
+    } catch (error) {
+      createError.textContent = 'Error creating room: ' + error.message;
+      createError.classList.add('visible');
+    }
   }
   
   document.getElementById('createRoomBtn').addEventListener('click', createRoom);
-  
-  window.deleteRoom = deleteRoom;
   
   loadRooms();
 });
@@ -934,5 +995,14 @@ document.addEventListener('DOMContentLoaded', function() {
 function copyRoomLink(roomName) {
   const url = window.location.origin + `/chat/group.html?group=${roomName}`;
   navigator.clipboard.writeText(url);
+  Swal.fire({
+    title: 'Copied!',
+    text: 'Room link copied to clipboard',
+    icon: 'success',
+    timer: 1500,
+    showConfirmButton: false,
+    background: document.body.classList.contains('light-mode') ? '#fff' : '#1e1e1e',
+    color: document.body.classList.contains('light-mode') ? '#333' : '#fff'
+  });
 }
 </script>
