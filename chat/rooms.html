@@ -231,6 +231,7 @@ main {
   font-size: 1.3em;
   margin: 0 0 8px 0;
   color: var(--dark-text);
+  word-break: break-word;
 }
 
 .light-mode .room-title {
@@ -242,6 +243,7 @@ main {
   margin: 0 0 16px 0;
   line-height: 1.4;
   font-size: 0.95em;
+  word-break: break-word;
 }
 
 .light-mode .room-description {
@@ -600,12 +602,10 @@ main {
 {% include scripts.html %}
 
 <script>
-// Firebase config
 const firebaseConfig = {
   databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
 };
 
-// Initialize Firebase
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
@@ -616,7 +616,6 @@ document.addEventListener('DOMContentLoaded', function() {
   const createSection = document.getElementById('createSection');
   const roomsGrid = document.getElementById('roomsGrid');
   
-  // Password checkbox toggle
   const passwordCheckbox = document.getElementById('passwordCheckbox');
   const passwordField = document.getElementById('passwordField');
   
@@ -628,7 +627,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   });
   
-  // Tab switching
   tabRooms.addEventListener('click', function() {
     tabRooms.classList.add('active');
     tabCreate.classList.remove('active');
@@ -643,7 +641,6 @@ document.addEventListener('DOMContentLoaded', function() {
     roomsSection.classList.add('hidden');
   });
   
-  // Load rooms from Firebase
   function loadRooms() {
     const groupsRef = db.ref('groups');
     groupsRef.on('value', (snapshot) => {
@@ -663,9 +660,9 @@ document.addEventListener('DOMContentLoaded', function() {
       
       let hasRooms = false;
       
-      Object.keys(rooms).forEach((key) => {
-        const room = rooms[key];
-        if (room && room.name) {
+      Object.keys(rooms).forEach((roomName) => {
+        const room = rooms[roomName];
+        if (room && typeof room === 'object') {
           hasRooms = true;
           const roomCard = document.createElement('div');
           roomCard.className = 'room-card';
@@ -676,16 +673,16 @@ document.addEventListener('DOMContentLoaded', function() {
             <div class="room-header">
               <img src="/chat/logo.png" alt="Chat Room" class="room-image">
               <div class="room-info">
-                <h2 class="room-title">${room.name} ${passwordIcon}</h2>
+                <h2 class="room-title">${roomName} ${passwordIcon}</h2>
                 <p class="room-description">${room.description || 'No description provided.'}</p>
               </div>
             </div>
             <div class="room-actions">
-              <a href="/chat/group.html?group=${key}" class="btn btn-primary">
+              <a href="/chat/group.html?group=${roomName}" class="btn btn-primary">
                 <i class="fas fa-sign-in-alt"></i>
                 Join Room
               </a>
-              <button class="btn btn-secondary" onclick="copyRoomLink('${key}')" title="Copy Link">
+              <button class="btn btn-secondary" onclick="copyRoomLink('${roomName}')" title="Copy Link">
                 <i class="fas fa-link"></i>
               </button>
             </div>
@@ -707,7 +704,6 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
   
-  // Create room function
   function createRoom() {
     const roomName = document.getElementById('roomNameInput').value.trim();
     const description = document.getElementById('roomDescriptionInput').value.trim();
@@ -720,7 +716,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     const roomData = {
-      name: roomName,
       description: description || 'No description provided'
     };
     
@@ -728,8 +723,8 @@ document.addEventListener('DOMContentLoaded', function() {
       roomData.password = password;
     }
     
-    const newRoomRef = db.ref('groups').push();
-    newRoomRef.set(roomData)
+    const roomRef = db.ref('groups/' + roomName);
+    roomRef.set(roomData)
       .then(() => {
         document.getElementById('roomNameInput').value = '';
         document.getElementById('roomDescriptionInput').value = '';
@@ -744,16 +739,13 @@ document.addEventListener('DOMContentLoaded', function() {
       });
   }
   
-  // Add create room button listener
   document.getElementById('createRoomBtn').addEventListener('click', createRoom);
   
-  // Load rooms on startup
   loadRooms();
 });
 
-// Copy room link function
-function copyRoomLink(roomKey) {
-  const url = window.location.origin + `/chat/group.html?group=${roomKey}`;
+function copyRoomLink(roomName) {
+  const url = window.location.origin + `/chat/group.html?group=${roomName}`;
   navigator.clipboard.writeText(url);
 }
 </script>
