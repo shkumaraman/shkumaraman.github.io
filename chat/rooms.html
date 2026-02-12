@@ -432,6 +432,38 @@ main {
   display: block;
 }
 
+.empty-state {
+  grid-column: 1 / -1;
+  background: var(--dark-card-bg);
+  border: 1px solid var(--dark-card-border);
+  border-radius: 16px;
+  padding: 60px 20px;
+  text-align: center;
+  color: var(--dark-secondary-text);
+}
+
+.light-mode .empty-state {
+  background: var(--light-card-bg);
+  border: 1px solid var(--light-card-border);
+  color: var(--light-secondary-text);
+}
+
+.empty-state i {
+  font-size: 48px;
+  color: #25D366;
+  margin-bottom: 20px;
+}
+
+.empty-state h3 {
+  font-size: 1.5em;
+  margin-bottom: 10px;
+  color: var(--dark-text);
+}
+
+.light-mode .empty-state h3 {
+  color: var(--light-text);
+}
+
 @media (max-width: 600px) {
   .room-card {
     padding: 14px;
@@ -476,6 +508,18 @@ main {
   .create-title {
     font-size: 1.4em;
   }
+  
+  .empty-state {
+    padding: 40px 20px;
+  }
+  
+  .empty-state i {
+    font-size: 40px;
+  }
+  
+  .empty-state h3 {
+    font-size: 1.3em;
+  }
 }
 </style>
 
@@ -502,67 +546,16 @@ main {
   </div>
 
   <div id="roomsSection" class="content-section">
-    <div class="rooms-grid">
-      <div class="room-card">
-        <div class="room-header">
-          <img src="" alt="Chat Room" class="room-image">
-          <div class="room-info">
-            <h2 class="room-title">General Chat Room</h2>
-            <p class="room-description">Meet and chat with people from around the world. Make new friends and have casual conversations.</p>
-          </div>
-        </div>
-        <div class="room-actions">
-          <a href="/chat/group.html" class="btn btn-primary">
-            <i class="fas fa-sign-in-alt"></i>
-            Join Room
-          </a>
-          <button class="btn btn-secondary" onclick="copyRoomLink('general')" title="Copy Link">
-            <i class="fas fa-link"></i>
-          </button>
-        </div>
-      </div>
-
-      <div class="room-card">
-        <div class="room-header">
-          <img src="" alt="Chat Room" class="room-image">
-          <div class="room-info">
-            <h2 class="room-title">Dating Chat Room</h2>
-            <p class="room-description">A cozy space for dating-minded individuals to connect, flirt, and find potential partners.</p>
-          </div>
-        </div>
-        <div class="room-actions">
-          <a href="/chat/group.html?group=dating" class="btn btn-primary">
-            <i class="fas fa-sign-in-alt"></i>
-            Join Room
-          </a>
-          <button class="btn btn-secondary" onclick="copyRoomLink('dating')" title="Copy Link">
-            <i class="fas fa-link"></i>
-          </button>
-        </div>
-      </div>
-
-      <div class="room-card">
-        <div class="room-header">
-          <img src="" alt="Chat Room" class="room-image">
-          <div class="room-info">
-            <h2 class="room-title">Singles Chat Room</h2>
-            <p class="room-description">Connect with other singles looking for friendship, dating, or meaningful conversations.</p>
-          </div>
-        </div>
-        <div class="room-actions">
-          <a href="/chat/group.html?group=singles" class="btn btn-primary">
-            <i class="fas fa-sign-in-alt"></i>
-            Join Room
-          </a>
-          <button class="btn btn-secondary" onclick="copyRoomLink('singles')" title="Copy Link">
-            <i class="fas fa-link"></i>
-          </button>
-        </div>
+    <div id="roomsGrid" class="rooms-grid">
+      <div class="empty-state">
+        <i class="fas fa-comments"></i>
+        <h3>No Rooms Yet</h3>
+        <p>Create the first chat room to get started!</p>
       </div>
     </div>
 
     <ins class="adsbygoogle"
-         style="display:block"
+         style="display:block; margin-top: 20px;"
          data-ad-client="ca-pub-7059052735946479"
          data-ad-slot="8592327962"
          data-ad-format="auto"
@@ -578,12 +571,12 @@ main {
       
       <div class="form-group">
         <label class="form-label">Room Name</label>
-        <input type="text" class="form-input" placeholder="Enter room name">
+        <input type="text" id="roomNameInput" class="form-input" placeholder="Enter room name">
       </div>
       
       <div class="form-group">
         <label class="form-label">Description</label>
-        <textarea class="form-textarea" placeholder="Describe what your chat room is about..."></textarea>
+        <textarea id="roomDescriptionInput" class="form-textarea" placeholder="Describe what your chat room is about..."></textarea>
       </div>
       
       <div class="form-group">
@@ -592,11 +585,11 @@ main {
           <label for="passwordCheckbox" class="checkbox-label">Add password protection (optional)</label>
         </div>
         <div id="passwordField" class="password-field">
-          <input type="password" class="form-input" placeholder="Enter room password" style="margin-top: 12px;">
+          <input type="password" id="roomPasswordInput" class="form-input" placeholder="Enter room password">
         </div>
       </div>
       
-      <button class="btn-success">
+      <button id="createRoomBtn" class="btn-success">
         <i class="fas fa-plus-circle"></i> Create Room
       </button>
     </div>
@@ -607,17 +600,35 @@ main {
 {% include scripts.html %}
 
 <script>
+// Firebase config
+const firebaseConfig = {
+  databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
+};
+
+// Initialize Firebase
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
 document.addEventListener('DOMContentLoaded', function() {
-  const roomImages = document.querySelectorAll('.room-image');
-  roomImages.forEach(img => {
-    img.src = '/chat/logo.png';
-  });
-  
   const tabRooms = document.getElementById('tabRooms');
   const tabCreate = document.getElementById('tabCreate');
   const roomsSection = document.getElementById('roomsSection');
   const createSection = document.getElementById('createSection');
-
+  const roomsGrid = document.getElementById('roomsGrid');
+  
+  // Password checkbox toggle
+  const passwordCheckbox = document.getElementById('passwordCheckbox');
+  const passwordField = document.getElementById('passwordField');
+  
+  passwordCheckbox.addEventListener('change', function() {
+    if (this.checked) {
+      passwordField.classList.add('visible');
+    } else {
+      passwordField.classList.remove('visible');
+    }
+  });
+  
+  // Tab switching
   tabRooms.addEventListener('click', function() {
     tabRooms.classList.add('active');
     tabCreate.classList.remove('active');
@@ -632,15 +643,117 @@ document.addEventListener('DOMContentLoaded', function() {
     roomsSection.classList.add('hidden');
   });
   
-  const passwordCheckbox = document.getElementById('passwordCheckbox');
-  const passwordField = document.getElementById('passwordField');
+  // Load rooms from Firebase
+  function loadRooms() {
+    const groupsRef = db.ref('groups');
+    groupsRef.on('value', (snapshot) => {
+      const rooms = snapshot.val();
+      roomsGrid.innerHTML = '';
+      
+      if (!rooms) {
+        roomsGrid.innerHTML = `
+          <div class="empty-state">
+            <i class="fas fa-comments"></i>
+            <h3>No Rooms Yet</h3>
+            <p>Create the first chat room to get started!</p>
+          </div>
+        `;
+        return;
+      }
+      
+      let hasRooms = false;
+      
+      Object.keys(rooms).forEach((key) => {
+        const room = rooms[key];
+        if (room && room.name) {
+          hasRooms = true;
+          const roomCard = document.createElement('div');
+          roomCard.className = 'room-card';
+          
+          const passwordIcon = room.password ? '<i class="fas fa-lock" style="margin-left: 5px; color: #25D366;"></i>' : '';
+          
+          roomCard.innerHTML = `
+            <div class="room-header">
+              <img src="/chat/logo.png" alt="Chat Room" class="room-image">
+              <div class="room-info">
+                <h2 class="room-title">${room.name} ${passwordIcon}</h2>
+                <p class="room-description">${room.description || 'No description provided.'}</p>
+              </div>
+            </div>
+            <div class="room-actions">
+              <a href="/chat/group.html?group=${key}" class="btn btn-primary">
+                <i class="fas fa-sign-in-alt"></i>
+                Join Room
+              </a>
+              <button class="btn btn-secondary" onclick="copyRoomLink('${key}')" title="Copy Link">
+                <i class="fas fa-link"></i>
+              </button>
+            </div>
+          `;
+          
+          roomsGrid.appendChild(roomCard);
+        }
+      });
+      
+      if (!hasRooms) {
+        roomsGrid.innerHTML = `
+          <div class="empty-state">
+            <i class="fas fa-comments"></i>
+            <h3>No Rooms Yet</h3>
+            <p>Create the first chat room to get started!</p>
+          </div>
+        `;
+      }
+    });
+  }
   
-  passwordCheckbox.addEventListener('change', function() {
-    if (this.checked) {
-      passwordField.classList.add('visible');
-    } else {
-      passwordField.classList.remove('visible');
+  // Create room function
+  function createRoom() {
+    const roomName = document.getElementById('roomNameInput').value.trim();
+    const description = document.getElementById('roomDescriptionInput').value.trim();
+    const passwordCheckbox = document.getElementById('passwordCheckbox');
+    const password = document.getElementById('roomPasswordInput').value.trim();
+    
+    if (!roomName) {
+      alert('Please enter a room name');
+      return;
     }
-  });
+    
+    const roomData = {
+      name: roomName,
+      description: description || 'No description provided'
+    };
+    
+    if (passwordCheckbox.checked && password) {
+      roomData.password = password;
+    }
+    
+    const newRoomRef = db.ref('groups').push();
+    newRoomRef.set(roomData)
+      .then(() => {
+        document.getElementById('roomNameInput').value = '';
+        document.getElementById('roomDescriptionInput').value = '';
+        document.getElementById('passwordCheckbox').checked = false;
+        document.getElementById('roomPasswordInput').value = '';
+        passwordField.classList.remove('visible');
+        
+        tabRooms.click();
+      })
+      .catch((error) => {
+        alert('Error creating room: ' + error.message);
+      });
+  }
+  
+  // Add create room button listener
+  document.getElementById('createRoomBtn').addEventListener('click', createRoom);
+  
+  // Load rooms on startup
+  loadRooms();
 });
+
+// Copy room link function
+function copyRoomLink(roomKey) {
+  const url = window.location.origin + `/chat/group.html?group=${roomKey}`;
+  navigator.clipboard.writeText(url);
+}
 </script>
