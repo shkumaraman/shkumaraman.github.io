@@ -196,6 +196,7 @@ main {
   transition: transform 0.2s, box-shadow 0.2s;
   display: flex;
   flex-direction: column;
+  position: relative;
 }
 
 .light-mode .room-card {
@@ -206,6 +207,49 @@ main {
 .room-card:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.admin-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: rgba(37, 211, 102, 0.2);
+  color: #25D366;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 0.8em;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid rgba(37, 211, 102, 0.3);
+}
+
+.light-mode .admin-badge {
+  background: rgba(37, 211, 102, 0.1);
+}
+
+.delete-btn {
+  background: rgba(255, 69, 58, 0.1);
+  color: #ff453a;
+  border: 1px solid rgba(255, 69, 58, 0.3);
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 0.85em;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.2s;
+}
+
+.delete-btn:hover {
+  background: rgba(255, 69, 58, 0.2);
+  border-color: #ff453a;
+}
+
+.light-mode .delete-btn {
+  background: rgba(255, 69, 58, 0.05);
 }
 
 .room-header {
@@ -229,13 +273,34 @@ main {
 
 .room-title {
   font-size: 1.3em;
-  margin: 0 0 8px 0;
+  margin: 0 0 4px 0;
   color: var(--dark-text);
   word-break: break-word;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .light-mode .room-title {
   color: var(--light-text);
+}
+
+.room-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+  font-size: 0.85em;
+  color: var(--dark-secondary-text);
+}
+
+.light-mode .room-meta {
+  color: var(--light-secondary-text);
+}
+
+.room-meta i {
+  margin-right: 4px;
 }
 
 .room-description {
@@ -466,6 +531,27 @@ main {
   color: var(--light-text);
 }
 
+.my-rooms-header {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 20px 0 10px 0;
+  color: var(--dark-text);
+  font-size: 1.2em;
+  border-bottom: 1px solid var(--dark-card-border);
+  padding-bottom: 10px;
+}
+
+.light-mode .my-rooms-header {
+  color: var(--light-text);
+  border-bottom-color: var(--light-card-border);
+}
+
+.my-rooms-header i {
+  color: #25D366;
+}
+
 @media (max-width: 600px) {
   .room-card {
     padding: 14px;
@@ -521,6 +607,13 @@ main {
   
   .empty-state h3 {
     font-size: 1.3em;
+  }
+  
+  .admin-badge {
+    top: 8px;
+    right: 8px;
+    padding: 3px 8px;
+    font-size: 0.75em;
   }
 }
 </style>
@@ -595,6 +688,14 @@ main {
         <i class="fas fa-plus-circle"></i> Create Room
       </button>
     </div>
+    
+    <div id="myRoomsSection" style="margin-top: 30px; display: none;">
+      <div class="my-rooms-header">
+        <i class="fas fa-crown"></i>
+        <span>Rooms You Admin</span>
+      </div>
+      <div id="myRoomsGrid" class="rooms-grid"></div>
+    </div>
   </div>
 </main>
 
@@ -609,12 +710,21 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
+let myNickname = 'Guest';
+
 document.addEventListener('DOMContentLoaded', function() {
+  const savedNickname = localStorage.getItem('talkrush_nickname');
+  if (savedNickname) {
+    myNickname = savedNickname;
+  }
+  
   const tabRooms = document.getElementById('tabRooms');
   const tabCreate = document.getElementById('tabCreate');
   const roomsSection = document.getElementById('roomsSection');
   const createSection = document.getElementById('createSection');
   const roomsGrid = document.getElementById('roomsGrid');
+  const myRoomsGrid = document.getElementById('myRoomsGrid');
+  const myRoomsSection = document.getElementById('myRoomsSection');
   
   const passwordCheckbox = document.getElementById('passwordCheckbox');
   const passwordField = document.getElementById('passwordField');
@@ -626,6 +736,14 @@ document.addEventListener('DOMContentLoaded', function() {
       passwordField.classList.remove('visible');
     }
   });
+  
+  function shuffleArray(array) {
+    for (let i = array.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [array[i], array[j]] = [array[j], array[i]];
+    }
+    return array;
+  }
   
   tabRooms.addEventListener('click', function() {
     tabRooms.classList.add('active');
@@ -641,58 +759,46 @@ document.addEventListener('DOMContentLoaded', function() {
     roomsSection.classList.add('hidden');
   });
   
+  function deleteRoom(roomName) {
+    if (confirm(`Are you sure you want to delete "${roomName}"?`)) {
+      db.ref('groups/' + roomName).remove()
+        .catch((error) => {
+          alert('Error deleting room: ' + error.message);
+        });
+    }
+  }
+  
   function loadRooms() {
     const groupsRef = db.ref('groups');
     groupsRef.on('value', (snapshot) => {
       const rooms = snapshot.val();
-      roomsGrid.innerHTML = '';
       
-      if (!rooms) {
-        roomsGrid.innerHTML = `
-          <div class="empty-state">
-            <i class="fas fa-comments"></i>
-            <h3>No Rooms Yet</h3>
-            <p>Create the first chat room to get started!</p>
-          </div>
-        `;
-        return;
+      const allRooms = [];
+      const myRooms = [];
+      
+      if (rooms) {
+        Object.keys(rooms).forEach((roomName) => {
+          const room = rooms[roomName];
+          if (room && typeof room === 'object') {
+            allRooms.push({
+              name: roomName,
+              data: room
+            });
+            
+            if (room.admin === myNickname) {
+              myRooms.push({
+                name: roomName,
+                data: room
+              });
+            }
+          }
+        });
       }
       
-      let hasRooms = false;
+      const shuffledRooms = shuffleArray([...allRooms]);
       
-      Object.keys(rooms).forEach((roomName) => {
-        const room = rooms[roomName];
-        if (room && typeof room === 'object') {
-          hasRooms = true;
-          const roomCard = document.createElement('div');
-          roomCard.className = 'room-card';
-          
-          const passwordIcon = room.password ? '<i class="fas fa-lock" style="margin-left: 5px; color: #25D366;"></i>' : '';
-          
-          roomCard.innerHTML = `
-            <div class="room-header">
-              <img src="/chat/logo.png" alt="Chat Room" class="room-image">
-              <div class="room-info">
-                <h2 class="room-title">${roomName} ${passwordIcon}</h2>
-                <p class="room-description">${room.description || 'No description provided.'}</p>
-              </div>
-            </div>
-            <div class="room-actions">
-              <a href="/chat/group.html?group=${roomName}" class="btn btn-primary">
-                <i class="fas fa-sign-in-alt"></i>
-                Join Room
-              </a>
-              <button class="btn btn-secondary" onclick="copyRoomLink('${roomName}')" title="Copy Link">
-                <i class="fas fa-link"></i>
-              </button>
-            </div>
-          `;
-          
-          roomsGrid.appendChild(roomCard);
-        }
-      });
-      
-      if (!hasRooms) {
+      roomsGrid.innerHTML = '';
+      if (shuffledRooms.length === 0) {
         roomsGrid.innerHTML = `
           <div class="empty-state">
             <i class="fas fa-comments"></i>
@@ -700,8 +806,81 @@ document.addEventListener('DOMContentLoaded', function() {
             <p>Create the first chat room to get started!</p>
           </div>
         `;
+      } else {
+        shuffledRooms.forEach((room) => {
+          const roomCard = createRoomCard(room.name, room.data);
+          roomsGrid.appendChild(roomCard);
+        });
+      }
+      
+      myRoomsGrid.innerHTML = '';
+      if (myRooms.length > 0) {
+        myRoomsSection.style.display = 'block';
+        myRooms.forEach((room) => {
+          const roomCard = createRoomCard(room.name, room.data, true);
+          myRoomsGrid.appendChild(roomCard);
+        });
+      } else {
+        myRoomsSection.style.display = 'none';
       }
     });
+  }
+  
+  function createRoomCard(roomName, roomData, showDelete = false) {
+    const roomCard = document.createElement('div');
+    roomCard.className = 'room-card';
+    
+    const passwordIcon = roomData.password ? '<i class="fas fa-lock" style="margin-left: 5px; color: #25D366;"></i>' : '';
+    const isAdmin = roomData.admin === myNickname;
+    
+    let adminBadge = '';
+    if (roomData.admin) {
+      adminBadge = `
+        <div class="admin-badge">
+          <i class="fas fa-crown"></i>
+          ${roomData.admin}
+        </div>
+      `;
+    }
+    
+    let deleteButton = '';
+    if (showDelete && isAdmin) {
+      deleteButton = `
+        <button class="delete-btn" onclick="deleteRoom('${roomName}')">
+          <i class="fas fa-trash"></i>
+          Delete
+        </button>
+      `;
+    }
+    
+    roomCard.innerHTML = `
+      ${adminBadge}
+      <div class="room-header">
+        <img src="/chat/logo.png" alt="Chat Room" class="room-image">
+        <div class="room-info">
+          <h2 class="room-title">
+            ${roomName} ${passwordIcon}
+          </h2>
+          <div class="room-meta">
+            <span><i class="fas fa-user"></i> ${roomData.admin || 'Unknown'}</span>
+            ${roomData.password ? '<span><i class="fas fa-lock"></i> Password protected</span>' : ''}
+          </div>
+          <p class="room-description">${roomData.description || 'No description provided.'}</p>
+        </div>
+      </div>
+      <div class="room-actions">
+        <a href="/chat/group.html?group=${roomName}" class="btn btn-primary">
+          <i class="fas fa-sign-in-alt"></i>
+          Join Room
+        </a>
+        <button class="btn btn-secondary" onclick="copyRoomLink('${roomName}')" title="Copy Link">
+          <i class="fas fa-link"></i>
+        </button>
+        ${deleteButton}
+      </div>
+    `;
+    
+    return roomCard;
   }
   
   function createRoom() {
@@ -715,8 +894,14 @@ document.addEventListener('DOMContentLoaded', function() {
       return;
     }
     
+    if (!myNickname || myNickname === 'Guest') {
+      alert('Please set your nickname first');
+      return;
+    }
+    
     const roomData = {
-      description: description || 'No description provided'
+      description: description || 'No description provided',
+      admin: myNickname
     };
     
     if (passwordCheckbox.checked && password) {
@@ -740,6 +925,8 @@ document.addEventListener('DOMContentLoaded', function() {
   }
   
   document.getElementById('createRoomBtn').addEventListener('click', createRoom);
+  
+  window.deleteRoom = deleteRoom;
   
   loadRooms();
 });
