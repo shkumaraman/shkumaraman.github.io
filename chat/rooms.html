@@ -415,6 +415,7 @@ main {
 
 .form-group {
   margin-bottom: 20px;
+  position: relative;
 }
 
 .form-label {
@@ -502,6 +503,19 @@ main {
 
 .password-field.visible {
   display: block;
+}
+
+.error-message {
+  color: #ff453a;
+  font-size: 0.85em;
+  margin-top: 5px;
+  display: none;
+  align-items: center;
+  gap: 5px;
+}
+
+.error-message.visible {
+  display: flex;
 }
 
 .empty-state {
@@ -676,11 +690,19 @@ main {
       <div class="form-group">
         <label class="form-label">Room Name</label>
         <input type="text" id="roomNameInput" class="form-input" placeholder="Enter room name">
+        <div id="roomNameError" class="error-message">
+          <i class="fas fa-exclamation-circle"></i>
+          <span></span>
+        </div>
       </div>
       
       <div class="form-group">
         <label class="form-label">Description</label>
         <textarea id="roomDescriptionInput" class="form-textarea" placeholder="Describe what your chat room is about..."></textarea>
+        <div id="roomDescriptionError" class="error-message">
+          <i class="fas fa-exclamation-circle"></i>
+          <span></span>
+        </div>
       </div>
       
       <div class="form-group">
@@ -710,9 +732,9 @@ main {
 
 {% include menu.html %}
 {% include scripts.html %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
 <script>
-// Bad word filter system
 let bannedWords = [];
 let bannedWordsLoaded = false;
 
@@ -724,9 +746,7 @@ async function loadBannedWords() {
       .map(word => word.trim().toLowerCase())
       .filter(word => word.length > 0);
     bannedWordsLoaded = true;
-    console.log("Banned words loaded:", bannedWords.length);
   } catch (err) {
-    console.error("Error loading banned words:", err);
     bannedWords = [];
     bannedWordsLoaded = true;
   }
@@ -734,7 +754,6 @@ async function loadBannedWords() {
 
 function containsInappropriateContent(text) {
   if (!bannedWordsLoaded || !text || typeof text !== 'string') return false;
-  
   const lowerText = text.toLowerCase();
   return bannedWords.some(word => {
     if (!word || word.length < 2) return false;
@@ -773,11 +792,34 @@ document.addEventListener('DOMContentLoaded', async function() {
   const passwordCheckbox = document.getElementById('passwordCheckbox');
   const passwordField = document.getElementById('passwordField');
   
+  const roomNameInput = document.getElementById('roomNameInput');
+  const roomDescriptionInput = document.getElementById('roomDescriptionInput');
+  const roomNameError = document.getElementById('roomNameError');
+  const roomDescriptionError = document.getElementById('roomDescriptionError');
+  
   passwordCheckbox.addEventListener('change', function() {
     if (this.checked) {
       passwordField.classList.add('visible');
     } else {
       passwordField.classList.remove('visible');
+    }
+  });
+  
+  roomNameInput.addEventListener('input', function() {
+    if (containsInappropriateContent(this.value)) {
+      roomNameError.querySelector('span').textContent = 'Room name contains inappropriate content';
+      roomNameError.classList.add('visible');
+    } else {
+      roomNameError.classList.remove('visible');
+    }
+  });
+  
+  roomDescriptionInput.addEventListener('input', function() {
+    if (containsInappropriateContent(this.value)) {
+      roomDescriptionError.querySelector('span').textContent = 'Description contains inappropriate content';
+      roomDescriptionError.classList.add('visible');
+    } else {
+      roomDescriptionError.classList.remove('visible');
     }
   });
   
@@ -804,64 +846,25 @@ document.addEventListener('DOMContentLoaded', async function() {
   });
   
   function deleteRoom(roomName) {
-    // Sweet alert style without CDN
-    const modal = document.createElement('div');
-    modal.style.cssText = `
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(0,0,0,0.8);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 100000;
-      animation: fadeIn 0.2s;
-    `;
-    
-    const modalContent = document.createElement('div');
-    modalContent.style.cssText = `
-      background: ${document.body.classList.contains('light-mode') ? '#fff' : '#1e1e1e'};
-      padding: 30px;
-      border-radius: 16px;
-      max-width: 400px;
-      width: 90%;
-      text-align: center;
-      animation: slideIn 0.3s;
-      border: 1px solid ${document.body.classList.contains('light-mode') ? '#ddd' : '#333'};
-    `;
-    
-    modalContent.innerHTML = `
-      <i class="fas fa-exclamation-triangle" style="font-size: 48px; color: #ff453a; margin-bottom: 20px;"></i>
-      <h3 style="color: ${document.body.classList.contains('light-mode') ? '#333' : '#fff'}; margin-bottom: 10px;">Delete Room?</h3>
-      <p style="color: ${document.body.classList.contains('light-mode') ? '#666' : '#aaa'}; margin-bottom: 25px;">Are you sure you want to delete "${roomName}"? This action cannot be undone.</p>
-      <div style="display: flex; gap: 12px; justify-content: center;">
-        <button id="confirmDelete" style="background: #ff453a; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: 600;">Yes, Delete</button>
-        <button id="cancelDelete" style="background: ${document.body.classList.contains('light-mode') ? '#f0f0f0' : '#333'}; color: ${document.body.classList.contains('light-mode') ? '#333' : '#fff'}; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: 600;">Cancel</button>
-      </div>
-    `;
-    
-    modal.appendChild(modalContent);
-    document.body.appendChild(modal);
-    
-    document.getElementById('confirmDelete').onclick = function() {
-      db.ref('groups/' + roomName).remove()
-        .catch((error) => {
-          alert('Error deleting room: ' + error.message);
-        });
-      document.body.removeChild(modal);
-    };
-    
-    document.getElementById('cancelDelete').onclick = function() {
-      document.body.removeChild(modal);
-    };
-    
-    modal.onclick = function(e) {
-      if (e.target === modal) {
-        document.body.removeChild(modal);
+    Swal.fire({
+      title: 'Delete Room?',
+      text: `Are you sure you want to delete "${roomName}"? This action cannot be undone.`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#ff453a',
+      cancelButtonColor: '#6c757d',
+      confirmButtonText: 'Yes, delete it',
+      cancelButtonText: 'Cancel',
+      background: document.body.classList.contains('light-mode') ? '#fff' : '#1e1e1e',
+      color: document.body.classList.contains('light-mode') ? '#333' : '#fff'
+    }).then((result) => {
+      if (result.isConfirmed) {
+        db.ref('groups/' + roomName).remove()
+          .catch((error) => {
+            alert('Error deleting room: ' + error.message);
+          });
       }
-    };
+    });
   }
   
   function loadRooms() {
@@ -979,13 +982,16 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
   
   async function createRoom() {
-    const roomName = document.getElementById('roomNameInput').value.trim();
-    const description = document.getElementById('roomDescriptionInput').value.trim();
-    const passwordCheckbox = document.getElementById('passwordCheckbox');
+    const roomName = roomNameInput.value.trim();
+    const description = roomDescriptionInput.value.trim();
     const password = document.getElementById('roomPasswordInput').value.trim();
     
+    roomNameError.classList.remove('visible');
+    roomDescriptionError.classList.remove('visible');
+    
     if (!roomName) {
-      alert('Please enter a room name');
+      roomNameError.querySelector('span').textContent = 'Please enter a room name';
+      roomNameError.classList.add('visible');
       return;
     }
     
@@ -994,13 +1000,18 @@ document.addEventListener('DOMContentLoaded', async function() {
       return;
     }
     
-    // Check for inappropriate content
-    if (containsInappropriateContent(roomName) || containsInappropriateContent(description)) {
-      alert('Room name or description contains inappropriate content. Please revise your text.');
+    if (containsInappropriateContent(roomName)) {
+      roomNameError.querySelector('span').textContent = 'Room name contains inappropriate content';
+      roomNameError.classList.add('visible');
       return;
     }
     
-    // Check if room already exists
+    if (containsInappropriateContent(description)) {
+      roomDescriptionError.querySelector('span').textContent = 'Description contains inappropriate content';
+      roomDescriptionError.classList.add('visible');
+      return;
+    }
+    
     const roomRef = db.ref('groups/' + roomName);
     const snapshot = await roomRef.once('value');
     
@@ -1023,9 +1034,9 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     roomRef.set(roomData)
       .then(() => {
-        document.getElementById('roomNameInput').value = '';
-        document.getElementById('roomDescriptionInput').value = '';
-        document.getElementById('passwordCheckbox').checked = false;
+        roomNameInput.value = '';
+        roomDescriptionInput.value = '';
+        passwordCheckbox.checked = false;
         document.getElementById('roomPasswordInput').value = '';
         passwordField.classList.remove('visible');
         
@@ -1046,7 +1057,6 @@ document.addEventListener('DOMContentLoaded', async function() {
   window.copyRoomLink = function(roomName) {
     const url = window.location.origin + `/chat/group.html?group=${encodeURIComponent(roomName)}`;
     navigator.clipboard.writeText(url);
-    alert('Room link copied to clipboard!');
   };
   
   loadRooms();
