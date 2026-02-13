@@ -373,6 +373,7 @@
         groupName: GROUP_NAME,
         cleanupTimer: null,
         hasUserLeft: false,
+        isBackgroundPaused: false,
 
         init: function() {
             if (document.readyState === 'loading') {
@@ -386,16 +387,39 @@
             document.addEventListener('visibilitychange', () => {
                 if (document.hidden) {
                     this.hasUserLeft = true;
+                    this.isBackgroundPaused = true;
                 } else {
                     this.hasUserLeft = false;
-                    if (this.ytReady && this.currentSongUrl) {
-                        const status = this.isPlaying ? 'playing' : 'paused';
-                        this.updateState(status);
-                    }
+                    
+                    setTimeout(() => {
+                        this.isBackgroundPaused = false;
+                        
+                        if (this.ytReady && this.currentSongUrl) {
+                            this.getFirebaseRef().once('value').then((snapshot) => {
+                                const data = snapshot.val();
+                                if (data) {
+                                    const { status, timestamp } = data;
+                                    
+                                    if (timestamp) {
+                                        this.player.seekTo(timestamp, true);
+                                    }
+                                    
+                                    if (status === 'playing' && this.player.getPlayerState() !== YT.PlayerState.PLAYING) {
+                                        this.player.playVideo();
+                                    } else if (status === 'paused' && this.player.getPlayerState() !== YT.PlayerState.PAUSED) {
+                                        this.player.pauseVideo();
+                                    }
+                                }
+                            });
+                        }
+                    }, 1000);
                 }
             });
             
             window.addEventListener('beforeunload', () => {
+                this.hasUserLeft = true;
+                this.isBackgroundPaused = true;
+                
                 if (this.firebaseListener) {
                     this.getFirebaseRef().off('value', this.firebaseListener);
                 }
@@ -556,18 +580,20 @@
         },
         
         onPlayerStateChange: function(event) {
+            if (this.hasUserLeft) return;
+            
             if (event.data === YT.PlayerState.PLAYING) {
                 this.isPlaying = true;
                 this.updatePlayPauseIcon();
                 
-                if (this.currentSongUrl && !this.hasUserLeft) {
+                if (this.currentSongUrl) {
                     this.updateState('playing');
                 }
             } else if (event.data === YT.PlayerState.PAUSED) {
                 this.isPlaying = false;
                 this.updatePlayPauseIcon();
                 
-                if (this.currentSongUrl && !this.hasUserLeft) {
+                if (!this.isBackgroundPaused && this.currentSongUrl) {
                     this.updateState('paused');
                 }
             } else if (event.data === YT.PlayerState.ENDED && this.isLooping) {
@@ -667,6 +693,8 @@
         },
         
         updateState: function(status) {
+            if (this.hasUserLeft) return;
+            
             if (!this.firebaseInitialized() || !this.currentSongUrl) return;
             
             const currentTime = this.player ? Math.floor(this.player.getCurrentTime()) : 0;
@@ -764,16 +792,13 @@
                 return;
             }
             
+            this.isBackgroundPaused = false;
+            
             if (!this.isPlaying) {
                 this.player.playVideo();
-                this.isPlaying = true;
-                this.updateState('playing');
             } else {
                 this.player.pauseVideo();
-                this.isPlaying = false;
-                this.updateState('paused');
             }
-            this.updatePlayPauseIcon();
         },
         
         handleMute: function() {
