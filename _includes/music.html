@@ -298,6 +298,16 @@
     #muteBtn.muted i {
         color: #ff5252 !important;
     }
+
+    .group-badge {
+        background: #ff5252;
+        color: white;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 500;
+        margin-left: 10px;
+    }
 </style>
 
 <!-- Mini player -->
@@ -306,7 +316,10 @@
 <!-- Fullscreen Player -->
 <div id="fullPlayer">
     <div class="player-header">
-        <h3>MusicPlay</h3>
+        <div style="display: flex; align-items: center;">
+            <h3>MusicPlay</h3>
+            <span id="groupBadge" class="group-badge"></span>
+        </div>
         <div class="now-playing" id="nowPlaying">Not playing</div>
     </div>
   
@@ -366,6 +379,12 @@
         return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
     }
 
+    // Get group name from URL
+    function getGroupFromUrl() {
+        const urlParams = new URLSearchParams(window.location.search);
+        return urlParams.get('group') || 'default';
+    }
+
     var musicPlayer = {
         player: null,
         ytReady: false,
@@ -376,6 +395,12 @@
         firebaseListener: null,
         currentVideoTitle: "",
         lastAutoUpdate: 0,
+        group: getGroupFromUrl(), // Current group name
+        cleanupInterval: null,
+
+        getFirebasePath: function() {
+            return `music/${this.group}`;
+        },
 
         init: function() {
             if (document.readyState === 'loading') {
@@ -391,14 +416,50 @@
                 return;
             }
             
+            // Display group badge
+            document.getElementById('groupBadge').textContent = `Group: ${this.group}`;
+            
             this.setupEventListeners();
             this.setupFirebaseListener();
+            
+            // Start cleanup check every hour
+            this.cleanupInterval = setInterval(this.cleanupInactiveGroups.bind(this), 3600000); // 1 hour
             
             if (typeof YT !== 'undefined' && YT.loaded) {
                 this.onYouTubeIframeAPIReady();
             } else {
                 window.onYouTubeIframeAPIReady = this.onYouTubeIframeAPIReady.bind(this);
             }
+        },
+
+        cleanupInactiveGroups: function() {
+            if (!this.firebaseInitialized()) return;
+            
+            const musicRef = firebase.database().ref('music');
+            musicRef.once('value').then((snapshot) => {
+                const groups = snapshot.val();
+                if (!groups) return;
+                
+                const sixHoursAgo = Date.now() - (6 * 60 * 60 * 1000); // 6 hours in milliseconds
+                
+                Object.keys(groups).forEach(groupName => {
+                    const groupData = groups[groupName];
+                    if (groupData && groupData.lastUpdate) {
+                        if (groupData.lastUpdate < sixHoursAgo) {
+                            // Delete inactive group
+                            musicRef.child(groupName).remove()
+                                .then(() => {
+                                    console.log(`Deleted inactive group: ${groupName}`);
+                                })
+                                .catch(error => {
+                                    console.error(`Error deleting group ${groupName}:`, error);
+                                });
+                        }
+                    }
+                });
+            }).catch(error => {
+                console.error('Error checking inactive groups:', error);
+            });
         },
         
         setupEventListeners: function() {
@@ -443,10 +504,25 @@
             if (!this.firebaseInitialized()) return;
             if (this.firebaseListener) this.firebaseListener();
             
-            const stateRef = firebase.database().ref('music');
+            const stateRef = firebase.database().ref(this.getFirebasePath());
             this.firebaseListener = stateRef.on('value', (snapshot) => {
                 const data = snapshot.val();
-                if (!data || !this.ytReady) return;
+                
+                // If no data exists for this group, stop playback
+                if (!data || !data.currentSong) {
+                    if (this.player) {
+                        this.player.stopVideo();
+                        this.isPlaying = false;
+                        this.currentSongUrl = null;
+                        this.updatePlayPauseIcon();
+                        document.getElementById('nowPlaying').textContent = 'Not playing';
+                        document.getElementById('videoThumbnail').src = '/chat/logo.png';
+                        document.getElementById('searchInput').value = '';
+                    }
+                    return;
+                }
+
+                if (!this.ytReady) return;
 
                 const { currentSong, status, timestamp, lastUpdate, loop } = data;
                 if (!currentSong) return;
@@ -580,7 +656,7 @@
         
         checkSavedState: function() {
             if (!this.firebaseInitialized()) return;
-            const stateRef = firebase.database().ref('music');
+            const stateRef = firebase.database().ref(this.getFirebasePath());
             stateRef.once('value').then((snapshot) => {
                 const data = snapshot.val();
                 if (data && data.currentSong) {
@@ -654,7 +730,7 @@
                 loop: this.isLooping
             };
             
-            firebase.database().ref('music').set(stateObj).catch(error => {
+            firebase.database().ref(this.getFirebasePath()).set(stateObj).catch(error => {
                 console.error('Firebase update error:', error);
             });
         },
@@ -843,7 +919,7 @@
                     this.lastAutoUpdate = now;
                     
                     // Update only timestamp and lastUpdate to avoid conflicts
-                    firebase.database().ref('music').update({
+                    firebase.database().ref(this.getFirebasePath()).update({
                         timestamp: t,
                         lastUpdate: now
                     }).catch(error => {
@@ -855,10 +931,25 @@
         
         firebaseInitialized: function() {
             return typeof firebase !== 'undefined' && firebase.apps.length > 0;
+        },
+
+        // Clean up listeners when component is destroyed
+        destroy: function() {
+            if (this.firebaseListener) {
+                firebase.database().ref(this.getFirebasePath()).off('value', this.firebaseListener);
+            }
+            if (this.cleanupInterval) {
+                clearInterval(this.cleanupInterval);
+            }
         }
     };
 
     musicPlayer.init();
+
+    // Clean up on page unload
+    window.addEventListener('beforeunload', function() {
+        musicPlayer.destroy();
+    });
 
     setInterval(() => {
         if (musicPlayer.player) {
