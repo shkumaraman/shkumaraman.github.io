@@ -298,15 +298,19 @@
     #muteBtn.muted i {
         color: #ff5252 !important;
     }
-
+    
     .group-badge {
+        position: fixed;
+        top: 20px;
+        right: 20px;
         background: #ff5252;
         color: white;
-        padding: 4px 12px;
+        padding: 8px 16px;
         border-radius: 20px;
-        font-size: 12px;
-        font-weight: 500;
-        margin-left: 10px;
+        font-size: 14px;
+        font-weight: bold;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        z-index: 1002;
     }
 </style>
 
@@ -316,10 +320,7 @@
 <!-- Fullscreen Player -->
 <div id="fullPlayer">
     <div class="player-header">
-        <div style="display: flex; align-items: center;">
-            <h3>MusicPlay</h3>
-            <span id="groupBadge" class="group-badge"></span>
-        </div>
+        <h3>MusicPlay</h3>
         <div class="now-playing" id="nowPlaying">Not playing</div>
     </div>
   
@@ -364,6 +365,9 @@
 <!-- Hidden player -->
 <div id="player"></div>
 
+<!-- Group Badge -->
+<div id="groupBadge" class="group-badge"></div>
+
 <script>
     if (typeof YT === 'undefined') {
         var tag = document.createElement('script');
@@ -382,8 +386,16 @@
     // Get group name from URL
     function getGroupFromUrl() {
         const urlParams = new URLSearchParams(window.location.search);
-        return urlParams.get('group') || 'default';
+        const group = urlParams.get('group');
+        if (!group) return null;
+        
+        // Sanitize group name (alphanumeric, underscore, hyphen only)
+        const sanitized = group.replace(/[^a-zA-Z0-9_-]/g, '_');
+        return sanitized || 'default';
     }
+
+    const GROUP_NAME = getGroupFromUrl() || 'default';
+    const FIREBASE_PATH = `music/${GROUP_NAME}`;
 
     var musicPlayer = {
         player: null,
@@ -395,19 +407,64 @@
         firebaseListener: null,
         currentVideoTitle: "",
         lastAutoUpdate: 0,
-        group: getGroupFromUrl(), // Current group name
-        cleanupInterval: null,
-
-        getFirebasePath: function() {
-            return `music/${this.group}`;
-        },
+        groupName: GROUP_NAME,
+        cleanupTimer: null,
 
         init: function() {
+            // Display group badge
+            document.getElementById('groupBadge').textContent = `Group: ${this.groupName}`;
+            
             if (document.readyState === 'loading') {
                 document.addEventListener('DOMContentLoaded', this.setupPlayer.bind(this));
             } else {
                 this.setupPlayer();
             }
+            
+            // Start cleanup checker (runs every minute)
+            this.startCleanupChecker();
+        },
+        
+        startCleanupChecker: function() {
+            // Check every minute for empty groups
+            this.cleanupTimer = setInterval(() => {
+                this.cleanupEmptyGroups();
+            }, 60000); // 1 minute
+        },
+        
+        cleanupEmptyGroups: function() {
+            if (!this.firebaseInitialized()) return;
+            
+            const sixHoursAgo = Date.now() - (6 * 60 * 60 * 1000); // 6 hours in milliseconds
+            
+            // Get all groups under music node
+            firebase.database().ref('music').once('value')
+                .then((snapshot) => {
+                    const groups = snapshot.val() || {};
+                    const promises = [];
+                    
+                    Object.keys(groups).forEach(groupKey => {
+                        const groupData = groups[groupKey];
+                        
+                        // Check if group has no song or lastUpdate is older than 6 hours
+                        const isEmpty = !groupData || !groupData.currentSong;
+                        const lastUpdate = groupData?.lastUpdate || 0;
+                        const isOld = lastUpdate < sixHoursAgo;
+                        
+                        if (isEmpty || isOld) {
+                            console.log(`Cleaning up empty/old group: ${groupKey}`);
+                            const promise = firebase.database().ref(`music/${groupKey}`).remove()
+                                .catch(error => console.error(`Error removing group ${groupKey}:`, error));
+                            promises.push(promise);
+                        }
+                    });
+                    
+                    return Promise.all(promises);
+                })
+                .catch(error => console.error('Error checking groups for cleanup:', error));
+        },
+        
+        getFirebaseRef: function() {
+            return firebase.database().ref(FIREBASE_PATH);
         },
         
         setupPlayer: function() {
@@ -416,50 +473,14 @@
                 return;
             }
             
-            // Display group badge
-            document.getElementById('groupBadge').textContent = `Group: ${this.group}`;
-            
             this.setupEventListeners();
             this.setupFirebaseListener();
-            
-            // Start cleanup check every hour
-            this.cleanupInterval = setInterval(this.cleanupInactiveGroups.bind(this), 3600000); // 1 hour
             
             if (typeof YT !== 'undefined' && YT.loaded) {
                 this.onYouTubeIframeAPIReady();
             } else {
                 window.onYouTubeIframeAPIReady = this.onYouTubeIframeAPIReady.bind(this);
             }
-        },
-
-        cleanupInactiveGroups: function() {
-            if (!this.firebaseInitialized()) return;
-            
-            const musicRef = firebase.database().ref('music');
-            musicRef.once('value').then((snapshot) => {
-                const groups = snapshot.val();
-                if (!groups) return;
-                
-                const sixHoursAgo = Date.now() - (6 * 60 * 60 * 1000); // 6 hours in milliseconds
-                
-                Object.keys(groups).forEach(groupName => {
-                    const groupData = groups[groupName];
-                    if (groupData && groupData.lastUpdate) {
-                        if (groupData.lastUpdate < sixHoursAgo) {
-                            // Delete inactive group
-                            musicRef.child(groupName).remove()
-                                .then(() => {
-                                    console.log(`Deleted inactive group: ${groupName}`);
-                                })
-                                .catch(error => {
-                                    console.error(`Error deleting group ${groupName}:`, error);
-                                });
-                        }
-                    }
-                });
-            }).catch(error => {
-                console.error('Error checking inactive groups:', error);
-            });
         },
         
         setupEventListeners: function() {
@@ -504,25 +525,10 @@
             if (!this.firebaseInitialized()) return;
             if (this.firebaseListener) this.firebaseListener();
             
-            const stateRef = firebase.database().ref(this.getFirebasePath());
+            const stateRef = this.getFirebaseRef();
             this.firebaseListener = stateRef.on('value', (snapshot) => {
                 const data = snapshot.val();
-                
-                // If no data exists for this group, stop playback
-                if (!data || !data.currentSong) {
-                    if (this.player) {
-                        this.player.stopVideo();
-                        this.isPlaying = false;
-                        this.currentSongUrl = null;
-                        this.updatePlayPauseIcon();
-                        document.getElementById('nowPlaying').textContent = 'Not playing';
-                        document.getElementById('videoThumbnail').src = '/chat/logo.png';
-                        document.getElementById('searchInput').value = '';
-                    }
-                    return;
-                }
-
-                if (!this.ytReady) return;
+                if (!data || !this.ytReady) return;
 
                 const { currentSong, status, timestamp, lastUpdate, loop } = data;
                 if (!currentSong) return;
@@ -656,7 +662,7 @@
         
         checkSavedState: function() {
             if (!this.firebaseInitialized()) return;
-            const stateRef = firebase.database().ref(this.getFirebasePath());
+            const stateRef = this.getFirebaseRef();
             stateRef.once('value').then((snapshot) => {
                 const data = snapshot.val();
                 if (data && data.currentSong) {
@@ -730,7 +736,7 @@
                 loop: this.isLooping
             };
             
-            firebase.database().ref(this.getFirebasePath()).set(stateObj).catch(error => {
+            this.getFirebaseRef().set(stateObj).catch(error => {
                 console.error('Firebase update error:', error);
             });
         },
@@ -919,7 +925,7 @@
                     this.lastAutoUpdate = now;
                     
                     // Update only timestamp and lastUpdate to avoid conflicts
-                    firebase.database().ref(this.getFirebasePath()).update({
+                    this.getFirebaseRef().update({
                         timestamp: t,
                         lastUpdate: now
                     }).catch(error => {
@@ -932,24 +938,15 @@
         firebaseInitialized: function() {
             return typeof firebase !== 'undefined' && firebase.apps.length > 0;
         },
-
-        // Clean up listeners when component is destroyed
+        
         destroy: function() {
-            if (this.firebaseListener) {
-                firebase.database().ref(this.getFirebasePath()).off('value', this.firebaseListener);
-            }
-            if (this.cleanupInterval) {
-                clearInterval(this.cleanupInterval);
+            if (this.cleanupTimer) {
+                clearInterval(this.cleanupTimer);
             }
         }
     };
 
     musicPlayer.init();
-
-    // Clean up on page unload
-    window.addEventListener('beforeunload', function() {
-        musicPlayer.destroy();
-    });
 
     setInterval(() => {
         if (musicPlayer.player) {
