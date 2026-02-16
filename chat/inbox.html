@@ -700,9 +700,7 @@ body.light-mode {
 {% include menu.html %}
 {% include scripts.html %}
 
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script type="module">
-// Import Firebase modules
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
 import { getDatabase, ref, onValue, get, set, update, remove, push, child, off } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
 
@@ -779,16 +777,13 @@ function showTypingIndicator() {
   const indicator = document.getElementById('typingIndicator');
   if (!indicator || !currentFriendName) return;
   
-  // Show indicator
   indicator.style.display = "block";
   indicator.textContent = `${currentFriendName} is typing...`;
   
-  // Clear any existing timer
   if (typingTimer) {
     clearTimeout(typingTimer);
   }
   
-  // Hide after 2 seconds
   typingTimer = setTimeout(() => {
     if (indicator) {
       indicator.style.display = "none";
@@ -885,12 +880,10 @@ function setupEventListeners() {
   msgInput.addEventListener('input', () => {
     sendTypingIndicator();
     
-    // Clear previous debounce
     if (typingDebounce) {
       clearTimeout(typingDebounce);
     }
     
-    // Send typing indicator after 300ms of no typing
     typingDebounce = setTimeout(() => {
       sendTypingIndicator();
     }, 300);
@@ -1075,23 +1068,18 @@ function updateMyPeerIdInFirebase() {
     });
     
     if (Object.keys(updates).length > 0) {
-      update(ref(db, "friends"), updates)
-        .catch(error => {
-          console.error('Error updating Peer ID:', error);
-        });
+      update(ref(db, "friends"), updates);
     }
   });
 }
 
 function openChat(chatId, friendId, friendName) {
-  // Close previous connection if any
   if (myConn) {
     myConn.close();
     myConn = null;
     isConnected = false;
   }
   
-  // Hide typing indicator
   hideTypingIndicator();
   
   currentChatId = chatId;
@@ -1107,7 +1095,6 @@ function openChat(chatId, friendId, friendName) {
   
   loadLocalChatMessages();
   
-  // Try to connect
   connectToFriend(friendId);
 }
 
@@ -1163,7 +1150,6 @@ function connectToFriend(friendId) {
 function handleIncomingData(data) {
   if (!currentChatId || !currentFriendId) return;
   
-  // Check if it's a typing indicator
   if (data && typeof data === "object" && data.type === "typing") {
     showTypingIndicator();
     return;
@@ -1203,7 +1189,6 @@ function showOfflineStatus() {
   updateInputPlaceholder();
 }
 
-// Make closeChat function globally available
 window.closeChat = function() {
   if (myConn) {
     myConn.close();
@@ -1211,7 +1196,6 @@ window.closeChat = function() {
     isConnected = false;
   }
   
-  // Hide typing indicator
   hideTypingIndicator();
   
   document.getElementById('friendsContainer').style.display = 'block';
@@ -1298,10 +1282,7 @@ function saveIncomingMessage(content, type, senderId) {
     updateData.message2 = lastMsg;
   }
   
-  update(ref(db, "friends/" + currentChatId), updateData)
-    .catch(error => {
-      console.error('Error updating last message:', error);
-    });
+  update(ref(db, "friends/" + currentChatId), updateData);
   
   return message;
 }
@@ -1356,7 +1337,6 @@ function sendMessage() {
     }
   }
   
-  // Always save and display locally
   saveIncomingMessage(content, 'text', currentUserId);
   displayMessageImmediately(content, 'text', currentUserId);
   input.value = '';
@@ -1366,7 +1346,6 @@ function handleImageUpload(e) {
   const file = e.target.files[0];
   if (!file) return;
   
-  // Simple check without SweetAlert
   if (file.size > 5 * 1024 * 1024) {
     Swal.fire({
       icon: 'error',
@@ -1383,7 +1362,6 @@ function handleImageUpload(e) {
   reader.onload = (event) => {
     const imgData = event.target.result;
     
-    // Send via WebRTC if connected
     if (myConn && isConnected) {
       try {
         myConn.send({ type: "image", blob: imgData });
@@ -1392,7 +1370,6 @@ function handleImageUpload(e) {
       }
     }
     
-    // Always save and display locally
     saveIncomingMessage(imgData, 'image', currentUserId);
     displayMessageImmediately(imgData, 'image', currentUserId);
   };
@@ -1420,31 +1397,22 @@ window.unfriend = function(chatId) {
       
       const friendData = myFriendsData[chatId];
       
-      remove(ref(db, "friends/" + chatId))
-        .then(() => {
-          localStorage.removeItem(`talkrush_chat_${chatId}`);
-          delete myFriendsData[chatId];
-          
-          if (currentChatId === chatId) {
-            window.closeChat();
-          }
-          
-          Swal.fire({
-            icon: 'success',
-            title: 'Removed!',
-            text: 'Friend has been removed.',
-            timer: 1500,
-            showConfirmButton: false
-          });
-        })
-        .catch(error => {
-          console.error('Error removing friend:', error);
-          Swal.fire({
-            icon: 'error',
-            title: 'Error',
-            text: 'Failed to remove friend. Please try again.'
-          });
+      remove(ref(db, "friends/" + chatId)).then(() => {
+        localStorage.removeItem(`talkrush_chat_${chatId}`);
+        delete myFriendsData[chatId];
+        
+        if (currentChatId === chatId) {
+          window.closeChat();
+        }
+        
+        Swal.fire({
+          icon: 'success',
+          title: 'Removed!',
+          text: 'Friend has been removed.',
+          timer: 1500,
+          showConfirmButton: false
         });
+      });
     }
   });
 };
@@ -1485,7 +1453,6 @@ function displayGifs(gifs) {
     img.onclick = () => {
       if (!currentChatId || !currentFriendId) return;
       
-      // Send via WebRTC if connected
       if (myConn && isConnected) {
         try {
           myConn.send({ type: "gif", url: gifUrl });
@@ -1494,7 +1461,6 @@ function displayGifs(gifs) {
         }
       }
       
-      // Always save and display locally
       saveIncomingMessage(gifUrl, 'gif', currentUserId);
       displayMessageImmediately(gifUrl, 'gif', currentUserId);
       
