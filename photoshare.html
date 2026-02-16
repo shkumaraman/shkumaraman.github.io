@@ -642,15 +642,19 @@ body.light-mode {
 {% include scripts.html %}
 {% include menu.html %}
 
-  <script>
+<script type="module">
+  // Import Firebase modules (v12.9.0+)
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
+  import { getDatabase, ref, set, get, remove } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
+
   // Firebase configuration
   const firebaseConfig = {
     databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
   };
 
   // Initialize Firebase
-  firebase.initializeApp(firebaseConfig);
-  const db = firebase.database();
+  const app = initializeApp(firebaseConfig);
+  const db = getDatabase(app);
 
   // DOM elements
   const uploadArea = document.getElementById('uploadArea');
@@ -841,11 +845,13 @@ body.light-mode {
       
       // Always resize to optimize storage (max 2000px with 85% quality)
       const resizedDataUrl = await resizeImage(file, 2000, 2000, 0.85);
-      await db.ref(`photos/${shareCode}/image`).set(resizedDataUrl);
+      
+      // Using modular SDK syntax
+      await set(ref(db, `photos/${shareCode}/image`), resizedDataUrl);
 
       showSystemMessage('Photo uploaded successfully!');
       // Set expiration (24 hours)
-      await db.ref(`photos/${shareCode}/expires`).set(Date.now() + 24 * 60 * 60 * 1000);
+      await set(ref(db, `photos/${shareCode}/expires`), Date.now() + 24 * 60 * 60 * 1000);
     } catch (error) {
       console.error('Upload error:', error);
       showSystemMessage('Error uploading photo. Please try again.');
@@ -869,24 +875,24 @@ body.light-mode {
 
   // Share via Web Share API
   function shareCodeViaAPI() {
-  const url = `${window.location.href.split('?')[0]}?code=${shareCode}`;
-  const text = `Check out my photo! Use this code on PhotoShare: ${shareCode}`;
+    const url = `${window.location.href.split('?')[0]}?code=${shareCode}`;
+    const text = `Check out my photo! Use this code on PhotoShare: ${shareCode}`;
 
-  if (navigator.share) {
-    navigator.share({
-      title: 'PhotoShare Code',
-      text: text,
-      url: url
-    })
-    .then(() => console.log('Shared successfully'))
-    .catch((error) => {
-      console.log('Error sharing:', error);
-      copyUrl(); // fallback
-    });
-  } else {
-    copyUrl(); // fallback for unsupported browsers
-    showSystemMessage('URL copied to clipboard!');
-  }
+    if (navigator.share) {
+      navigator.share({
+        title: 'PhotoShare Code',
+        text: text,
+        url: url
+      })
+      .then(() => console.log('Shared successfully'))
+      .catch((error) => {
+        console.log('Error sharing:', error);
+        copyUrl(); // fallback
+      });
+    } else {
+      copyUrl(); // fallback for unsupported browsers
+      showSystemMessage('URL copied to clipboard!');
+    }
   }
 
   // View photo
@@ -900,7 +906,8 @@ body.light-mode {
     viewerGallery.innerHTML = '';
     showSystemMessage('Loading photo...');
 
-    db.ref(`photos/${code}`).once('value')
+    // Using modular SDK syntax
+    get(ref(db, `photos/${code}`))
       .then((snapshot) => {
         const data = snapshot.val();
         if (!data) {
@@ -912,7 +919,7 @@ body.light-mode {
         if (data.expires && data.expires < Date.now()) {
           showSystemMessage('This code has expired!');
           // Delete expired data
-          db.ref(`photos/${code}`).remove();
+          remove(ref(db, `photos/${code}`));
           return;
         }
 
