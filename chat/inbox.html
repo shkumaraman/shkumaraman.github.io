@@ -661,7 +661,7 @@ body.light-mode {
 
 <div class="chat-container" id="chatContainer">
   <div class="chat-header">
-    <button class="back-btn" onclick="showFriendsList()">&larr;</button>
+    <button class="back-btn" onclick="closeChat()">&larr;</button>
     <div class="chat-avatar" id="chatAvatar">?</div>
     <h3 class="chat-name" id="chatName">
       Friend
@@ -700,6 +700,7 @@ body.light-mode {
 {% include menu.html %}
 {% include scripts.html %}
 
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script type="module">
 // Import Firebase modules
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
@@ -1202,7 +1203,8 @@ function showOfflineStatus() {
   updateInputPlaceholder();
 }
 
-function showFriendsList() {
+// Make closeChat function globally available
+window.closeChat = function() {
   if (myConn) {
     myConn.close();
     myConn = null;
@@ -1366,7 +1368,13 @@ function handleImageUpload(e) {
   
   // Simple check without SweetAlert
   if (file.size > 5 * 1024 * 1024) {
-    alert('Image too large! Maximum size is 5MB.');
+    Swal.fire({
+      icon: 'error',
+      title: 'File Too Large',
+      text: 'Image size should be less than 5MB',
+      timer: 2000,
+      showConfirmButton: true
+    });
     e.target.value = '';
     return;
   }
@@ -1393,31 +1401,52 @@ function handleImageUpload(e) {
 }
 
 window.unfriend = function(chatId) {
-  if (confirm('Remove this friend? All chat history will be deleted.')) {
-    if (currentChatId === chatId && myConn) {
-      myConn.close();
-      myConn = null;
-      isConnected = false;
+  Swal.fire({
+    title: 'Remove Friend?',
+    text: 'All chat history will be permanently deleted.',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#d33',
+    cancelButtonColor: '#3085d6',
+    confirmButtonText: 'Yes, remove',
+    cancelButtonText: 'Cancel'
+  }).then((result) => {
+    if (result.isConfirmed) {
+      if (currentChatId === chatId && myConn) {
+        myConn.close();
+        myConn = null;
+        isConnected = false;
+      }
+      
+      const friendData = myFriendsData[chatId];
+      
+      remove(ref(db, "friends/" + chatId))
+        .then(() => {
+          localStorage.removeItem(`talkrush_chat_${chatId}`);
+          delete myFriendsData[chatId];
+          
+          if (currentChatId === chatId) {
+            window.closeChat();
+          }
+          
+          Swal.fire({
+            icon: 'success',
+            title: 'Removed!',
+            text: 'Friend has been removed.',
+            timer: 1500,
+            showConfirmButton: false
+          });
+        })
+        .catch(error => {
+          console.error('Error removing friend:', error);
+          Swal.fire({
+            icon: 'error',
+            title: 'Error',
+            text: 'Failed to remove friend. Please try again.'
+          });
+        });
     }
-    
-    const friendData = myFriendsData[chatId];
-    
-    remove(ref(db, "friends/" + chatId))
-      .then(() => {
-        localStorage.removeItem(`talkrush_chat_${chatId}`);
-        delete myFriendsData[chatId];
-        
-        if (currentChatId === chatId) {
-          showFriendsList();
-        }
-        
-        alert('Friend removed successfully.');
-      })
-      .catch(error => {
-        console.error('Error removing friend:', error);
-        alert('Failed to remove friend. Please try again.');
-      });
-  }
+  });
 };
 
 async function fetchTrendingGifs() {
