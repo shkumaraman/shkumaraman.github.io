@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Firebase v12 Test</title>
+</head>
+<body>
+  <h2>Test Post Feed</h2>
+
+  <input id="postText" type="text" placeholder="Write something..." style="width:300px;">
+  <button id="submitBtn">Post</button>
+
+  <div id="postsContainer" style="margin-top:20px; border:1px solid #ccc; padding:10px;"></div>
+
+  <!-- Firebase Modular SDK must use type="module" -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
+    import { getDatabase, ref, push, set, onValue } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
+
+    // --- Firebase config ---
+    const firebaseConfig = {
+      databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
+    };
+
+    // --- Initialize Firebase ---
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    // --- DOM elements ---
+    const postInput = document.getElementById("postText");
+    const submitBtn = document.getElementById("submitBtn");
+    const postsContainer = document.getElementById("postsContainer");
+
+    // --- Submit post ---
+    submitBtn.addEventListener("click", async () => {
+      const text = postInput.value.trim();
+      if (!text) {
+        alert("Write something!");
+        return;
+      }
+
+      try {
+        const postsRef = ref(db, "posts");
+        const newPostRef = push(postsRef);
+        await set(newPostRef, {
+          nickname: "TestUser",
+          text: text,
+          timestamp: Date.now()
+        });
+        postInput.value = ""; // clear input
+      } catch (err) {
+        console.error("Error posting:", err);
+        alert("Failed to post. Check console.");
+      }
+    });
+
+    // --- Display posts in real-time ---
+    const postsRef = ref(db, "posts");
+    onValue(postsRef, (snapshot) => {
+      const posts = snapshot.val() || {};
+      postsContainer.innerHTML = ""; // clear previous
+      Object.entries(posts).forEach(([id, post]) => {
+        const div = document.createElement("div");
+        const time = new Date(post.timestamp).toLocaleTimeString();
+        div.textContent = `[${time}] ${post.nickname}: ${post.text}`;
+        div.style.borderBottom = "1px solid #ddd";
+        div.style.padding = "5px 0";
+        postsContainer.appendChild(div);
+      });
+    });
+  </script>
+</body>
+</html>
