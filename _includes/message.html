@@ -72,110 +72,116 @@
 </div>
 
 <!-- SCRIPT -->
-<script>
-document.addEventListener("DOMContentLoaded", function () {
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
+  import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
 
-  const firebaseConfig = {
-    databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
-  };
+  document.addEventListener("DOMContentLoaded", function () {
 
-  if (!firebase.apps.length) {
-    firebase.initializeApp(firebaseConfig);
-  }
-
-  const db = firebase.database();
-  const myNickname = localStorage.getItem("talkrush_nickname");
-  if (!myNickname) return;
-
-  const toast = document.getElementById("messageToast");
-  const toastName = document.getElementById("toastName");
-  const toastMessage = document.getElementById("toastMessage");
-  const toastViewBtn = document.getElementById("toastViewBtn");
-  if (!toast) return;
-
-  const notifySound = new Audio("/assets/notify.mp3");
-  notifySound.preload = "auto";
-
-  let lastNotifiedMessages = JSON.parse(
-    localStorage.getItem("lastNotifiedMessages") || "{}"
-  );
-
-  let toastQueue = [];
-  let toastShowing = false;
-
-  function getFriendMessageField(friend) {
-    if (friend.nickname1 === myNickname) return "message2";
-    if (friend.nickname2 === myNickname) return "message1";
-    return null;
-  }
-
-  function getFriendNickname(friend) {
-    if (friend.nickname1 === myNickname) return friend.nickname2;
-    if (friend.nickname2 === myNickname) return friend.nickname1;
-    return null;
-  }
-
-  db.ref("friends").on("value", snapshot => {
-    const data = snapshot.val();
-    if (!data) return;
-
-    Object.entries(data).forEach(([chatId, friend]) => {
-      if (!friend.timestamp) return;
-
-      const friendNickname = getFriendNickname(friend);
-      const messageField = getFriendMessageField(friend);
-      if (!friendNickname || !messageField) return;
-
-      const message = friend[messageField] || "";
-      if (!message.trim()) return;
-
-      if (lastNotifiedMessages[chatId] !== message) {
-        toastQueue.push({
-          senderName: friendNickname,
-          message: message,
-          chatId: chatId
-        });
-
-        lastNotifiedMessages[chatId] = message;
-        localStorage.setItem(
-          "lastNotifiedMessages",
-          JSON.stringify(lastNotifiedMessages)
-        );
-
-        processToastQueue();
-      }
-    });
-  });
-
-  function processToastQueue() {
-    if (toastShowing || toastQueue.length === 0) return;
-
-    toastShowing = true;
-    const { senderName, message } = toastQueue.shift();
-
-    const shortMessage =
-      message.length > 40 ? message.substring(0, 40) + "..." : message;
-
-    toastName.textContent = senderName;
-    toastMessage.textContent = shortMessage;
-
-    notifySound.currentTime = 0;
-    notifySound.play().catch(() => {});
-
-    toast.style.top = "20px";
-
-    toastViewBtn.onclick = () => {
-      window.location.href = "/chat/inbox.html";
+    const firebaseConfig = {
+      databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
     };
 
-    setTimeout(() => {
-      toast.style.top = "-120px";
-      setTimeout(() => {
-        toastShowing = false;
-        processToastQueue();
-      }, 400);
-    }, 5000);
-  }
+    // Initialize Firebase
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    
+    const myNickname = localStorage.getItem("talkrush_nickname");
+    if (!myNickname) return;
 
-});
+    const toast = document.getElementById("messageToast");
+    const toastName = document.getElementById("toastName");
+    const toastMessage = document.getElementById("toastMessage");
+    const toastViewBtn = document.getElementById("toastViewBtn");
+    if (!toast) return;
+
+    const notifySound = new Audio("/assets/notify.mp3");
+    notifySound.preload = "auto";
+
+    let lastNotifiedMessages = JSON.parse(
+      localStorage.getItem("lastNotifiedMessages") || "{}"
+    );
+
+    let toastQueue = [];
+    let toastShowing = false;
+
+    function getFriendMessageField(friend) {
+      if (friend.nickname1 === myNickname) return "message2";
+      if (friend.nickname2 === myNickname) return "message1";
+      return null;
+    }
+
+    function getFriendNickname(friend) {
+      if (friend.nickname1 === myNickname) return friend.nickname2;
+      if (friend.nickname2 === myNickname) return friend.nickname1;
+      return null;
+    }
+
+    // Use onValue with modular syntax
+    const friendsRef = ref(db, "friends");
+    onValue(friendsRef, (snapshot) => {
+      const data = snapshot.val();
+      if (!data) return;
+
+      Object.entries(data).forEach(([chatId, friend]) => {
+        if (!friend.timestamp) return;
+
+        const friendNickname = getFriendNickname(friend);
+        const messageField = getFriendMessageField(friend);
+        if (!friendNickname || !messageField) return;
+
+        const message = friend[messageField] || "";
+        if (!message.trim()) return;
+
+        if (lastNotifiedMessages[chatId] !== message) {
+          toastQueue.push({
+            senderName: friendNickname,
+            message: message,
+            chatId: chatId
+          });
+
+          lastNotifiedMessages[chatId] = message;
+          localStorage.setItem(
+            "lastNotifiedMessages",
+            JSON.stringify(lastNotifiedMessages)
+          );
+
+          processToastQueue();
+        }
+      });
+    }, (error) => {
+      console.error("Firebase listener error:", error);
+    });
+
+    function processToastQueue() {
+      if (toastShowing || toastQueue.length === 0) return;
+
+      toastShowing = true;
+      const { senderName, message } = toastQueue.shift();
+
+      const shortMessage =
+        message.length > 40 ? message.substring(0, 40) + "..." : message;
+
+      toastName.textContent = senderName;
+      toastMessage.textContent = shortMessage;
+
+      notifySound.currentTime = 0;
+      notifySound.play().catch(() => {});
+
+      toast.style.top = "20px";
+
+      toastViewBtn.onclick = () => {
+        window.location.href = "/chat/inbox.html";
+      };
+
+      setTimeout(() => {
+        toast.style.top = "-120px";
+        setTimeout(() => {
+          toastShowing = false;
+          processToastQueue();
+        }, 400);
+      }, 5000);
+    }
+
+  });
 </script>
