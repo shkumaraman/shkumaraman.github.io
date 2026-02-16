@@ -778,16 +778,13 @@ function showTypingIndicator() {
   const indicator = document.getElementById('typingIndicator');
   if (!indicator || !currentFriendName) return;
   
-  // Show indicator
   indicator.style.display = "block";
   indicator.textContent = `${currentFriendName} is typing...`;
   
-  // Clear any existing timer
   if (typingTimer) {
     clearTimeout(typingTimer);
   }
   
-  // Hide after 2 seconds
   typingTimer = setTimeout(() => {
     if (indicator) {
       indicator.style.display = "none";
@@ -873,6 +870,12 @@ function handleFriendConnection(conn) {
 function setupEventListeners() {
   const msgInput = document.getElementById('msgInput');
   
+  // Back button
+  document.getElementById('backBtn').addEventListener('click', (e) => {
+    e.preventDefault();
+    showFriendsList();
+  });
+  
   msgInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -884,12 +887,10 @@ function setupEventListeners() {
   msgInput.addEventListener('input', () => {
     sendTypingIndicator();
     
-    // Clear previous debounce
     if (typingDebounce) {
       clearTimeout(typingDebounce);
     }
     
-    // Send typing indicator after 300ms of no typing
     typingDebounce = setTimeout(() => {
       sendTypingIndicator();
     }, 300);
@@ -1030,7 +1031,7 @@ function loadFriends() {
           <p class="last-message">${escapeHtml(friend.displayMsg)}</p>
         </div>
         <span class="message-time">${formatTime(friend.timestamp)}</span>
-        <button class="unfriend-btn" onclick="event.stopPropagation(); unfriend('${friend.chatId}')" title="Remove friend">
+        <button class="unfriend-btn" onclick="window.unfriend('${friend.chatId}')" title="Remove friend">
           <i class="fas fa-times"></i>
         </button>
       `;
@@ -1081,14 +1082,12 @@ function updateMyPeerIdInFirebase() {
 }
 
 function openChat(chatId, friendId, friendName) {
-  // Close previous connection if any
   if (myConn) {
     myConn.close();
     myConn = null;
     isConnected = false;
   }
   
-  // Hide typing indicator
   hideTypingIndicator();
   
   currentChatId = chatId;
@@ -1104,7 +1103,6 @@ function openChat(chatId, friendId, friendName) {
   
   loadLocalChatMessages();
   
-  // Try to connect
   connectToFriend(friendId);
 }
 
@@ -1160,7 +1158,6 @@ function connectToFriend(friendId) {
 function handleIncomingData(data) {
   if (!currentChatId || !currentFriendId) return;
   
-  // Check if it's a typing indicator
   if (data && typeof data === "object" && data.type === "typing") {
     showTypingIndicator();
     return;
@@ -1207,7 +1204,6 @@ function showFriendsList() {
     isConnected = false;
   }
   
-  // Hide typing indicator
   hideTypingIndicator();
   
   document.getElementById('friendsContainer').style.display = 'block';
@@ -1324,9 +1320,9 @@ function appendMessageToChat(msg, isMe) {
   
   let content = '';
   if (msg.type === 'image') {
-    content = `<img src="${msg.content}" alt="Shared image">`;
+    content = `<img src="${msg.content}" alt="Shared image" style="max-width: 200px; max-height: 200px; border-radius: 8px;">`;
   } else if (msg.type === 'gif') {
-    content = `<img src="${msg.content}" alt="GIF">`;
+    content = `<img src="${msg.content}" alt="GIF" style="max-width: 200px; max-height: 200px; border-radius: 8px;">`;
   } else {
     content = escapeHtml(msg.content);
   }
@@ -1352,7 +1348,6 @@ function sendMessage() {
     }
   }
   
-  // Always save and display locally
   saveIncomingMessage(content, 'text', currentUserId);
   displayMessageImmediately(content, 'text', currentUserId);
   input.value = '';
@@ -1362,7 +1357,6 @@ function handleImageUpload(e) {
   const file = e.target.files[0];
   if (!file) return;
   
-  // Simple check without SweetAlert
   if (file.size > 5 * 1024 * 1024) {
     alert('Image too large! Maximum size is 5MB.');
     e.target.value = '';
@@ -1373,7 +1367,6 @@ function handleImageUpload(e) {
   reader.onload = (event) => {
     const imgData = event.target.result;
     
-    // Send via WebRTC if connected
     if (myConn && isConnected) {
       try {
         myConn.send({ type: "image", blob: imgData });
@@ -1382,7 +1375,6 @@ function handleImageUpload(e) {
       }
     }
     
-    // Always save and display locally
     saveIncomingMessage(imgData, 'image', currentUserId);
     displayMessageImmediately(imgData, 'image', currentUserId);
   };
@@ -1390,33 +1382,61 @@ function handleImageUpload(e) {
   e.target.value = '';
 }
 
-function unfriend(chatId) {
-  if (confirm('Remove this friend? All chat history will be deleted.')) {
-    if (currentChatId === chatId && myConn) {
-      myConn.close();
-      myConn = null;
-      isConnected = false;
+// Make unfriend globally available for onclick
+window.unfriend = function(chatId) {
+  const friendName = myFriendsData[chatId]?.displayName || 'this friend';
+  
+  Swal.fire({
+    title: 'Remove Friend?',
+    text: `Are you sure you want to remove ${friendName}? All chat history will be deleted.`,
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#dc3545',
+    cancelButtonColor: '#6c757d',
+    confirmButtonText: 'Yes, remove',
+    cancelButtonText: 'Cancel',
+    background: document.body.classList.contains('light-mode') ? '#fff' : '#1e1e1e',
+    color: document.body.classList.contains('light-mode') ? '#333' : '#fff'
+  }).then((result) => {
+    if (result.isConfirmed) {
+      if (currentChatId === chatId && myConn) {
+        myConn.close();
+        myConn = null;
+        isConnected = false;
+      }
+      
+      remove(ref(db, "friends/" + chatId))
+        .then(() => {
+          localStorage.removeItem(`talkrush_chat_${chatId}`);
+          delete myFriendsData[chatId];
+          
+          if (currentChatId === chatId) {
+            showFriendsList();
+          }
+          
+          Swal.fire({
+            icon: 'success',
+            title: 'Removed!',
+            text: 'Friend has been removed.',
+            timer: 1500,
+            showConfirmButton: false,
+            background: document.body.classList.contains('light-mode') ? '#fff' : '#1e1e1e',
+            color: document.body.classList.contains('light-mode') ? '#333' : '#fff'
+          });
+        })
+        .catch(error => {
+          console.error('Error removing friend:', error);
+          Swal.fire({
+            icon: 'error',
+            title: 'Error',
+            text: 'Failed to remove friend. Please try again.',
+            background: document.body.classList.contains('light-mode') ? '#fff' : '#1e1e1e',
+            color: document.body.classList.contains('light-mode') ? '#333' : '#fff'
+          });
+        });
     }
-    
-    const friendData = myFriendsData[chatId];
-    
-    remove(ref(db, "friends/" + chatId))
-      .then(() => {
-        localStorage.removeItem(`talkrush_chat_${chatId}`);
-        delete myFriendsData[chatId];
-        
-        if (currentChatId === chatId) {
-          showFriendsList();
-        }
-        
-        alert('Friend removed successfully.');
-      })
-      .catch(error => {
-        console.error('Error removing friend:', error);
-        alert('Failed to remove friend. Please try again.');
-      });
-  }
-}
+  });
+};
 
 async function fetchTrendingGifs() {
   try {
@@ -1454,7 +1474,6 @@ function displayGifs(gifs) {
     img.onclick = () => {
       if (!currentChatId || !currentFriendId) return;
       
-      // Send via WebRTC if connected
       if (myConn && isConnected) {
         try {
           myConn.send({ type: "gif", url: gifUrl });
@@ -1463,7 +1482,6 @@ function displayGifs(gifs) {
         }
       }
       
-      // Always save and display locally
       saveIncomingMessage(gifUrl, 'gif', currentUserId);
       displayMessageImmediately(gifUrl, 'gif', currentUserId);
       
