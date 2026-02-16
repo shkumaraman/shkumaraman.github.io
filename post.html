@@ -531,638 +531,612 @@ description: "Post anything anonymously without login. Confess, express, or spea
 {% include scripts.html %}
 
 <script type="module">
-    // Import Firebase modules
-    import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
-    import { getDatabase, ref, onValue, get, set, update, remove, push, child, off, query, orderByChild, endAt } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
+// Import Firebase modules
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
+import { getDatabase, ref, push, set, onValue, onChildRemoved, query, orderByChild, endAt, remove, get, child } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
 
-    const firebaseConfig = {
-      databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
-    };
+const firebaseConfig = {
+  databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+const POST_EXPIRY_DAYS = 30;
+const MILLISECONDS_IN_DAY = 24 * 60 * 60 * 1000;
+
+let bannedWords = [];
+let bannedWordsLoaded = false;
+let allPosts = [];
+let displayedPosts = [];
+let currentSearchTerm = '';
+let highlightPostId = null;
+let searchTimeout = null;
+let isNewPost = false;
+let newPostId = null;
+let hasRandomized = false;
+
+async function loadBannedWords() {
+  try {
+    const response = await fetch('/chat/filter.txt');
+    const text = await response.text();
+    bannedWords = text.split('\n')
+      .map(word => word.trim().toLowerCase())
+      .filter(word => word.length > 0);
+    bannedWordsLoaded = true;
+  } catch (err) {
+    bannedWords = [];
+    bannedWordsLoaded = true;
+  }
+}
+
+function containsBannedWords(message) {
+  if (!bannedWordsLoaded || !message || typeof message !== 'string') return false;
+  
+  const lowerMsg = message.toLowerCase();
+  return bannedWords.some(word => {
+    if (!word || word.length < 2) return false;
+    const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const pattern = new RegExp(`\\b${escapedWord}\\b`, 'i');
+    return pattern.test(message);
+  });
+}
+
+function getNickname() {
+  const savedNickname = localStorage.getItem("talkrush_nickname");
+  if (savedNickname) {
+    return savedNickname;
+  }
+  return null;
+}
+
+function showAlert(message, type = 'error') {
+  const alertContainer = document.getElementById("alertContainer");
+  const alertDiv = document.createElement("div");
+  alertDiv.className = `alert-message alert-${type}`;
+  alertDiv.innerHTML = `<i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'}"></i> ${message}`;
+  alertContainer.appendChild(alertDiv);
+  
+  setTimeout(() => {
+    if (alertDiv.parentNode) {
+      alertDiv.remove();
+    }
+  }, type === 'success' ? 3000 : 5000);
+}
+
+function makeTextClickable(text) {
+  if (!text) return '';
+  const urlRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|([a-zA-Z0-9-]+\.[a-zA-Z]{2,}(\/[^\s]*)?)/g;
+  
+  return text.replace(urlRegex, (url) => {
+    const href = normalizeURL(url);
+    return `<a href="${href}" target="_blank" rel="noopener nofollow">${url}</a>`;
+  });
+}
+
+function normalizeURL(url) {
+  if (!url) return null;
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    return 'https://' + url;
+  }
+  return url;
+}
+
+function isImageURL(url) {
+  if (!url) return false;
+  const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg'];
+  const lowerUrl = url.toLowerCase();
+  return imageExtensions.some(ext => lowerUrl.includes(ext));
+}
+
+function extractFirstImageURL(text) {
+  if (!text) return null;
+  
+  const urlRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|([a-zA-Z0-9-]+\.[a-zA-Z]{2,}(\/[^\s]*)?)/g;
+  const urls = text.match(urlRegex) || [];
+  
+  const imageURL = urls.find(url => isImageURL(url));
+  return imageURL ? normalizeURL(imageURL) : null;
+}
+
+function searchPosts(searchTerm) {
+  currentSearchTerm = searchTerm.toLowerCase().trim();
+  
+  if (!currentSearchTerm) {
+    displayedPosts = [...allPosts];
+    displayPosts();
+    return;
+  }
+  
+  displayedPosts = allPosts.filter(([postId, post]) => {
+    const nickname = post.nickname || '';
+    const text = post.text || '';
     
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
+    return nickname.toLowerCase().includes(currentSearchTerm) || 
+           text.toLowerCase().includes(currentSearchTerm);
+  });
+  
+  displayPosts();
+}
 
-    const POST_EXPIRY_DAYS = 30;
-    const MILLISECONDS_IN_DAY = 24 * 60 * 60 * 1000;
+function handleSearch(inputValue) {
+  if (searchTimeout) {
+    clearTimeout(searchTimeout);
+  }
+  
+  searchTimeout = setTimeout(() => {
+    searchPosts(inputValue);
+  }, 500);
+}
 
-    let bannedWords = [];
-    let bannedWordsLoaded = false;
-    let allPosts = [];
-    let displayedPosts = [];
-    let currentSearchTerm = '';
-    let highlightPostId = null;
-    let searchTimeout = null;
-    let isNewPost = false;
-    let newPostId = null;
-    let hasRandomized = false;
-    let postsListener = null;
+function clearSearch() {
+  const searchInput = document.getElementById('searchInput');
+  if (searchInput) {
+    searchInput.value = '';
+  }
+  
+  currentSearchTerm = '';
+  displayedPosts = [...allPosts];
+  displayPosts();
+  
+  if (searchTimeout) {
+    clearTimeout(searchTimeout);
+    searchTimeout = null;
+  }
+}
 
-    async function loadBannedWords() {
+function createAdElement() {
+  const adContainer = document.createElement('div');
+  adContainer.className = 'ad-container';
+  adContainer.style.margin = '10px auto';
+  adContainer.style.maxWidth = '600px';
+  adContainer.style.textAlign = 'center';
+  
+  adContainer.innerHTML = `
+    <ins class="adsbygoogle"
+         style="display:block"
+         data-ad-client="ca-pub-7059052735946479"
+         data-ad-slot="8592327962"
+         data-ad-format="auto"
+         data-full-width-responsive="true"></ins>
+  `;
+  
+  return adContainer;
+}
+
+async function submitPost() {
+  const nickname = getNickname();
+  if (!nickname) {
+    showAlert("Click on Pencil button to set your Nickname first!");
+    return;
+  }
+
+  const text = document.getElementById("postText").value.trim();
+  if (text === "") {
+    showAlert("Write something!");
+    return;
+  }
+
+  if (containsBannedWords(text)) {
+    showAlert("Your post contains inappropriate content and cannot be sent.");
+    return;
+  }
+  
+  const newPostRef = push(ref(db, "posts"));
+  const postId = newPostRef.key;
+  newPostId = postId;
+  isNewPost = true;
+  
+  const postData = {
+    nickname: nickname,
+    text: text,
+    timestamp: Date.now(),
+    postId: postId
+  };
+
+  try {
+    await set(newPostRef, postData);
+    document.getElementById("postText").value = "";
+    showAlert("Post published successfully!", 'success');
+    
+    setTimeout(() => {
+      isNewPost = false;
+      newPostId = null;
+    }, 5000);
+    
+    if (currentSearchTerm) {
+      clearSearch();
+    }
+  } catch (error) {
+    showAlert("Failed to publish post. Please try again.");
+    isNewPost = false;
+    newPostId = null;
+  }
+}
+
+window.deletePost = function(postId, postNickname) {
+  const currentNickname = getNickname();
+  
+  if (!currentNickname) {
+    showAlert("Please set your nickname first!");
+    return;
+  }
+  
+  if (postNickname !== currentNickname) {
+    showAlert("You can only delete your own posts!");
+    return;
+  }
+
+  Swal.fire({
+    title: 'Are you sure?',
+    text: "This action cannot be undone!",
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#dc3545',
+    cancelButtonColor: '#6c757d',
+    confirmButtonText: 'Yes, delete it!',
+    cancelButtonText: 'Cancel',
+    background: document.body.classList.contains('light-mode') ? '#fff' : '#1e1e1e',
+    color: document.body.classList.contains('light-mode') ? '#333' : '#fff'
+  }).then((result) => {
+    if (result.isConfirmed) {
+      remove(ref(db, "posts/" + postId)).then(() => {
+        Swal.fire({
+          title: 'Deleted!',
+          text: 'Your post has been deleted.',
+          icon: 'success',
+          confirmButtonColor: '#007bff',
+          background: document.body.classList.contains('light-mode') ? '#fff' : '#1e1e1e',
+          color: document.body.classList.contains('light-mode') ? '#333' : '#fff'
+        });
+      });
+    }
+  });
+}
+    
+window.sharePost = async function(post) {
+  const shareUrl = window.location.origin + window.location.pathname + '?postId=' + post.postId;
+
+  const shareData = {
+    title: 'Check out this post',
+    text: post.text.substring(0, 100) + '...',
+    url: shareUrl
+  };
+
+  try {
+    if (navigator.share) {
+      await navigator.share(shareData);
+    } else {
+      await navigator.clipboard.writeText(shareUrl);
+      showAlert("Link copied to clipboard!", 'success');
+    }
+  } catch (error) {
+    await navigator.clipboard.writeText(shareUrl);
+    showAlert("Link copied to clipboard!", 'success');
+  }
+}
+
+function checkSharedPost() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const sharedPostId = urlParams.get('postId');
+  
+  if (sharedPostId) {
+    highlightPostId = sharedPostId;
+    
+    const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
+    window.history.replaceState({}, document.title, newUrl);
+    
+    showAlert("You've opened a shared post. It will be highlighted.", 'success');
+  }
+}
+
+function highlightPost(postId) {
+  const postElement = document.querySelector(`[data-post-id="${postId}"]`);
+  if (postElement) {
+    postElement.classList.add('highlighted-post');
+    postElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    
+    setTimeout(() => {
+      postElement.classList.remove('highlighted-post');
+    }, 5000);
+  }
+}
+
+function isPostExpired(timestamp) {
+  const postAgeInDays = (Date.now() - timestamp) / MILLISECONDS_IN_DAY;
+  return postAgeInDays > POST_EXPIRY_DAYS;
+}
+
+function deleteExpiredPosts() {
+  const currentTime = Date.now();
+  const expiryThreshold = currentTime - (POST_EXPIRY_DAYS * MILLISECONDS_IN_DAY);
+  
+  const expiredPostsQuery = query(
+    ref(db, "posts"),
+    orderByChild("timestamp"),
+    endAt(expiryThreshold)
+  );
+  
+  get(expiredPostsQuery).then(snapshot => {
+    const deletions = [];
+    snapshot.forEach(childSnapshot => {
+      deletions.push(remove(childSnapshot.ref));
+    });
+    return Promise.all(deletions);
+  }).then(() => {
+    if (deletions && deletions.length > 0) {
+      console.log(`Deleted ${deletions.length} expired posts`);
+    }
+  }).catch(error => {
+    console.error("Error deleting expired posts:", error);
+  });
+}
+
+function timeSince(ts) {
+  const seconds = Math.floor((Date.now() - ts) / 1000);
+  const intervals = [
+    [31536000, 'year'],
+    [2592000, 'month'],
+    [86400, 'day'],
+    [3600, 'hour'],
+    [60, 'minute'],
+    [1, 'second']
+  ];
+  for (const [unit, label] of intervals) {
+    const count = Math.floor(seconds / unit);
+    if (count >= 1) return `${count} ${label}${count > 1 ? 's' : ''} ago`;
+  }
+  return "just now";
+}
+
+function randomizePosts() {
+  if (allPosts.length <= 1) return;
+  
+  const postsToShuffle = [...allPosts];
+  
+  for (let i = postsToShuffle.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [postsToShuffle[i], postsToShuffle[j]] = [postsToShuffle[j], postsToShuffle[i]];
+  }
+  
+  allPosts = postsToShuffle;
+  displayedPosts = [...allPosts];
+  displayPosts();
+  hasRandomized = true;
+}
+
+function displayPosts() {
+  const postsContainer = document.getElementById("postsContainer");
+  const postInputContainer = document.querySelector('.post-input-container');
+  const searchContainer = document.querySelector('.search-container');
+  const alertContainer = document.getElementById("alertContainer");
+  
+  const postsToShow = displayedPosts;
+  
+  const existingPosts = postsContainer.querySelectorAll('.post, .system-msg, .ad-container');
+  existingPosts.forEach(el => el.remove());
+  
+  postsContainer.appendChild(postInputContainer);
+  if (searchContainer) {
+    postsContainer.appendChild(searchContainer);
+  }
+  postsContainer.appendChild(alertContainer);
+  
+  if (!postsToShow || postsToShow.length === 0) {
+    const noPostsMsg = document.createElement("div");
+    noPostsMsg.className = "system-msg";
+    noPostsMsg.style.margin = "20px auto";
+    noPostsMsg.style.maxWidth = "600px";
+    noPostsMsg.style.textAlign = "center";
+    noPostsMsg.style.color = "var(--dark-secondary-text)";
+    noPostsMsg.textContent = currentSearchTerm ? 
+      "No posts found matching your search." : 
+      "No posts yet. Be the first to post!";
+    postsContainer.appendChild(noPostsMsg);
+    return;
+  }
+
+  let postCounter = 0;
+
+  postsToShow.forEach(([postId, post]) => {
+    if (isPostExpired(post.timestamp)) {
+      return;
+    }
+
+    if (postCounter > 0 && postCounter % 2 === 0) {
+      const adElement = createAdElement();
+      postsContainer.appendChild(adElement);
+      
       try {
-        const response = await fetch('/chat/filter.txt');
-        const text = await response.text();
-        bannedWords = text.split('\n')
-          .map(word => word.trim().toLowerCase())
-          .filter(word => word.length > 0);
-        bannedWordsLoaded = true;
-      } catch (err) {
-        console.error('Error loading banned words:', err);
-        bannedWords = [];
-        bannedWordsLoaded = true;
+        (adsbygoogle = window.adsbygoogle || []).push({});
+      } catch (error) {
+        console.log('Ad loading error:', error);
       }
     }
 
-    function containsBannedWords(message) {
-      if (!bannedWordsLoaded || !message || typeof message !== 'string') return false;
-      
-      const lowerMsg = message.toLowerCase();
-      return bannedWords.some(word => {
-        if (!word || word.length < 2) return false;
-        const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const pattern = new RegExp(`\\b${escapedWord}\\b`, 'i');
-        return pattern.test(message);
-      });
+    const div = document.createElement("div");
+    const currentNickname = getNickname();
+    const isMyPost = currentNickname && post.nickname === currentNickname;
+    
+    div.className = "post";
+    div.setAttribute("data-post-id", postId);
+    
+    if (isNewPost && postId === newPostId) {
+      div.classList.add('highlighted-post');
+      div.style.animation = "pulse 2s infinite";
     }
 
-    function getNickname() {
-      const savedNickname = localStorage.getItem("talkrush_nickname");
-      if (savedNickname) {
-        return savedNickname;
-      }
-      return null;
-    }
+    const displayText = containsBannedWords(post.text) 
+      ? "This post was hidden due to inappropriate content"
+      : makeTextClickable(post.text);
 
-    function showAlert(message, type = 'error') {
-      const alertContainer = document.getElementById("alertContainer");
-      const alertDiv = document.createElement("div");
-      alertDiv.className = `alert-message alert-${type}`;
-      alertDiv.innerHTML = `<i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'}"></i> ${message}`;
-      alertContainer.appendChild(alertDiv);
-      
-      setTimeout(() => {
-        if (alertDiv.parentNode) {
-          alertDiv.remove();
-        }
-      }, type === 'success' ? 3000 : 5000);
-    }
+    const displayNickname = containsBannedWords(post.nickname)
+      ? "Guest"
+      : (post.nickname || 'Guest');
 
-    function makeTextClickable(text) {
-      if (!text) return '';
-      const urlRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|([a-zA-Z0-9-]+\.[a-zA-Z]{2,}(\/[^\s]*)?)/g;
-      
-      return text.replace(urlRegex, (url) => {
-        const href = normalizeURL(url);
-        return `<a href="${href}" target="_blank" rel="noopener nofollow">${url}</a>`;
-      });
-    }
-
-    function normalizeURL(url) {
-      if (!url) return null;
-      if (!url.startsWith('http://') && !url.startsWith('https://')) {
-        return 'https://' + url;
-      }
-      return url;
-    }
-
-    function isImageURL(url) {
-      if (!url) return false;
-      const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg'];
-      const lowerUrl = url.toLowerCase();
-      return imageExtensions.some(ext => lowerUrl.includes(ext));
-    }
-
-    function extractFirstImageURL(text) {
-      if (!text) return null;
-      
-      const urlRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|([a-zA-Z0-9-]+\.[a-zA-Z]{2,}(\/[^\s]*)?)/g;
-      const urls = text.match(urlRegex) || [];
-      
-      const imageURL = urls.find(url => isImageURL(url));
-      return imageURL ? normalizeURL(imageURL) : null;
-    }
-
-    function searchPosts(searchTerm) {
-      currentSearchTerm = searchTerm.toLowerCase().trim();
-      
-      if (!currentSearchTerm) {
-        displayedPosts = [...allPosts];
-        displayPosts();
-        return;
-      }
-      
-      displayedPosts = allPosts.filter(([postId, post]) => {
-        const nickname = post.nickname || '';
-        const text = post.text || '';
-        
-        return nickname.toLowerCase().includes(currentSearchTerm) || 
-               text.toLowerCase().includes(currentSearchTerm);
-      });
-      
-      displayPosts();
-    }
-
-    function handleSearch(inputValue) {
-      if (searchTimeout) {
-        clearTimeout(searchTimeout);
-      }
-      
-      searchTimeout = setTimeout(() => {
-        searchPosts(inputValue);
-      }, 500);
-    }
-
-    function clearSearch() {
-      const searchInput = document.getElementById('searchInput');
-      if (searchInput) {
-        searchInput.value = '';
-      }
-      
-      currentSearchTerm = '';
-      displayedPosts = [...allPosts];
-      displayPosts();
-      
-      if (searchTimeout) {
-        clearTimeout(searchTimeout);
-        searchTimeout = null;
-      }
-    }
-
-    function createAdElement() {
-      const adContainer = document.createElement('div');
-      adContainer.className = 'ad-container';
-      adContainer.style.margin = '10px auto';
-      adContainer.style.maxWidth = '600px';
-      adContainer.style.textAlign = 'center';
-      
-      adContainer.innerHTML = `
-        <ins class="adsbygoogle"
-             style="display:block"
-             data-ad-client="ca-pub-7059052735946479"
-             data-ad-slot="8592327962"
-             data-ad-format="auto"
-             data-full-width-responsive="true"></ins>
+    const imageURL = extractFirstImageURL(post.text);
+    let imagePreviewHTML = '';
+    
+    if (imageURL && !containsBannedWords(post.text)) {
+      imagePreviewHTML = `
+        <div class="image-preview">
+          <img src="${imageURL}" alt="Image preview" 
+               onerror="this.style.display='none'"
+               loading="lazy"
+               style="cursor: default;">
+        </div>
       `;
-      
-      return adContainer;
     }
 
-    async function submitPost() {
-      const nickname = getNickname();
-      if (!nickname) {
-        showAlert("Click on Pencil button to set your Nickname first!");
-        return;
-      }
+    div.innerHTML = `
+      <div class="nickname">${displayNickname}</div>
+      <div class="post-content">${displayText}</div>
+      ${imagePreviewHTML}
+      <div class="timestamp">${timeSince(post.timestamp)}</div>
+      <div class="buttons">
+        <button class="share-btn-post" onclick='sharePost(${JSON.stringify({...post, postId}).replace(/'/g, "\\'")})'>
+          <i class="fas fa-share"></i> Share
+        </button>
+        ${isMyPost ? `
+          <button class="delete-btn" onclick="deletePost('${postId}', '${post.nickname.replace(/'/g, "\\'")}')">
+            <i class="fas fa-trash"></i> Delete
+          </button>
+        ` : ''}
+      </div>
+    `;
 
-      const text = document.getElementById("postText").value.trim();
-      if (text === "") {
-        showAlert("Write something!");
-        return;
-      }
-
-      if (containsBannedWords(text)) {
-        showAlert("Your post contains inappropriate content and cannot be sent.");
-        return;
-      }
-      
-      const postsRef = ref(db, "posts");
-      const newPostRef = push(postsRef);
-      const postId = newPostRef.key;
-      newPostId = postId;
-      isNewPost = true;
-      
-      const postData = {
-        nickname: nickname,
-        text: text,
-        timestamp: Date.now(),
-        postId: postId
-      };
-
-      try {
-        await set(newPostRef, postData);
-        document.getElementById("postText").value = "";
-        showAlert("Post published successfully!", 'success');
-        
-        setTimeout(() => {
-          isNewPost = false;
-          newPostId = null;
-        }, 5000);
-        
-        if (currentSearchTerm) {
-          clearSearch();
-        }
-      } catch (error) {
-        console.error('Error publishing post:', error);
-        showAlert("Failed to publish post. Please try again.");
-        isNewPost = false;
-        newPostId = null;
-      }
-    }
-
-    window.deletePost = function(postId, postNickname) {
-      const currentNickname = getNickname();
-      
-      if (!currentNickname) {
-        showAlert("Please set your nickname first!");
-        return;
-      }
-      
-      if (postNickname !== currentNickname) {
-        showAlert("You can only delete your own posts!");
-        return;
-      }
-
-      Swal.fire({
-        title: 'Are you sure?',
-        text: "This action cannot be undone!",
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#dc3545',
-        cancelButtonColor: '#6c757d',
-        confirmButtonText: 'Yes, delete it!',
-        cancelButtonText: 'Cancel',
-        background: document.body.classList.contains('light-mode') ? '#fff' : '#1e1e1e',
-        color: document.body.classList.contains('light-mode') ? '#333' : '#fff'
-      }).then((result) => {
-        if (result.isConfirmed) {
-          remove(ref(db, "posts/" + postId)).then(() => {
-            Swal.fire({
-              title: 'Deleted!',
-              text: 'Your post has been deleted.',
-              icon: 'success',
-              confirmButtonColor: '#007bff',
-              background: document.body.classList.contains('light-mode') ? '#fff' : '#1e1e1e',
-              color: document.body.classList.contains('light-mode') ? '#333' : '#fff'
-            });
-          }).catch(error => {
-            console.error('Error deleting post:', error);
-            Swal.fire({
-              title: 'Error!',
-              text: 'Failed to delete post.',
-              icon: 'error',
-              confirmButtonColor: '#007bff',
-              background: document.body.classList.contains('light-mode') ? '#fff' : '#1e1e1e',
-              color: document.body.classList.contains('light-mode') ? '#333' : '#fff'
-            });
-          });
-        }
-      });
-    }
+    postsContainer.appendChild(div);
+    postCounter++;
     
-    window.sharePost = async function(post) {
-      const shareUrl = window.location.origin + window.location.pathname + '?postId=' + post.postId;
+    if (postId === highlightPostId && postId !== newPostId) {
+      setTimeout(() => {
+        highlightPost(postId);
+      }, 100);
+    }
+  });
+}
 
-      const shareData = {
-        title: 'Check out this post',
-        text: post.text.substring(0, 100) + '...',
-        url: shareUrl
-      };
+function initializeApp() {
+  loadBannedWords();
+  checkSharedPost();
+  deleteExpiredPosts();
+  
+  setInterval(deleteExpiredPosts, 60 * 60 * 1000);
 
-      try {
-        if (navigator.share) {
-          await navigator.share(shareData);
-        } else {
-          await navigator.clipboard.writeText(shareUrl);
-          showAlert("Link copied to clipboard!", 'success');
+  const nickname = getNickname();
+  if (!nickname) {
+    showAlert("Click on Pencil button to set your Nickname before posting!", 'error');
+  }
+
+  const searchInput = document.getElementById('searchInput');
+  const clearSearchBtn = document.getElementById('clearSearch');
+  
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      handleSearch(e.target.value);
+    });
+    
+    searchInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        if (searchTimeout) {
+          clearTimeout(searchTimeout);
         }
-      } catch (error) {
-        console.error('Error sharing:', error);
-        try {
-          await navigator.clipboard.writeText(shareUrl);
-          showAlert("Link copied to clipboard!", 'success');
-        } catch (clipError) {
-          showAlert("Failed to copy link. Please try again.");
-        }
+        searchPosts(e.target.value);
       }
+    });
+  }
+  
+  if (clearSearchBtn) {
+    clearSearchBtn.addEventListener('click', clearSearch);
+  }
+
+  onValue(ref(db, "posts"), snapshot => {
+    const posts = snapshot.val();
+    
+    if (!posts) {
+      allPosts = [];
+      displayedPosts = [];
+      displayPosts();
+      return;
     }
 
-    function checkSharedPost() {
-      const urlParams = new URLSearchParams(window.location.search);
-      const sharedPostId = urlParams.get('postId');
+    let postsArray = Object.entries(posts);
+    
+    if (allPosts.length === 0) {
+      const sortedArray = [...postsArray].sort((a, b) => b[1].timestamp - a[1].timestamp);
       
-      if (sharedPostId) {
-        highlightPostId = sharedPostId;
+      if (!hasRandomized) {
+        const shuffledArray = [];
+        const halfLength = Math.ceil(sortedArray.length / 2);
         
-        const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
-        window.history.replaceState({}, document.title, newUrl);
+        for (let i = 0; i < sortedArray.length; i++) {
+          if (i === 0) {
+            shuffledArray.push(sortedArray[0]);
+          } else {
+            const randomIndex = Math.floor(Math.random() * (sortedArray.length - 1)) + 1;
+            shuffledArray.push(sortedArray[randomIndex]);
+          }
+        }
         
-        showAlert("You've opened a shared post. It will be highlighted.", 'success');
+        postsArray = shuffledArray;
+        hasRandomized = true;
+      } else {
+        postsArray = sortedArray;
+      }
+    } else {
+      const existingIds = new Set(allPosts.map(([id]) => id));
+      const newPosts = postsArray.filter(([id]) => !existingIds.has(id));
+      const existingPosts = postsArray.filter(([id]) => existingIds.has(id));
+      
+      const orderedExisting = allPosts.filter(([id]) => existingIds.has(id));
+      
+      if (isNewPost && newPostId) {
+        postsArray = [...newPosts, ...orderedExisting];
+        
+        const newPostIndex = postsArray.findIndex(([id]) => id === newPostId);
+        if (newPostIndex > 0) {
+          const [newPost] = postsArray.splice(newPostIndex, 1);
+          postsArray.unshift(newPost);
+        }
+      } else {
+        postsArray = [...orderedExisting, ...newPosts];
       }
     }
 
-    function highlightPost(postId) {
+    allPosts = postsArray;
+    displayedPosts = [...allPosts];
+
+    if (highlightPostId && posts[highlightPostId]) {
+      const highlightedPostIndex = displayedPosts.findIndex(([id]) => id === highlightPostId);
+      if (highlightedPostIndex !== -1) {
+        const highlightedPost = displayedPosts.splice(highlightedPostIndex, 1)[0];
+        displayedPosts.unshift(highlightedPost);
+      }
+    }
+
+    if (currentSearchTerm) {
+      searchPosts(currentSearchTerm);
+    } else {
+      displayPosts();
+    }
+  });
+
+  onChildRemoved(ref(db, "posts"), snapshot => {
+    const postId = snapshot.key;
+    
+    allPosts = allPosts.filter(([id]) => id !== postId);
+    displayedPosts = displayedPosts.filter(([id]) => id !== postId);
+    
+    if (currentSearchTerm) {
+      searchPosts(currentSearchTerm);
+    } else {
       const postElement = document.querySelector(`[data-post-id="${postId}"]`);
       if (postElement) {
-        postElement.classList.add('highlighted-post');
-        postElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        
-        setTimeout(() => {
-          postElement.classList.remove('highlighted-post');
-        }, 5000);
+        postElement.remove();
       }
     }
+  });
+}
 
-    function isPostExpired(timestamp) {
-      const postAgeInDays = (Date.now() - timestamp) / MILLISECONDS_IN_DAY;
-      return postAgeInDays > POST_EXPIRY_DAYS;
-    }
-
-    async function deleteExpiredPosts() {
-      const currentTime = Date.now();
-      const expiryThreshold = currentTime - (POST_EXPIRY_DAYS * MILLISECONDS_IN_DAY);
-      
-      try {
-        const postsRef = ref(db, "posts");
-        const expiredQuery = query(postsRef, orderByChild("timestamp"), endAt(expiryThreshold));
-        const snapshot = await get(expiredQuery);
-        
-        const deletions = [];
-        snapshot.forEach(childSnapshot => {
-          deletions.push(remove(childSnapshot.ref));
-        });
-        
-        await Promise.all(deletions);
-        
-        if (deletions.length > 0) {
-          console.log(`Deleted ${deletions.length} expired posts`);
-        }
-      } catch (error) {
-        console.error("Error deleting expired posts:", error);
-      }
-    }
-
-    function timeSince(ts) {
-      const seconds = Math.floor((Date.now() - ts) / 1000);
-      const intervals = [
-        [31536000, 'year'],
-        [2592000, 'month'],
-        [86400, 'day'],
-        [3600, 'hour'],
-        [60, 'minute'],
-        [1, 'second']
-      ];
-      for (const [unit, label] of intervals) {
-        const count = Math.floor(seconds / unit);
-        if (count >= 1) return `${count} ${label}${count > 1 ? 's' : ''} ago`;
-      }
-      return "just now";
-    }
-
-    function randomizePosts() {
-      if (allPosts.length <= 1) return;
-      
-      const postsToShuffle = [...allPosts];
-      
-      for (let i = postsToShuffle.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [postsToShuffle[i], postsToShuffle[j]] = [postsToShuffle[j], postsToShuffle[i]];
-      }
-      
-      allPosts = postsToShuffle;
-      displayedPosts = [...allPosts];
-      displayPosts();
-      hasRandomized = true;
-    }
-
-    function displayPosts() {
-      const postsContainer = document.getElementById("postsContainer");
-      const postInputContainer = document.querySelector('.post-input-container');
-      const searchContainer = document.querySelector('.search-container');
-      const alertContainer = document.getElementById("alertContainer");
-      
-      const postsToShow = displayedPosts;
-      
-      const existingPosts = postsContainer.querySelectorAll('.post, .system-msg, .ad-container');
-      existingPosts.forEach(el => el.remove());
-      
-      postsContainer.appendChild(postInputContainer);
-      if (searchContainer) {
-        postsContainer.appendChild(searchContainer);
-      }
-      postsContainer.appendChild(alertContainer);
-      
-      if (!postsToShow || postsToShow.length === 0) {
-        const noPostsMsg = document.createElement("div");
-        noPostsMsg.className = "system-msg";
-        noPostsMsg.style.margin = "20px auto";
-        noPostsMsg.style.maxWidth = "600px";
-        noPostsMsg.style.textAlign = "center";
-        noPostsMsg.style.color = "var(--dark-secondary-text)";
-        noPostsMsg.textContent = currentSearchTerm ? 
-          "No posts found matching your search." : 
-          "No posts yet. Be the first to post!";
-        postsContainer.appendChild(noPostsMsg);
-        return;
-      }
-
-      let postCounter = 0;
-
-      postsToShow.forEach(([postId, post]) => {
-        if (isPostExpired(post.timestamp)) {
-          return;
-        }
-
-        if (postCounter > 0 && postCounter % 2 === 0) {
-          const adElement = createAdElement();
-          postsContainer.appendChild(adElement);
-          
-          try {
-            (adsbygoogle = window.adsbygoogle || []).push({});
-          } catch (error) {
-            console.log('Ad loading error:', error);
-          }
-        }
-
-        const div = document.createElement("div");
-        const currentNickname = getNickname();
-        const isMyPost = currentNickname && post.nickname === currentNickname;
-        
-        div.className = "post";
-        div.setAttribute("data-post-id", postId);
-        
-        if (isNewPost && postId === newPostId) {
-          div.classList.add('highlighted-post');
-          div.style.animation = "pulse 2s infinite";
-        }
-
-        const displayText = containsBannedWords(post.text) 
-          ? "This post was hidden due to inappropriate content"
-          : makeTextClickable(post.text);
-
-        const displayNickname = containsBannedWords(post.nickname)
-          ? "Guest"
-          : (post.nickname || 'Guest');
-
-        const imageURL = extractFirstImageURL(post.text);
-        let imagePreviewHTML = '';
-        
-        if (imageURL && !containsBannedWords(post.text)) {
-          imagePreviewHTML = `
-            <div class="image-preview">
-              <img src="${imageURL}" alt="Image preview" 
-                   onerror="this.style.display='none'"
-                   loading="lazy"
-                   style="cursor: default;">
-            </div>
-          `;
-        }
-
-        // Escape the post data for the share function
-        const escapedPostData = JSON.stringify({...post, postId}).replace(/'/g, "\\'").replace(/"/g, '&quot;');
-
-        div.innerHTML = `
-          <div class="nickname">${displayNickname}</div>
-          <div class="post-content">${displayText}</div>
-          ${imagePreviewHTML}
-          <div class="timestamp">${timeSince(post.timestamp)}</div>
-          <div class="buttons">
-            <button class="share-btn-post" onclick='sharePost(${escapedPostData})'>
-              <i class="fas fa-share"></i> Share
-            </button>
-            ${isMyPost ? `
-              <button class="delete-btn" onclick="deletePost('${postId}', '${post.nickname.replace(/'/g, "\\'")}')">
-                <i class="fas fa-trash"></i> Delete
-              </button>
-            ` : ''}
-          </div>
-        `;
-
-        postsContainer.appendChild(div);
-        postCounter++;
-        
-        if (postId === highlightPostId && postId !== newPostId) {
-          setTimeout(() => {
-            highlightPost(postId);
-          }, 100);
-        }
-      });
-    }
-
-    function initializeApp() {
-      loadBannedWords();
-      checkSharedPost();
-      deleteExpiredPosts();
-      
-      setInterval(deleteExpiredPosts, 60 * 60 * 1000);
-
-      const nickname = getNickname();
-      if (!nickname) {
-        showAlert("Click on Pencil button to set your Nickname before posting!", 'error');
-      }
-
-      const searchInput = document.getElementById('searchInput');
-      const clearSearchBtn = document.getElementById('clearSearch');
-      
-      if (searchInput) {
-        searchInput.addEventListener('input', (e) => {
-          handleSearch(e.target.value);
-        });
-        
-        searchInput.addEventListener('keypress', (e) => {
-          if (e.key === 'Enter') {
-            if (searchTimeout) {
-              clearTimeout(searchTimeout);
-            }
-            searchPosts(e.target.value);
-          }
-        });
-      }
-      
-      if (clearSearchBtn) {
-        clearSearchBtn.addEventListener('click', clearSearch);
-      }
-
-      // Set up posts listener
-      const postsRef = ref(db, "posts");
-      
-      if (postsListener) {
-        off(postsRef, "value", postsListener);
-      }
-      
-      postsListener = onValue(postsRef, (snapshot) => {
-        const posts = snapshot.val();
-        
-        if (!posts) {
-          allPosts = [];
-          displayedPosts = [];
-          displayPosts();
-          return;
-        }
-
-        let postsArray = Object.entries(posts);
-        
-        if (allPosts.length === 0) {
-          const sortedArray = [...postsArray].sort((a, b) => b[1].timestamp - a[1].timestamp);
-          
-          if (!hasRandomized) {
-            const shuffledArray = [];
-            const halfLength = Math.ceil(sortedArray.length / 2);
-            
-            for (let i = 0; i < sortedArray.length; i++) {
-              if (i === 0) {
-                shuffledArray.push(sortedArray[0]);
-              } else {
-                const randomIndex = Math.floor(Math.random() * (sortedArray.length - 1)) + 1;
-                shuffledArray.push(sortedArray[randomIndex]);
-              }
-            }
-            
-            postsArray = shuffledArray;
-            hasRandomized = true;
-          } else {
-            postsArray = sortedArray;
-          }
-        } else {
-          const existingIds = new Set(allPosts.map(([id]) => id));
-          const newPosts = postsArray.filter(([id]) => !existingIds.has(id));
-          const existingPosts = postsArray.filter(([id]) => existingIds.has(id));
-          
-          const orderedExisting = allPosts.filter(([id]) => existingIds.has(id));
-          
-          if (isNewPost && newPostId) {
-            postsArray = [...newPosts, ...orderedExisting];
-            
-            const newPostIndex = postsArray.findIndex(([id]) => id === newPostId);
-            if (newPostIndex > 0) {
-              const [newPost] = postsArray.splice(newPostIndex, 1);
-              postsArray.unshift(newPost);
-            }
-          } else {
-            postsArray = [...orderedExisting, ...newPosts];
-          }
-        }
-
-        allPosts = postsArray;
-        displayedPosts = [...allPosts];
-
-        if (highlightPostId && posts[highlightPostId]) {
-          const highlightedPostIndex = displayedPosts.findIndex(([id]) => id === highlightPostId);
-          if (highlightedPostIndex !== -1) {
-            const highlightedPost = displayedPosts.splice(highlightedPostIndex, 1)[0];
-            displayedPosts.unshift(highlightedPost);
-          }
-        }
-
-        if (currentSearchTerm) {
-          searchPosts(currentSearchTerm);
-        } else {
-          displayPosts();
-        }
-      }, (error) => {
-        console.error('Error loading posts:', error);
-        showAlert('Failed to load posts. Please refresh the page.');
-      });
-
-      // Set up post removal listener
-      onValue(ref(db, "posts"), (snapshot) => {
-        // This is handled in the main listener above
-        // But we keep this for child_removed specific handling
-      });
-    }
-
-    // Make functions available globally
-    window.submitPost = submitPost;
-    window.clearSearch = clearSearch;
-
-    // Initialize when DOM is ready
-    document.addEventListener('DOMContentLoaded', initializeApp);
+document.addEventListener('DOMContentLoaded', initializeApp);
 </script>
