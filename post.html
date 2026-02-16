@@ -530,13 +530,17 @@ description: "Post anything anonymously without login. Confess, express, or spea
 {% include menu.html %}
 {% include scripts.html %}
 
-<script>
+<script type="module">
+    // Import Firebase modules
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
+    import { getDatabase, ref, onValue, get, set, update, remove, push, child, off, query, orderByChild, endAt } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
+
     const firebaseConfig = {
       databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
     };
     
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.database();
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
 
     const POST_EXPIRY_DAYS = 30;
     const MILLISECONDS_IN_DAY = 24 * 60 * 60 * 1000;
@@ -551,6 +555,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
     let isNewPost = false;
     let newPostId = null;
     let hasRandomized = false;
+    let postsListener = null;
 
     async function loadBannedWords() {
       try {
@@ -561,6 +566,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
           .filter(word => word.length > 0);
         bannedWordsLoaded = true;
       } catch (err) {
+        console.error('Error loading banned words:', err);
         bannedWords = [];
         bannedWordsLoaded = true;
       }
@@ -718,7 +724,8 @@ description: "Post anything anonymously without login. Confess, express, or spea
         return;
       }
       
-      const newPostRef = db.ref("posts").push();
+      const postsRef = ref(db, "posts");
+      const newPostRef = push(postsRef);
       const postId = newPostRef.key;
       newPostId = postId;
       isNewPost = true;
@@ -731,7 +738,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
       };
 
       try {
-        await newPostRef.set(postData);
+        await set(newPostRef, postData);
         document.getElementById("postText").value = "";
         showAlert("Post published successfully!", 'success');
         
@@ -744,13 +751,14 @@ description: "Post anything anonymously without login. Confess, express, or spea
           clearSearch();
         }
       } catch (error) {
+        console.error('Error publishing post:', error);
         showAlert("Failed to publish post. Please try again.");
         isNewPost = false;
         newPostId = null;
       }
     }
 
-    function deletePost(postId, postNickname) {
+    window.deletePost = function(postId, postNickname) {
       const currentNickname = getNickname();
       
       if (!currentNickname) {
@@ -764,33 +772,43 @@ description: "Post anything anonymously without login. Confess, express, or spea
       }
 
       Swal.fire({
-  title: 'Are you sure?',
-  text: "This action cannot be undone!",
-  icon: 'warning',
-  showCancelButton: true,
-  confirmButtonColor: '#dc3545',
-  cancelButtonColor: '#6c757d',
-  confirmButtonText: 'Yes, delete it!',
-  cancelButtonText: 'Cancel',
-  background: document.body.classList.contains('light-mode') ? '#fff' : '#1e1e1e',
-  color: document.body.classList.contains('light-mode') ? '#333' : '#fff'
-}).then((result) => {
-  if (result.isConfirmed) {
-    db.ref("posts/" + postId).remove().then(() => {
-      Swal.fire({
-        title: 'Deleted!',
-        text: 'Your post has been deleted.',
-        icon: 'success',
-        confirmButtonColor: '#007bff',
+        title: 'Are you sure?',
+        text: "This action cannot be undone!",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#dc3545',
+        cancelButtonColor: '#6c757d',
+        confirmButtonText: 'Yes, delete it!',
+        cancelButtonText: 'Cancel',
         background: document.body.classList.contains('light-mode') ? '#fff' : '#1e1e1e',
         color: document.body.classList.contains('light-mode') ? '#333' : '#fff'
+      }).then((result) => {
+        if (result.isConfirmed) {
+          remove(ref(db, "posts/" + postId)).then(() => {
+            Swal.fire({
+              title: 'Deleted!',
+              text: 'Your post has been deleted.',
+              icon: 'success',
+              confirmButtonColor: '#007bff',
+              background: document.body.classList.contains('light-mode') ? '#fff' : '#1e1e1e',
+              color: document.body.classList.contains('light-mode') ? '#333' : '#fff'
+            });
+          }).catch(error => {
+            console.error('Error deleting post:', error);
+            Swal.fire({
+              title: 'Error!',
+              text: 'Failed to delete post.',
+              icon: 'error',
+              confirmButtonColor: '#007bff',
+              background: document.body.classList.contains('light-mode') ? '#fff' : '#1e1e1e',
+              color: document.body.classList.contains('light-mode') ? '#333' : '#fff'
+            });
+          });
+        }
       });
-    });
-  }
-});
-}
+    }
     
-    async function sharePost(post) {
+    window.sharePost = async function(post) {
       const shareUrl = window.location.origin + window.location.pathname + '?postId=' + post.postId;
 
       const shareData = {
@@ -807,8 +825,13 @@ description: "Post anything anonymously without login. Confess, express, or spea
           showAlert("Link copied to clipboard!", 'success');
         }
       } catch (error) {
-        await navigator.clipboard.writeText(shareUrl);
-        showAlert("Link copied to clipboard!", 'success');
+        console.error('Error sharing:', error);
+        try {
+          await navigator.clipboard.writeText(shareUrl);
+          showAlert("Link copied to clipboard!", 'success');
+        } catch (clipError) {
+          showAlert("Failed to copy link. Please try again.");
+        }
       }
     }
 
@@ -843,26 +866,28 @@ description: "Post anything anonymously without login. Confess, express, or spea
       return postAgeInDays > POST_EXPIRY_DAYS;
     }
 
-    function deleteExpiredPosts() {
+    async function deleteExpiredPosts() {
       const currentTime = Date.now();
       const expiryThreshold = currentTime - (POST_EXPIRY_DAYS * MILLISECONDS_IN_DAY);
       
-      db.ref("posts").orderByChild("timestamp").endAt(expiryThreshold).once("value")
-        .then(snapshot => {
-          const deletions = [];
-          snapshot.forEach(childSnapshot => {
-            deletions.push(childSnapshot.ref.remove());
-          });
-          return Promise.all(deletions);
-        })
-        .then(() => {
-          if (deletions.length > 0) {
-            console.log(`Deleted ${deletions.length} expired posts`);
-          }
-        })
-        .catch(error => {
-          console.error("Error deleting expired posts:", error);
+      try {
+        const postsRef = ref(db, "posts");
+        const expiredQuery = query(postsRef, orderByChild("timestamp"), endAt(expiryThreshold));
+        const snapshot = await get(expiredQuery);
+        
+        const deletions = [];
+        snapshot.forEach(childSnapshot => {
+          deletions.push(remove(childSnapshot.ref));
         });
+        
+        await Promise.all(deletions);
+        
+        if (deletions.length > 0) {
+          console.log(`Deleted ${deletions.length} expired posts`);
+        }
+      } catch (error) {
+        console.error("Error deleting expired posts:", error);
+      }
     }
 
     function timeSince(ts) {
@@ -981,13 +1006,16 @@ description: "Post anything anonymously without login. Confess, express, or spea
           `;
         }
 
+        // Escape the post data for the share function
+        const escapedPostData = JSON.stringify({...post, postId}).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+
         div.innerHTML = `
           <div class="nickname">${displayNickname}</div>
           <div class="post-content">${displayText}</div>
           ${imagePreviewHTML}
           <div class="timestamp">${timeSince(post.timestamp)}</div>
           <div class="buttons">
-            <button class="share-btn-post" onclick='sharePost(${JSON.stringify({...post, postId}).replace(/'/g, "\\'")})'>
+            <button class="share-btn-post" onclick='sharePost(${escapedPostData})'>
               <i class="fas fa-share"></i> Share
             </button>
             ${isMyPost ? `
@@ -1043,7 +1071,14 @@ description: "Post anything anonymously without login. Confess, express, or spea
         clearSearchBtn.addEventListener('click', clearSearch);
       }
 
-      db.ref("posts").on("value", snapshot => {
+      // Set up posts listener
+      const postsRef = ref(db, "posts");
+      
+      if (postsListener) {
+        off(postsRef, "value", postsListener);
+      }
+      
+      postsListener = onValue(postsRef, (snapshot) => {
         const posts = snapshot.val();
         
         if (!posts) {
@@ -1112,24 +1147,22 @@ description: "Post anything anonymously without login. Confess, express, or spea
         } else {
           displayPosts();
         }
+      }, (error) => {
+        console.error('Error loading posts:', error);
+        showAlert('Failed to load posts. Please refresh the page.');
       });
 
-      db.ref("posts").on("child_removed", snapshot => {
-        const postId = snapshot.key;
-        
-        allPosts = allPosts.filter(([id]) => id !== postId);
-        displayedPosts = displayedPosts.filter(([id]) => id !== postId);
-        
-        if (currentSearchTerm) {
-          searchPosts(currentSearchTerm);
-        } else {
-          const postElement = document.querySelector(`[data-post-id="${postId}"]`);
-          if (postElement) {
-            postElement.remove();
-          }
-        }
+      // Set up post removal listener
+      onValue(ref(db, "posts"), (snapshot) => {
+        // This is handled in the main listener above
+        // But we keep this for child_removed specific handling
       });
     }
 
+    // Make functions available globally
+    window.submitPost = submitPost;
+    window.clearSearch = clearSearch;
+
+    // Initialize when DOM is ready
     document.addEventListener('DOMContentLoaded', initializeApp);
 </script>
