@@ -138,6 +138,9 @@ description: "Post anything anonymously without login. Confess, express, or spea
       flex: 1;
       padding: 60px 5px 10px 5px;
       background: var(--dark-chat-bg);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
     }
 
     .light-mode .posts-container {
@@ -150,6 +153,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
       padding: 10px;
       border-radius: 15px;
       box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+      width: 100%;
       max-width: 600px;
       border: 1px solid rgba(255,255,255,0.1);
     }
@@ -214,17 +218,19 @@ description: "Post anything anonymously without login. Confess, express, or spea
     }
 
     .alert-container {
-      margin: 10px auto;
+      width: 100%;
       max-width: 600px;
+      margin: 10px auto;
     }
 
     .alert-message {
       padding: 10px 15px;
       border-radius: 10px;
-      margin: 5px auto;
+      margin: 5px 0;
       display: flex;
       align-items: center;
       gap: 8px;
+      width: 100%;
     }
 
     .alert-error {
@@ -255,6 +261,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
       box-shadow: 0 2px 4px rgba(0,0,0,0.2);
       word-wrap: break-word;
       overflow-wrap: break-word;
+      width: 100%;
       max-width: 600px;
       border: 1px solid rgba(255,255,255,0.1);
     }
@@ -267,6 +274,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
 
     .ad-container {
       margin: 10px auto;
+      width: 100%;
       max-width: 600px;
       text-align: center;
       background: var(--dark-msg-bg);
@@ -466,6 +474,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
 
     .system-msg {
       margin: 20px auto;
+      width: 100%;
       max-width: 600px;
       text-align: center;
       color: var(--dark-secondary-text);
@@ -479,6 +488,58 @@ description: "Post anything anonymously without login. Confess, express, or spea
       background: var(--light-msg-bg);
       color: var(--light-secondary-text);
       border: 1px solid rgba(0,0,0,0.1);
+    }
+
+    /* SweetAlert Custom Styles */
+    .swal-custom-popup {
+      background: var(--dark-msg-bg) !important;
+      color: var(--dark-text) !important;
+      border-radius: 15px !important;
+      border: 1px solid rgba(255,255,255,0.1) !important;
+    }
+
+    .light-mode .swal-custom-popup {
+      background: var(--light-msg-bg) !important;
+      color: var(--light-text) !important;
+      border: 1px solid rgba(0,0,0,0.1) !important;
+    }
+
+    .swal-custom-title {
+      color: var(--dark-text) !important;
+      font-size: 1.3em !important;
+    }
+
+    .light-mode .swal-custom-title {
+      color: var(--light-text) !important;
+    }
+
+    .swal-custom-text {
+      color: var(--dark-secondary-text) !important;
+    }
+
+    .light-mode .swal-custom-text {
+      color: var(--light-secondary-text) !important;
+    }
+
+    .swal-custom-confirm {
+      background: var(--delete-btn) !important;
+      border-radius: 10px !important;
+      padding: 8px 20px !important;
+      font-size: 0.95em !important;
+    }
+
+    .swal-custom-cancel {
+      background: var(--dark-input-bg) !important;
+      color: var(--dark-text) !important;
+      border-radius: 10px !important;
+      padding: 8px 20px !important;
+      font-size: 0.95em !important;
+      border: none !important;
+    }
+
+    .light-mode .swal-custom-cancel {
+      background: var(--light-input-bg) !important;
+      color: var(--light-text) !important;
     }
 
     @media (max-width: 600px) {
@@ -564,6 +625,9 @@ description: "Post anything anonymously without login. Confess, express, or spea
 {% include menu.html %}
 {% include scripts.html %}
 
+<!-- SweetAlert CDN -->
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
     import { getDatabase, ref, push, set, onValue, remove } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
@@ -584,8 +648,9 @@ description: "Post anything anonymously without login. Confess, express, or spea
     let allPosts = [];
     let displayedPosts = [];
     let currentSearchTerm = '';
-    let hasRandomized = false;
+    let shouldRandomize = true;
     let highlightPostId = null;
+    let newPostJustAdded = false;
 
     async function loadBannedWords() {
       try {
@@ -912,10 +977,45 @@ description: "Post anything anonymously without login. Confess, express, or spea
         showAlert("You can only delete your own posts!");
         return;
       }
-      if (confirm('Are you sure you want to delete this post?')) {
-        remove(ref(db, `posts/${postId}`));
-        showAlert("Post deleted successfully!", 'success');
-      }
+      
+      Swal.fire({
+        title: 'Delete Post?',
+        text: "This action cannot be undone!",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#dc3545',
+        cancelButtonColor: '#6c757d',
+        confirmButtonText: 'Yes, delete it!',
+        cancelButtonText: 'Cancel',
+        background: document.body.classList.contains('light-mode') ? '#f9f9f9' : '#2b2b2b',
+        color: document.body.classList.contains('light-mode') ? '#333' : '#fff',
+        customClass: {
+          popup: 'swal-custom-popup',
+          title: 'swal-custom-title',
+          htmlContainer: 'swal-custom-text',
+          confirmButton: 'swal-custom-confirm',
+          cancelButton: 'swal-custom-cancel'
+        }
+      }).then((result) => {
+        if (result.isConfirmed) {
+          remove(ref(db, `posts/${postId}`)).then(() => {
+            Swal.fire({
+              title: 'Deleted!',
+              text: 'Your post has been deleted.',
+              icon: 'success',
+              timer: 2000,
+              showConfirmButton: false,
+              background: document.body.classList.contains('light-mode') ? '#f9f9f9' : '#2b2b2b',
+              color: document.body.classList.contains('light-mode') ? '#333' : '#fff',
+              customClass: {
+                popup: 'swal-custom-popup',
+                title: 'swal-custom-title',
+                htmlContainer: 'swal-custom-text'
+              }
+            });
+          });
+        }
+      });
     };
 
     document.getElementById("submitBtn").addEventListener("click", async () => {
@@ -937,6 +1037,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
       }
 
       try {
+        newPostJustAdded = true;
         const newPostRef = push(postsRef);
         await set(newPostRef, {
           nickname: nickname,
@@ -945,6 +1046,11 @@ description: "Post anything anonymously without login. Confess, express, or spea
         });
         document.getElementById("postText").value = "";
         showAlert("Post published successfully!", 'success');
+        
+        // Reset randomization flag for next load
+        setTimeout(() => {
+          newPostJustAdded = false;
+        }, 2000);
       } catch (error) {
         showAlert("Failed to publish post. Please try again.");
       }
@@ -982,11 +1088,15 @@ description: "Post anything anonymously without login. Confess, express, or spea
 
       const postsArray = Object.entries(posts).filter(([id, post]) => !isPostExpired(post.timestamp));
       
-      if (!hasRandomized) {
-        allPosts = shuffleArray([...postsArray]);
-        hasRandomized = true;
-      } else {
-        allPosts = [...postsArray];
+      // Sort by timestamp (newest first) for initial display
+      allPosts = [...postsArray].sort((a, b) => b[1].timestamp - a[1].timestamp);
+      
+      // Check if we should randomize (on normal page loads, not after new post)
+      if (shouldRandomize && !newPostJustAdded) {
+        // Shuffle but keep the first 3 posts? No, just randomize all
+        const shuffled = shuffleArray([...allPosts]);
+        // But ensure the newest post isn't buried too deep? Let's just randomize fully
+        allPosts = shuffled;
       }
 
       displayedPosts = [...allPosts];
@@ -1005,6 +1115,9 @@ description: "Post anything anonymously without login. Confess, express, or spea
         displayPosts();
       }
     });
+
+    // Set randomization flag
+    shouldRandomize = true;
 
     loadBannedWords();
     deleteExpiredPosts();
