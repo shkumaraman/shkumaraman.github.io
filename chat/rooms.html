@@ -746,7 +746,18 @@ main {
 {% include menu.html %}
 {% include scripts.html %}
 
-<script>
+<script type="module">
+// Import Firebase modules
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
+import { getDatabase, ref, onValue, get, set, remove } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
+
+const firebaseConfig = {
+  databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
 let bannedWords = [];
 let bannedWordsLoaded = false;
 let myNickname = 'Guest';
@@ -775,13 +786,6 @@ function containsInappropriateContent(text) {
     return pattern.test(text);
   });
 }
-
-const firebaseConfig = {
-  databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
-};
-
-firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
 
 document.addEventListener('DOMContentLoaded', async function() {
   await loadBannedWords();
@@ -870,7 +874,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       color: document.body.classList.contains('light-mode') ? '#333' : '#fff'
     }).then((result) => {
       if (result.isConfirmed) {
-        db.ref('groups/' + roomName).remove();
+        remove(ref(db, 'groups/' + roomName));
       }
     });
   };
@@ -946,8 +950,8 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
   
   function loadRooms() {
-    const groupsRef = db.ref('groups');
-    groupsRef.on('value', (snapshot) => {
+    const groupsRef = ref(db, 'groups');
+    onValue(groupsRef, (snapshot) => {
       const rooms = snapshot.val();
       
       const allRooms = [];
@@ -1034,8 +1038,8 @@ document.addEventListener('DOMContentLoaded', async function() {
       return;
     }
     
-    const roomRef = db.ref('groups/' + roomName);
-    const snapshot = await roomRef.once('value');
+    const roomRef = ref(db, 'groups/' + roomName);
+    const snapshot = await get(roomRef);
     
     if (snapshot.exists()) {
       alert('A room with this name already exists. Please choose a different name.');
@@ -1054,7 +1058,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     createRoomBtn.disabled = true;
     createRoomBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating...';
     
-    roomRef.set(roomData)
+    set(roomRef, roomData)
       .then(() => {
         roomNameInput.value = '';
         roomDescriptionInput.value = '';
