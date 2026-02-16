@@ -528,58 +528,72 @@ description: "Post anything anonymously without login. Confess, express, or spea
 </div>
 
 {% include menu.html %}
-{% include scripts.html %}
 
-<script type="module">
-// --- Import Firebase modular SDK ---
-import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
-import { getDatabase, ref, push, set, onValue } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
+<script>
+  // Firebase config
+  const firebaseConfig = {
+    databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
+  };
 
-// --- Firebase configuration ---
-const firebaseConfig = {
-  databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
-};
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
 
-// --- Initialize Firebase ---
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
+  // Posts array
+  let allPosts = [];
 
-// --- DOM elements ---
-const postInput = document.getElementById("postText");
-const submitBtn = document.getElementById("submitBtn");
-const postsContainer = document.getElementById("postsContainer");
+  // Submit post
+  async function submitPost() {
+    const text = document.getElementById("postText").value.trim();
+    if (!text) {
+      alert("Write something!");
+      return;
+    }
 
-// --- Submit post ---
-submitBtn.addEventListener("click", async () => {
-  const text = postInput.value.trim();
-  if (!text) {
-    alert("Write something!");
-    return;
-  }
+    const nickname = localStorage.getItem("talkrush_nickname") || "Guest";
 
-  try {
-    const postsRef = ref(db, "posts");
-    const newPostRef = push(postsRef);
-    await set(newPostRef, {
-      nickname: "TestUser",
+    const newPostRef = db.ref("posts").push();
+    await newPostRef.set({
+      nickname: nickname,
       text: text,
       timestamp: Date.now()
     });
-    postInput.value = ""; // clear input
-  } catch (err) {
-    console.error("Error posting:", err);
-  }
-});
 
-// --- Display posts in real-time ---
-const postsRef = ref(db, "posts");
-onValue(postsRef, (snapshot) => {
-  const posts = snapshot.val() || {};
-  postsContainer.innerHTML = ""; // clear previous
-  Object.entries(posts).forEach(([id, post]) => {
-    const div = document.createElement("div");
-    div.textContent = `${post.nickname}: ${post.text}`;
-    postsContainer.appendChild(div);
+    document.getElementById("postText").value = "";
+  }
+
+  // Display posts
+  function displayPosts() {
+    const postsContainer = document.getElementById("postsContainer");
+    
+    // Remove old posts (but keep input container)
+    const inputContainer = document.querySelector(".post-input-container");
+    postsContainer.innerHTML = "";
+    postsContainer.appendChild(inputContainer);
+
+    allPosts.sort((a, b) => b[1].timestamp - a[1].timestamp);
+    allPosts.forEach(([id, post]) => {
+      const div = document.createElement("div");
+      div.className = "post";
+      div.innerHTML = `
+        <div class="nickname">${post.nickname}</div>
+        <div class="post-content">${post.text}</div>
+        <div class="timestamp">${new Date(post.timestamp).toLocaleString()}</div>
+      `;
+      postsContainer.appendChild(div);
+    });
+  }
+
+  // Listen for Firebase changes
+  db.ref("posts").on("value", snapshot => {
+    const posts = snapshot.val() || {};
+    allPosts = Object.entries(posts);
+    displayPosts();
   });
-});
+
+  document.addEventListener('DOMContentLoaded', () => {
+    // Optional: set a test nickname
+    if (!localStorage.getItem("talkrush_nickname")) {
+      localStorage.setItem("talkrush_nickname", "Tester");
+    }
+  });
 </script>
