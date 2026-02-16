@@ -341,14 +341,29 @@
 
 <div id="player"></div>
 
-<script>
-    if (typeof YT === 'undefined') {
-        var tag = document.createElement('script');
-        tag.src = "https://www.youtube.com/iframe_api";
-        var firstScriptTag = document.getElementsByTagName('script')[0];
-        firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
-    }
+<script type="module">
+    // Firebase v12.9.0 modular import
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
+    import { getDatabase, ref, set, get, onValue, off, remove, update, query, orderByKey, limitToLast } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
 
+    const firebaseConfig = {
+        databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
+    };
+
+    // Initialize Firebase
+    const app = initializeApp(firebaseConfig);
+    const database = getDatabase(app);
+
+    // Make Firebase available globally for the musicPlayer object
+    window.firebase = {
+        database: () => database,
+        app: app
+    };
+
+    // Helper function to get database reference
+    window.getFirebaseRef = (path) => ref(database, path);
+
+    // Format time function
     function formatTime(seconds) {
         if (isNaN(seconds) || seconds < 0) return "0:00";
         const mins = Math.floor(seconds / 60);
@@ -356,6 +371,7 @@
         return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
     }
 
+    // Get URL parameters
     const urlParams = new URLSearchParams(window.location.search);
     const GROUP_NAME = (urlParams.get('group') || 'default').replace(/[^a-zA-Z0-9_-]/g, '_');
     const FIREBASE_PATH = `music/${GROUP_NAME}`;
@@ -410,6 +426,8 @@
                                         this.player.pauseVideo();
                                     }
                                 }
+                            }).catch((error) => {
+                                console.error("Firebase read error:", error);
                             });
                         }
                     }, 1000);
@@ -436,30 +454,34 @@
             if (!this.firebaseInitialized()) return;
             
             const sixHoursAgo = Date.now() - (6 * 60 * 60 * 1000);
+            const dbRef = ref(database, 'music');
             
-            firebase.database().ref('music').once('value')
-                .then((snapshot) => {
-                    const groups = snapshot.val() || {};
+            get(dbRef).then((snapshot) => {
+                const groups = snapshot.val() || {};
+                
+                Object.keys(groups).forEach(groupKey => {
+                    const groupData = groups[groupKey];
+                    const lastUpdate = groupData?.lastUpdate || 0;
                     
-                    Object.keys(groups).forEach(groupKey => {
-                        const groupData = groups[groupKey];
-                        const lastUpdate = groupData?.lastUpdate || 0;
-                        
-                        if (lastUpdate < sixHoursAgo) {
-                            firebase.database().ref(`music/${groupKey}`).remove()
-                                .catch(() => {});
-                        }
-                    });
-                })
-                .catch(() => {});
+                    if (lastUpdate < sixHoursAgo) {
+                        const groupRef = ref(database, `music/${groupKey}`);
+                        remove(groupRef).catch((error) => {
+                            console.error("Cleanup error:", error);
+                        });
+                    }
+                });
+            }).catch((error) => {
+                console.error("Cleanup read error:", error);
+            });
         },
         
         getFirebaseRef: function() {
-            return firebase.database().ref(FIREBASE_PATH);
+            return ref(database, FIREBASE_PATH);
         },
         
         setupPlayer: function() {
-            if (typeof firebase === 'undefined') {
+            if (!window.firebase) {
+                console.error("Firebase not initialized");
                 return;
             }
             
@@ -513,10 +535,14 @@
         
         setupFirebaseListener: function() {
             if (!this.firebaseInitialized()) return;
-            if (this.firebaseListener) this.firebaseListener();
+            if (this.firebaseListener) {
+                off(this.getFirebaseRef(), 'value', this.firebaseListener);
+            }
             
             const stateRef = this.getFirebaseRef();
-            this.firebaseListener = stateRef.on('value', (snapshot) => {
+            
+            // Create the listener function
+            this.firebaseListener = (snapshot) => {
                 const data = snapshot.val();
                 if (!data || !this.ytReady) return;
 
@@ -555,7 +581,10 @@
                         this.updatePlayPauseIcon();
                     }
                 }
-            });
+            };
+            
+            // Attach the listener
+            onValue(stateRef, this.firebaseListener);
         },
         
         onYouTubeIframeAPIReady: function() {
@@ -634,7 +663,7 @@
         checkSavedState: function() {
             if (!this.firebaseInitialized()) return;
             const stateRef = this.getFirebaseRef();
-            stateRef.once('value').then((snapshot) => {
+            get(stateRef).then((snapshot) => {
                 const data = snapshot.val();
                 if (data && data.currentSong) {
                     const { currentSong, status, timestamp, lastUpdate, loop } = data;
@@ -651,6 +680,8 @@
                     
                     this.processNewSong(currentSong, status, effectiveTime);
                 }
+            }).catch((error) => {
+                console.error("Check saved state error:", error);
             });
         },
         
@@ -689,7 +720,8 @@
         fetchVideoTitle: function(videoId) {
             return fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`)
                 .then(response => response.json())
-                .then(data => data.title);
+                .then(data => data.title)
+                .catch(() => "Unknown Title");
         },
         
         updateState: function(status) {
@@ -707,7 +739,10 @@
                 loop: this.isLooping
             };
             
-            this.getFirebaseRef().set(stateObj).catch(() => {});
+            const stateRef = this.getFirebaseRef();
+            set(stateRef, stateObj).catch((error) => {
+                console.error("Update state error:", error);
+            });
         },
         
         handleSearch: function() {
@@ -869,7 +904,7 @@
                 seekBar.value = t;
             }
             
-            const progress = (t / d) * 100;
+            const progress = d > 0 ? (t / d) * 100 : 0;
             seekBar.style.background = `linear-gradient(to right, #ff5252 ${progress}%, #ddd ${progress}%)`;
             
             if (this.isPlaying && this.firebaseInitialized() && this.currentSongUrl && !this.hasUserLeft) {
@@ -877,16 +912,19 @@
                 if (!this.lastAutoUpdate || (now - this.lastAutoUpdate) > 5000) {
                     this.lastAutoUpdate = now;
                     
-                    this.getFirebaseRef().update({
+                    const stateRef = this.getFirebaseRef();
+                    update(stateRef, {
                         timestamp: t,
                         lastUpdate: now
-                    }).catch(() => {});
+                    }).catch((error) => {
+                        console.error("Auto update error:", error);
+                    });
                 }
             }
         },
         
         firebaseInitialized: function() {
-            return typeof firebase !== 'undefined' && firebase.apps.length > 0;
+            return typeof database !== 'undefined' && app;
         },
         
         destroy: function() {
@@ -894,16 +932,29 @@
                 clearInterval(this.cleanupTimer);
             }
             if (this.firebaseListener) {
-                this.getFirebaseRef().off('value', this.firebaseListener);
+                const stateRef = this.getFirebaseRef();
+                off(stateRef, 'value', this.firebaseListener);
             }
         }
     };
 
+    // Initialize the player
     musicPlayer.init();
 
+    // Update UI every second
     setInterval(() => {
         if (musicPlayer.player) {
             musicPlayer.updatePlayerUI();
         }
     }, 1000);
+</script>
+
+<!-- Load YouTube IFrame API -->
+<script>
+    if (typeof YT === 'undefined') {
+        var tag = document.createElement('script');
+        tag.src = "https://www.youtube.com/iframe_api";
+        var firstScriptTag = document.getElementsByTagName('script')[0];
+        firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+    }
 </script>
