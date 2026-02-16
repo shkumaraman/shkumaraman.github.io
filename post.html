@@ -602,7 +602,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
     let allPosts = [];
     let displayedPosts = [];
     let currentSearchTerm = '';
-    let newPostId = null;
+    let highlightPostId = null; // Only for shared links
 
     async function loadBannedWords() {
       try {
@@ -684,11 +684,13 @@ description: "Post anything anonymously without login. Confess, express, or spea
       const sharedPostId = urlParams.get('postId');
       
       if (sharedPostId) {
-        newPostId = sharedPostId;
+        highlightPostId = sharedPostId;
         const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
         window.history.replaceState({}, document.title, newUrl);
         showAlert("You've opened a shared post. It will be highlighted.", 'success');
+        return true;
       }
+      return false;
     }
 
     function shuffleArray(array) {
@@ -814,6 +816,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
       }
 
       let postCounter = 0;
+      let highlightedPostShown = false;
 
       displayedPosts.forEach(([postId, post]) => {
         if (isPostExpired(post.timestamp)) {
@@ -837,12 +840,14 @@ description: "Post anything anonymously without login. Confess, express, or spea
         div.className = "post";
         div.setAttribute("data-post-id", postId);
         
-        // Highlight new post or shared post
-        if (postId === newPostId) {
+        // Highlight only shared posts from URL
+        if (postId === highlightPostId && !highlightedPostShown) {
           div.classList.add('highlighted-post');
+          highlightedPostShown = true;
           setTimeout(() => {
             div.scrollIntoView({ behavior: 'smooth', block: 'center' });
           }, 100);
+          
           // Remove highlight after 5 seconds
           setTimeout(() => {
             div.classList.remove('highlighted-post');
@@ -891,10 +896,10 @@ description: "Post anything anonymously without login. Confess, express, or spea
         postCounter++;
       });
       
-      // Reset newPostId after displaying
-      if (newPostId) {
+      // Reset highlightPostId after some time
+      if (highlightPostId) {
         setTimeout(() => {
-          newPostId = null;
+          highlightPostId = null;
         }, 6000);
       }
     }
@@ -929,42 +934,25 @@ description: "Post anything anonymously without login. Confess, express, or spea
         return;
       }
       
-      // Sweet alert for deletion confirmation
-      const isLightMode = document.body.classList.contains('light-mode');
-      
+      // Simple Sweet Alert for deletion
       Swal.fire({
-        title: 'Are you sure?',
-        text: "You won't be able to revert this!",
+        title: 'Delete Post?',
+        text: "This action cannot be undone!",
         icon: 'warning',
         showCancelButton: true,
         confirmButtonColor: '#dc3545',
         cancelButtonColor: '#6c757d',
         confirmButtonText: 'Yes, delete it!',
-        cancelButtonText: 'Cancel',
-        background: isLightMode ? '#f5f5f5' : '#1e1e1e',
-        color: isLightMode ? '#333' : '#fff',
-        iconColor: isLightMode ? '#dc3545' : '#ff6b6b'
+        cancelButtonText: 'Cancel'
       }).then((result) => {
         if (result.isConfirmed) {
           remove(ref(db, `posts/${postId}`)).then(() => {
             Swal.fire({
               title: 'Deleted!',
-              text: 'Your post has been deleted.',
+              text: 'Your post has been removed.',
               icon: 'success',
-              background: isLightMode ? '#f5f5f5' : '#1e1e1e',
-              color: isLightMode ? '#333' : '#fff',
-              iconColor: isLightMode ? '#28a745' : '#6bff6b',
-              timer: 2000,
+              timer: 1500,
               showConfirmButton: false
-            });
-          }).catch((error) => {
-            Swal.fire({
-              title: 'Error!',
-              text: 'Failed to delete post. Please try again.',
-              icon: 'error',
-              background: isLightMode ? '#f5f5f5' : '#1e1e1e',
-              color: isLightMode ? '#333' : '#fff',
-              iconColor: isLightMode ? '#dc3545' : '#ff6b6b'
             });
           });
         }
@@ -997,11 +985,10 @@ description: "Post anything anonymously without login. Confess, express, or spea
           timestamp: Date.now()
         });
         
-        // Set the new post ID for highlighting
-        newPostId = newPostRef.key;
-        
         document.getElementById("postText").value = "";
         showAlert("Post published successfully!", 'success');
+        
+        // Don't set highlightPostId for new posts - they just appear at top normally
       } catch (error) {
         showAlert("Failed to publish post. Please try again.");
       }
@@ -1059,7 +1046,8 @@ description: "Post anything anonymously without login. Confess, express, or spea
       }
     });
 
-    checkSharedPost();
+    // Check for shared post in URL
+    const hasSharedPost = checkSharedPost();
 
     onValue(postsRef, (snapshot) => {
       const posts = snapshot.val();
@@ -1089,12 +1077,11 @@ description: "Post anything anonymously without login. Confess, express, or spea
 
       displayedPosts = [...allPosts];
 
-      // If there's a new post to highlight, make sure it's at the top
-      if (newPostId) {
-        const newPostIndex = displayedPosts.findIndex(([id]) => id === newPostId);
-        if (newPostIndex !== -1) {
-          const newPost = displayedPosts.splice(newPostIndex, 1)[0];
-          displayedPosts.unshift(newPost);
+      if (highlightPostId) {
+        const sharedPostIndex = displayedPosts.findIndex(([id]) => id === highlightPostId);
+        if (sharedPostIndex !== -1) {
+          const sharedPost = displayedPosts.splice(sharedPostIndex, 1)[0];
+          displayedPosts.unshift(sharedPost);
         }
       }
 
@@ -1107,7 +1094,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
 
     // Reset session on page load
     window.addEventListener('load', () => {
-      // Check if this is a fresh page load (not a reload)
       if (performance.navigation.type === 0) {
         sessionStorage.removeItem('postsInitialized');
       }
