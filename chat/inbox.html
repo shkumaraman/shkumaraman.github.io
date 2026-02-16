@@ -700,7 +700,11 @@ body.light-mode {
 {% include menu.html %}
 {% include scripts.html %}
 
-<script>
+<script type="module">
+// Import Firebase modules
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
+import { getDatabase, ref, onValue, off, update, remove, get, set } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
+
 const firebaseConfig = {
   databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
 };
@@ -720,10 +724,8 @@ let myNickname = null;
 let myFriendsData = {};
 let typingTimer = null;
 
-if (!firebase.apps.length) {
-  firebase.initializeApp(firebaseConfig);
-}
-const db = firebase.database();
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
 
 function getCurrentUserId() {
   return currentUserId;
@@ -945,10 +947,11 @@ function sendTypingIndicator() {
 
 function loadFriends() {
   if (friendListListener) {
-    db.ref("friends").off("value", friendListListener);
+    off(ref(db, "friends"), friendListListener);
   }
   
-  friendListListener = db.ref("friends").on("value", snap => {
+  const friendsRef = ref(db, "friends");
+  friendListListener = onValue(friendsRef, (snap) => {
     const data = snap.val();
     const list = document.getElementById("friendList");
     const loading = document.getElementById("loading");
@@ -1043,7 +1046,7 @@ function loadFriends() {
     list.style.display = "flex";
     
     updateMyPeerIdInFirebase();
-  }, error => {
+  }, (error) => {
     console.error('Error loading friends:', error);
     document.getElementById("loading").style.display = "none";
     document.getElementById("emptyState").style.display = "block";
@@ -1053,7 +1056,7 @@ function loadFriends() {
 function updateMyPeerIdInFirebase() {
   if (!currentUserId || !myNickname) return;
   
-  db.ref("friends").once('value').then(snap => {
+  get(ref(db, "friends")).then((snap) => {
     const data = snap.val();
     if (!data) return;
     
@@ -1069,7 +1072,8 @@ function updateMyPeerIdInFirebase() {
     });
     
     if (Object.keys(updates).length > 0) {
-      db.ref("friends").update(updates)
+      const updateRef = ref(db, "friends");
+      update(updateRef, updates)
         .catch(error => {
           console.error('Error updating Peer ID:', error);
         });
@@ -1291,7 +1295,7 @@ function saveIncomingMessage(content, type, senderId) {
     updateData.message2 = lastMsg;
   }
   
-  db.ref("friends/" + currentChatId).update(updateData)
+  update(ref(db, "friends/" + currentChatId), updateData)
     .catch(error => {
       console.error('Error updating last message:', error);
     });
@@ -1397,7 +1401,7 @@ function unfriend(chatId) {
     
     const friendData = myFriendsData[chatId];
     
-    db.ref("friends/" + chatId).remove()
+    remove(ref(db, "friends/" + chatId))
       .then(() => {
         localStorage.removeItem(`talkrush_chat_${chatId}`);
         delete myFriendsData[chatId];
