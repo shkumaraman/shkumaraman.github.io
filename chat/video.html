@@ -692,12 +692,17 @@ video {
 {% include menu.html %}
 {% include scripts.html %}
 
-<script>
+<script type="module">
+// Import Firebase modules
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
+import { getDatabase, ref, onValue, get, set, update, remove, push, child } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
+
 const firebaseConfig = {
   databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
 };
-firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
     
 let peer, myConn, myId, waitingRef, waitingEntryRef;
 let isConnected = false;
@@ -889,8 +894,8 @@ acceptFriendBtn.onclick = async () => {
     const otherPeerId = friendRequestFrom.fromPeer;
     const otherNickname = friendRequestFrom.fromNickname;
     
-    const friendRef = db.ref('friends/' + friendId);
-    await friendRef.set({
+    const friendRef = ref(db, 'friends/' + friendId);
+    await set(friendRef, {
       peer1: myPeerId,
       peer2: otherPeerId,
       nickname1: myNickname,
@@ -1151,14 +1156,14 @@ function setupDataConnection(conn) {
 
 function cleanUpStaleConnections() {
   if (myId) {
-    const waitingRef = db.ref("videoWaiting");
-    waitingRef.once('value').then((snapshot) => {
+    const waitingRef = ref(db, "videoWaiting");
+    get(waitingRef).then((snapshot) => {
       if (snapshot.exists()) {
         snapshot.forEach((child) => {
           const entry = child.val();
           const isOld = entry.timestamp && (Date.now() - entry.timestamp) > 60000;
           if (entry.id === myId || isOld) {
-            child.ref.remove();
+            remove(child.ref);
           }
         });
       }
@@ -1202,15 +1207,15 @@ function handleFriendRejected() {
 }
 
 function tryToFindMatch() {
-  waitingRef = db.ref("videoWaiting");
-  waitingRef.once('value', (snapshot) => {
+  waitingRef = ref(db, "videoWaiting");
+  get(waitingRef).then((snapshot) => {
     const list = snapshot.val();
     let bestMatch = null;
 
     if (list) {
       for (let [key, entry] of Object.entries(list)) {
         if (entry.timestamp && (Date.now() - entry.timestamp) > 30000) {
-          db.ref("videoWaiting/" + key).remove();
+          remove(ref(db, "videoWaiting/" + key));
           continue;
         }
         
@@ -1229,14 +1234,14 @@ function tryToFindMatch() {
     }
 
     if (bestMatch) {
-      db.ref("videoWaiting/" + bestMatch.key).remove();
+      remove(ref(db, "videoWaiting/" + bestMatch.key));
       connectToPeer(bestMatch.otherId);
       return;
     }
 
-    const newRef = waitingRef.push();
+    const newRef = push(waitingRef);
     waitingEntryRef = newRef;
-    newRef.set({
+    set(newRef, {
       id: myId,
       interest: myGenderInterest,
       tags: myTags,
@@ -1248,17 +1253,17 @@ function tryToFindMatch() {
     if (heartbeatInterval) clearInterval(heartbeatInterval);
     heartbeatInterval = setInterval(() => {
       if (waitingEntryRef && !isConnected) {
-        waitingEntryRef.update({ timestamp: Date.now() });
+        update(waitingEntryRef, { timestamp: Date.now() });
       }
     }, 10000);
 
     setTimeout(() => {
       if (!isConnected) {
-        waitingRef.once('value', (snap) => {
+        get(waitingRef).then((snap) => {
           snap.forEach(child => {
             const entry = child.val();
             if (entry.id !== myId && isGenderCompatible(myGenderInterest, entry.interest)) {
-              child.ref.remove();
+              remove(child.ref);
               connectToPeer(entry.id);
               return true;
             }
@@ -1351,7 +1356,7 @@ function endConnection() {
 
 function cleanUpWaitingList() {
   if (waitingEntryRef) {
-    waitingEntryRef.remove();
+    remove(waitingEntryRef);
     waitingEntryRef = null;
   }
   if (heartbeatInterval) {
