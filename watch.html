@@ -96,13 +96,13 @@ height:200px;
 overflow-y:auto;
 display:flex;
 flex-direction:column;
-gap:8px;
+gap:10px;
 }
-.chat-message{
-background:transparent;
-padding:4px 0;
-font-size:0.95rem;
-border-bottom:1px solid #e9eef3;
+.msg-bubble{
+background:#f1f5f9;
+padding:10px 16px;
+border-radius:18px;
+max-width:80%;
 }
 .chat-input-row{
 display:flex;
@@ -134,11 +134,10 @@ cursor:pointer;
 <div class="frame">
 <div class="link-bar">
 <div class="link-field">
-<i class="fas fa-link"></i>
-<input id="videoLink" placeholder="Paste YouTube link or video url (mp4, webm)">
+<input id="videoLink" placeholder="Paste YouTube link or video URL (mp4, webm, etc.)">
 </div>
 <button class="load-btn" id="loadBtn">
-<i class="fas fa-play"></i> Load
+<i class="fas fa-play"></i>
 </button>
 </div>
 <div class="player-box">
@@ -167,13 +166,14 @@ cursor:pointer;
 </div>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
-import { getDatabase, ref, onValue, set, push, update } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
+import { getDatabase, ref, onValue, update, push } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
 const firebaseConfig = {
 databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
 };
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
-const roomRef = ref(db, "watch");
+const watchRef = ref(db,"watch");
+const chatRef = ref(db,"watch/messages");
 const player = document.getElementById("player");
 const input = document.getElementById("videoLink");
 const loadBtn = document.getElementById("loadBtn");
@@ -181,23 +181,17 @@ const syncStatus = document.getElementById("syncStatus");
 const chatBox = document.getElementById("chatMessages");
 const chatInput = document.getElementById("chatMessage");
 const sendBtn = document.getElementById("sendChatBtn");
-let localUpdate = false;
 let currentLink = "";
-let currentState = { playing: false, time: 0 };
-let seeking = false;
-let lastSeek = 0;
 function extractYouTubeId(url) {
-if (!url) return null;
 const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
 const match = url.match(regExp);
-return (match && match[2] && match[2].length === 11) ? match[2] : null;
+return (match && match[2].length === 11) ? match[2] : null;
 }
 function isDirectVideoFile(url) {
 try {
 const parsed = new URL(url);
 const path = parsed.pathname.toLowerCase();
-if (parsed.hostname.includes('drive.google.com')) return false;
-return path.endsWith('.mp4') || path.endsWith('.webm') || path.endsWith('.ogg') || path.endsWith('.mov');
+return path.endsWith('.mp4') || path.endsWith('.webm') || path.endsWith('.ogg');
 } catch {
 return false;
 }
@@ -205,7 +199,7 @@ return false;
 function loadVideo(link) {
 const ytId = extractYouTubeId(link);
 if (ytId) {
-player.src = `https://www.youtube.com/embed/${ytId}?enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}`;
+player.src = `https://www.youtube.com/embed/${ytId}?autoplay=1&enablejsapi=1`;
 currentLink = link;
 return;
 }
@@ -214,99 +208,45 @@ player.src = link;
 currentLink = link;
 return;
 }
-alert("Only YouTube or direct video file (mp4, webm) — Google Drive not allowed");
-}
-function syncToFirebase(partial) {
-localUpdate = true;
-update(roomRef, partial).finally(() => { localUpdate = false; });
+alert("Link not supported. Use a YouTube link or a direct video file (mp4, webm, etc.)");
 }
 loadBtn.onclick = () => {
 const link = input.value.trim();
 if (!link) return;
-if (link.includes('drive.google.com')) {
-alert("Google Drive not supported");
-return;
-}
-syncToFirebase({ link, updated: Date.now() });
+update(watchRef, {
+link: link,
+updated: Date.now()
+});
 };
 input.onkeypress = e => {
 if (e.key === "Enter") loadBtn.click();
 };
-window.addEventListener('message', (e) => {
-try {
-if (!e.data || typeof e.data !== 'object') return;
-if (e.data.event === 'onReady' && player.src) {
-setTimeout(() => {
-player.contentWindow.postMessage('{"event":"command","func":"getCurrentTime","args":""}', '*');
-player.contentWindow.postMessage('{"event":"command","func":"getPlayerState","args":""}', '*');
-}, 500);
-}
-if (e.data.event === 'infoDelivery') {
-if (e.data.info && e.data.info.currentTime !== undefined && !seeking) {
-const t = Math.floor(e.data.info.currentTime);
-if (Math.abs(t - currentState.time) > 1.5) {
-currentState.time = t;
-if (!localUpdate) syncToFirebase({ time: t, playing: currentState.playing });
-}
-}
-if (e.data.info && e.data.info.playerState !== undefined) {
-const ps = e.data.info.playerState;
-const isPlaying = (ps === 1);
-if (isPlaying !== currentState.playing) {
-currentState.playing = isPlaying;
-if (!localUpdate) syncToFirebase({ playing: isPlaying, time: currentState.time });
-}
-}
-}
-} catch (er) {}
-});
-setInterval(() => {
-if (!player.src || !player.contentWindow || seeking) return;
-player.contentWindow.postMessage('{"event":"command","func":"getCurrentTime","args":""}', '*');
-player.contentWindow.postMessage('{"event":"command","func":"getPlayerState","args":""}', '*');
-}, 3000);
-function applyRemoteState(data) {
-if (!data || !player.src) return;
+onValue(watchRef, (snap) => {
+const data = snap.val();
+if (!data) return;
+syncStatus.innerText = "Synced " + new Date().toLocaleTimeString();
 if (data.link && data.link !== currentLink) {
 input.value = data.link;
 loadVideo(data.link);
 }
-if (player.tagName === 'IFRAME' && player.src.includes('youtube')) {
-if (data.playing !== undefined) {
-const cmd = data.playing ? 'playVideo' : 'pauseVideo';
-player.contentWindow.postMessage(`{"event":"command","func":"${cmd}","args":""}`, '*');
-}
-if (data.time !== undefined && Math.abs(data.time - currentState.time) > 2) {
-currentState.time = data.time;
-player.contentWindow.postMessage(`{"event":"command","func":"seekTo","args":[${data.time}, true]}`, '*');
-}
-}
-}
-onValue(roomRef, (snap) => {
-if (localUpdate) return;
-const data = snap.val();
-if (!data) return;
-syncStatus.innerText = 'Synced ' + new Date().toLocaleTimeString();
-applyRemoteState(data);
-}, { onlyOnce: false });
+});
 async function sendChat() {
 const text = chatInput.value.trim();
 if (!text) return;
-await push(ref(db, 'watch/messages'), { text, time: Date.now() });
+await push(chatRef, text);
 chatInput.value = "";
 }
 sendBtn.onclick = sendChat;
 chatInput.onkeypress = e => {
 if (e.key === "Enter") sendChat();
 };
-onValue(ref(db, 'watch/messages'), (snap) => {
+onValue(chatRef, (snap) => {
 chatBox.innerHTML = "";
 const data = snap.val();
 if (!data) return;
 Object.values(data).forEach(msg => {
 const div = document.createElement("div");
-div.className = "chat-message";
-div.innerText = (typeof msg === 'object' && msg.text) ? msg.text : (typeof msg === 'string' ? msg : '');
+div.innerText = msg;
 chatBox.appendChild(div);
 });
 chatBox.scrollTop = chatBox.scrollHeight;
