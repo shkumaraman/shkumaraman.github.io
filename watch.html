@@ -304,10 +304,10 @@ let localUpdate = false;
 let hasUserLeft = false;
 let currentVideoTime = 0;
 let videoDuration = 0;
-let lastFirebaseUpdate = 0;
 let isPlaying = false;
 let userName = "User" + Math.floor(Math.random() * 1000);
 let youtubeInterval = null;
+let updateInterval = null;
 
 function extractYouTubeId(url) {
 const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
@@ -343,6 +343,11 @@ clearInterval(youtubeInterval);
 youtubeInterval = null;
 }
 
+if (updateInterval) {
+clearInterval(updateInterval);
+updateInterval = null;
+}
+
 if (ytId) {
 player.src = `https://www.youtube.com/embed/${ytId}?autoplay=1&enablejsapi=1&origin=${window.location.origin}`;
 syncStatus.innerText = "YouTube loaded";
@@ -359,11 +364,20 @@ return;
 
 update(watchRef, {
 link: link,
-time: 0,
 playing: true,
-timestamp: Date.now(),
 lastUpdate: Date.now()
 });
+
+startProgressUpdate();
+}
+
+function startProgressUpdate() {
+if (updateInterval) clearInterval(updateInterval);
+updateInterval = setInterval(() => {
+if (!hasUserLeft && playerReady && currentLink) {
+updateProgressAndTime();
+}
+}, 100);
 }
 
 function setupYouTubeAPI() {
@@ -382,7 +396,6 @@ if (data.event === 'infoDelivery' && data.info) {
 if (data.info.currentTime !== undefined && data.info.duration !== undefined) {
 currentVideoTime = data.info.currentTime;
 videoDuration = data.info.duration || 0;
-updateProgressAndTime();
 
 if (data.info.playerState !== undefined) {
 const wasPlaying = isPlaying;
@@ -407,7 +420,6 @@ updatePlayPauseIcon();
 if (!localUpdate && !hasUserLeft) {
 update(watchRef, {
 playing: true,
-timestamp: Date.now(),
 lastUpdate: Date.now()
 });
 }
@@ -419,7 +431,6 @@ updatePlayPauseIcon();
 if (!localUpdate && !hasUserLeft) {
 update(watchRef, {
 playing: false,
-timestamp: Date.now(),
 lastUpdate: Date.now()
 });
 }
@@ -429,17 +440,6 @@ video.addEventListener('timeupdate', () => {
 if (video.duration) {
 currentVideoTime = video.currentTime;
 videoDuration = video.duration;
-updateProgressAndTime();
-}
-});
-
-video.addEventListener('seeked', () => {
-if (!localUpdate && video.duration && !hasUserLeft) {
-update(watchRef, {
-time: video.currentTime,
-timestamp: Date.now(),
-lastUpdate: Date.now()
-});
 }
 });
 } else {
@@ -522,12 +522,15 @@ const video = player.contentDocument?.querySelector('video') || player;
 if (video) {
 switch(action) {
 case 'play':
-video.play();
+video.play().then(() => {
 isPlaying = true;
+updatePlayPauseIcon();
+}).catch(() => {});
 break;
 case 'pause':
 video.pause();
 isPlaying = false;
+updatePlayPauseIcon();
 break;
 case 'seek':
 video.currentTime = value;
@@ -539,35 +542,17 @@ case 'backward':
 video.currentTime = value;
 break;
 }
-updatePlayPauseIcon();
 localUpdate = false;
 }
 }
 
-if (!hasUserLeft && (action === 'seek' || action === 'forward' || action === 'backward')) {
+if (!hasUserLeft && (action === 'play' || action === 'pause')) {
 update(watchRef, {
-time: value,
-timestamp: Date.now(),
+playing: isPlaying,
 lastUpdate: Date.now()
 });
 }
 }
-
-setInterval(() => {
-if (!hasUserLeft && playerReady && currentLink && !localUpdate) {
-const now = Date.now();
-if (now - lastFirebaseUpdate > 3000) {
-lastFirebaseUpdate = now;
-const currentTime = getCurrentTime();
-update(watchRef, {
-time: currentTime,
-playing: isPlaying,
-timestamp: now,
-lastUpdate: now
-}).catch(() => {});
-}
-}
-}, 3000);
 
 loadBtn.onclick = () => {
 const link = input.value.trim();
@@ -635,24 +620,9 @@ return;
 
 if (!playerReady || !currentLink) return;
 
-let targetTime = data.time || 0;
-if (data.lastUpdate && data.playing) {
-const timeDiff = Math.floor((now - data.lastUpdate) / 1000);
-targetTime = data.time + timeDiff;
-if (targetTime > getDuration() && getDuration() > 0) {
-targetTime = getDuration();
-}
-}
-
 if (!localUpdate) {
-const currentTime = getCurrentTime();
-
 if (data.playing !== undefined && data.playing !== isPlaying) {
 controlVideo(data.playing ? 'play' : 'pause');
-}
-
-if (data.time !== undefined && Math.abs(targetTime - currentTime) > 1.5) {
-controlVideo('seek', targetTime);
 }
 }
 });
@@ -662,9 +632,7 @@ const text = chatInput.value.trim();
 if (!text) return;
 
 await push(chatRef, {
-text: text,
-user: userName,
-time: Date.now()
+text: text
 });
 chatInput.value = "";
 }
@@ -682,13 +650,11 @@ if (!data) return;
 Object.values(data).reverse().slice(0, 50).reverse().forEach(msg => {
 const div = document.createElement("div");
 div.className = "msg-text";
-div.textContent = msg.text || msg;
+div.textContent = msg.text;
 chatBox.appendChild(div);
 });
 chatBox.scrollTop = chatBox.scrollHeight;
 });
-
-update(watchRef, {connected: true, timestamp: Date.now()});
 
 console.log("Watch Together Synced");
 </script>
