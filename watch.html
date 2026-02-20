@@ -176,15 +176,12 @@ height:220px;
 overflow-y:auto;
 display:flex;
 flex-direction:column;
-gap:10px;
+gap:8px;
 }
-.msg-bubble{
-background:#1e293b;
-padding:10px 16px;
-border-radius:18px;
-max-width:80%;
+.msg-text{
 color:white;
-border:1px solid #334155;
+font-size:0.95rem;
+line-height:1.4;
 }
 .chat-input-row{
 display:flex;
@@ -275,7 +272,7 @@ transition:0.2s;
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
-import { getDatabase, ref, onValue, update, push, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
+import { getDatabase, ref, onValue, update, push } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
 
 const firebaseConfig = {
 databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
@@ -330,12 +327,8 @@ return false;
 
 function formatTime(seconds) {
 if (!seconds || isNaN(seconds)) return "0:00";
-const hrs = Math.floor(seconds / 3600);
-const mins = Math.floor((seconds % 3600) / 60);
+const mins = Math.floor(seconds / 60);
 const secs = Math.floor(seconds % 60);
-if (hrs > 0) {
-return `${hrs}:${mins.toString().padStart(2,'0')}:${secs.toString().padStart(2,'0')}`;
-}
 return `${mins}:${secs.toString().padStart(2,'0')}`;
 }
 
@@ -392,8 +385,11 @@ videoDuration = data.info.duration || 0;
 updateProgressAndTime();
 
 if (data.info.playerState !== undefined) {
+const wasPlaying = isPlaying;
 isPlaying = (data.info.playerState === 1);
+if (wasPlaying !== isPlaying) {
 updatePlayPauseIcon();
+}
 }
 }
 }
@@ -466,6 +462,24 @@ const icon = playPauseBtn.querySelector('i');
 icon.className = isPlaying ? 'fas fa-pause' : 'fas fa-play';
 }
 
+function getCurrentTime() {
+if (isYouTube) {
+return currentVideoTime;
+} else {
+const video = player.contentDocument?.querySelector('video');
+return video ? video.currentTime : 0;
+}
+}
+
+function getDuration() {
+if (isYouTube) {
+return videoDuration;
+} else {
+const video = player.contentDocument?.querySelector('video');
+return video ? video.duration : 0;
+}
+}
+
 function controlVideo(action, value) {
 if (!playerReady || !currentLink) return;
 
@@ -486,6 +500,9 @@ command = 'seekTo';
 args = [value, true];
 break;
 case 'forward':
+command = 'seekTo';
+args = [value, true];
+break;
 case 'backward':
 command = 'seekTo';
 args = [value, true];
@@ -493,6 +510,13 @@ break;
 }
 const message = JSON.stringify({event: 'command', func: command, args: args});
 player.contentWindow.postMessage(message, '*');
+
+if (action === 'play') isPlaying = true;
+if (action === 'pause') isPlaying = false;
+
+setTimeout(() => {
+localUpdate = false;
+}, 100);
 } else {
 const video = player.contentDocument?.querySelector('video') || player;
 if (video) {
@@ -509,37 +533,30 @@ case 'seek':
 video.currentTime = value;
 break;
 case 'forward':
-video.currentTime = Math.min(video.duration, video.currentTime + 10);
+video.currentTime = value;
 break;
 case 'backward':
-video.currentTime = Math.max(0, video.currentTime - 10);
+video.currentTime = value;
 break;
 }
 updatePlayPauseIcon();
-}
-}
-
 localUpdate = false;
+}
+}
 
-if (!hasUserLeft) {
-if (action === 'seek' || action === 'forward' || action === 'backward') {
+if (!hasUserLeft && (action === 'seek' || action === 'forward' || action === 'backward')) {
 update(watchRef, {
-time: isYouTube ? value : (action === 'forward' || action === 'backward' ? getCurrentTime() : value),
+time: value,
 timestamp: Date.now(),
 lastUpdate: Date.now()
 });
 }
 }
-}
-
-function getCurrentTime() {
-return isYouTube ? currentVideoTime : (player.contentDocument?.querySelector('video')?.currentTime || 0);
-}
 
 setInterval(() => {
 if (!hasUserLeft && playerReady && currentLink && !localUpdate) {
 const now = Date.now();
-if (now - lastFirebaseUpdate > 5000) {
+if (now - lastFirebaseUpdate > 3000) {
 lastFirebaseUpdate = now;
 const currentTime = getCurrentTime();
 update(watchRef, {
@@ -550,7 +567,7 @@ lastUpdate: now
 }).catch(() => {});
 }
 }
-}, 5000);
+}, 3000);
 
 loadBtn.onclick = () => {
 const link = input.value.trim();
@@ -572,23 +589,27 @@ controlVideo(isPlaying ? 'pause' : 'play');
 
 prevBtn.onclick = () => {
 const currentTime = getCurrentTime();
-controlVideo('backward', Math.max(0, currentTime - 10));
+const newTime = Math.max(0, currentTime - 10);
+controlVideo('backward', newTime);
 };
 
 nextBtn.onclick = () => {
 const currentTime = getCurrentTime();
-const duration = isYouTube ? videoDuration : (player.contentDocument?.querySelector('video')?.duration || 0);
-controlVideo('forward', Math.min(duration, currentTime + 10));
+const duration = getDuration();
+const newTime = Math.min(duration, currentTime + 10);
+controlVideo('forward', newTime);
 };
 
 progressBar.onclick = (e) => {
-if (!playerReady || !currentLink || videoDuration === 0) return;
+if (!playerReady || !currentLink) return;
 
 const rect = progressBar.getBoundingClientRect();
 const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-const seekTime = videoDuration * percent;
 
+if (videoDuration > 0) {
+const seekTime = videoDuration * percent;
 controlVideo('seek', seekTime);
+}
 };
 
 document.addEventListener('visibilitychange', () => {
@@ -603,6 +624,7 @@ onValue(watchRef, (snap) => {
 const data = snap.val();
 if (!data || hasUserLeft) return;
 
+const now = Date.now();
 syncStatus.innerText = `Synced ${new Date().toLocaleTimeString()}`;
 
 if (data.link && data.link !== currentLink) {
@@ -615,8 +637,11 @@ if (!playerReady || !currentLink) return;
 
 let targetTime = data.time || 0;
 if (data.lastUpdate && data.playing) {
-const timeDiff = Math.floor((Date.now() - data.lastUpdate) / 1000);
+const timeDiff = Math.floor((now - data.lastUpdate) / 1000);
 targetTime = data.time + timeDiff;
+if (targetTime > getDuration() && getDuration() > 0) {
+targetTime = getDuration();
+}
 }
 
 if (!localUpdate) {
@@ -656,10 +681,8 @@ if (!data) return;
 
 Object.values(data).reverse().slice(0, 50).reverse().forEach(msg => {
 const div = document.createElement("div");
-div.className = "msg-bubble";
-const user = msg.user || "Anonymous";
-const time = msg.time ? new Date(msg.time).toLocaleTimeString() : "";
-div.innerHTML = `<small style="color:#94a3b8">${user} ${time}</small><br>${msg.text || msg}`;
+div.className = "msg-text";
+div.textContent = msg.text || msg;
 chatBox.appendChild(div);
 });
 chatBox.scrollTop = chatBox.scrollHeight;
