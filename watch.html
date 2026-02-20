@@ -119,7 +119,6 @@ background:#3b82f6;
 border-radius:3px;
 width:0%;
 position:relative;
-transition:width 0.1s linear;
 }
 .progress-fill::after{
 content:'';
@@ -233,7 +232,7 @@ transition:0.2s;
 <i class="fas fa-backward"></i>
 </button>
 <button class="control-btn" id="playPauseBtn" title="Play/Pause">
-<i class="fas fa-play"></i>
+<i class="fas fa-play" id="playPauseIcon"></i>
 </button>
 <button class="control-btn" id="nextBtn" title="Forward 10 seconds">
 <i class="fas fa-forward"></i>
@@ -272,7 +271,7 @@ transition:0.2s;
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
-import { getDatabase, ref, onValue, update, push } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
+import { getDatabase, ref, onValue, update, push, set } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
 
 const firebaseConfig = {
 databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
@@ -291,6 +290,7 @@ const chatBox = document.getElementById("chatMessages");
 const chatInput = document.getElementById("chatMessage");
 const sendBtn = document.getElementById("sendChatBtn");
 const playPauseBtn = document.getElementById("playPauseBtn");
+const playPauseIcon = document.getElementById("playPauseIcon");
 const prevBtn = document.getElementById("prevBtn");
 const nextBtn = document.getElementById("nextBtn");
 const progressFill = document.getElementById("progressFill");
@@ -305,9 +305,11 @@ let hasUserLeft = false;
 let currentVideoTime = 0;
 let videoDuration = 0;
 let isPlaying = false;
-let userName = "User" + Math.floor(Math.random() * 1000);
 let youtubeInterval = null;
 let updateInterval = null;
+let lastAutoUpdate = 0;
+let isBackgroundPaused = false;
+let firstLoad = true;
 
 function extractYouTubeId(url) {
 const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
@@ -332,7 +334,7 @@ const secs = Math.floor(seconds % 60);
 return `${mins}:${secs.toString().padStart(2,'0')}`;
 }
 
-function loadVideo(link) {
+function loadVideo(link, startTime = 0) {
 const ytId = extractYouTubeId(link);
 isYouTube = !!ytId;
 currentLink = link;
@@ -349,22 +351,23 @@ updateInterval = null;
 }
 
 if (ytId) {
-player.src = `https://www.youtube.com/embed/${ytId}?autoplay=1&enablejsapi=1&origin=${window.location.origin}`;
+player.src = `https://www.youtube.com/embed/${ytId}?enablejsapi=1&origin=${window.location.origin}&start=${Math.floor(startTime)}`;
 syncStatus.innerText = "YouTube loaded";
 setupYouTubeAPI();
 } else if (isVideoFile(link)) {
 player.src = link;
 syncStatus.innerText = "Video loaded";
-setupHTML5Video();
+setupHTML5Video(startTime);
 } else {
 alert("Link not supported. Use YouTube or direct video");
 playerReady = false;
 return;
 }
 
-update(watchRef, {
+set(watchRef, {
 link: link,
 playing: true,
+timestamp: startTime,
 lastUpdate: Date.now()
 });
 
@@ -374,7 +377,7 @@ startProgressUpdate();
 function startProgressUpdate() {
 if (updateInterval) clearInterval(updateInterval);
 updateInterval = setInterval(() => {
-if (!hasUserLeft && playerReady && currentLink) {
+if (playerReady && currentLink) {
 updateProgressAndTime();
 }
 }, 100);
@@ -393,10 +396,12 @@ if (!isYouTube || !event.data || typeof event.data !== 'string') return;
 try {
 const data = JSON.parse(event.data);
 if (data.event === 'infoDelivery' && data.info) {
-if (data.info.currentTime !== undefined && data.info.duration !== undefined) {
+if (data.info.currentTime !== undefined) {
 currentVideoTime = data.info.currentTime;
+}
+if (data.info.duration !== undefined) {
 videoDuration = data.info.duration || 0;
-
+}
 if (data.info.playerState !== undefined) {
 const wasPlaying = isPlaying;
 isPlaying = (data.info.playerState === 1);
@@ -405,21 +410,24 @@ updatePlayPauseIcon();
 }
 }
 }
-}
 } catch (e) {}
 });
 }
 
-function setupHTML5Video() {
+function setupHTML5Video(startTime) {
 const checkVideo = () => {
 const video = player.contentDocument?.querySelector('video');
 if (video) {
+video.currentTime = startTime;
+video.play();
+
 video.addEventListener('play', () => {
 isPlaying = true;
 updatePlayPauseIcon();
 if (!localUpdate && !hasUserLeft) {
 update(watchRef, {
 playing: true,
+timestamp: video.currentTime,
 lastUpdate: Date.now()
 });
 }
@@ -431,6 +439,7 @@ updatePlayPauseIcon();
 if (!localUpdate && !hasUserLeft) {
 update(watchRef, {
 playing: false,
+timestamp: video.currentTime,
 lastUpdate: Date.now()
 });
 }
@@ -441,6 +450,10 @@ if (video.duration) {
 currentVideoTime = video.currentTime;
 videoDuration = video.duration;
 }
+});
+
+video.addEventListener('loadedmetadata', () => {
+videoDuration = video.duration;
 });
 } else {
 setTimeout(checkVideo, 500);
@@ -454,12 +467,20 @@ if (videoDuration > 0) {
 const progress = (currentVideoTime / videoDuration) * 100;
 progressFill.style.width = progress + '%';
 timeDisplay.textContent = `${formatTime(currentVideoTime)} / ${formatTime(videoDuration)}`;
+
+const now = Date.now();
+if (isPlaying && !hasUserLeft && !localUpdate && (now - lastAutoUpdate) > 5000) {
+lastAutoUpdate = now;
+update(watchRef, {
+timestamp: Math.floor(currentVideoTime),
+lastUpdate: now
+});
+}
 }
 }
 
 function updatePlayPauseIcon() {
-const icon = playPauseBtn.querySelector('i');
-icon.className = isPlaying ? 'fas fa-pause' : 'fas fa-play';
+playPauseIcon.className = isPlaying ? 'fas fa-pause' : 'fas fa-play';
 }
 
 function getCurrentTime() {
@@ -513,10 +534,6 @@ player.contentWindow.postMessage(message, '*');
 
 if (action === 'play') isPlaying = true;
 if (action === 'pause') isPlaying = false;
-
-setTimeout(() => {
-localUpdate = false;
-}, 100);
 } else {
 const video = player.contentDocument?.querySelector('video') || player;
 if (video) {
@@ -542,15 +559,25 @@ case 'backward':
 video.currentTime = value;
 break;
 }
-localUpdate = false;
 }
 }
 
-if (!hasUserLeft && (action === 'play' || action === 'pause')) {
+setTimeout(() => {
+localUpdate = false;
+}, 200);
+
+if (!hasUserLeft) {
+if (action === 'play' || action === 'pause') {
 update(watchRef, {
 playing: isPlaying,
 lastUpdate: Date.now()
 });
+} else if (action === 'seek' || action === 'forward' || action === 'backward') {
+update(watchRef, {
+timestamp: Math.floor(value),
+lastUpdate: Date.now()
+});
+}
 }
 }
 
@@ -560,7 +587,7 @@ if (!link) {
 alert("Please paste a video link");
 return;
 }
-loadVideo(link);
+loadVideo(link, 0);
 syncStatus.innerText = "Loading video...";
 };
 
@@ -600,27 +627,58 @@ controlVideo('seek', seekTime);
 document.addEventListener('visibilitychange', () => {
 if (document.hidden) {
 hasUserLeft = true;
+isBackgroundPaused = true;
 } else {
 hasUserLeft = false;
+setTimeout(() => {
+isBackgroundPaused = false;
+if (playerReady && currentLink) {
+const stateRef = ref(db, "watch");
+onValue(stateRef, (snap) => {
+const data = snap.val();
+if (data && data.timestamp !== undefined) {
+const currentTime = getCurrentTime();
+const timeDiff = Math.abs(currentTime - data.timestamp);
+if (timeDiff > 1.5) {
+controlVideo('seek', data.timestamp);
+}
+}
+}, { once: true });
+}
+}, 1000);
 }
 });
 
 onValue(watchRef, (snap) => {
 const data = snap.val();
-if (!data || hasUserLeft) return;
+if (!data || hasUserLeft || isBackgroundPaused) return;
 
 const now = Date.now();
 syncStatus.innerText = `Synced ${new Date().toLocaleTimeString()}`;
 
 if (data.link && data.link !== currentLink) {
 input.value = data.link;
-loadVideo(data.link);
+loadVideo(data.link, data.timestamp || 0);
 return;
 }
 
 if (!playerReady || !currentLink) return;
 
+let effectiveTime = data.timestamp || 0;
+if (data.lastUpdate && data.timestamp !== undefined && data.playing) {
+const timeDiff = Math.floor((now - data.lastUpdate) / 1000);
+effectiveTime = data.timestamp + timeDiff;
+if (videoDuration > 0 && effectiveTime > videoDuration) {
+effectiveTime = videoDuration;
+}
+}
+
 if (!localUpdate) {
+const currentTime = getCurrentTime();
+if (Math.abs(currentTime - effectiveTime) > 1.5) {
+controlVideo('seek', effectiveTime);
+}
+
 if (data.playing !== undefined && data.playing !== isPlaying) {
 controlVideo(data.playing ? 'play' : 'pause');
 }
@@ -630,10 +688,7 @@ controlVideo(data.playing ? 'play' : 'pause');
 async function sendChat() {
 const text = chatInput.value.trim();
 if (!text) return;
-
-await push(chatRef, {
-text: text
-});
+await push(chatRef, { text: text });
 chatInput.value = "";
 }
 
@@ -646,7 +701,6 @@ onValue(chatRef, (snap) => {
 chatBox.innerHTML = "";
 const data = snap.val();
 if (!data) return;
-
 Object.values(data).reverse().slice(0, 50).reverse().forEach(msg => {
 const div = document.createElement("div");
 div.className = "msg-text";
@@ -656,7 +710,18 @@ chatBox.appendChild(div);
 chatBox.scrollTop = chatBox.scrollHeight;
 });
 
-console.log("Watch Together Synced");
+onValue(ref(db, "watch"), (snap) => {
+const data = snap.val();
+if (data && data.link && firstLoad) {
+firstLoad = false;
+input.value = data.link;
+loadVideo(data.link, data.timestamp || 0);
+if (data.playing === false) {
+setTimeout(() => controlVideo('pause'), 2000);
+}
+}
+}, { once: true });
+
 </script>
 </body>
 </html>
