@@ -169,6 +169,12 @@ gap:8px;
 color:white;
 font-size:0.95rem;
 line-height:1.4;
+padding:8px 12px;
+background:#1e293b;
+border-radius:18px;
+max-width:80%;
+align-self:flex-start;
+word-wrap:break-word;
 }
 .chat-input-row{
 display:flex;
@@ -248,7 +254,7 @@ transition:0.2s;
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
-import { getDatabase, ref, onValue, update, push, set } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
+import { getDatabase, ref, onValue, update, push, set, limitToLast, query } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
 
 const firebaseConfig = {
 databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
@@ -258,6 +264,7 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 const watchRef = ref(db, "watch");
 const chatRef = ref(db, "watch/messages");
+const recentChatQuery = query(chatRef, limitToLast(50));
 
 const player = document.getElementById("player");
 const input = document.getElementById("videoLink");
@@ -350,11 +357,12 @@ startProgressUpdate();
 
 function startProgressUpdate() {
 if (updateInterval) clearInterval(updateInterval);
+// Changed from 100ms to 1000ms (1 second)
 updateInterval = setInterval(() => {
 if (playerReady && currentLink) {
 updateProgressAndTime();
 }
-}, 100);
+}, 1000);
 }
 
 function setupYouTubeAPI() {
@@ -443,7 +451,8 @@ progressFill.style.width = progress + '%';
 timeDisplay.textContent = `${formatTime(currentVideoTime)} / ${formatTime(videoDuration)}`;
 
 const now = Date.now();
-if (isPlaying && !hasUserLeft && !localUpdate && (now - lastAutoUpdate) > 5000) {
+// Changed from 5000ms to 10000ms (10 seconds) to reduce updates
+if (isPlaying && !hasUserLeft && !localUpdate && (now - lastAutoUpdate) > 10000) {
 lastAutoUpdate = now;
 update(watchRef, {
 timestamp: Math.floor(currentVideoTime),
@@ -658,7 +667,8 @@ controlVideo(data.playing ? 'play' : 'pause');
 async function sendChat() {
 const text = chatInput.value.trim();
 if (!text) return;
-await push(chatRef, { text: text });
+
+await push(chatRef, text);
 chatInput.value = "";
 }
 
@@ -667,14 +677,15 @@ chatInput.onkeypress = e => {
 if (e.key === "Enter") sendChat();
 };
 
-onValue(chatRef, (snap) => {
+onValue(recentChatQuery, (snap) => {
 chatBox.innerHTML = "";
 const data = snap.val();
 if (!data) return;
-Object.values(data).reverse().slice(0, 50).reverse().forEach(msg => {
+
+Object.values(data).reverse().forEach(msg => {
 const div = document.createElement("div");
 div.className = "msg-text";
-div.textContent = msg.text;
+div.textContent = typeof msg === 'object' && msg.text ? msg.text : String(msg);
 chatBox.appendChild(div);
 });
 chatBox.scrollTop = chatBox.scrollHeight;
