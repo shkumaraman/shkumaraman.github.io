@@ -4,12 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>watch together · sync</title>
-
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-
 body{
 background:#f1f5f9;
 font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
@@ -18,23 +15,17 @@ justify-content:center;
 align-items:center;
 min-height:100vh;
 }
-
 .frame{
-max-width:960px;
+max-width:600px;
 width:100%;
-background:white;
-border-radius:28px;
-box-shadow:0 20px 35px -8px rgba(0,0,0,0.2);
-padding:24px;
+padding:15px;
 }
-
 .link-bar{
 display:flex;
 gap:12px;
 margin-bottom:20px;
 flex-wrap:wrap;
 }
-
 .link-field{
 flex:1;
 display:flex;
@@ -44,7 +35,6 @@ border:1px solid #e2e8f0;
 border-radius:60px;
 padding:0 18px;
 }
-
 #videoLink{
 width:100%;
 padding:14px 0;
@@ -53,7 +43,6 @@ background:transparent;
 font-size:1rem;
 outline:none;
 }
-
 .load-btn{
 background:#2563eb;
 color:white;
@@ -64,26 +53,22 @@ font-weight:600;
 font-size:1rem;
 cursor:pointer;
 }
-
 .player-box{
 background:#0b1120;
 border-radius:24px;
 overflow:hidden;
 margin-bottom:18px;
 }
-
 #player{
 width:100%;
 aspect-ratio:16/9;
 border:none;
 }
-
 .toolbar{
 display:flex;
 justify-content:space-between;
 margin:16px 0;
 }
-
 .live-badge{
 background:#e6f7e6;
 border-radius:40px;
@@ -94,19 +79,16 @@ font-size:0.9rem;
 color:#166534;
 border:1px solid #86efac;
 }
-
 .chat-area{
 background:#f8fafc;
 border-radius:24px;
 border:1px solid #e2e8f0;
 overflow:hidden;
 }
-
 .chat-header{
 padding:16px;
 font-weight:500;
 }
-
 .msg-window{
 background:white;
 padding:16px;
@@ -116,31 +98,26 @@ display:flex;
 flex-direction:column;
 gap:10px;
 }
-
 .msg-bubble{
 background:#f1f5f9;
 padding:10px 16px;
 border-radius:18px;
 max-width:80%;
 }
-
 .chat-input-row{
 display:flex;
 padding:12px;
 background:#f8fafc;
 }
-
 .chat-field{
 flex:1;
 }
-
 #chatMessage{
 width:100%;
 padding:12px;
 border-radius:20px;
 border:1px solid #cbd5e1;
 }
-
 .send-btn{
 background:#2563eb;
 border:none;
@@ -151,236 +128,131 @@ height:44px;
 margin-left:8px;
 cursor:pointer;
 }
-
 </style>
 </head>
-
 <body>
-
 <div class="frame">
-
 <div class="link-bar">
-
 <div class="link-field">
 <i class="fas fa-link"></i>
-<input id="videoLink" placeholder="Paste Google Drive link">
+<input id="videoLink" placeholder="Paste YouTube link or video URL (mp4, webm, etc.)">
 </div>
-
 <button class="load-btn" id="loadBtn">
 <i class="fas fa-play"></i> Load
 </button>
-
 </div>
-
-
 <div class="player-box">
 <iframe id="player" allowfullscreen allow="autoplay"></iframe>
 </div>
-
-
 <div class="toolbar">
-
 <div class="live-badge">
 <i class="fas fa-cloud"></i>
 <span id="syncStatus">connecting...</span>
 </div>
-
 </div>
-
-
 <div class="chat-area">
-
 <div class="chat-header">
 <i class="fas fa-comment"></i> Group Chat
 </div>
-
 <div id="chatMessages" class="msg-window"></div>
-
 <div class="chat-input-row">
-
 <div class="chat-field">
 <input id="chatMessage" placeholder="Say something...">
 </div>
-
 <button id="sendChatBtn" class="send-btn">
 <i class="fas fa-paper-plane"></i>
 </button>
-
 </div>
-
 </div>
-
 </div>
-
-
 <script type="module">
-
-import { initializeApp }
-from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
-
-import {
-getDatabase,
-ref,
-onValue,
-update,
-push
-}
-from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
-
-
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
+import { getDatabase, ref, onValue, update, push } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
 const firebaseConfig = {
-databaseURL:
-"https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
+databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
 };
-
 const app = initializeApp(firebaseConfig);
-
 const db = getDatabase(app);
-
 const watchRef = ref(db,"watch");
 const chatRef = ref(db,"watch/messages");
-
-
 const player = document.getElementById("player");
 const input = document.getElementById("videoLink");
 const loadBtn = document.getElementById("loadBtn");
 const syncStatus = document.getElementById("syncStatus");
-
 const chatBox = document.getElementById("chatMessages");
 const chatInput = document.getElementById("chatMessage");
 const sendBtn = document.getElementById("sendChatBtn");
-
-
-let currentLink="";
-
-
-/* FIXED DRIVE ID EXTRACTION */
-
-function extractId(url){
-
-const match = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
-
-return match ? match[1] : null;
-
+let currentLink = "";
+function extractYouTubeId(url) {
+const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+const match = url.match(regExp);
+return (match && match[2].length === 11) ? match[2] : null;
 }
-
-
-/* LOAD VIDEO */
-
-function loadVideo(link){
-
-const id = extractId(link);
-
-if(!id){
-
-alert("Invalid Google Drive link");
-
+function isDirectVideoFile(url) {
+try {
+const parsed = new URL(url);
+const path = parsed.pathname.toLowerCase();
+return path.endsWith('.mp4') || path.endsWith('.webm') || path.endsWith('.ogg') || path.endsWith('.mov') || path.endsWith('.avi') || path.endsWith('.mkv');
+} catch {
+return false;
+}
+}
+function loadVideo(link) {
+const ytId = extractYouTubeId(link);
+if (ytId) {
+player.src = `https://www.youtube.com/embed/${ytId}?autoplay=1&enablejsapi=1`;
+currentLink = link;
 return;
-
 }
-
-const embed =
-`https://drive.google.com/file/d/${id}/preview`;
-
-player.src=embed;
-
-currentLink=link;
-
+if (isDirectVideoFile(link)) {
+player.src = link;
+currentLink = link;
+return;
 }
-
-
-/* LOAD BUTTON */
-
-loadBtn.onclick=()=>{
-
-const link=input.value.trim();
-
-if(!link)return;
-
-update(watchRef,{
-link:link,
-updated:Date.now()
+alert("Link not supported. Use a YouTube link or a direct video file (mp4, webm, etc.)");
+}
+loadBtn.onclick = () => {
+const link = input.value.trim();
+if (!link) return;
+update(watchRef, {
+link: link,
+updated: Date.now()
 });
-
 };
-
-
-/* ENTER PRESS */
-
-input.onkeypress=e=>{
-if(e.key==="Enter")loadBtn.click();
+input.onkeypress = e => {
+if (e.key === "Enter") loadBtn.click();
 };
-
-
-/* SYNC VIDEO */
-
-onValue(watchRef,(snap)=>{
-
-const data=snap.val();
-
-if(!data)return;
-
-syncStatus.innerText=
-"Synced "+
-new Date().toLocaleTimeString();
-
-if(data.link && data.link!==currentLink){
-
+onValue(watchRef, (snap) => {
+const data = snap.val();
+if (!data) return;
+syncStatus.innerText = "Synced " + new Date().toLocaleTimeString();
+if (data.link && data.link !== currentLink) {
+input.value = data.link;
 loadVideo(data.link);
-
 }
-
 });
-
-
-/* SEND CHAT */
-
-async function sendChat(){
-
-const text=chatInput.value.trim();
-
-if(!text)return;
-
-await push(chatRef,text);
-
-chatInput.value="";
-
+async function sendChat() {
+const text = chatInput.value.trim();
+if (!text) return;
+await push(chatRef, text);
+chatInput.value = "";
 }
-
-sendBtn.onclick=sendChat;
-
-chatInput.onkeypress=e=>{
-if(e.key==="Enter")sendChat();
+sendBtn.onclick = sendChat;
+chatInput.onkeypress = e => {
+if (e.key === "Enter") sendChat();
 };
-
-
-/* RECEIVE CHAT */
-
-onValue(chatRef,(snap)=>{
-
-chatBox.innerHTML="";
-
-const data=snap.val();
-
-if(!data)return;
-
-Object.values(data).forEach(msg=>{
-
-const div=document.createElement("div");
-
-div.className="msg-bubble";
-
-div.innerText=msg;
-
+onValue(chatRef, (snap) => {
+chatBox.innerHTML = "";
+const data = snap.val();
+if (!data) return;
+Object.values(data).forEach(msg => {
+const div = document.createElement("div");
+div.className = "msg-bubble";
+div.innerText = msg;
 chatBox.appendChild(div);
-
 });
-
-chatBox.scrollTop=chatBox.scrollHeight;
-
+chatBox.scrollTop = chatBox.scrollHeight;
 });
-
 </script>
-
 </body>
 </html>
