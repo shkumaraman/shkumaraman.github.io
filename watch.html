@@ -3,254 +3,472 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>watch together · sync</title>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+<title>Watch Together Sync</title>
+
+<link rel="stylesheet"
+href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+
 <style>
-*{margin:0;padding:0;box-sizing:border-box}
+
 body{
-background:#f1f5f9;
-font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+background:#0f172a;
+color:white;
+font-family:system-ui;
 display:flex;
 justify-content:center;
-align-items:center;
-min-height:100vh;
+padding:20px;
 }
+
 .frame{
-max-width:600px;
+width:600px;
+max-width:100%;
+}
+
+input{
 width:100%;
-padding:15px;
-}
-.link-bar{
-display:flex;
-gap:12px;
-margin-bottom:20px;
-flex-wrap:wrap;
-}
-.link-field{
-flex:1;
-display:flex;
-align-items:center;
-background:#f8fafc;
-border:1px solid #e2e8f0;
-border-radius:60px;
-padding:0 18px;
-}
-#videoLink{
-width:100%;
-padding:14px 0;
+padding:12px;
+border-radius:8px;
 border:none;
-background:transparent;
-font-size:1rem;
-outline:none;
+margin-bottom:10px;
 }
-.load-btn{
+
+button{
+padding:10px 15px;
+border:none;
+border-radius:8px;
 background:#2563eb;
 color:white;
-border:none;
-border-radius:60px;
-padding:0 28px;
-font-weight:600;
-font-size:1rem;
 cursor:pointer;
 }
+
 .player-box{
-background:#0b1120;
-border-radius:24px;
+background:black;
+border-radius:12px;
 overflow:hidden;
-margin-bottom:18px;
 }
-#player{
+
+iframe,video{
 width:100%;
 aspect-ratio:16/9;
 border:none;
 }
-.toolbar{
+
+.controls{
 display:flex;
-justify-content:space-between;
-margin:16px 0;
-}
-.live-badge{
-background:#e6f7e6;
-border-radius:40px;
-padding:8px 20px;
-display:flex;
-gap:8px;
-font-size:0.9rem;
-color:#166534;
-border:1px solid #86efac;
-}
-.chat-area{
-background:#f8fafc;
-border-radius:24px;
-border:1px solid #e2e8f0;
-overflow:hidden;
-}
-.chat-header{
-padding:16px;
-font-weight:500;
-}
-.msg-window{
-background:white;
-padding:16px;
-height:200px;
-overflow-y:auto;
-display:flex;
-flex-direction:column;
+align-items:center;
 gap:10px;
+padding:10px;
 }
-.msg-bubble{
-background:#f1f5f9;
-padding:10px 16px;
-border-radius:18px;
-max-width:80%;
-}
-.chat-input-row{
-display:flex;
-padding:12px;
-background:#f8fafc;
-}
-.chat-field{
+
+.progress{
 flex:1;
-}
-#chatMessage{
-width:100%;
-padding:12px;
-border-radius:20px;
-border:1px solid #cbd5e1;
-}
-.send-btn{
-background:#2563eb;
-border:none;
-color:white;
-border-radius:50%;
-width:44px;
-height:44px;
-margin-left:8px;
+height:5px;
+background:#334155;
 cursor:pointer;
 }
+
+.fill{
+height:100%;
+background:#2563eb;
+width:0%;
+}
+
+.chat{
+margin-top:15px;
+background:#1e293b;
+padding:10px;
+border-radius:10px;
+}
+
+.msgs{
+height:150px;
+overflow:auto;
+}
+
 </style>
 </head>
 <body>
+
 <div class="frame">
-<div class="link-bar">
-<div class="link-field">
-<input id="videoLink" placeholder="Paste YouTube link or video URL (mp4, webm, etc.)">
-</div>
-<button class="load-btn" id="loadBtn">
+
+<input id="linkInput"
+placeholder="Paste YouTube or video link">
+
+<button id="loadBtn">Load</button>
+
+<div class="player-box">
+
+<iframe id="yt"
+allow="autoplay"
+style="display:none"></iframe>
+
+<video id="video"
+controls
+style="display:none"></video>
+
+<div class="controls">
+
+<button id="playBtn">
 <i class="fas fa-play"></i>
 </button>
+
+<div class="progress" id="progress">
+<div class="fill" id="fill"></div>
 </div>
-<div class="player-box">
-<iframe id="player" allowfullscreen allow="autoplay"></iframe>
-</div>
-<div class="toolbar">
-<div class="live-badge">
-<i class="fas fa-cloud"></i>
-<span id="syncStatus">connecting...</span>
-</div>
-</div>
-<div class="chat-area">
-<div class="chat-header">
-<i class="fas fa-comment"></i> Group Chat
-</div>
-<div id="chatMessages" class="msg-window"></div>
-<div class="chat-input-row">
-<div class="chat-field">
-<input id="chatMessage" placeholder="Say something...">
-</div>
-<button id="sendChatBtn" class="send-btn">
-<i class="fas fa-paper-plane"></i>
-</button>
+
+<span id="time">0:00 / 0:00</span>
+
 </div>
 </div>
+
+
+<div class="chat">
+
+<div class="msgs" id="msgs"></div>
+
+<input id="msgInput"
+placeholder="message">
+
+<button id="sendBtn">Send</button>
+
 </div>
+
+</div>
+
+
 <script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
-import { getDatabase, ref, onValue, update, push } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
-const firebaseConfig = {
-databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
+
+import { initializeApp }
+from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
+
+import {
+getDatabase,
+ref,
+onValue,
+update,
+push
+}
+from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
+
+const config={
+databaseURL:
+"https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
 };
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
-const watchRef = ref(db,"watch");
-const chatRef = ref(db,"watch/messages");
-const player = document.getElementById("player");
-const input = document.getElementById("videoLink");
-const loadBtn = document.getElementById("loadBtn");
-const syncStatus = document.getElementById("syncStatus");
-const chatBox = document.getElementById("chatMessages");
-const chatInput = document.getElementById("chatMessage");
-const sendBtn = document.getElementById("sendChatBtn");
-let currentLink = "";
-function extractYouTubeId(url) {
-const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
-const match = url.match(regExp);
-return (match && match[2].length === 11) ? match[2] : null;
+
+const app=initializeApp(config);
+
+const db=getDatabase(app);
+
+const watchRef=ref(db,"watch");
+const controlRef=ref(db,"watch/control");
+const chatRef=ref(db,"watch/chat");
+
+
+const yt=document.getElementById("yt");
+const video=document.getElementById("video");
+
+const linkInput=document.getElementById("linkInput");
+
+const playBtn=document.getElementById("playBtn");
+
+const progress=document.getElementById("progress");
+const fill=document.getElementById("fill");
+
+const timeText=document.getElementById("time");
+
+const msgs=document.getElementById("msgs");
+
+let isYT=false;
+let ready=false;
+let duration=0;
+let current="";
+let local=false;
+
+
+function ytID(url){
+
+const reg=
+/(?:youtube\.com.*v=|youtu\.be\/)([^&]+)/;
+
+const m=url.match(reg);
+
+return m?m[1]:null;
+
 }
-function isDirectVideoFile(url) {
-try {
-const parsed = new URL(url);
-const path = parsed.pathname.toLowerCase();
-return path.endsWith('.mp4') || path.endsWith('.webm') || path.endsWith('.ogg');
-} catch {
-return false;
+
+
+function load(link){
+
+const id=ytID(link);
+
+current=link;
+
+if(id){
+
+isYT=true;
+
+video.style.display="none";
+yt.style.display="block";
+
+yt.src=
+`https://www.youtube.com/embed/${id}?enablejsapi=1`;
+
+}else{
+
+isYT=false;
+
+yt.style.display="none";
+video.style.display="block";
+
+video.src=link;
+
+video.load();
+
 }
+
+ready=true;
+
 }
-function loadVideo(link) {
-const ytId = extractYouTubeId(link);
-if (ytId) {
-player.src = `https://www.youtube.com/embed/${ytId}?autoplay=1&enablejsapi=1`;
-currentLink = link;
-return;
-}
-if (isDirectVideoFile(link)) {
-player.src = link;
-currentLink = link;
-return;
-}
-alert("Link not supported. Use a YouTube link or a direct video file (mp4, webm, etc.)");
-}
-loadBtn.onclick = () => {
-const link = input.value.trim();
-if (!link) return;
-update(watchRef, {
-link: link,
-updated: Date.now()
+
+
+function send(state){
+
+if(local)return;
+
+local=true;
+
+update(controlRef,{
+...state,
+t:Date.now()
+}).finally(()=>{
+local=false;
 });
+
+}
+
+
+function play(){
+
+if(isYT){
+
+yt.contentWindow.postMessage(JSON.stringify({
+event:"command",
+func:"playVideo"
+}),"*");
+
+}else{
+
+video.play();
+
+}
+
+send({playing:true});
+
+}
+
+
+function pause(){
+
+if(isYT){
+
+yt.contentWindow.postMessage(JSON.stringify({
+event:"command",
+func:"pauseVideo"
+}),"*");
+
+}else{
+
+video.pause();
+
+}
+
+send({playing:false});
+
+}
+
+
+function seek(time){
+
+if(isYT){
+
+yt.contentWindow.postMessage(JSON.stringify({
+event:"command",
+func:"seekTo",
+args:[time,true]
+}),"*");
+
+}else{
+
+video.currentTime=time;
+
+}
+
+send({time:time});
+
+}
+
+
+playBtn.onclick=()=>{
+
+if(isYT){
+
+play();
+
+}else{
+
+video.paused?play():pause();
+
+}
+
 };
-input.onkeypress = e => {
-if (e.key === "Enter") loadBtn.click();
+
+
+progress.onclick=e=>{
+
+if(!ready)return;
+
+const rect=progress.getBoundingClientRect();
+
+const percent=
+(e.clientX-rect.left)/rect.width;
+
+seek(duration*percent);
+
 };
-onValue(watchRef, (snap) => {
-const data = snap.val();
-if (!data) return;
-syncStatus.innerText = "Synced " + new Date().toLocaleTimeString();
-if (data.link && data.link !== currentLink) {
-input.value = data.link;
-loadVideo(data.link);
-}
+
+
+video.addEventListener("timeupdate",()=>{
+
+duration=video.duration||0;
+
+const t=video.currentTime||0;
+
+fill.style.width=(t/duration*100)+"%";
+
+timeText.innerText=
+format(t)+" / "+format(duration);
+
 });
-async function sendChat() {
-const text = chatInput.value.trim();
-if (!text) return;
-await push(chatRef, text);
-chatInput.value = "";
+
+
+function format(s){
+
+const m=Math.floor(s/60);
+
+const sec=Math.floor(s%60);
+
+return `${m}:${sec.toString().padStart(2,"0")}`;
+
 }
-sendBtn.onclick = sendChat;
-chatInput.onkeypress = e => {
-if (e.key === "Enter") sendChat();
+
+
+document.getElementById("loadBtn").onclick=()=>{
+
+const link=linkInput.value.trim();
+
+if(!link)return;
+
+update(watchRef,{
+link:link
+});
+
 };
-onValue(chatRef, (snap) => {
-chatBox.innerHTML = "";
-const data = snap.val();
-if (!data) return;
-Object.values(data).forEach(msg => {
-const div = document.createElement("div");
-div.innerText = msg;
-chatBox.appendChild(div);
+
+
+onValue(watchRef,snap=>{
+
+const d=snap.val();
+
+if(!d)return;
+
+if(d.link && d.link!==current){
+
+load(d.link);
+
+}
+
 });
-chatBox.scrollTop = chatBox.scrollHeight;
+
+
+onValue(controlRef,snap=>{
+
+if(local)return;
+
+const d=snap.val();
+
+if(!d)return;
+
+local=true;
+
+if(d.playing!==undefined){
+
+d.playing?play():pause();
+
+}
+
+if(d.time!==undefined){
+
+seek(d.time);
+
+}
+
+local=false;
+
 });
+
+
+setInterval(()=>{
+
+if(!ready)return;
+
+if(!isYT){
+
+send({
+time:video.currentTime
+});
+
+}
+
+},2000);
+
+
+// CHAT
+
+document.getElementById("sendBtn").onclick=()=>{
+
+const text=
+document.getElementById("msgInput").value;
+
+if(!text)return;
+
+push(chatRef,{
+text:text
+});
+
+document.getElementById("msgInput").value="";
+
+};
+
+
+onValue(chatRef,snap=>{
+
+msgs.innerHTML="";
+
+snap.forEach(c=>{
+
+const div=document.createElement("div");
+
+div.innerText=c.val().text;
+
+msgs.appendChild(div);
+
+});
+
+msgs.scrollTop=msgs.scrollHeight;
+
+});
+
 </script>
+
 </body>
 </html>
