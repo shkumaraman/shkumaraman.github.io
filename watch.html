@@ -1,25 +1,604 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Video Player</title>
+    <title>Sync video • chat</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+    <!-- Font Awesome 6 (free) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(145deg, #0f172a 0%, #1e1b4b 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 16px;
+        }
+        .card {
+            background: rgba(255,255,255,0.07);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border-radius: 32px;
+            box-shadow: 0 30px 60px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.05);
+            padding: 24px;
+            width: 100%;
+            max-width: 900px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .input-row {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .input-icon {
+            flex: 1;
+            min-width: 240px;
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+        .input-icon i {
+            position: absolute;
+            left: 18px;
+            color: #94a3b8;
+            font-size: 1rem;
+            pointer-events: none;
+        }
+        #videoLink {
+            width: 100%;
+            padding: 16px 20px 16px 50px;
+            background: rgba(15, 23, 42, 0.8);
+            border: 2px solid #334155;
+            border-radius: 60px;
+            font-size: 1rem;
+            color: #f1f5f9;
+            outline: none;
+            transition: all 0.2s;
+            backdrop-filter: blur(4px);
+        }
+        #videoLink:focus {
+            border-color: #818cf8;
+            background: #0f172a;
+            box-shadow: 0 0 0 4px rgba(129, 140, 248, 0.3);
+        }
+        #videoLink::placeholder {
+            color: #64748b;
+            font-weight: 300;
+        }
+        .btn-primary {
+            background: linear-gradient(145deg, #4f46e5, #7c3aed);
+            border: none;
+            border-radius: 60px;
+            padding: 0 32px;
+            color: white;
+            font-weight: 600;
+            font-size: 1rem;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s;
+            box-shadow: 0 8px 20px rgba(79, 70, 229, 0.5);
+            border: 1px solid rgba(255,255,255,0.15);
+        }
+        .btn-primary i { font-size: 1rem; }
+        .btn-primary:hover {
+            transform: scale(1.03);
+            background: linear-gradient(145deg, #6366f1, #8b5cf6);
+            box-shadow: 0 12px 28px rgba(124, 58, 237, 0.6);
+        }
+        .player-wrapper {
+            background: #030712;
+            border-radius: 24px;
+            overflow: hidden;
+            box-shadow: 0 20px 40px #00000070;
+            border: 1px solid #334155;
+            margin-bottom: 18px;
+        }
+        #player {
+            width: 100%;
+            aspect-ratio: 16/9;
+            border: none;
+            display: block;
+            background: #000;
+        }
+        .transport-bar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            margin: 20px 0 16px;
+        }
+        .ctrl-group {
+            display: flex;
+            gap: 12px;
+            background: #0f172a80;
+            padding: 8px 16px;
+            border-radius: 80px;
+            backdrop-filter: blur(8px);
+            border: 1px solid #334155;
+        }
+        .ctrl-btn {
+            background: transparent;
+            border: none;
+            color: #e2e8f0;
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            font-size: 1.4rem;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: 0.15s;
+        }
+        .ctrl-btn i { filter: drop-shadow(0 2px 4px black); }
+        .ctrl-btn:hover {
+            background: #1e293b;
+            color: white;
+            transform: scale(1.1);
+        }
+        .ctrl-btn:active { background: #334155; }
+        .green-dot {
+            width: 12px;
+            height: 12px;
+            background: #22c55e;
+            border-radius: 50%;
+            box-shadow: 0 0 0 3px #22c55e40;
+            animation: pulseLive 2s infinite;
+        }
+        @keyframes pulseLive { 0% { opacity:1; } 50% { opacity:0.6; } }
+        .sync-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: #0f172a99;
+            padding: 6px 16px;
+            border-radius: 40px;
+            font-size: 0.85rem;
+            color: #cbd5e1;
+            border: 1px solid #334155;
+            backdrop-filter: blur(4px);
+        }
+        /* chat section */
+        .chat-section {
+            background: #0f172acc;
+            border-radius: 28px;
+            padding: 18px 18px 12px;
+            backdrop-filter: blur(10px);
+            border: 1px solid #334155;
+            margin-top: 12px;
+        }
+        .chat-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: #e0e7ff;
+            font-weight: 500;
+            margin-bottom: 12px;
+            font-size: 0.95rem;
+            letter-spacing: 0.3px;
+        }
+        .chat-title i { color: #818cf8; }
+        .messages-box {
+            background: #03071280;
+            border-radius: 20px;
+            padding: 16px;
+            height: 180px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            border: 1px solid #1e293b;
+            scroll-behavior: smooth;
+        }
+        .msg-row {
+            display: flex;
+            gap: 10px;
+            align-items: flex-start;
+        }
+        .msg-bubble {
+            background: #1e293b;
+            padding: 10px 16px;
+            border-radius: 20px 20px 20px 4px;
+            max-width: 85%;
+            word-break: break-word;
+            color: #f1f5f9;
+            font-size: 0.95rem;
+            line-height: 1.4;
+            border: 1px solid #334155;
+            box-shadow: 0 2px 6px #00000040;
+        }
+        .msg-name {
+            font-weight: 600;
+            color: #a5b4fc;
+            margin-right: 8px;
+            font-size: 0.8rem;
+        }
+        .msg-time {
+            font-size: 0.65rem;
+            color: #94a3b8;
+            margin-top: 4px;
+            text-align: right;
+        }
+        .input-chat {
+            display: flex;
+            gap: 10px;
+            margin-top: 16px;
+        }
+        .input-chat .input-icon {
+            min-width: 0;
+            flex: 1;
+        }
+        .input-chat .input-icon i {
+            left: 16px;
+            color: #818cf8;
+        }
+        #chatMessage {
+            width: 100%;
+            padding: 14px 20px 14px 48px;
+            background: #0f172a;
+            border: 2px solid #334155;
+            border-radius: 60px;
+            color: #f8fafc;
+            font-size: 0.95rem;
+        }
+        #chatMessage:focus { border-color: #818cf8; }
+        .chat-send-btn {
+            background: #4f46e5;
+            border: none;
+            border-radius: 60px;
+            width: 54px;
+            height: 54px;
+            font-size: 1.3rem;
+            color: white;
+            cursor: pointer;
+            transition: 0.15s;
+            box-shadow: 0 6px 14px #4f46e5;
+        }
+        .chat-send-btn:hover {
+            background: #6366f1;
+            transform: rotate(4deg) scale(1.05);
+        }
+        @media (max-width: 550px) {
+            .card { padding: 16px; }
+            .transport-bar { flex-direction: column; align-items: stretch; }
+            .ctrl-group { justify-content: center; }
+        }
+    </style>
 </head>
 <body>
+    <div class="card">
+        <!-- link row with icon -->
+        <div class="input-row">
+            <div class="input-icon">
+                <i class="fas fa-link"></i>
+                <input type="text" id="videoLink" placeholder="Paste any Google Drive link (video)" autocomplete="off">
+            </div>
+            <button class="btn-primary" id="playBtn"><i class="fas fa-play"></i> Load</button>
+        </div>
 
-<input type="text" id="videoLink" placeholder="Paste Drive link">
-<button onclick="playVideo()">Play</button>
+        <!-- video iframe -->
+        <div class="player-wrapper">
+            <iframe id="player" allow="autoplay" allowfullscreen></iframe>
+        </div>
 
-<br><br>
+        <!-- play/pause/prev/next + firebase sync indicator -->
+        <div class="transport-bar">
+            <div class="ctrl-group">
+                <button class="ctrl-btn" id="prevBtn" title="previous (sync)"><i class="fas fa-backward-step"></i></button>
+                <button class="ctrl-btn" id="playPauseBtn" title="play/pause (global)"><i class="fas fa-play" id="playPauseIcon"></i></button>
+                <button class="ctrl-btn" id="nextBtn" title="next (sync)"><i class="fas fa-forward-step"></i></button>
+            </div>
+            <div class="sync-badge">
+                <span class="green-dot"></span>
+                <i class="fas fa-database" style="opacity:0.7;"></i>
+                <span id="syncStatus">live • firebase</span>
+            </div>
+        </div>
 
-<iframe id="player" width="640" height="360" allow="autoplay"></iframe>
+        <!-- CHAT section -->
+        <div class="chat-section">
+            <div class="chat-title">
+                <i class="fas fa-comment-dots"></i> Live chat (real-time)
+                <span style="margin-left:auto; font-size:0.8rem; color:#64748b;"><i class="far fa-eye"></i> everyone</span>
+            </div>
+            <!-- messages container -->
+            <div class="messages-box" id="chatMessages"></div>
+            <!-- chat input -->
+            <div class="input-chat">
+                <div class="input-icon">
+                    <i class="fas fa-pencil-alt"></i>
+                    <input type="text" id="chatMessage" placeholder="Type a message..." autocomplete="off">
+                </div>
+                <button class="chat-send-btn" id="sendChatBtn"><i class="fas fa-paper-plane"></i></button>
+            </div>
+        </div>
+    </div>
 
-<script>
-function playVideo() {
-    var link = document.getElementById("videoLink").value;
-    var id = link.split("/d/")[1].split("/")[0];
-    document.getElementById("player").src =
-        "https://drive.google.com/file/d/" + id + "/preview";
-}
-</script>
+    <!-- Firebase SDK (modular) -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
+        import { getDatabase, ref, onValue, set, update, push, serverTimestamp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
 
+        // ---------- firebase setup ----------
+        const firebaseConfig = {
+            databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
+        };
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+
+        // references
+        const videoControlRef = ref(db, 'videoControl');
+        const chatRef = ref(db, 'chatMessages'); // all chat messages
+
+        // ---------- DOM elements ----------
+        const videoLinkInput = document.getElementById('videoLink');
+        const playerIframe = document.getElementById('player');
+        const playBtn = document.getElementById('playBtn');
+        const prevBtn = document.getElementById('prevBtn');
+        const nextBtn = document.getElementById('nextBtn');
+        const playPauseBtn = document.getElementById('playPauseBtn');
+        const playPauseIcon = document.getElementById('playPauseIcon');
+        const syncStatus = document.getElementById('syncStatus');
+        const chatMessagesDiv = document.getElementById('chatMessages');
+        const chatInput = document.getElementById('chatMessage');
+        const sendChatBtn = document.getElementById('sendChatBtn');
+
+        // state
+        let currentLink = '';           // last loaded link
+        let isPlayingLocally = false;    // for UI only
+        let ignorePlayPauseFromFirebase = false; // to avoid echo
+
+        // ---------- helper: extract Google Drive ID ----------
+        function extractDriveId(url) {
+            if (!url) return null;
+            // patterns: /d/ID, id=ID, /file/d/ID
+            let match = url.match(/[-\w]{25,}/); // typical ID length >25
+            if (match) return match[0];
+            // more precise
+            if (url.includes('/d/')) {
+                let parts = url.split('/d/')[1];
+                if (parts) return parts.split('/')[0];
+            }
+            if (url.includes('id=')) {
+                let parts = url.split('id=')[1];
+                if (parts) return parts.split('&')[0];
+            }
+            if (url.includes('/file/d/')) {
+                let parts = url.split('/file/d/')[1];
+                if (parts) return parts.split('/')[0];
+            }
+            return null;
+        }
+
+        // ---------- load video into iframe ----------
+        function loadVideo(link) {
+            if (!link) return;
+            const id = extractDriveId(link);
+            if (id && id.length >= 20) {
+                playerIframe.src = `https://drive.google.com/file/d/${id}/preview`;
+                currentLink = link;
+            } else {
+                alert('Invalid Google Drive link. Use format: https://drive.google.com/file/d/XXX/view');
+            }
+        }
+
+        // ---------- update firebase with action & link ----------
+        function sendControlAction(action, extra = {}) {
+            const link = videoLinkInput.value.trim();
+            update(videoControlRef, {
+                link: link,
+                action: action,
+                timestamp: new Date().toISOString(),
+                ...extra
+            }).catch(console.warn);
+        }
+
+        // ---------- play/pause toggle (local + firebase) ----------
+        function togglePlayPause() {
+            // Drive preview does not expose play/pause API, but we simulate a "command"
+            // We'll broadcast 'play' or 'pause' and rely on iframe's own controls.
+            // UI: just toggle icon (optimistic)
+            isPlayingLocally = !isPlayingLocally;
+            updatePlayPauseIcon(isPlayingLocally);
+
+            // Send action to firebase
+            const action = isPlayingLocally ? 'play' : 'pause';
+            sendControlAction(action, { playState: isPlayingLocally });
+
+            // For Google Drive iframe, we cannot programmatically play/pause.
+            // But we show sync state, user still can click inside iframe.
+            // This demonstrates the firebase message.
+        }
+
+        function updatePlayPauseIcon(state) {
+            if (state) {
+                playPauseIcon.className = 'fas fa-pause';
+            } else {
+                playPauseIcon.className = 'fas fa-play';
+            }
+        }
+
+        // ---------- next / prev (playlist demo) - with static examples, but you can use any ----------
+        // We keep three sample IDs (no hardcoded demo links — using placeholder IDs, but they won't work)
+        // Instead, we keep current index in memory. For simplicity, just rotate between last three entered links.
+        let playlist = []; // store last used links (max 3)
+        let currentIndex = -1;
+
+        function addToPlaylist(link) {
+            if (!link || playlist.includes(link)) return;
+            playlist.unshift(link);
+            if (playlist.length > 3) playlist.pop();
+            if (currentIndex === -1 && playlist.length) currentIndex = 0;
+        }
+
+        function nextVideo() {
+            if (playlist.length === 0) {
+                if (videoLinkInput.value.trim()) {
+                    addToPlaylist(videoLinkInput.value.trim());
+                } else return;
+            }
+            // rotate forward
+            currentIndex = (currentIndex + 1) % playlist.length;
+            const newLink = playlist[currentIndex];
+            videoLinkInput.value = newLink;
+            loadVideo(newLink);
+            sendControlAction('next', { link: newLink, index: currentIndex });
+        }
+
+        function prevVideo() {
+            if (playlist.length === 0) {
+                if (videoLinkInput.value.trim()) {
+                    addToPlaylist(videoLinkInput.value.trim());
+                } else return;
+            }
+            currentIndex = (currentIndex - 1 + playlist.length) % playlist.length;
+            const newLink = playlist[currentIndex];
+            videoLinkInput.value = newLink;
+            loadVideo(newLink);
+            sendControlAction('prev', { link: newLink, index: currentIndex });
+        }
+
+        // ----- chat functions -----
+        async function sendChatMessage() {
+            const text = chatInput.value.trim();
+            if (!text) return;
+            try {
+                await push(chatRef, {
+                    text: text,
+                    name: 'user_' + Math.floor(Math.random() * 1000), // simple nickname
+                    timestamp: serverTimestamp(),
+                    createdAt: new Date().toISOString()
+                });
+                chatInput.value = '';
+            } catch (e) {
+                console.warn('chat error', e);
+            }
+        }
+
+        // listen to chat
+        onValue(chatRef, (snapshot) => {
+            const msgs = snapshot.val();
+            chatMessagesDiv.innerHTML = '';
+            if (!msgs) return;
+            const sorted = Object.entries(msgs)
+                .map(([key, val]) => ({ key, ...val }))
+                .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+            
+            for (let m of sorted) {
+                const row = document.createElement('div');
+                row.className = 'msg-row';
+                const bubble = document.createElement('div');
+                bubble.className = 'msg-bubble';
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'msg-name';
+                nameSpan.textContent = m.name || 'anon';
+                const textSpan = document.createElement('span');
+                textSpan.textContent = m.text;
+                bubble.appendChild(nameSpan);
+                bubble.appendChild(textSpan);
+                
+                const timeDiv = document.createElement('div');
+                timeDiv.className = 'msg-time';
+                if (m.createdAt) {
+                    const d = new Date(m.createdAt);
+                    timeDiv.textContent = d.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
+                } else if (m.timestamp) {
+                    const d = new Date(m.timestamp);
+                    timeDiv.textContent = d.toLocaleTimeString();
+                } else {
+                    timeDiv.textContent = 'now';
+                }
+                bubble.appendChild(timeDiv);
+                row.appendChild(bubble);
+                chatMessagesDiv.appendChild(row);
+            }
+            // auto scroll to bottom
+            chatMessagesDiv.scrollTop = chatMessagesDiv.scrollHeight;
+        });
+
+        // ---------- firebase incoming ----------
+        onValue(videoControlRef, (snapshot) => {
+            const data = snapshot.val();
+            if (!data) return;
+            syncStatus.innerText = 'sync • ' + new Date().toLocaleTimeString();
+
+            // update link field if differs
+            if (data.link && data.link !== videoLinkInput.value) {
+                videoLinkInput.value = data.link;
+            }
+            // load video if link is new and action play/next/prev
+            if (data.link && (data.action === 'play' || data.action === 'next' || data.action === 'prev' || data.action === 'load')) {
+                if (data.link !== currentLink) {
+                    loadVideo(data.link);
+                }
+            }
+            // handle play/pause state from others (just icon, can't control iframe)
+            if (data.action === 'play') {
+                isPlayingLocally = true;
+                updatePlayPauseIcon(true);
+            } else if (data.action === 'pause') {
+                isPlayingLocally = false;
+                updatePlayPauseIcon(false);
+            } else if (data.action === 'next' || data.action === 'prev') {
+                // update playlist index locally
+                if (data.link && !playlist.includes(data.link)) {
+                    addToPlaylist(data.link);
+                    currentIndex = playlist.indexOf(data.link);
+                }
+            }
+        });
+
+        // ----- UI event bindings -----
+        playBtn.addEventListener('click', () => {
+            const link = videoLinkInput.value.trim();
+            if (!link) return;
+            addToPlaylist(link);
+            currentIndex = playlist.indexOf(link);
+            loadVideo(link);
+            sendControlAction('load', { link });
+        });
+
+        playPauseBtn.addEventListener('click', togglePlayPause);
+
+        prevBtn.addEventListener('click', () => {
+            prevVideo();
+        });
+
+        nextBtn.addEventListener('click', () => {
+            nextVideo();
+        });
+
+        // Enter in video link triggers load
+        videoLinkInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') playBtn.click();
+        });
+
+        // chat send
+        sendChatBtn.addEventListener('click', sendChatMessage);
+        chatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                sendChatMessage();
+            }
+        });
+
+        // load initial from firebase if any (or empty)
+        // small demo: prefill with empty but user will paste
+        // remove any demo placeholder
+        videoLinkInput.value = '';
+
+        // clean playlist from any hardcoded demo – empty
+        playlist = [];
+        currentIndex = -1;
+
+        console.log('ready — no demo urls, all fresh.');
+    </script>
 </body>
 </html>
