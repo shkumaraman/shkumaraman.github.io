@@ -607,9 +607,8 @@ body.light-mode {
 {% include scripts.html %}
 
 <script type="module">
-// Import Firebase modules
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
-import { getDatabase, ref, push, set, onChildAdded, query, orderByChild, limitToLast, get, update, onValue } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
+import { getDatabase, ref, push, set, onChildAdded, query, orderByChild, limitToLast, get, update } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
 
 const firebaseConfig = {
   databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
@@ -627,7 +626,6 @@ const messageExpiryHours = 6;
 let isSendingGif = false;
 let isSendingMessage = false;
 let initialMessagesLoaded = false;
-let messagesRef;
 let groupPasswordRequired = false;
 let groupAdminNickname = null;
 let passwordVerified = false;
@@ -645,9 +643,7 @@ async function loadBannedWords() {
       .map(word => word.trim().toLowerCase())
       .filter(word => word.length > 0);
     bannedWordsLoaded = true;
-    console.log("Banned words loaded:", bannedWords.length);
   } catch (err) {
-    console.error("Error loading banned words:", err);
     bannedWords = [];
     bannedWordsLoaded = true;
   }
@@ -808,13 +804,7 @@ function cleanupOldMessages() {
         }
       });
       if (Object.keys(updates).length > 0) {
-        update(ref(db, `groups/${currentGroup}/messages`), updates)
-          .then(() => {
-            console.log("Cleaned up old messages");
-          })
-          .catch((error) => {
-            console.error("Error cleaning up old messages:", error);
-          });
+        update(ref(db, `groups/${currentGroup}/messages`), updates);
       }
     }
   });
@@ -843,7 +833,6 @@ function sendMessageToGroup(text) {
       maintainMessageLimit();
     })
     .catch(err => {
-      console.error("Error sending message:", err);
       isSendingMessage = false;
     });
 }
@@ -946,7 +935,6 @@ function sendImageToGroup(blob) {
       maintainMessageLimit();
     })
     .catch(err => {
-      console.error("Error sending image:", err);
       isSendingMessage = false;
     });
 }
@@ -972,7 +960,6 @@ function sendGifToGroup(url) {
       maintainMessageLimit();
     })
     .catch(err => {
-      console.error("Error sending GIF:", err);
       isSendingGif = false;
       isSendingMessage = false;
     });
@@ -991,7 +978,19 @@ function displayMessage(msg) {
   nicknameEl.style.fontWeight = "bold";
   nicknameEl.style.marginBottom = "2px";
   nicknameEl.style.lineHeight = "1";
-  nicknameEl.textContent = msg.nickname || 'Guest';
+  
+  const nicknameSpan = document.createElement("span");
+  nicknameSpan.textContent = msg.nickname || 'Guest';
+  nicknameSpan.style.cursor = "pointer";
+  
+  nicknameSpan.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const encodedNickname = encodeURIComponent(msg.nickname || 'Guest');
+    window.location.href = `/profile.html?id=${encodedNickname}`;
+  });
+  
+  nicknameEl.appendChild(nicknameSpan);
   
   if (msg.nickname === groupAdminNickname) {
     const verifyImg = document.createElement("img");
