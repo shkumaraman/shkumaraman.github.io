@@ -324,10 +324,7 @@ import {
   ref, 
   set, 
   get, 
-  push,
-  query,
-  orderByChild,
-  equalTo
+  push
 } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
 
 const firebaseConfig = {
@@ -349,7 +346,6 @@ if (fullNickname.includes('TR|')) {
 const myNickname = localStorage.getItem('talkrush_nickname') || '';
 const isOwnProfile = myNickname === fullNickname;
 
-let myPeerId = localStorage.getItem('peerId');
 let isFriend = false;
 let existingChatId = null;
 
@@ -378,10 +374,9 @@ async function checkIfFriend() {
   if (!myNickname || !fullNickname || isOwnProfile) return;
   
   const friendsRef = ref(db, 'friends');
-  const friendsQuery = query(friendsRef);
   
   try {
-    const snapshot = await get(friendsQuery);
+    const snapshot = await get(friendsRef);
     const data = snapshot.val();
     
     if (data) {
@@ -401,24 +396,10 @@ async function checkIfFriend() {
 }
 
 async function addFriend() {
-  if (!myPeerId) {
-    myPeerId = localStorage.getItem('peerId');
-    if (!myPeerId) {
-      return;
-    }
-  }
-
   try {
-    const otherPeerId = await getOtherPeerId();
-    if (!otherPeerId) {
-      return;
-    }
-
     const newChatRef = push(ref(db, 'friends'));
     
     await set(newChatRef, {
-      peer1: myPeerId,
-      peer2: otherPeerId,
       nickname1: myNickname,
       nickname2: fullNickname,
       timestamp: Date.now()
@@ -433,25 +414,6 @@ async function addFriend() {
   } catch (error) {
     console.error('Error adding friend:', error);
   }
-}
-
-async function getOtherPeerId() {
-  const friendsRef = ref(db, 'friends');
-  const snapshot = await get(friendsRef);
-  const data = snapshot.val();
-  
-  if (data) {
-    for (const [chatId, friend] of Object.entries(data)) {
-      if (friend.nickname1 === fullNickname) {
-        return friend.peer1;
-      }
-      if (friend.nickname2 === fullNickname) {
-        return friend.peer2;
-      }
-    }
-  }
-  
-  return null;
 }
 
 function loadProfile() {
@@ -503,11 +465,4 @@ window.addFriend = addFriend;
 
 loadProfile();
 checkIfFriend();
-
-setInterval(() => {
-  const peerId = localStorage.getItem('peerId');
-  if (peerId && peerId !== myPeerId) {
-    myPeerId = peerId;
-  }
-}, 1000);
 </script>
