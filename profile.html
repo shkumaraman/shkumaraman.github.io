@@ -169,7 +169,7 @@ body.light-mode {
   justify-content: center;
 }
 
-.add-friend-btn, .back-btn {
+.add-friend-btn, .back-btn, .chat-btn {
   padding: 10px 20px;
   border-radius: 25px;
   font-size: 0.95em;
@@ -197,6 +197,15 @@ body.light-mode {
   cursor: not-allowed;
 }
 
+.chat-btn {
+  background: var(--dark-btn-bg);
+  color: white;
+}
+
+.chat-btn:hover {
+  background: var(--dark-btn-hover);
+}
+
 .back-btn {
   background: var(--dark-input-bg);
   color: white;
@@ -206,7 +215,7 @@ body.light-mode {
   background: var(--dark-header-border);
 }
 
-.light-mode .add-friend-btn {
+.light-mode .add-friend-btn, .light-mode .chat-btn {
   background: var(--light-btn-bg);
 }
 
@@ -219,6 +228,42 @@ body.light-mode {
   margin: 15px 0;
   font-size: 0.95em;
   color: #4CAF50;
+}
+
+.added-status {
+  position: fixed;
+  top: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #4CAF50;
+  color: white;
+  padding: 10px 20px;
+  border-radius: 30px;
+  font-size: 0.95em;
+  z-index: 10001;
+  animation: slideDown 0.3s ease, fadeOut 2s ease forwards 1.5s;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+
+@keyframes slideDown {
+  from {
+    top: 40px;
+    opacity: 0;
+  }
+  to {
+    top: 60px;
+    opacity: 1;
+  }
+}
+
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    display: none;
+  }
 }
 
 @media (max-width: 600px) {
@@ -255,6 +300,7 @@ body.light-mode {
 </header>
 
 <div class="profile-container" id="profileContainer"></div>
+<div id="statusMessage"></div>
 
 <ins class="adsbygoogle"
      style="display:block"
@@ -307,6 +353,15 @@ let myPeerId = localStorage.getItem('peerId');
 let isFriend = false;
 let existingChatId = null;
 
+function showAddedMessage() {
+  const statusDiv = document.getElementById('statusMessage');
+  statusDiv.innerHTML = '<div class="added-status">Friend added successfully!</div>';
+  
+  setTimeout(() => {
+    statusDiv.innerHTML = '';
+  }, 3000);
+}
+
 function generateAvatar(name) {
   const firstChar = name ? name.charAt(0).toUpperCase() : '?';
   const bgColor = '#4CAF50';
@@ -349,11 +404,6 @@ async function addFriend() {
   if (!myPeerId) {
     myPeerId = localStorage.getItem('peerId');
     if (!myPeerId) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Error',
-        text: 'Please wait for connection to initialize'
-      });
       return;
     }
   }
@@ -361,11 +411,6 @@ async function addFriend() {
   try {
     const otherPeerId = await getOtherPeerId();
     if (!otherPeerId) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Error',
-        text: 'Could not find user'
-      });
       return;
     }
 
@@ -381,23 +426,12 @@ async function addFriend() {
 
     isFriend = true;
     existingChatId = newChatRef.key;
+    
+    showAddedMessage();
     updateProfileUI();
-
-    Swal.fire({
-      icon: 'success',
-      title: 'Friend Added!',
-      text: `You are now friends with ${displayName}`,
-      timer: 2000,
-      showConfirmButton: false
-    });
 
   } catch (error) {
     console.error('Error adding friend:', error);
-    Swal.fire({
-      icon: 'error',
-      title: 'Error',
-      text: 'Failed to add friend'
-    });
   }
 }
 
@@ -436,7 +470,7 @@ function loadProfile() {
   } else if (isFriend) {
     statusHtml = '<div class="friend-status"><i class="fas fa-check-circle"></i> Already Friends</div>';
     buttonHtml = `
-      <button class="back-btn" onclick="window.location.href='/chat/inbox.html'">
+      <button class="chat-btn" onclick="window.location.href='/chat/inbox.html'">
         <i class="fas fa-comments"></i> Chat
       </button>
     `;
