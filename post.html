@@ -266,20 +266,10 @@ description: "Post anything anonymously without login. Confess, express, or spea
       border: 1px solid rgba(0,0,0,0.1);
     }
 
-    /* Adsense container - normal style diya hai */
     .ad-container {
       margin: 10px auto;
       max-width: 600px;
       text-align: center;
-      background: var(--dark-msg-bg);
-      border-radius: 15px;
-      padding: 10px;
-      border: 1px solid rgba(255,255,255,0.1);
-    }
-
-    .light-mode .ad-container {
-      background: var(--light-msg-bg);
-      border: 1px solid rgba(0,0,0,0.1);
     }
 
     .nickname {
@@ -485,6 +475,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
       border: 1px solid rgba(0,0,0,0.1);
     }
 
+    /* Sweet Alert Custom Styles */
     .swal2-popup {
       font-family: 'Segoe UI', sans-serif !important;
     }
@@ -526,7 +517,10 @@ description: "Post anything anonymously without login. Confess, express, or spea
     }
 </style>
 
+<!-- Font Awesome -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+
+<!-- SweetAlert2 CSS -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11.7.32/dist/sweetalert2.min.css">
 
 <div class="app-header">
@@ -595,7 +589,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
     let allPosts = [];
     let displayedPosts = [];
     let currentSearchTerm = '';
-    let highlightPostId = null;
+    let highlightPostId = null; // Only for shared links
 
     async function loadBannedWords() {
       try {
@@ -816,7 +810,6 @@ description: "Post anything anonymously without login. Confess, express, or spea
           return;
         }
 
-        // Har 3 post ke baad ad dikhao
         if (postCounter > 0 && postCounter % 3 === 0) {
           const adElement = createAdElement();
           postsContainer.appendChild(adElement);
@@ -834,6 +827,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
         div.className = "post";
         div.setAttribute("data-post-id", postId);
         
+        // Highlight only shared posts from URL
         if (postId === highlightPostId && !highlightedPostShown) {
           div.classList.add('highlighted-post');
           highlightedPostShown = true;
@@ -841,6 +835,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
             div.scrollIntoView({ behavior: 'smooth', block: 'center' });
           }, 100);
           
+          // Remove highlight after 5 seconds
           setTimeout(() => {
             div.classList.remove('highlighted-post');
           }, 5000);
@@ -888,6 +883,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
         postCounter++;
       });
       
+      // Reset highlightPostId after some time
       if (highlightPostId) {
         setTimeout(() => {
           highlightPostId = null;
@@ -937,7 +933,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
       }).then((result) => {
         if (result.isConfirmed) {
           remove(ref(db, `posts/${postId}`)).then(() => {
-            showAlert("Post deleted successfully!", 'success');
+            Swal.close();
           });
         }
       });
@@ -994,8 +990,8 @@ description: "Post anything anonymously without login. Confess, express, or spea
     if (clearSearchBtn) {
       clearSearchBtn.addEventListener('click', clearSearch);
     }
-
-    checkSharedPost();
+    
+    const hasSharedPost = checkSharedPost();
 
     onValue(postsRef, (snapshot) => {
       const posts = snapshot.val();
@@ -1007,9 +1003,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
       }
 
       const postsArray = Object.entries(posts).filter(([id, post]) => !isPostExpired(post.timestamp));
-      
       const sortedPosts = postsArray.sort((a, b) => b[1].timestamp - a[1].timestamp);
-      
       const isPageReload = !sessionStorage.getItem('postsInitialized');
       
       if (isPageReload) {
@@ -1021,6 +1015,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
 
       displayedPosts = [...allPosts];
 
+      // If there's a shared post to highlight, make sure it's at the top
       if (highlightPostId) {
         const sharedPostIndex = displayedPosts.findIndex(([id]) => id === highlightPostId);
         if (sharedPostIndex !== -1) {
@@ -1036,6 +1031,7 @@ description: "Post anything anonymously without login. Confess, express, or spea
       }
     });
 
+    // Reset session on page load
     window.addEventListener('load', () => {
       if (performance.navigation.type === 0) {
         sessionStorage.removeItem('postsInitialized');
