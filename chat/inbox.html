@@ -946,7 +946,7 @@ function loadFriends() {
     off(friendsRef, "value", friendListListener);
   }
   
-  friendListListener = onValue(friendsRef, (snap) => {
+  friendListListener = onValue(friendsRef, async (snap) => {
     const data = snap.val();
     const list = document.getElementById("friendList");
     const loading = document.getElementById("loading");
@@ -961,10 +961,66 @@ function loadFriends() {
       return;
     }
 
+    // Check for duplicates and delete newer ones
+    const friendPairs = new Map(); // Key: sorted pair of nicknames, Value: {chatId, timestamp}
+    const duplicateChatIds = [];
+
+    Object.entries(data).forEach(([chatId, friend]) => {
+      const friendNickname1 = friend.nickname1;
+      const friendNickname2 = friend.nickname2;
+      
+      // Create a unique key for each friend pair (sorted alphabetically)
+      const pairKey = [friendNickname1, friendNickname2].sort().join('_');
+      
+      if (friendPairs.has(pairKey)) {
+        // Duplicate found, compare timestamps
+        const existing = friendPairs.get(pairKey);
+        const currentTimestamp = friend.timestamp || 0;
+        const existingTimestamp = existing.timestamp || 0;
+        
+        if (currentTimestamp > existingTimestamp) {
+          // Current entry is newer, mark existing for deletion
+          duplicateChatIds.push(existing.chatId);
+          friendPairs.set(pairKey, { chatId, timestamp: currentTimestamp });
+        } else {
+          // Current entry is older or equal, mark current for deletion
+          duplicateChatIds.push(chatId);
+        }
+      } else {
+        friendPairs.set(pairKey, { chatId, timestamp: friend.timestamp || 0 });
+      }
+    });
+
+    // Delete duplicate entries from Firebase
+    if (duplicateChatIds.length > 0) {
+      const updates = {};
+      duplicateChatIds.forEach(chatId => {
+        updates[`friends/${chatId}`] = null;
+      });
+      
+      try {
+        await update(ref(db), updates);
+        console.log('Removed duplicate friends:', duplicateChatIds.length);
+      } catch (error) {
+        console.error('Error removing duplicates:', error);
+      }
+    }
+
+    // Refresh data after removing duplicates
+    const freshSnap = await get(friendsRef);
+    const freshData = freshSnap.val();
+    
+    if (!freshData) {
+      empty.style.display = "block";
+      list.style.display = "none";
+      myFriendsData = {};
+      return;
+    }
+
     list.innerHTML = "";
     const friendsArray = [];
 
-    Object.entries(data).forEach(([chatId, friend]) => {
+    Object.entries(freshData).forEach(([chatId, friend]) => {
       const friendNickname = friend.nickname2 === myNickname ? friend.nickname1 : 
                            friend.nickname1 === myNickname ? friend.nickname2 : null;
       
@@ -1405,13 +1461,7 @@ window.unfriend = function(chatId) {
           window.closeChat();
         }
         
-        Swal.fire({
-          icon: 'success',
-          title: 'Removed!',
-          text: 'Friend has been removed.',
-          timer: 1500,
-          showConfirmButton: false
-        });
+        // Removed the success Swal.fire
       });
     }
   });
