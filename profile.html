@@ -169,7 +169,7 @@ body.light-mode {
   justify-content: center;
 }
 
-.message-btn, .back-btn {
+.add-friend-btn, .back-btn {
   padding: 10px 20px;
   border-radius: 25px;
   font-size: 0.95em;
@@ -183,13 +183,18 @@ body.light-mode {
   min-width: 110px;
 }
 
-.message-btn {
+.add-friend-btn {
   background: var(--dark-btn-bg);
   color: white;
 }
 
-.message-btn:hover {
+.add-friend-btn:hover {
   background: var(--dark-btn-hover);
+}
+
+.add-friend-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .back-btn {
@@ -201,13 +206,19 @@ body.light-mode {
   background: var(--dark-header-border);
 }
 
-.light-mode .message-btn {
+.light-mode .add-friend-btn {
   background: var(--light-btn-bg);
 }
 
 .light-mode .back-btn {
   background: var(--light-header-border);
   color: var(--light-text);
+}
+
+.friend-status {
+  margin: 15px 0;
+  font-size: 0.95em;
+  color: #4CAF50;
 }
 
 @media (max-width: 600px) {
@@ -260,7 +271,26 @@ body.light-mode {
 {% include menu.html %}
 {% include scripts.html %}
 
-<script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
+import { 
+  getDatabase, 
+  ref, 
+  set, 
+  get, 
+  push,
+  query,
+  orderByChild,
+  equalTo
+} from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
+
+const firebaseConfig = {
+  databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
 const urlParams = new URLSearchParams(window.location.search);
 const encodedNickname = urlParams.get('id');
 const fullNickname = encodedNickname ? decodeURIComponent(encodedNickname) : '';
@@ -272,6 +302,10 @@ if (fullNickname.includes('TR|')) {
 
 const myNickname = localStorage.getItem('talkrush_nickname') || '';
 const isOwnProfile = myNickname === fullNickname;
+
+let myPeerId = localStorage.getItem('peerId');
+let isFriend = false;
+let existingChatId = null;
 
 function generateAvatar(name) {
   const firstChar = name ? name.charAt(0).toUpperCase() : '?';
@@ -285,6 +319,107 @@ function generateAvatar(name) {
   `;
 }
 
+async function checkIfFriend() {
+  if (!myNickname || !fullNickname || isOwnProfile) return;
+  
+  const friendsRef = ref(db, 'friends');
+  const friendsQuery = query(friendsRef);
+  
+  try {
+    const snapshot = await get(friendsQuery);
+    const data = snapshot.val();
+    
+    if (data) {
+      Object.entries(data).forEach(([chatId, friend]) => {
+        if ((friend.nickname1 === myNickname && friend.nickname2 === fullNickname) ||
+            (friend.nickname1 === fullNickname && friend.nickname2 === myNickname)) {
+          isFriend = true;
+          existingChatId = chatId;
+        }
+      });
+    }
+  } catch (error) {
+    console.error('Error checking friend status:', error);
+  }
+  
+  updateProfileUI();
+}
+
+async function addFriend() {
+  if (!myPeerId) {
+    myPeerId = localStorage.getItem('peerId');
+    if (!myPeerId) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: 'Please wait for connection to initialize'
+      });
+      return;
+    }
+  }
+
+  try {
+    const otherPeerId = await getOtherPeerId();
+    if (!otherPeerId) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: 'Could not find user'
+      });
+      return;
+    }
+
+    const newChatRef = push(ref(db, 'friends'));
+    
+    await set(newChatRef, {
+      peer1: myPeerId,
+      peer2: otherPeerId,
+      nickname1: myNickname,
+      nickname2: fullNickname,
+      timestamp: Date.now()
+    });
+
+    isFriend = true;
+    existingChatId = newChatRef.key;
+    updateProfileUI();
+
+    Swal.fire({
+      icon: 'success',
+      title: 'Friend Added!',
+      text: `You are now friends with ${displayName}`,
+      timer: 2000,
+      showConfirmButton: false
+    });
+
+  } catch (error) {
+    console.error('Error adding friend:', error);
+    Swal.fire({
+      icon: 'error',
+      title: 'Error',
+      text: 'Failed to add friend'
+    });
+  }
+}
+
+async function getOtherPeerId() {
+  const friendsRef = ref(db, 'friends');
+  const snapshot = await get(friendsRef);
+  const data = snapshot.val();
+  
+  if (data) {
+    for (const [chatId, friend] of Object.entries(data)) {
+      if (friend.nickname1 === fullNickname) {
+        return friend.peer1;
+      }
+      if (friend.nickname2 === fullNickname) {
+        return friend.peer2;
+      }
+    }
+  }
+  
+  return null;
+}
+
 function loadProfile() {
   const container = document.getElementById('profileContainer');
   
@@ -293,28 +428,52 @@ function loadProfile() {
     return;
   }
   
-  const messageButton = isOwnProfile 
-    ? '<button class="message-btn" disabled style="opacity: 0.5; cursor: not-allowed;"><i class="fas fa-message"></i> Message</button>'
-    : '<button class="message-btn" onclick="sendMessage()"><i class="fas fa-message"></i> Message</button>';
+  let buttonHtml = '';
+  let statusHtml = '';
+  
+  if (isOwnProfile) {
+    buttonHtml = '<button class="add-friend-btn" disabled><i class="fas fa-user-plus"></i> Add Friend</button>';
+  } else if (isFriend) {
+    statusHtml = '<div class="friend-status"><i class="fas fa-check-circle"></i> Already Friends</div>';
+    buttonHtml = `
+      <button class="back-btn" onclick="window.location.href='/chat/inbox.html'">
+        <i class="fas fa-comments"></i> Chat
+      </button>
+    `;
+  } else {
+    buttonHtml = '<button class="add-friend-btn" onclick="window.addFriend()"><i class="fas fa-user-plus"></i> Add Friend</button>';
+  }
   
   container.innerHTML = `
     <div class="profile-card">
       <div class="profile-avatar">${generateAvatar(displayName)}</div>
       <h1 class="profile-name">${displayName}</h1>
       
+      ${statusHtml}
+      
       <div class="button-container">
         <button class="back-btn" onclick="window.history.back()">
           <i class="fas fa-arrow-left"></i> Back
         </button>
-        ${messageButton}
+        ${buttonHtml}
       </div>
     </div>
   `;
 }
 
-window.sendMessage = function() {
-  window.location.href = `/chat/inbox.html?id=${encodeURIComponent(fullNickname)}`;
-};
+function updateProfileUI() {
+  loadProfile();
+}
+
+window.addFriend = addFriend;
 
 loadProfile();
+checkIfFriend();
+
+setInterval(() => {
+  const peerId = localStorage.getItem('peerId');
+  if (peerId && peerId !== myPeerId) {
+    myPeerId = peerId;
+  }
+}, 1000);
 </script>
