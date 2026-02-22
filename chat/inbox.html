@@ -702,7 +702,7 @@ body.light-mode {
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
-import { getDatabase, ref, onValue, get, set, update, remove, push, child, off } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
+import { getDatabase, ref, onValue, get, set, update, remove, push, child, off, query, orderByChild, equalTo } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
 
 const firebaseConfig = {
   databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
@@ -725,6 +725,9 @@ let typingTimer = null;
 
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
+
+const urlParams = new URLSearchParams(window.location.search);
+const friendNicknameFromUrl = urlParams.get('id') ? decodeURIComponent(urlParams.get('id')) : null;
 
 function getCurrentUserId() {
   return currentUserId;
@@ -810,7 +813,131 @@ document.addEventListener("DOMContentLoaded", () => {
   
   initializePeerConnection();
   setupEventListeners();
+  
+  if (friendNicknameFromUrl && friendNicknameFromUrl !== myNickname) {
+    setTimeout(() => {
+      findOrCreateChatWithFriend(friendNicknameFromUrl);
+    }, 2000);
+  }
 });
+
+async function findOrCreateChatWithFriend(friendNickname) {
+  try {
+    const friendsRef = ref(db, "friends");
+    const snapshot = await get(friendsRef);
+    
+    if (!snapshot.exists()) {
+      await createNewChat(friendNickname);
+      return;
+    }
+    
+    let existingChatId = null;
+    let friendPeerId = null;
+    let chatData = null;
+    
+    snapshot.forEach((childSnapshot) => {
+      const data = childSnapshot.val();
+      
+      if ((data.nickname1 === myNickname && data.nickname2 === friendNickname) ||
+          (data.nickname1 === friendNickname && data.nickname2 === myNickname)) {
+        existingChatId = childSnapshot.key;
+        friendPeerId = (data.nickname1 === friendNickname) ? data.peer1 : data.peer2;
+        chatData = data;
+      }
+    });
+    
+    if (existingChatId && friendPeerId) {
+      currentFriendName = friendNickname;
+      currentFriendId = friendPeerId;
+      currentChatId = existingChatId;
+      
+      myFriendsData[existingChatId] = {
+        otherId: friendPeerId,
+        displayName: friendNickname,
+        isUserNickname1: myNickname === chatData.nickname1,
+        isUserNickname2: myNickname === chatData.nickname2,
+        friendPeerId: friendPeerId
+      };
+      
+      openExistingChat();
+    } else {
+      await createNewChat(friendNickname);
+    }
+  } catch (error) {
+    console.error('Error finding/creating chat:', error);
+  }
+}
+
+async function createNewChat(friendNickname) {
+  try {
+    const chatId = `${myNickname}_${friendNickname}_${Date.now()}`;
+    const friendPeerId = await findPeerIdByNickname(friendNickname);
+    
+    if (!friendPeerId) {
+      return;
+    }
+    
+    const chatData = {
+      nickname1: myNickname,
+      nickname2: friendNickname,
+      peer1: currentUserId,
+      peer2: friendPeerId,
+      timestamp: Date.now(),
+      message1: '',
+      message2: ''
+    };
+    
+    await set(ref(db, `friends/${chatId}`), chatData);
+    
+    currentFriendName = friendNickname;
+    currentFriendId = friendPeerId;
+    currentChatId = chatId;
+    
+    myFriendsData[chatId] = {
+      otherId: friendPeerId,
+      displayName: friendNickname,
+      isUserNickname1: true,
+      isUserNickname2: false,
+      friendPeerId: friendPeerId
+    };
+    
+    openExistingChat();
+  } catch (error) {
+    console.error('Error creating new chat:', error);
+  }
+}
+
+async function findPeerIdByNickname(nickname) {
+  const friendsRef = ref(db, "friends");
+  const snapshot = await get(friendsRef);
+  
+  if (!snapshot.exists()) return null;
+  
+  let peerId = null;
+  
+  snapshot.forEach((childSnapshot) => {
+    const data = childSnapshot.val();
+    if (data.nickname1 === nickname && data.peer1) {
+      peerId = data.peer1;
+    } else if (data.nickname2 === nickname && data.peer2) {
+      peerId = data.peer2;
+    }
+  });
+  
+  return peerId;
+}
+
+function openExistingChat() {
+  document.getElementById('chatAvatar').textContent = currentFriendName.charAt(0).toUpperCase();
+  document.getElementById('chatName').textContent = currentFriendName;
+  document.getElementById('pageTitle').textContent = currentFriendName;
+  
+  document.getElementById('friendsContainer').style.display = 'none';
+  document.getElementById('chatContainer').style.display = 'flex';
+  
+  loadLocalChatMessages();
+  connectToFriend(currentFriendId);
+}
 
 function initializePeerConnection() {
   const peerOptions = {
@@ -1205,6 +1332,10 @@ window.closeChat = function() {
   currentChatId = null;
   currentFriendId = null;
   currentFriendName = "";
+  
+  const url = new URL(window.location);
+  url.searchParams.delete('id');
+  window.history.replaceState({}, '', url);
 }
 
 function loadLocalChatMessages() {
@@ -1404,14 +1535,6 @@ window.unfriend = function(chatId) {
         if (currentChatId === chatId) {
           window.closeChat();
         }
-        
-        Swal.fire({
-          icon: 'success',
-          title: 'Removed!',
-          text: 'Friend has been removed.',
-          timer: 1500,
-          showConfirmButton: false
-        });
       });
     }
   });
