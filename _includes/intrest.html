@@ -93,7 +93,7 @@
 .modal-content {
   background-color: var(--dark-card);
   border-radius: 20px 20px 0 0;
-  width: 90%;
+  width: 95%;
   max-width: 600px;
   max-height: 90vh;
   overflow-y: auto;
@@ -475,7 +475,6 @@ let prefsMyTags = [];
 let prefsBannedWords = [];
 let prefsBannedWordsLoaded = false;
 
-// Touch/drag variables for handle
 let touchStartY = 0;
 let touchCurrentY = 0;
 let isDragging = false;
@@ -490,9 +489,7 @@ async function loadPrefsBannedWords() {
       .map(word => word.trim().toLowerCase())
       .filter(word => word.length > 0);
     prefsBannedWordsLoaded = true;
-    console.log("Banned words loaded successfully:", prefsBannedWords.length);
   } catch (err) {
-    console.error("Error loading banned words:", err);
     prefsBannedWords = [];
     prefsBannedWordsLoaded = true;
   }
@@ -514,24 +511,23 @@ function openPreferencesModal() {
   modal = document.getElementById('preferencesModal');
   modalContent = document.querySelector('.modal-content');
   modal.style.display = 'flex';
-  // Force reflow
   modal.offsetHeight;
   modal.classList.add('show');
   loadSavedPreferences();
   
-  // Add touch event listeners for the handle
   const handle = document.getElementById('modalHandle');
   handle.addEventListener('touchstart', handleTouchStart, { passive: false });
   handle.addEventListener('touchmove', handleTouchMove, { passive: false });
   handle.addEventListener('touchend', handleTouchEnd);
   handle.addEventListener('mousedown', handleMouseDown);
+  
+  document.addEventListener('keydown', handleEscKey);
 }
 
 function closePreferencesModal() {
   modal = document.getElementById('preferencesModal');
   modal.classList.remove('show');
   
-  // Remove event listeners
   const handle = document.getElementById('modalHandle');
   handle.removeEventListener('touchstart', handleTouchStart);
   handle.removeEventListener('touchmove', handleTouchMove);
@@ -539,6 +535,7 @@ function closePreferencesModal() {
   handle.removeEventListener('mousedown', handleMouseDown);
   document.removeEventListener('mousemove', handleMouseMove);
   document.removeEventListener('mouseup', handleMouseUp);
+  document.removeEventListener('keydown', handleEscKey);
   
   setTimeout(() => {
     modal.style.display = 'none';
@@ -546,6 +543,18 @@ function closePreferencesModal() {
   }, 300);
   
   hideAllFeedback();
+}
+
+function handleOutsideClick(e) {
+  if (e.target === modal) {
+    closePreferencesModal();
+  }
+}
+
+function handleEscKey(e) {
+  if (e.key === 'Escape') {
+    closePreferencesModal();
+  }
 }
 
 function handleTouchStart(e) {
@@ -562,7 +571,7 @@ function handleTouchMove(e) {
   touchCurrentY = e.touches[0].clientY;
   const deltaY = touchCurrentY - touchStartY;
   
-  if (deltaY > 0) { // Only allow downward drag
+  if (deltaY > 0) {
     const translateY = Math.min(deltaY, window.innerHeight);
     modalContent.style.transform = `translateY(${translateY}px)`;
   }
@@ -575,7 +584,6 @@ function handleTouchEnd(e) {
   const deltaY = touchCurrentY - touchStartY;
   modalContent.style.transition = 'transform 0.3s ease-out';
   
-  // Close if dragged down more than 100px or 30% of modal height
   if (deltaY > 100 || deltaY > modalContent.offsetHeight * 0.3) {
     closePreferencesModal();
   } else {
@@ -602,7 +610,7 @@ function handleMouseMove(e) {
   touchCurrentY = e.clientY;
   const deltaY = touchCurrentY - touchStartY;
   
-  if (deltaY > 0) { // Only allow downward drag
+  if (deltaY > 0) {
     const translateY = Math.min(deltaY, window.innerHeight);
     modalContent.style.transform = `translateY(${translateY}px)`;
   }
@@ -615,7 +623,6 @@ function handleMouseUp(e) {
   const deltaY = touchCurrentY - touchStartY;
   modalContent.style.transition = 'transform 0.3s ease-out';
   
-  // Close if dragged down more than 100px or 30% of modal height
   if (deltaY > 100 || deltaY > modalContent.offsetHeight * 0.3) {
     closePreferencesModal();
   } else {
@@ -651,7 +658,6 @@ function loadSavedPreferences() {
   const input = document.getElementById("nicknameInput");
 
   if (savedNickname) {
-    // Remove TR| prefix if it exists when loading for editing
     prefsMyNickname = savedNickname.replace(/^TR\|/, '');
     input.value = prefsMyNickname;
   } else {
@@ -741,7 +747,6 @@ function savePreferences() {
     return;
   }
 
-  // Add TR| prefix to the nickname
   prefsMyNickname = "TR|" + newNickname.substring(0, 20);
   localStorage.setItem("talkrush_nickname", prefsMyNickname);
   
@@ -792,6 +797,11 @@ document.addEventListener("DOMContentLoaded", function() {
   const savedTags = localStorage.getItem("talkrush_tags");
   if (savedTags) {
     prefsMyTags = JSON.parse(savedTags);
+  }
+  
+  modal = document.getElementById('preferencesModal');
+  if (modal) {
+    modal.addEventListener('click', handleOutsideClick);
   }
 });
 </script>
