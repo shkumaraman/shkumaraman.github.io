@@ -756,7 +756,7 @@ function formatMessageTime(timestamp) {
   if (!timestamp) return "";
   return new Date(timestamp).toLocaleTimeString([], { 
     hour: '2-digit', 
-    minute: '2-digit' 
+    minute: 'digit' 
   });
 }
 
@@ -866,31 +866,51 @@ function loadFriends() {
     }
 
     const friendPairs = new Map();
-    const duplicateChatIds = [];
+    const duplicateChats = [];
 
     Object.entries(data).forEach(([chatId, friend]) => {
       const friendNickname1 = friend.nickname1;
       const friendNickname2 = friend.nickname2;
+      const createdAt = friend.createdAt || Date.now();
       
       const pairKey = [friendNickname1, friendNickname2].sort().join('_');
       
       if (friendPairs.has(pairKey)) {
-        duplicateChatIds.push(chatId);
+        duplicateChats.push({ chatId, friend, createdAt });
       } else {
-        friendPairs.set(pairKey, chatId);
+        friendPairs.set(pairKey, { chatId, createdAt });
       }
     });
 
-    if (duplicateChatIds.length > 0) {
-      const updates = {};
-      duplicateChatIds.forEach(chatId => {
-        updates[`friends/${chatId}`] = null;
-      });
-      
-      try {
-        await update(ref(db), updates);
-      } catch (error) {
-        console.error('Error removing duplicates:', error);
+    if (duplicateChats.length > 0) {
+      for (const duplicate of duplicateChats) {
+        const pairKey = [duplicate.friend.nickname1, duplicate.friend.nickname2].sort().join('_');
+        const existing = friendPairs.get(pairKey);
+        
+        if (duplicate.createdAt < existing.createdAt) {
+          const tempChatId = existing.chatId;
+          friendPairs.set(pairKey, { chatId: duplicate.chatId, createdAt: duplicate.createdAt });
+          
+          if (duplicate.friend.messages) {
+            const messagesRef = ref(db, `friends/${duplicate.chatId}/messages`);
+            Object.entries(duplicate.friend.messages).forEach(([msgKey, msg]) => {
+              const newMsgRef = push(messagesRef);
+              set(newMsgRef, msg);
+            });
+          }
+          
+          await remove(ref(db, `friends/${tempChatId}`));
+        } else {
+          if (duplicate.friend.messages) {
+            const messagesRef = ref(db, `friends/${existing.chatId}/messages`);
+            Object.entries(duplicate.friend.messages).forEach(([msgKey, msg]) => {
+              const newMsgRef = push(messagesRef);
+              set(newMsgRef, msg);
+            });
+          }
+          
+          await remove(ref(db, `friends/${duplicate.chatId}`));
+        }
       }
     }
 
@@ -993,7 +1013,6 @@ function loadFriends() {
 }
 
 function openChat(chatId, friendName) {
-  // Clean up previous listeners
   if (messagesListener) {
     off(ref(db, `friends/${currentChatId}/messages`), 'child_added', messagesListener);
     messagesListener = null;
@@ -1016,7 +1035,6 @@ function openChat(chatId, friendName) {
   document.getElementById('friendsContainer').style.display = 'none';
   document.getElementById('chatContainer').style.display = 'flex';
   
-  // Clear chat log
   document.getElementById('chatLog').innerHTML = '';
   lastMessageTimestamp = 0;
   
@@ -1057,12 +1075,10 @@ function listenForMessages() {
   
   const messagesRef = ref(db, `friends/${currentChatId}/messages`);
   
-  // Remove any existing listener
   if (messagesListener) {
     off(messagesRef, 'child_added', messagesListener);
   }
   
-  // Create new listener
   messagesListener = onChildAdded(messagesRef, (snapshot) => {
     const msg = snapshot.val();
     if (msg && msg.timestamp > lastMessageTimestamp) {
@@ -1079,12 +1095,10 @@ function listenForTyping() {
   
   const typingRef = ref(db, `typing/${currentChatId}`);
   
-  // Remove any existing listener
   if (typingListener) {
     off(typingRef, 'value', typingListener);
   }
   
-  // Create new listener
   typingListener = onValue(typingRef, (snapshot) => {
     const data = snapshot.val();
     if (!data) {
@@ -1195,7 +1209,6 @@ function handleImageUpload(e) {
 }
 
 window.closeChat = function() {
-  // Clean up listeners properly
   if (messagesListener && currentChatId) {
     off(ref(db, `friends/${currentChatId}/messages`), 'child_added', messagesListener);
     messagesListener = null;
