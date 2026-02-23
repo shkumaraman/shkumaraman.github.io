@@ -607,7 +607,7 @@ body.light-mode {
 {% include scripts.html %}
 
 <script type="module">
-  import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
 import { getDatabase, ref, push, set, onChildAdded, query, orderByChild, limitToLast, get, update } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
 
 const firebaseConfig = {
@@ -622,7 +622,6 @@ let myNickname = 'Guest';
 let currentGroup = null;
 let lastMessageTimestamp = 0;
 const messageLimit = 25;
-const messageExpiryHours = 6;
 let isSendingGif = false;
 let isSendingMessage = false;
 let initialMessagesLoaded = false;
@@ -782,30 +781,30 @@ function joinGroupChat() {
       scrollToBottom();
     }
   });
-  
-  setInterval(cleanupOldMessages, 60 * 60 * 1000);
-  cleanupOldMessages();
 }
 
-function cleanupOldMessages() {
-  const expiryTime = Date.now() - (messageExpiryHours * 60 * 60 * 1000);
-  const oldMessagesQuery = query(
+function maintainMessageLimit() {
+  const messagesQuery = query(
     ref(db, `groups/${currentGroup}/messages`),
-    orderByChild("timestamp"),
-    limitToLast(1000)
+    orderByChild("timestamp")
   );
   
-  get(oldMessagesQuery).then((snapshot) => {
-    if (snapshot.exists()) {
-      const updates = {};
+  get(messagesQuery).then((snapshot) => {
+    if (snapshot.size > messageLimit) {
+      const messages = [];
       snapshot.forEach((childSnapshot) => {
-        if (childSnapshot.val().timestamp < expiryTime) {
-          updates[childSnapshot.key] = null;
-        }
+        messages.push({
+          key: childSnapshot.key,
+          timestamp: childSnapshot.val().timestamp
+        });
       });
-      if (Object.keys(updates).length > 0) {
-        update(ref(db, `groups/${currentGroup}/messages`), updates);
-      }
+      messages.sort((a, b) => a.timestamp - b.timestamp);
+      const messagesToRemove = messages.slice(0, messages.length - messageLimit);
+      const updates = {};
+      messagesToRemove.forEach(msg => {
+        updates[msg.key] = null;
+      });
+      update(ref(db, `groups/${currentGroup}/messages`), updates);
     }
   });
 }
@@ -835,32 +834,6 @@ function sendMessageToGroup(text) {
     .catch(err => {
       isSendingMessage = false;
     });
-}
-
-function maintainMessageLimit() {
-  const messagesQuery = query(
-    ref(db, `groups/${currentGroup}/messages`),
-    orderByChild("timestamp")
-  );
-  
-  get(messagesQuery).then((snapshot) => {
-    if (snapshot.size > messageLimit) {
-      const messages = [];
-      snapshot.forEach((childSnapshot) => {
-        messages.push({
-          key: childSnapshot.key,
-          timestamp: childSnapshot.val().timestamp
-        });
-      });
-      messages.sort((a, b) => a.timestamp - b.timestamp);
-      const messagesToRemove = messages.slice(0, messages.length - messageLimit);
-      const updates = {};
-      messagesToRemove.forEach(msg => {
-        updates[msg.key] = null;
-      });
-      update(ref(db, `groups/${currentGroup}/messages`), updates);
-    }
-  });
 }
 
 function compressImage(file, callback) {
