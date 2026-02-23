@@ -693,7 +693,6 @@ video {
 {% include scripts.html %}
 
 <script type="module">
-// Import Firebase modules
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
 import { getDatabase, ref, onValue, get, set, update, remove, push, child } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
 
@@ -889,28 +888,22 @@ acceptFriendBtn.onclick = async () => {
   if (!friendRequestFrom || !dataChannel) return;
   
   try {
-    const friendId = Date.now().toString();
-    const myPeerId = myId;
-    const otherPeerId = friendRequestFrom.fromPeer;
-    const otherNickname = friendRequestFrom.fromNickname;
+    const newChatRef = push(ref(db, 'friends'));
     
-    const friendRef = ref(db, 'friends/' + friendId);
-    await set(friendRef, {
-      peer1: myPeerId,
-      peer2: otherPeerId,
+    await set(newChatRef, {
       nickname1: myNickname,
-      nickname2: otherNickname,
-      timestamp: Date.now()
+      nickname2: friendRequestFrom.fromNickname,
+      messages: {}
     });
     
     dataChannel.send(JSON.stringify({
       type: 'friend_accepted',
-      friendId: friendId,
+      friendId: newChatRef.key,
       nickname: myNickname
     }));
     
     hideFriendButton();
-    addMessage(`🎉 You are now friends with ${otherNickname || 'Stranger'}!`, 'system');
+    addMessage(`🎉 You are now friends with ${friendRequestFrom.fromNickname || 'Stranger'}!`, 'system');
     closeFriendModal();
     
   } catch (error) {
@@ -977,7 +970,6 @@ function addMessage(text, sender) {
   chatMessages.appendChild(messageDiv);
   chatMessages.scrollTop = chatMessages.scrollHeight;
   
-  // Auto-open chat when receiving a message from stranger
   if (sender === 'them' && !chatVisible) {
     chatVisible = true;
     chatContainer.style.display = 'flex';
@@ -1141,7 +1133,6 @@ function setupDataConnection(conn) {
       if (parsed.type === "message") {
         addMessage(parsed.text, "them");
         
-        // Ensure chat is visible when message arrives
         if (!chatVisible) {
           chatVisible = true;
           chatContainer.style.display = 'flex';
