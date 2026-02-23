@@ -1,8 +1,11 @@
 <div class="preferences-modal" id="preferencesModal">
   <div class="modal-content">
+    <div class="modal-handle" id="modalHandle">
+      <div class="handle-bar"></div>
+    </div>
+    
     <div class="modal-header">
       <h2>Chat Preferences</h2>
-      <button class="close-btn" onclick="closePreferencesModal()">&times;</button>
     </div>
     
     <div class="modal-body">
@@ -75,32 +78,71 @@
   left: 0;
   width: 100%;
   height: 100%;
-  background-color: rgba(0, 0, 0, 0.7);
+  background-color: rgba(0, 0, 0, 0.5);
   z-index: 10001;
-  align-items: center;
+  align-items: flex-end;
   justify-content: center;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.preferences-modal.show {
+  opacity: 1;
 }
 
 .modal-content {
   background-color: var(--dark-card);
-  border-radius: 10px;
-  width: 95%;
+  border-radius: 20px 20px 0 0;
+  width: 90%;
   max-width: 600px;
   max-height: 90vh;
   overflow-y: auto;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
+  transform: translateY(100%);
+  transition: transform 0.3s ease-out;
+  position: relative;
+}
+
+.preferences-modal.show .modal-content {
+  transform: translateY(0);
 }
 
 .light-mode .modal-content {
   background-color: var(--light-card);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.2);
+}
+
+.modal-handle {
+  width: 100%;
+  padding: 12px 0;
+  display: flex;
+  justify-content: center;
+  cursor: grab;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.modal-handle:active {
+  cursor: grabbing;
+}
+
+.handle-bar {
+  width: 40px;
+  height: 5px;
+  background-color: var(--dark-muted);
+  border-radius: 3px;
+  transition: background-color 0.3s;
+}
+
+.light-mode .handle-bar {
+  background-color: var(--light-muted);
 }
 
 .modal-header {
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
   align-items: center;
-  padding: 15px 20px;
+  padding: 0 20px 15px 20px;
 }
   
 .modal-header h2 {
@@ -111,36 +153,6 @@
 
 .light-mode .modal-header h2 {
   color: var(--light-text);
-}
-
-.close-btn {
-  background: none;
-  border: none;
-  color: var(--dark-muted);
-  font-size: 1.4rem;
-  cursor: pointer;
-  padding: 0;
-  width: 30px;
-  height: 30px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  transition: all 0.3s;
-}
-
-.close-btn:hover {
-  color: var(--dark-text);
-  background: rgba(255,255,255,0.1);
-}
-
-.light-mode .close-btn {
-  color: var(--light-muted);
-}
-
-.light-mode .close-btn:hover {
-  color: var(--light-text);
-  background: rgba(0,0,0,0.05);
 }
 
 .modal-body {
@@ -463,6 +475,13 @@ let prefsMyTags = [];
 let prefsBannedWords = [];
 let prefsBannedWordsLoaded = false;
 
+// Touch/drag variables for handle
+let touchStartY = 0;
+let touchCurrentY = 0;
+let isDragging = false;
+let modalContent = null;
+let modal = null;
+
 async function loadPrefsBannedWords() {
   try {
     const response = await fetch('filter.txt');
@@ -492,13 +511,120 @@ function prefsContainsBannedWords(message) {
 }
 
 function openPreferencesModal() {
-  document.getElementById('preferencesModal').style.display = 'flex';
+  modal = document.getElementById('preferencesModal');
+  modalContent = document.querySelector('.modal-content');
+  modal.style.display = 'flex';
+  // Force reflow
+  modal.offsetHeight;
+  modal.classList.add('show');
   loadSavedPreferences();
+  
+  // Add touch event listeners for the handle
+  const handle = document.getElementById('modalHandle');
+  handle.addEventListener('touchstart', handleTouchStart, { passive: false });
+  handle.addEventListener('touchmove', handleTouchMove, { passive: false });
+  handle.addEventListener('touchend', handleTouchEnd);
+  handle.addEventListener('mousedown', handleMouseDown);
 }
 
 function closePreferencesModal() {
-  document.getElementById('preferencesModal').style.display = 'none';
+  modal = document.getElementById('preferencesModal');
+  modal.classList.remove('show');
+  
+  // Remove event listeners
+  const handle = document.getElementById('modalHandle');
+  handle.removeEventListener('touchstart', handleTouchStart);
+  handle.removeEventListener('touchmove', handleTouchMove);
+  handle.removeEventListener('touchend', handleTouchEnd);
+  handle.removeEventListener('mousedown', handleMouseDown);
+  document.removeEventListener('mousemove', handleMouseMove);
+  document.removeEventListener('mouseup', handleMouseUp);
+  
+  setTimeout(() => {
+    modal.style.display = 'none';
+    modalContent.style.transform = 'translateY(0)';
+  }, 300);
+  
   hideAllFeedback();
+}
+
+function handleTouchStart(e) {
+  e.preventDefault();
+  touchStartY = e.touches[0].clientY;
+  isDragging = true;
+  modalContent.style.transition = 'none';
+}
+
+function handleTouchMove(e) {
+  if (!isDragging) return;
+  e.preventDefault();
+  
+  touchCurrentY = e.touches[0].clientY;
+  const deltaY = touchCurrentY - touchStartY;
+  
+  if (deltaY > 0) { // Only allow downward drag
+    const translateY = Math.min(deltaY, window.innerHeight);
+    modalContent.style.transform = `translateY(${translateY}px)`;
+  }
+}
+
+function handleTouchEnd(e) {
+  if (!isDragging) return;
+  e.preventDefault();
+  
+  const deltaY = touchCurrentY - touchStartY;
+  modalContent.style.transition = 'transform 0.3s ease-out';
+  
+  // Close if dragged down more than 100px or 30% of modal height
+  if (deltaY > 100 || deltaY > modalContent.offsetHeight * 0.3) {
+    closePreferencesModal();
+  } else {
+    modalContent.style.transform = 'translateY(0)';
+  }
+  
+  isDragging = false;
+}
+
+function handleMouseDown(e) {
+  e.preventDefault();
+  touchStartY = e.clientY;
+  isDragging = true;
+  modalContent.style.transition = 'none';
+  
+  document.addEventListener('mousemove', handleMouseMove);
+  document.addEventListener('mouseup', handleMouseUp);
+}
+
+function handleMouseMove(e) {
+  if (!isDragging) return;
+  e.preventDefault();
+  
+  touchCurrentY = e.clientY;
+  const deltaY = touchCurrentY - touchStartY;
+  
+  if (deltaY > 0) { // Only allow downward drag
+    const translateY = Math.min(deltaY, window.innerHeight);
+    modalContent.style.transform = `translateY(${translateY}px)`;
+  }
+}
+
+function handleMouseUp(e) {
+  if (!isDragging) return;
+  e.preventDefault();
+  
+  const deltaY = touchCurrentY - touchStartY;
+  modalContent.style.transition = 'transform 0.3s ease-out';
+  
+  // Close if dragged down more than 100px or 30% of modal height
+  if (deltaY > 100 || deltaY > modalContent.offsetHeight * 0.3) {
+    closePreferencesModal();
+  } else {
+    modalContent.style.transform = 'translateY(0)';
+  }
+  
+  isDragging = false;
+  document.removeEventListener('mousemove', handleMouseMove);
+  document.removeEventListener('mouseup', handleMouseUp);
 }
 
 function hideAllFeedback() {
