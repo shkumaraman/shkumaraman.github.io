@@ -701,8 +701,8 @@ body.light-mode {
 {% include scripts.html %}
 
 <script type="module">
- import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
-import { getDatabase, ref, onValue, get, set, update, remove, push, query, orderByChild, limitToLast, off } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
+import { getDatabase, ref, onValue, get, set, update, remove, push, query, orderByChild, limitToLast, off, onChildAdded } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
 
 const firebaseConfig = {
   databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
@@ -993,12 +993,15 @@ function loadFriends() {
 }
 
 function openChat(chatId, friendName) {
+  // Clean up previous listeners
   if (messagesListener) {
-    off(ref(db, `friends/${chatId}/messages`));
+    off(ref(db, `friends/${currentChatId}/messages`), 'child_added', messagesListener);
+    messagesListener = null;
   }
   
   if (typingListener) {
-    off(ref(db, `typing/${chatId}`));
+    off(ref(db, `typing/${currentChatId}`), 'value', typingListener);
+    typingListener = null;
   }
   
   hideTypingIndicator();
@@ -1012,6 +1015,10 @@ function openChat(chatId, friendName) {
   
   document.getElementById('friendsContainer').style.display = 'none';
   document.getElementById('chatContainer').style.display = 'flex';
+  
+  // Clear chat log
+  document.getElementById('chatLog').innerHTML = '';
+  lastMessageTimestamp = 0;
   
   loadMessages();
   listenForMessages();
@@ -1050,9 +1057,15 @@ function listenForMessages() {
   
   const messagesRef = ref(db, `friends/${currentChatId}/messages`);
   
+  // Remove any existing listener
+  if (messagesListener) {
+    off(messagesRef, 'child_added', messagesListener);
+  }
+  
+  // Create new listener
   messagesListener = onChildAdded(messagesRef, (snapshot) => {
     const msg = snapshot.val();
-    if (msg.timestamp > lastMessageTimestamp) {
+    if (msg && msg.timestamp > lastMessageTimestamp) {
       const isMe = msg.nickname === myNickname;
       appendMessageToChat(msg, isMe);
       lastMessageTimestamp = msg.timestamp;
@@ -1066,6 +1079,12 @@ function listenForTyping() {
   
   const typingRef = ref(db, `typing/${currentChatId}`);
   
+  // Remove any existing listener
+  if (typingListener) {
+    off(typingRef, 'value', typingListener);
+  }
+  
+  // Create new listener
   typingListener = onValue(typingRef, (snapshot) => {
     const data = snapshot.val();
     if (!data) {
@@ -1088,15 +1107,15 @@ function maintainMessageLimit() {
   const messagesRef = ref(db, `friends/${currentChatId}/messages`);
   
   get(messagesRef).then((snapshot) => {
-    if (snapshot.size > MESSAGE_LIMIT) {
-      const messages = [];
-      snapshot.forEach((childSnapshot) => {
-        messages.push({
-          key: childSnapshot.key,
-          timestamp: childSnapshot.val().timestamp
-        });
+    const messages = [];
+    snapshot.forEach((childSnapshot) => {
+      messages.push({
+        key: childSnapshot.key,
+        timestamp: childSnapshot.val().timestamp
       });
-      
+    });
+    
+    if (messages.length > MESSAGE_LIMIT) {
       messages.sort((a, b) => a.timestamp - b.timestamp);
       const messagesToRemove = messages.slice(0, messages.length - MESSAGE_LIMIT);
       const updates = {};
@@ -1176,12 +1195,15 @@ function handleImageUpload(e) {
 }
 
 window.closeChat = function() {
-  if (messagesListener) {
-    off(ref(db, `friends/${currentChatId}/messages`));
+  // Clean up listeners properly
+  if (messagesListener && currentChatId) {
+    off(ref(db, `friends/${currentChatId}/messages`), 'child_added', messagesListener);
+    messagesListener = null;
   }
   
-  if (typingListener) {
-    off(ref(db, `typing/${currentChatId}`));
+  if (typingListener && currentChatId) {
+    off(ref(db, `typing/${currentChatId}`), 'value', typingListener);
+    typingListener = null;
   }
   
   hideTypingIndicator();
