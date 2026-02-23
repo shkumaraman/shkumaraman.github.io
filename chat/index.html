@@ -704,7 +704,6 @@ body.light-mode {
 {% include scripts.html %}
 
 <script type="module">
-  // Import Firebase modules
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
   import { 
     getDatabase, 
@@ -725,7 +724,6 @@ body.light-mode {
     databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
   };
   
-  // Initialize Firebase
   const app = initializeApp(firebaseConfig);
   const db = getDatabase(app);
 
@@ -1134,32 +1132,26 @@ body.light-mode {
     if (!friendRequestFrom || !myConn) return;
     
     try {
-      const friendId = Date.now().toString();
-      const myPeerId = peer ? peer.id : null;
-      const otherPeerId = friendRequestFrom.fromPeer;
-      const otherNickname = friendRequestFrom.fromNickname || "Friend";
+      const newChatRef = push(ref(db, 'friends'));
       
-      const friendRef = ref(db, 'friends/' + friendId);
-      await set(friendRef, {
-        peer1: myPeerId,
-        peer2: otherPeerId,
+      await set(newChatRef, {
         nickname1: myNickname,
-        nickname2: otherNickname,
-        timestamp: Date.now()
+        nickname2: friendRequestFrom.fromNickname,
+        messages: {}
       });
       
       myConn.send({
         type: 'friend_accepted',
-        friendId: friendId,
+        friendId: newChatRef.key,
         nickname: myNickname
       });
       
       hideFriendButton();
       if (myConn) {
         myConn.isFriend = true;
-        myConn.otherNickname = otherNickname;
+        myConn.otherNickname = friendRequestFrom.fromNickname;
       }
-      logSystem(`🎉 You are now friends with ${otherNickname}!`);
+      logSystem(`🎉 You are now friends with ${friendRequestFrom.fromNickname}!`);
       closeFriendModal();
       
     } catch (error) {
