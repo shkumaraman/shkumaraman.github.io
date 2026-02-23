@@ -20,11 +20,7 @@
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
 ">
-
-  <!-- LEFT CONTENT -->
   <div style="display: flex; align-items: center; gap: 14px; flex: 1;">
-    
-    <!-- ICON -->
     <div style="
       width: 40px;
       height: 40px;
@@ -39,15 +35,12 @@
         <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/>
       </svg>
     </div>
-
-    <!-- TEXT -->
     <div style="display: flex; flex-direction: column;">
       <span id="toastName" style="
         font-size: 14px;
         font-weight: 600;
         color: #ffffff;
       "></span>
-
       <span id="toastMessage" style="
         font-size: 13px;
         color: #cccccc;
@@ -56,8 +49,6 @@
       "></span>
     </div>
   </div>
-
-  <!-- VIEW BUTTON -->
   <button id="toastViewBtn" style="
     background: #25D366;
     border: none;
@@ -71,18 +62,15 @@
   ">View</button>
 </div>
 
-<!-- SCRIPT -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
   import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
 
   document.addEventListener("DOMContentLoaded", function () {
-
     const firebaseConfig = {
       databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
     };
 
-    // Initialize Firebase
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
     
@@ -98,18 +86,9 @@
     const notifySound = new Audio("/assets/notify.mp3");
     notifySound.preload = "auto";
 
-    let lastNotifiedMessages = JSON.parse(
-      localStorage.getItem("lastNotifiedMessages") || "{}"
-    );
-
+    let lastNotifiedMessages = JSON.parse(localStorage.getItem("lastNotifiedMessages") || "{}");
     let toastQueue = [];
     let toastShowing = false;
-
-    function getFriendMessageField(friend) {
-      if (friend.nickname1 === myNickname) return "message2";
-      if (friend.nickname2 === myNickname) return "message1";
-      return null;
-    }
 
     function getFriendNickname(friend) {
       if (friend.nickname1 === myNickname) return friend.nickname2;
@@ -117,34 +96,56 @@
       return null;
     }
 
-    // Use onValue with modular syntax
+    function getLastMessageFromFriend(friend) {
+      if (!friend.messages) return null;
+      
+      const messages = Object.values(friend.messages);
+      if (messages.length === 0) return null;
+      
+      messages.sort((a, b) => b.timestamp - a.timestamp);
+      const latestMessage = messages[0];
+      
+      if (latestMessage.nickname !== myNickname) {
+        let text = 'New message';
+        if (latestMessage.type === 'image') text = '📷 Photo';
+        else if (latestMessage.type === 'gif') text = '🎯 GIF';
+        else if (latestMessage.type === 'text') text = latestMessage.text;
+        
+        return {
+          text: text,
+          timestamp: latestMessage.timestamp
+        };
+      }
+      
+      return null;
+    }
+
     const friendsRef = ref(db, "friends");
     onValue(friendsRef, (snapshot) => {
       const data = snapshot.val();
       if (!data) return;
 
       Object.entries(data).forEach(([chatId, friend]) => {
-        if (!friend.timestamp) return;
+        if (friend.nickname1 !== myNickname && friend.nickname2 !== myNickname) return;
 
         const friendNickname = getFriendNickname(friend);
-        const messageField = getFriendMessageField(friend);
-        if (!friendNickname || !messageField) return;
+        if (!friendNickname) return;
 
-        const message = friend[messageField] || "";
-        if (!message.trim()) return;
+        const lastMessage = getLastMessageFromFriend(friend);
+        if (!lastMessage) return;
 
-        if (lastNotifiedMessages[chatId] !== message) {
+        const notificationKey = `${chatId}_${lastMessage.timestamp}`;
+        
+        if (lastNotifiedMessages[chatId] !== notificationKey) {
           toastQueue.push({
             senderName: friendNickname,
-            message: message,
-            chatId: chatId
+            message: lastMessage.text,
+            chatId: chatId,
+            timestamp: lastMessage.timestamp
           });
 
-          lastNotifiedMessages[chatId] = message;
-          localStorage.setItem(
-            "lastNotifiedMessages",
-            JSON.stringify(lastNotifiedMessages)
-          );
+          lastNotifiedMessages[chatId] = notificationKey;
+          localStorage.setItem("lastNotifiedMessages", JSON.stringify(lastNotifiedMessages));
 
           processToastQueue();
         }
@@ -159,8 +160,7 @@
       toastShowing = true;
       const { senderName, message } = toastQueue.shift();
 
-      const shortMessage =
-        message.length > 40 ? message.substring(0, 40) + "..." : message;
+      const shortMessage = message.length > 40 ? message.substring(0, 40) + "..." : message;
 
       toastName.textContent = senderName;
       toastMessage.textContent = shortMessage;
@@ -182,6 +182,5 @@
         }, 400);
       }, 5000);
     }
-
   });
 </script>
