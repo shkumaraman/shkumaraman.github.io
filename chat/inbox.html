@@ -784,6 +784,27 @@ function hideTypingIndicator() {
   }
 }
 
+function updateFriendListOrder(chatId, lastMessage, timestamp) {
+  if (!myFriendsData[chatId]) return;
+  
+  const friendItem = document.querySelector(`.friend-item[data-chat-id="${chatId}"]`);
+  if (!friendItem) return;
+  
+  const lastMsgElement = friendItem.querySelector('.last-message');
+  const timeElement = friendItem.querySelector('.message-time');
+  
+  if (lastMsgElement) {
+    lastMsgElement.textContent = lastMessage;
+  }
+  
+  if (timeElement) {
+    timeElement.textContent = formatTime(timestamp);
+  }
+  
+  const friendList = document.getElementById('friendList');
+  friendList.insertBefore(friendItem, friendList.firstChild);
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   myNickname = localStorage.getItem("talkrush_nickname") || "Guest";
   currentUserId = 'user_' + Math.random().toString(36).substr(2, 9);
@@ -976,6 +997,8 @@ function loadFriends() {
         </button>
       `;
 
+      div.setAttribute('data-chat-id', friend.chatId);
+
       div.onclick = () => {
         openChat(friend.chatId, friend.displayName);
       };
@@ -993,7 +1016,6 @@ function loadFriends() {
 }
 
 function openChat(chatId, friendName) {
-  // Clean up previous listeners
   if (messagesListener) {
     off(ref(db, `friends/${currentChatId}/messages`), 'child_added', messagesListener);
     messagesListener = null;
@@ -1016,7 +1038,6 @@ function openChat(chatId, friendName) {
   document.getElementById('friendsContainer').style.display = 'none';
   document.getElementById('chatContainer').style.display = 'flex';
   
-  // Clear chat log
   document.getElementById('chatLog').innerHTML = '';
   lastMessageTimestamp = 0;
   
@@ -1057,12 +1078,10 @@ function listenForMessages() {
   
   const messagesRef = ref(db, `friends/${currentChatId}/messages`);
   
-  // Remove any existing listener
   if (messagesListener) {
     off(messagesRef, 'child_added', messagesListener);
   }
   
-  // Create new listener
   messagesListener = onChildAdded(messagesRef, (snapshot) => {
     const msg = snapshot.val();
     if (msg && msg.timestamp > lastMessageTimestamp) {
@@ -1070,6 +1089,15 @@ function listenForMessages() {
       appendMessageToChat(msg, isMe);
       lastMessageTimestamp = msg.timestamp;
       scrollToBottom();
+      
+      let displayMsg = '';
+      if (msg.type === 'image') displayMsg = '📷 Image';
+      else if (msg.type === 'gif') displayMsg = '🎯 GIF';
+      else if (msg.type === 'text') {
+        displayMsg = msg.text.length > 30 ? msg.text.substring(0, 30) + '...' : msg.text;
+      }
+      
+      updateFriendListOrder(currentChatId, displayMsg, msg.timestamp);
     }
   });
 }
@@ -1079,12 +1107,10 @@ function listenForTyping() {
   
   const typingRef = ref(db, `typing/${currentChatId}`);
   
-  // Remove any existing listener
   if (typingListener) {
     off(typingRef, 'value', typingListener);
   }
   
-  // Create new listener
   typingListener = onValue(typingRef, (snapshot) => {
     const data = snapshot.val();
     if (!data) {
@@ -1195,7 +1221,6 @@ function handleImageUpload(e) {
 }
 
 window.closeChat = function() {
-  // Clean up listeners properly
   if (messagesListener && currentChatId) {
     off(ref(db, `friends/${currentChatId}/messages`), 'child_added', messagesListener);
     messagesListener = null;
