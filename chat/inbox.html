@@ -701,34 +701,30 @@ body.light-mode {
 {% include scripts.html %}
 
 <script type="module">
-  import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
-import { getDatabase, ref, onValue, get, set, update, remove, push, child, off } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
+ import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
+import { getDatabase, ref, onValue, get, set, update, remove, push, query, orderByChild, limitToLast, off } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
 
 const firebaseConfig = {
   databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
 };
 
 const GIPHY_API_KEY = 'EKvv5S1CcXqYuHgxPNVKiNuiuNHRTzFk';
-const MESSAGE_LIMIT = 100;
+const MESSAGE_LIMIT = 25;
 
 let currentUserId = null;
 let currentChatId = null;
 let currentFriendId = null;
 let currentFriendName = "";
 let friendListListener = null;
-let peer = null;
-let myConn = null;
-let isConnected = false;
+let messagesListener = null;
+let typingListener = null;
 let myNickname = null;
 let myFriendsData = {};
 let typingTimer = null;
+let lastMessageTimestamp = 0;
 
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
-
-function getCurrentUserId() {
-  return currentUserId;
-}
 
 function escapeHtml(text) {
   const div = document.createElement('div');
@@ -778,93 +774,23 @@ function showTypingIndicator() {
   if (!indicator) return;
   
   indicator.style.display = "block";
-  indicator.textContent = `Typing...`;
-  
-  if (typingTimer) {
-    clearTimeout(typingTimer);
-  }
-  
-  typingTimer = setTimeout(() => {
-    if (indicator) {
-      indicator.style.display = "none";
-      indicator.textContent = "";
-    }
-  }, 2000);
+  indicator.textContent = `${currentFriendName} is typing...`;
 }
 
 function hideTypingIndicator() {
   const indicator = document.getElementById('typingIndicator');
   if (indicator) {
     indicator.style.display = "none";
-    indicator.textContent = "";
-  }
-  
-  if (typingTimer) {
-    clearTimeout(typingTimer);
-    typingTimer = null;
   }
 }
 
 document.addEventListener("DOMContentLoaded", () => {
   myNickname = localStorage.getItem("talkrush_nickname") || "Guest";
+  currentUserId = 'user_' + Math.random().toString(36).substr(2, 9);
   
-  initializePeerConnection();
+  loadFriends();
   setupEventListeners();
 });
-
-function initializePeerConnection() {
-  const peerOptions = {
-    config: {
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
-        { urls: 'stun:stun3.l.google.com:19302' },
-        { urls: 'stun:stun4.l.google.com:19302' }
-      ]
-    }
-  };
-  
-  peer = new Peer(peerOptions);
-
-  peer.on('open', (id) => {
-    currentUserId = id;
-    loadFriends();
-  });
-  
-  peer.on('connection', (conn) => {
-    if (currentFriendId && conn.peer === currentFriendId) {
-      handleFriendConnection(conn);
-    } else {
-      conn.close();
-    }
-  });
-  
-  peer.on('error', (err) => {
-    console.error('Peer error:', err);
-  });
-}
-
-function handleFriendConnection(conn) {
-  myConn = conn;
-  isConnected = true;
-  
-  conn.on('data', (data) => {
-    handleIncomingData(data);
-  });
-  
-  conn.on('close', () => {
-    myConn = null;
-    isConnected = false;
-    showOfflineStatus();
-  });
-  
-  conn.on('error', (err) => {
-    console.error('Connection error:', err);
-  });
-  
-  showOnlineStatus();
-}
 
 function setupEventListeners() {
   const msgInput = document.getElementById('msgInput');
@@ -876,23 +802,23 @@ function setupEventListeners() {
     }
   });
 
-  let typingDebounce;
+  let typingTimeout;
   msgInput.addEventListener('input', () => {
-    sendTypingIndicator();
+    if (!currentChatId) return;
     
-    if (typingDebounce) {
-      clearTimeout(typingDebounce);
-    }
+    const typingRef = ref(db, `typing/${currentChatId}/${currentUserId}`);
+    set(typingRef, true);
     
-    typingDebounce = setTimeout(() => {
-      sendTypingIndicator();
-    }, 300);
+    if (typingTimeout) clearTimeout(typingTimeout);
+    
+    typingTimeout = setTimeout(() => {
+      remove(typingRef);
+    }, 2000);
   });
 
   msgInput.addEventListener('blur', () => {
-    if (typingDebounce) {
-      clearTimeout(typingDebounce);
-    }
+    if (!currentChatId) return;
+    remove(ref(db, `typing/${currentChatId}/${currentUserId}`));
   });
 
   document.getElementById('imgInput').addEventListener('change', handleImageUpload);
@@ -915,28 +841,6 @@ function setupEventListeners() {
       document.getElementById('gifModal').style.display = 'none';
     }
   });
-  
-  updateInputPlaceholder();
-}
-
-function updateInputPlaceholder() {
-  const msgInput = document.getElementById('msgInput');
-  
-  if (!isConnected) {
-    msgInput.placeholder = "Friend is offline";
-  } else {
-    msgInput.placeholder = "Type your message...";
-  }
-}
-
-function sendTypingIndicator() {
-  if (myConn && isConnected) {
-    try {
-      myConn.send({ type: "typing" });
-    } catch (error) {
-      console.error('Failed to send typing indicator:', error);
-    }
-  }
 }
 
 function loadFriends() {
@@ -971,18 +875,9 @@ function loadFriends() {
       const pairKey = [friendNickname1, friendNickname2].sort().join('_');
       
       if (friendPairs.has(pairKey)) {
-        const existing = friendPairs.get(pairKey);
-        const currentTimestamp = friend.timestamp || 0;
-        const existingTimestamp = existing.timestamp || 0;
-        
-        if (currentTimestamp > existingTimestamp) {
-          duplicateChatIds.push(existing.chatId);
-          friendPairs.set(pairKey, { chatId, timestamp: currentTimestamp });
-        } else {
-          duplicateChatIds.push(chatId);
-        }
+        duplicateChatIds.push(chatId);
       } else {
-        friendPairs.set(pairKey, { chatId, timestamp: friend.timestamp || 0 });
+        friendPairs.set(pairKey, chatId);
       }
     });
 
@@ -994,7 +889,6 @@ function loadFriends() {
       
       try {
         await update(ref(db), updates);
-        console.log('Removed duplicate friends:', duplicateChatIds.length);
       } catch (error) {
         console.error('Error removing duplicates:', error);
       }
@@ -1019,37 +913,40 @@ function loadFriends() {
       
       if (!friendNickname) return;
 
-      const otherId = friendNickname === friend.nickname1 ? friend.peer1 : friend.peer2;
+      let lastMessage = "Say Hi!";
+      let lastTimestamp = 0;
+      
+      if (friend.messages) {
+        const messages = Object.values(friend.messages);
+        if (messages.length > 0) {
+          const sorted = messages.sort((a, b) => b.timestamp - a.timestamp);
+          const latest = sorted[0];
+          lastTimestamp = latest.timestamp;
+          
+          if (latest.type === 'image') lastMessage = '📷 Image';
+          else if (latest.type === 'gif') lastMessage = '🎯 GIF';
+          else if (latest.type === 'text') {
+            lastMessage = latest.text.length > 30 ? latest.text.substring(0, 30) + '...' : latest.text;
+          }
+        }
+      }
+
       const avatarLetter = friendNickname.charAt(0).toUpperCase();
       const displayName = friendNickname;
-      
-      let displayMsg = "Say Hi!";
-      if (friend.message1 && friend.message2) {
-        if (myNickname === friend.nickname1) {
-          displayMsg = friend.message2 || friend.message1 || "Say Hi!";
-        } else {
-          displayMsg = friend.message1 || friend.message2 || "Say Hi!";
-        }
-      } else if (friend.message1 || friend.message2) {
-        displayMsg = friend.message1 || friend.message2 || "Say Hi!";
-      }
 
       friendsArray.push({
         chatId,
-        otherId,
         displayName: friendNickname,
         avatarLetter,
-        displayMsg,
-        timestamp: friend.timestamp || Date.now(),
+        displayMsg: lastMessage,
+        timestamp: lastTimestamp || Date.now(),
         friendData: friend
       });
       
       myFriendsData[chatId] = {
-        otherId: otherId,
         displayName: friendNickname,
         isUserNickname1: myNickname === friend.nickname1,
-        isUserNickname2: myNickname === friend.nickname2,
-        friendPeerId: otherId
+        isUserNickname2: myNickname === friend.nickname2
       };
     });
 
@@ -1080,7 +977,7 @@ function loadFriends() {
       `;
 
       div.onclick = () => {
-        openChat(friend.chatId, friend.otherId, friend.displayName);
+        openChat(friend.chatId, friend.displayName);
       };
 
       list.appendChild(div);
@@ -1088,8 +985,6 @@ function loadFriends() {
 
     empty.style.display = "none";
     list.style.display = "flex";
-    
-    updateMyPeerIdInFirebase();
   }, (error) => {
     console.error('Error loading friends:', error);
     document.getElementById("loading").style.display = "none";
@@ -1097,303 +992,153 @@ function loadFriends() {
   });
 }
 
-function updateMyPeerIdInFirebase() {
-  if (!currentUserId || !myNickname) return;
+function openChat(chatId, friendName) {
+  if (messagesListener) {
+    off(ref(db, `friends/${chatId}/messages`));
+  }
   
-  const friendsRef = ref(db, "friends");
-  get(friendsRef).then(snap => {
-    const data = snap.val();
-    if (!data) return;
-    
-    const updates = {};
-    
-    Object.entries(data).forEach(([chatId, friend]) => {
-      if (friend.nickname1 === myNickname && friend.peer1 !== currentUserId) {
-        updates[`${chatId}/peer1`] = currentUserId;
-      }
-      else if (friend.nickname2 === myNickname && friend.peer2 !== currentUserId) {
-        updates[`${chatId}/peer2`] = currentUserId;
-      }
-    });
-    
-    if (Object.keys(updates).length > 0) {
-      update(ref(db, "friends"), updates);
-    }
-  });
-}
-
-function openChat(chatId, friendId, friendName) {
-  if (myConn) {
-    myConn.close();
-    myConn = null;
-    isConnected = false;
+  if (typingListener) {
+    off(ref(db, `typing/${chatId}`));
   }
   
   hideTypingIndicator();
   
   currentChatId = chatId;
-  currentFriendId = friendId;
   currentFriendName = friendName;
   
   document.getElementById('chatAvatar').textContent = friendName.charAt(0).toUpperCase();
   document.getElementById('chatName').textContent = friendName;
-  document.getElementById('pageTitle').textContent = friendName;
+  document.getElementById('pageTitle').textContent = `Messages - ${friendName}`;
   
   document.getElementById('friendsContainer').style.display = 'none';
   document.getElementById('chatContainer').style.display = 'flex';
   
-  loadLocalChatMessages();
-  
-  connectToFriend(friendId);
+  loadMessages();
+  listenForMessages();
+  listenForTyping();
 }
 
-function connectToFriend(friendId) {
-  if (!peer || peer.destroyed) {
-    showOfflineStatus();
-    return;
-  }
-  
-  if (peer.disconnected) {
-    peer.reconnect();
-    setTimeout(() => connectToFriend(friendId), 1000);
-    return;
-  }
-  
-  try {
-    const conn = peer.connect(friendId, {
-      reliable: true
-    });
-    
-    conn.on("open", () => {
-      myConn = conn;
-      isConnected = true;
-      showOnlineStatus();
-      
-      conn.on("data", handleIncomingData);
-      
-      conn.on("close", () => {
-        myConn = null;
-        isConnected = false;
-        showOfflineStatus();
-      });
-      
-      conn.on("error", (err) => {
-        console.error('Connection error:', err);
-        myConn = null;
-        isConnected = false;
-        showOfflineStatus();
-      });
-    });
-    
-    conn.on("error", (err) => {
-      console.error('Connection failed:', err);
-      showOfflineStatus();
-    });
-    
-  } catch (error) {
-    console.error('Failed to connect:', error);
-    showOfflineStatus();
-  }
-}
-
-function handleIncomingData(data) {
-  if (!currentChatId || !currentFriendId) return;
-  
-  if (data && typeof data === "object" && data.type === "typing") {
-    showTypingIndicator();
-    return;
-  }
-  
-  const senderId = myConn ? myConn.peer : currentFriendId;
-  
-  if (typeof data === "string") {
-    saveIncomingMessage(data, 'text', senderId);
-    displayMessageImmediately(data, 'text', senderId, true);
-  } else if (data.type === "image") {
-    saveIncomingMessage(data.blob, 'image', senderId);
-    displayMessageImmediately(data.blob, 'image', senderId, true);
-  } else if (data.type === "gif") {
-    saveIncomingMessage(data.url, 'gif', senderId);
-    displayMessageImmediately(data.url, 'gif', senderId, true);
-  }
-}
-
-function showOnlineStatus() {
-  const chatAvatar = document.getElementById('chatAvatar');
-  
-  if (chatAvatar) {
-    chatAvatar.style.boxShadow = '0 0 10px #4CAF50, 0 0 20px #4CAF50';
-  }
-  
-  updateInputPlaceholder();
-}
-
-function showOfflineStatus() {
-  const chatAvatar = document.getElementById('chatAvatar');
-  
-  if (chatAvatar) {
-    chatAvatar.style.boxShadow = 'none';
-  }
-  
-  updateInputPlaceholder();
-}
-
-window.closeChat = function() {
-  if (myConn) {
-    myConn.close();
-    myConn = null;
-    isConnected = false;
-  }
-  
-  hideTypingIndicator();
-  
-  document.getElementById('friendsContainer').style.display = 'block';
-  document.getElementById('chatContainer').style.display = 'none';
-  document.getElementById('pageTitle').textContent = 'Messages';
-  
-  currentChatId = null;
-  currentFriendId = null;
-  currentFriendName = "";
-}
-
-function loadLocalChatMessages() {
+function loadMessages() {
   const chatDiv = document.getElementById('chatLog');
   chatDiv.innerHTML = '';
+  lastMessageTimestamp = 0;
   
   if (!currentChatId) return;
   
-  const savedChats = localStorage.getItem(`talkrush_chat_${currentChatId}`);
+  const messagesRef = ref(db, `friends/${currentChatId}/messages`);
   
-  if (savedChats) {
-    try {
-      const messages = JSON.parse(savedChats);
-      messages.forEach(msg => {
-        const isMe = msg.senderId === currentUserId;
-        appendMessageToChat(msg, isMe);
+  get(messagesRef).then((snapshot) => {
+    const messages = snapshot.val();
+    if (messages) {
+      const messageArray = Object.values(messages);
+      messageArray.sort((a, b) => a.timestamp - b.timestamp);
+      
+      messageArray.forEach(msg => {
+        if (msg.timestamp > lastMessageTimestamp) {
+          const isMe = msg.nickname === myNickname;
+          appendMessageToChat(msg, isMe);
+          lastMessageTimestamp = msg.timestamp;
+        }
       });
+    }
+    scrollToBottom();
+  });
+}
+
+function listenForMessages() {
+  if (!currentChatId) return;
+  
+  const messagesRef = ref(db, `friends/${currentChatId}/messages`);
+  
+  messagesListener = onChildAdded(messagesRef, (snapshot) => {
+    const msg = snapshot.val();
+    if (msg.timestamp > lastMessageTimestamp) {
+      const isMe = msg.nickname === myNickname;
+      appendMessageToChat(msg, isMe);
+      lastMessageTimestamp = msg.timestamp;
       scrollToBottom();
-    } catch (e) {
-      console.error('Error parsing saved chats:', e);
     }
-  }
+  });
 }
 
-function saveIncomingMessage(content, type, senderId) {
-  if (!currentChatId || !currentFriendId) return;
+function listenForTyping() {
+  if (!currentChatId) return;
   
-  const message = {
-    content: content,
-    senderId: senderId,
-    timestamp: Date.now(),
-    type: type,
-    delivered: true
-  };
+  const typingRef = ref(db, `typing/${currentChatId}`);
   
-  const storageKey = `talkrush_chat_${currentChatId}`;
-  let messages = [];
-  
-  try {
-    const saved = localStorage.getItem(storageKey);
-    if (saved) {
-      messages = JSON.parse(saved);
+  typingListener = onValue(typingRef, (snapshot) => {
+    const data = snapshot.val();
+    if (!data) {
+      hideTypingIndicator();
+      return;
     }
-  } catch (e) {
-    console.error('Error loading messages:', e);
-  }
-  
-  messages.push(message);
-  
-  if (messages.length > MESSAGE_LIMIT) {
-    messages = messages.slice(-MESSAGE_LIMIT);
-  }
-  
-  localStorage.setItem(storageKey, JSON.stringify(messages));
-  
-  let lastMsg = '';
-  if (type === 'image') {
-    lastMsg = 'Image';
-  } else if (type === 'gif') {
-    lastMsg = 'GIF';
-  } else if (type === 'text') {
-    lastMsg = content;
-  }
-  
-  const friendData = myFriendsData[currentChatId];
-  if (!friendData) return message;
-  
-  const updateData = {
-    timestamp: Date.now()
-  };
-  
-  if (friendData.isUserNickname1) {
-    updateData.message1 = lastMsg;
-  } else if (friendData.isUserNickname2) {
-    updateData.message2 = lastMsg;
-  }
-  
-  update(ref(db, "friends/" + currentChatId), updateData);
-  
-  return message;
+    
+    const typingUsers = Object.keys(data).filter(id => id !== currentUserId);
+    if (typingUsers.length > 0) {
+      showTypingIndicator();
+    } else {
+      hideTypingIndicator();
+    }
+  });
 }
 
-function displayMessageImmediately(content, type, senderId, isReceived = false) {
-  if (!currentChatId || !currentFriendId) return;
+function maintainMessageLimit() {
+  if (!currentChatId) return;
   
-  const message = {
-    content: content,
-    senderId: senderId,
-    timestamp: Date.now(),
-    type: type,
-    delivered: true
-  };
+  const messagesRef = ref(db, `friends/${currentChatId}/messages`);
   
-  const isMe = senderId === currentUserId;
-  appendMessageToChat(message, isMe);
-}
-
-function appendMessageToChat(msg, isMe) {
-  const chatDiv = document.getElementById('chatLog');
-  const div = document.createElement("div");
-  div.className = `msg ${isMe ? 'me' : 'stranger'}`;
-  
-  let content = '';
-  if (msg.type === 'image') {
-    content = `<img src="${msg.content}" alt="Shared image">`;
-  } else if (msg.type === 'gif') {
-    content = `<img src="${msg.content}" alt="GIF">`;
-  } else {
-    content = escapeHtml(msg.content);
-  }
-  
-  div.innerHTML = content + 
-    `<div class="timestamp">${formatMessageTime(msg.timestamp)}</div>`;
-  
-  chatDiv.appendChild(div);
-  scrollToBottom();
+  get(messagesRef).then((snapshot) => {
+    if (snapshot.size > MESSAGE_LIMIT) {
+      const messages = [];
+      snapshot.forEach((childSnapshot) => {
+        messages.push({
+          key: childSnapshot.key,
+          timestamp: childSnapshot.val().timestamp
+        });
+      });
+      
+      messages.sort((a, b) => a.timestamp - b.timestamp);
+      const messagesToRemove = messages.slice(0, messages.length - MESSAGE_LIMIT);
+      const updates = {};
+      
+      messagesToRemove.forEach(msg => {
+        updates[msg.key] = null;
+      });
+      
+      update(ref(db, `friends/${currentChatId}/messages`), updates);
+    }
+  });
 }
 
 function sendMessage() {
   const input = document.getElementById('msgInput');
   const content = input.value.trim();
   
-  if (!content || !currentChatId || !currentFriendId) return;
+  if (!content || !currentChatId) return;
   
-  if (myConn && isConnected) {
-    try {
-      myConn.send(content);
-    } catch (error) {
-      console.error('Failed to send via WebRTC:', error);
-    }
-  }
+  const timestamp = Date.now();
+  const message = {
+    nickname: myNickname,
+    text: content,
+    timestamp: timestamp,
+    type: "text"
+  };
   
-  saveIncomingMessage(content, 'text', currentUserId);
-  displayMessageImmediately(content, 'text', currentUserId);
+  const messagesRef = ref(db, `friends/${currentChatId}/messages`);
+  const newMsgRef = push(messagesRef);
+  
+  set(newMsgRef, message).then(() => {
+    maintainMessageLimit();
+  });
+  
+  remove(ref(db, `typing/${currentChatId}/${currentUserId}`));
+  
   input.value = '';
 }
 
 function handleImageUpload(e) {
   const file = e.target.files[0];
-  if (!file) return;
+  if (!file || !currentChatId) return;
   
   if (file.size > 5 * 1024 * 1024) {
     Swal.fire({
@@ -1411,19 +1156,88 @@ function handleImageUpload(e) {
   reader.onload = (event) => {
     const imgData = event.target.result;
     
-    if (myConn && isConnected) {
-      try {
-        myConn.send({ type: "image", blob: imgData });
-      } catch (error) {
-        console.error('Failed to send image via WebRTC:', error);
-      }
-    }
+    const timestamp = Date.now();
+    const message = {
+      nickname: myNickname,
+      blob: imgData,
+      timestamp: timestamp,
+      type: "image"
+    };
     
-    saveIncomingMessage(imgData, 'image', currentUserId);
-    displayMessageImmediately(imgData, 'image', currentUserId);
+    const messagesRef = ref(db, `friends/${currentChatId}/messages`);
+    const newMsgRef = push(messagesRef);
+    
+    set(newMsgRef, message).then(() => {
+      maintainMessageLimit();
+    });
   };
   reader.readAsDataURL(file);
   e.target.value = '';
+}
+
+window.closeChat = function() {
+  if (messagesListener) {
+    off(ref(db, `friends/${currentChatId}/messages`));
+  }
+  
+  if (typingListener) {
+    off(ref(db, `typing/${currentChatId}`));
+  }
+  
+  hideTypingIndicator();
+  
+  document.getElementById('friendsContainer').style.display = 'block';
+  document.getElementById('chatContainer').style.display = 'none';
+  document.getElementById('pageTitle').textContent = 'Messages';
+  
+  currentChatId = null;
+  currentFriendName = "";
+  lastMessageTimestamp = 0;
+}
+
+function appendMessageToChat(msg, isMe) {
+  const chatDiv = document.getElementById('chatLog');
+  const div = document.createElement("div");
+  div.className = `msg ${isMe ? 'me' : 'stranger'}`;
+  
+  if (!isMe) {
+    const nicknameDiv = document.createElement("div");
+    nicknameDiv.className = "msg-nickname";
+    nicknameDiv.style.fontWeight = "bold";
+    nicknameDiv.style.marginBottom = "2px";
+    nicknameDiv.style.fontSize = "0.85em";
+    nicknameDiv.style.opacity = "0.8";
+    nicknameDiv.textContent = msg.nickname;
+    div.appendChild(nicknameDiv);
+  }
+  
+  if (msg.type === 'image') {
+    const img = document.createElement("img");
+    img.src = msg.blob;
+    img.style.maxWidth = "200px";
+    img.style.maxHeight = "200px";
+    img.style.borderRadius = "8px";
+    div.appendChild(img);
+  } else if (msg.type === 'gif') {
+    const img = document.createElement("img");
+    img.src = msg.url;
+    img.style.maxWidth = "200px";
+    img.style.maxHeight = "200px";
+    img.style.borderRadius = "8px";
+    div.appendChild(img);
+  } else {
+    const textDiv = document.createElement("div");
+    textDiv.textContent = msg.text;
+    div.appendChild(textDiv);
+  }
+  
+  const timeDiv = document.createElement("div");
+  timeDiv.className = "timestamp";
+  timeDiv.textContent = formatMessageTime(msg.timestamp);
+  div.appendChild(timeDiv);
+  
+  chatDiv.appendChild(div);
+  scrollToBottom();
 }
 
 window.unfriend = function(chatId) {
@@ -1438,21 +1252,15 @@ window.unfriend = function(chatId) {
     cancelButtonText: 'Cancel'
   }).then((result) => {
     if (result.isConfirmed) {
-      if (currentChatId === chatId && myConn) {
-        myConn.close();
-        myConn = null;
-        isConnected = false;
+      if (currentChatId === chatId) {
+        window.closeChat();
       }
       
-      const friendData = myFriendsData[chatId];
-      
-      remove(ref(db, "friends/" + chatId)).then(() => {
-        localStorage.removeItem(`talkrush_chat_${chatId}`);
+      Promise.all([
+        remove(ref(db, "friends/" + chatId)),
+        remove(ref(db, `typing/${chatId}`))
+      ]).then(() => {
         delete myFriendsData[chatId];
-        
-        if (currentChatId === chatId) {
-          window.closeChat();
-        }
       });
     }
   });
@@ -1492,18 +1300,22 @@ function displayGifs(gifs) {
     img.src = gifUrl;
     img.className = "gif-item";
     img.onclick = () => {
-      if (!currentChatId || !currentFriendId) return;
+      if (!currentChatId) return;
       
-      if (myConn && isConnected) {
-        try {
-          myConn.send({ type: "gif", url: gifUrl });
-        } catch (error) {
-          console.error('Failed to send GIF via WebRTC:', error);
-        }
-      }
+      const timestamp = Date.now();
+      const message = {
+        nickname: myNickname,
+        url: gifUrl,
+        timestamp: timestamp,
+        type: "gif"
+      };
       
-      saveIncomingMessage(gifUrl, 'gif', currentUserId);
-      displayMessageImmediately(gifUrl, 'gif', currentUserId);
+      const messagesRef = ref(db, `friends/${currentChatId}/messages`);
+      const newMsgRef = push(messagesRef);
+      
+      set(newMsgRef, message).then(() => {
+        maintainMessageLimit();
+      });
       
       document.getElementById('gifModal').style.display = 'none';
     };
