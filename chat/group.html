@@ -608,7 +608,7 @@ body.light-mode {
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
-import { getDatabase, ref, push, set, onChildAdded, query, orderByChild, limitToLast, get, update } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
+import { getDatabase, ref, push, set, onChildAdded, query, orderByChild, limitToLast, get, update, remove } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
 
 const firebaseConfig = {
   databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
@@ -800,16 +800,20 @@ function maintainMessageLimit() {
       });
     });
 
+    console.log("Total messages:", allMessages.length);
+
     if (allMessages.length > messageLimit) {
       const messagesToDelete = allMessages.slice(0, allMessages.length - messageLimit);
-      const updates = {};
+      console.log("Deleting:", messagesToDelete.length, "messages"); // debug
+
       messagesToDelete.forEach(msg => {
-        updates[`groups/${currentGroup}/messages/${msg.key}`] = null;
+        remove(ref(db, `groups/${currentGroup}/messages/${msg.key}`))
+          .then(() => console.log("Deleted:", msg.key))
+          .catch(err => console.error("Delete failed:", msg.key, err));
       });
-      update(ref(db), updates);
     }
   });
-}
+ }
 
 function sendMessageToGroup(text) {
   if (!text.trim() || isSendingMessage || !passwordVerified) return;
