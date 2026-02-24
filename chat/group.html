@@ -607,7 +607,7 @@ body.light-mode {
 {% include scripts.html %}
 
 <script type="module">
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
 import { getDatabase, ref, push, set, onChildAdded, query, orderByChild, limitToLast, get, update } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
 
 const firebaseConfig = {
@@ -664,6 +664,41 @@ function getGroupFromURL() {
   return urlParams.get('group');
 }
 
+async function cleanupOldMessages() {
+  if (!currentGroup) return;
+  
+  const messagesRef = ref(db, `groups/${currentGroup}/messages`);
+  
+  try {
+    const snapshot = await get(query(messagesRef, orderByChild('timestamp')));
+    
+    if (snapshot.size > messageLimit) {
+      const messages = [];
+      snapshot.forEach((childSnapshot) => {
+        messages.push({
+          key: childSnapshot.key,
+          timestamp: childSnapshot.val().timestamp
+        });
+      });
+      
+      messages.sort((a, b) => a.timestamp - b.timestamp);
+      
+      const messagesToDelete = messages.slice(0, messages.length - messageLimit);
+      
+      if (messagesToDelete.length > 0) {
+        const updates = {};
+        messagesToDelete.forEach(msg => {
+          updates[msg.key] = null;
+        });
+        
+        await update(messagesRef, updates);
+      }
+    }
+  } catch (error) {
+    console.error('Cleanup error:', error);
+  }
+}
+
 async function initializeChat() {
   myId = 'user_' + Math.random().toString(36).substr(2, 9);
   currentGroup = getGroupFromURL();
@@ -674,6 +709,7 @@ async function initializeChat() {
   }
   
   await loadBannedWords();
+  await cleanupOldMessages();
   
   const savedNickname = localStorage.getItem('talkrush_nickname');
   if (savedNickname) {
@@ -783,32 +819,6 @@ function joinGroupChat() {
   });
 }
 
-function maintainMessageLimit() {
-  const messagesQuery = query(
-    ref(db, `groups/${currentGroup}/messages`),
-    orderByChild("timestamp")
-  );
-  
-  get(messagesQuery).then((snapshot) => {
-    if (snapshot.size > messageLimit) {
-      const messages = [];
-      snapshot.forEach((childSnapshot) => {
-        messages.push({
-          key: childSnapshot.key,
-          timestamp: childSnapshot.val().timestamp
-        });
-      });
-      messages.sort((a, b) => a.timestamp - b.timestamp);
-      const messagesToRemove = messages.slice(0, messages.length - messageLimit);
-      const updates = {};
-      messagesToRemove.forEach(msg => {
-        updates[msg.key] = null;
-      });
-      update(ref(db, `groups/${currentGroup}/messages`), updates);
-    }
-  });
-}
-
 function sendMessageToGroup(text) {
   if (!text.trim() || isSendingMessage || !passwordVerified) return;
   if (containsBannedWords(text)) {
@@ -829,7 +839,7 @@ function sendMessageToGroup(text) {
   set(newMsgRef, message)
     .then(() => {
       isSendingMessage = false;
-      maintainMessageLimit();
+      cleanupOldMessages();
     })
     .catch(err => {
       isSendingMessage = false;
@@ -905,7 +915,7 @@ function sendImageToGroup(blob) {
   set(newMsgRef, message)
     .then(() => {
       isSendingMessage = false;
-      maintainMessageLimit();
+      cleanupOldMessages();
     })
     .catch(err => {
       isSendingMessage = false;
@@ -930,7 +940,7 @@ function sendGifToGroup(url) {
     .then(() => {
       isSendingGif = false;
       isSendingMessage = false;
-      maintainMessageLimit();
+      cleanupOldMessages();
     })
     .catch(err => {
       isSendingGif = false;
@@ -1000,7 +1010,6 @@ function displayMessage(msg) {
   time.textContent = formatTimestamp(msg.timestamp);
   div.appendChild(time);
   document.getElementById("chatLog").appendChild(div);
-  scrollToBottom();
 }
 
 function formatTimestamp(timestamp) {
