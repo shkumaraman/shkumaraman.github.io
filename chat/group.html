@@ -783,39 +783,35 @@ function joinGroupChat() {
   });
 }
 
-function maintainMessageLimit() {
-  const messagesQuery = query(
-    ref(db, `groups/${currentGroup}/messages`),
-    orderByChild("timestamp")
-  );
+// ✅ Purane messages delete karne ka function
+async function deleteOldMessages() {
+  try {
+    const messagesQuery = query(
+      ref(db, `groups/${currentGroup}/messages`),
+      orderByChild("timestamp")
+    );
 
-  get(messagesQuery).then((snapshot) => {
+    const snapshot = await get(messagesQuery);
     if (!snapshot.exists()) return;
 
     const allMessages = [];
-    snapshot.forEach((childSnapshot) => {
-      allMessages.push({
-        key: childSnapshot.key,
-        timestamp: childSnapshot.val().timestamp
-      });
+    snapshot.forEach((child) => {
+      allMessages.push(child.key);
     });
 
-    console.log("Total messages:", allMessages.length);
-
-    if (allMessages.length > messageLimit) {
-      const messagesToDelete = allMessages.slice(0, allMessages.length - messageLimit);
-      console.log("Deleting:", messagesToDelete.length, "messages"); // debug
-
-      messagesToDelete.forEach(msg => {
-        remove(ref(db, `groups/${currentGroup}/messages/${msg.key}`))
-          .then(() => console.log("Deleted:", msg.key))
-          .catch(err => console.error("Delete failed:", msg.key, err));
-      });
+    if (allMessages.length >= messageLimit) {
+      const toDelete = allMessages.slice(0, allMessages.length - messageLimit + 1);
+      for (const key of toDelete) {
+        await remove(ref(db, `groups/${currentGroup}/messages/${key}`));
+      }
     }
-  });
- }
+  } catch (err) {
+    console.error("Delete old messages error:", err);
+  }
+}
 
-function sendMessageToGroup(text) {
+// ✅ Text message send
+async function sendMessageToGroup(text) {
   if (!text.trim() || isSendingMessage || !passwordVerified) return;
   if (containsBannedWords(text)) {
     logSystem("Your message contains inappropriate content and cannot be sent.");
@@ -823,6 +819,9 @@ function sendMessageToGroup(text) {
   }
   
   isSendingMessage = true;
+  
+  await deleteOldMessages();
+  
   const timestamp = Date.now();
   const message = {
     text: text,
@@ -833,13 +832,8 @@ function sendMessageToGroup(text) {
   
   const newMsgRef = push(ref(db, `groups/${currentGroup}/messages`));
   set(newMsgRef, message)
-    .then(() => {
-      isSendingMessage = false;
-      maintainMessageLimit();
-    })
-    .catch(err => {
-      isSendingMessage = false;
-    });
+    .then(() => { isSendingMessage = false; })
+    .catch(() => { isSendingMessage = false; });
 }
 
 function compressImage(file, callback) {
@@ -895,9 +889,12 @@ function compressImage(file, callback) {
   reader.readAsDataURL(file);
 }
 
-function sendImageToGroup(blob) {
+// ✅ Image message send
+async function sendImageToGroup(blob) {
   if (isSendingMessage || !passwordVerified) return;
   isSendingMessage = true;
+  
+  await deleteOldMessages();
   
   const timestamp = Date.now();
   const message = {
@@ -909,19 +906,17 @@ function sendImageToGroup(blob) {
   
   const newMsgRef = push(ref(db, `groups/${currentGroup}/messages`));
   set(newMsgRef, message)
-    .then(() => {
-      isSendingMessage = false;
-      maintainMessageLimit();
-    })
-    .catch(err => {
-      isSendingMessage = false;
-    });
+    .then(() => { isSendingMessage = false; })
+    .catch(() => { isSendingMessage = false; });
 }
 
-function sendGifToGroup(url) {
+// ✅ GIF message send
+async function sendGifToGroup(url) {
   if (isSendingGif || isSendingMessage || !passwordVerified) return;
   isSendingGif = true;
   isSendingMessage = true;
+  
+  await deleteOldMessages();
   
   const timestamp = Date.now();
   const message = {
@@ -936,9 +931,8 @@ function sendGifToGroup(url) {
     .then(() => {
       isSendingGif = false;
       isSendingMessage = false;
-      maintainMessageLimit();
     })
-    .catch(err => {
+    .catch(() => {
       isSendingGif = false;
       isSendingMessage = false;
     });
