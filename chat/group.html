@@ -621,7 +621,7 @@ let myId;
 let myNickname = 'Guest';
 let currentGroup = null;
 let lastMessageTimestamp = 0;
-const messageLimit = 25;
+const MESSAGE_LIMIT = 25;
 let isSendingGif = false;
 let isSendingMessage = false;
 let initialMessagesLoaded = false;
@@ -754,7 +754,7 @@ function joinGroupChat() {
   const messagesRefQuery = query(
     ref(db, `groups/${currentGroup}/messages`),
     orderByChild("timestamp"),
-    limitToLast(messageLimit)
+    limitToLast(MESSAGE_LIMIT) // <-- Sirf latest 25 messages load karein
   );
   
   if (!initialMessagesLoaded) {
@@ -783,30 +783,38 @@ function joinGroupChat() {
   });
 }
 
-function maintainMessageLimit() {
-  const messagesQuery = query(
-    ref(db, `groups/${currentGroup}/messages`),
-    orderByChild("timestamp")
-  );
+async function maintainMessageLimit() {
+  if (!currentGroup) return;
   
-  get(messagesQuery).then((snapshot) => {
-    if (snapshot.size > messageLimit) {
-      const messages = [];
-      snapshot.forEach((childSnapshot) => {
-        messages.push({
-          key: childSnapshot.key,
-          timestamp: childSnapshot.val().timestamp
-        });
+  try {
+    const messagesRef = ref(db, `groups/${currentGroup}/messages`);
+    const snapshot = await get(messagesRef);
+    
+    if (!snapshot.exists()) return;
+    
+    const messages = [];
+    snapshot.forEach((childSnapshot) => {
+      messages.push({
+        key: childSnapshot.key,
+        timestamp: childSnapshot.val().timestamp
       });
+    });
+    
+    if (messages.length > MESSAGE_LIMIT) {
       messages.sort((a, b) => a.timestamp - b.timestamp);
-      const messagesToRemove = messages.slice(0, messages.length - messageLimit);
+      
+      const messagesToRemove = messages.slice(0, messages.length - MESSAGE_LIMIT);
       const updates = {};
       messagesToRemove.forEach(msg => {
         updates[msg.key] = null;
       });
-      update(ref(db, `groups/${currentGroup}/messages`), updates);
+      
+      await update(ref(db, `groups/${currentGroup}/messages`), updates);
+      console.log(`${messagesToRemove.length} Messages deleted`);
     }
-  });
+  } catch (error) {
+    console.error('Message limit maintain karne mein error:', error);
+  }
 }
 
 function sendMessageToGroup(text) {
