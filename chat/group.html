@@ -788,23 +788,25 @@ function maintainMessageLimit() {
     ref(db, `groups/${currentGroup}/messages`),
     orderByChild("timestamp")
   );
-  
+
   get(messagesQuery).then((snapshot) => {
-    if (snapshot.size > messageLimit) {
-      const messages = [];
-      snapshot.forEach((childSnapshot) => {
-        messages.push({
-          key: childSnapshot.key,
-          timestamp: childSnapshot.val().timestamp
-        });
+    if (!snapshot.exists()) return;
+
+    const allMessages = [];
+    snapshot.forEach((childSnapshot) => {
+      allMessages.push({
+        key: childSnapshot.key,
+        timestamp: childSnapshot.val().timestamp
       });
-      messages.sort((a, b) => a.timestamp - b.timestamp);
-      const messagesToRemove = messages.slice(0, messages.length - messageLimit);
+    });
+
+    if (allMessages.length > messageLimit) {
+      const messagesToDelete = allMessages.slice(0, allMessages.length - messageLimit);
       const updates = {};
-      messagesToRemove.forEach(msg => {
-        updates[msg.key] = null;
+      messagesToDelete.forEach(msg => {
+        updates[`groups/${currentGroup}/messages/${msg.key}`] = null;
       });
-      update(ref(db, `groups/${currentGroup}/messages`), updates);
+      update(ref(db), updates);
     }
   });
 }
