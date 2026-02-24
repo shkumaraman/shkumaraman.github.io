@@ -751,9 +751,8 @@ function joinGroupChat() {
     return;
   }
   
-  const messagesRef = ref(db, `groups/${currentGroup}/messages`);
   const messagesRefQuery = query(
-    messagesRef,
+    ref(db, `groups/${currentGroup}/messages`),
     orderByChild("timestamp"),
     limitToLast(messageLimit)
   );
@@ -771,8 +770,6 @@ function joinGroupChat() {
       }
       scrollToBottom();
       initialMessagesLoaded = true;
-      
-      maintainMessageLimit();
     });
   }
   
@@ -782,45 +779,32 @@ function joinGroupChat() {
       displayMessage(msg);
       lastMessageTimestamp = msg.timestamp;
       scrollToBottom();
-      maintainMessageLimit();
     }
   });
 }
 
 function maintainMessageLimit() {
-  const messagesRef = ref(db, `groups/${currentGroup}/messages`);
   const messagesQuery = query(
-    messagesRef,
+    ref(db, `groups/${currentGroup}/messages`),
     orderByChild("timestamp")
   );
   
   get(messagesQuery).then((snapshot) => {
-    if (snapshot.size > messageLimit) {
-      const messages = [];
-      snapshot.forEach((childSnapshot) => {
-        messages.push({
-          key: childSnapshot.key,
-          timestamp: childSnapshot.val().timestamp
-        });
-      });
-      
-      messages.sort((a, b) => a.timestamp - b.timestamp);
-      
-      const messagesToRemove = messages.slice(0, messages.length - messageLimit);
-      
-      if (messagesToRemove.length > 0) {
-        const updates = {};
-        messagesToRemove.forEach(msg => {
-          updates[`/groups/${currentGroup}/messages/${msg.key}`] = null;
-        });
-        
-        update(ref(db), updates).catch(err => {
-          console.error("Error removing old messages:", err);
-        });
+    const now = Date.now();
+    const twentyFourHoursAgo = now - (24 * 60 * 60 * 1000);
+    
+    const updates = {};
+    
+    snapshot.forEach((childSnapshot) => {
+      const message = childSnapshot.val();
+      if (message.timestamp < twentyFourHoursAgo) {
+        updates[childSnapshot.key] = null;
       }
+    });
+    
+    if (Object.keys(updates).length > 0) {
+      update(ref(db, `groups/${currentGroup}/messages`), updates);
     }
-  }).catch(err => {
-    console.error("Error in maintainMessageLimit:", err);
   });
 }
 
