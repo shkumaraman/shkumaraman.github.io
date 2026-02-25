@@ -67,20 +67,15 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebas
 import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
 
 document.addEventListener("DOMContentLoaded", function () {
-
-  // Firebase config
   const firebaseConfig = {
     databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
   };
 
   const app = initializeApp(firebaseConfig);
   const db = getDatabase(app);
-
-  // get current user
   const myNickname = localStorage.getItem("talkrush_nickname");
   if (!myNickname) return;
 
-  // toast elements
   const toast = document.getElementById("messageToast");
   const toastName = document.getElementById("toastName");
   const toastMessage = document.getElementById("toastMessage");
@@ -88,49 +83,39 @@ document.addEventListener("DOMContentLoaded", function () {
 
   if (!toast) return;
 
-  // notification sound
   const notifySound = new Audio("/assets/notify.mp3");
   notifySound.preload = "auto";
 
-  // load settings
   let soundMuted = localStorage.getItem("soundMuted") === "true";
   let notificationOff = localStorage.getItem("notificationOff") === "true";
 
   notifySound.muted = soundMuted;
 
-  // storage for last notified messages
   let lastNotifiedMessages = JSON.parse(
     localStorage.getItem("lastNotifiedMessages") || "{}"
   );
 
-  // toast queue
   let toastQueue = [];
   let toastShowing = false;
 
-  // get friend's nickname
   function getFriendNickname(friend) {
     if (friend.nickname1 === myNickname) return friend.nickname2;
     if (friend.nickname2 === myNickname) return friend.nickname1;
     return null;
   }
 
-  // get last message
   function getLastMessageFromFriend(friend) {
-
     if (!friend.messages) return null;
 
     const messages = Object.values(friend.messages);
-
     if (messages.length === 0) return null;
 
     messages.sort((a, b) => b.timestamp - a.timestamp);
-
     const latestMessage = messages[0];
 
     if (latestMessage.nickname === myNickname) return null;
 
     let text = "New message";
-
     if (latestMessage.type === "image") text = "📷 Photo";
     else if (latestMessage.type === "gif") text = "🎯 GIF";
     else if (latestMessage.type === "text") text = latestMessage.text;
@@ -141,35 +126,27 @@ document.addEventListener("DOMContentLoaded", function () {
     };
   }
 
-  // firebase listener
   const friendsRef = ref(db, "friends");
 
   onValue(friendsRef, (snapshot) => {
-
     const data = snapshot.val();
-
     if (!data) return;
 
     Object.entries(data).forEach(([chatId, friend]) => {
-
       if (
         friend.nickname1 !== myNickname &&
         friend.nickname2 !== myNickname
       ) return;
 
       const friendNickname = getFriendNickname(friend);
-
       if (!friendNickname) return;
 
       const lastMessage = getLastMessageFromFriend(friend);
-
       if (!lastMessage) return;
 
       const notificationKey = chatId + "_" + lastMessage.timestamp;
-
       if (lastNotifiedMessages[chatId] === notificationKey) return;
 
-      // add to queue
       toastQueue.push({
         senderName: friendNickname,
         message: lastMessage.text,
@@ -177,47 +154,30 @@ document.addEventListener("DOMContentLoaded", function () {
         timestamp: lastMessage.timestamp
       });
 
-      // save notified state
       lastNotifiedMessages[chatId] = notificationKey;
-
       localStorage.setItem(
         "lastNotifiedMessages",
         JSON.stringify(lastNotifiedMessages)
       );
 
       processToastQueue();
-
     });
-
   }, (error) => {
-
     console.error("Firebase listener error:", error);
-
   });
 
-
-  // process toast queue
   function processToastQueue() {
-
-    // reload settings realtime
     soundMuted = localStorage.getItem("soundMuted") === "true";
     notificationOff = localStorage.getItem("notificationOff") === "true";
 
     notifySound.muted = soundMuted;
 
-    // notification completely off
     if (notificationOff) return;
-
-    // if already showing
     if (toastShowing) return;
-
-    // if queue empty
     if (toastQueue.length === 0) return;
 
     toastShowing = true;
-
     const data = toastQueue.shift();
-
     const senderName = data.senderName;
     const message = data.message;
 
@@ -226,45 +186,27 @@ document.addEventListener("DOMContentLoaded", function () {
         ? message.substring(0, 40) + "..."
         : message;
 
-    // set content
     toastName.textContent = senderName;
     toastMessage.textContent = shortMessage;
 
-    // play sound
     if (!soundMuted) {
-
       notifySound.currentTime = 0;
-
       notifySound.play().catch(() => {});
-
     }
 
-    // show toast
     toast.style.top = "20px";
 
-    // click action
     toastViewBtn.onclick = function () {
-
       window.location.href = "/chat/inbox.html";
-
     };
 
-    // hide after 5 sec
     setTimeout(function () {
-
       toast.style.top = "-120px";
-
       setTimeout(function () {
-
         toastShowing = false;
-
         processToastQueue();
-
       }, 400);
-
     }, 5000);
-
   }
-
 });
 </script>
