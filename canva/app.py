@@ -1,9 +1,10 @@
-from flask import Flask, make_response, redirect
+from flask import Flask, Response, request
+import requests
 import os
 
 app = Flask(__name__)
 
-# ================== YOUR FULL COOKIES ==================
+# ================== YOUR COOKIES (FULL) ==================
 YOUR_COOKIES = {
     'CL': 'en-IN',
     'ASI': '01KJBA1RJGZ1JF96FAD5ANWEJT',
@@ -22,28 +23,63 @@ YOUR_COOKIES = {
     'ab.storage.sessionId.320f7332-8571-45d7-b342-c54192dae547': 'g%3Ab389319c-a1d7-454d-a93b-37aa447c15a9%7Ce%3A1772056088427%7Cc%3A1772053658349%7Cl%3A1772054288427'
 }
 
+HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.5',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Connection': 'keep-alive',
+    'Upgrade-Insecure-Requests': '1'
+}
+
 @app.route('/')
-def home():
-    # Step 1: Redirect to Canva
-    response = make_response(redirect("https://www.canva.com"))
+@app.route('/<path:path>')
+def proxy(path=''):
+    # Target Canva URL
+    if path:
+        target_url = f'https://www.canva.com/{path}'
+    else:
+        target_url = 'https://www.canva.com'
     
-    # Step 2: Attach all cookies
-    for name, value in YOUR_COOKIES.items():
-        response.set_cookie(
-            key=name,
-            value=value,
-            domain='.canva.com',        # Important!
-            path='/',
-            secure=True,
-            httponly=False,
-            samesite='None'
+    # Create session with cookies
+    session = requests.Session()
+    session.cookies.update(YOUR_COOKIES)
+    session.headers.update(HEADERS)
+    
+    try:
+        # Forward query parameters if any
+        if request.query_string:
+            target_url += f'?{request.query_string.decode()}'
+        
+        # Make request to Canva
+        resp = session.get(target_url, timeout=15)
+        
+        # Create Flask response
+        response = Response(
+            resp.content,
+            status=resp.status_code,
+            content_type=resp.headers.get('content-type', 'text/html')
         )
-    
-    return response
+        
+        # Also set cookies in client browser (optional but helpful)
+        for name, value in YOUR_COOKIES.items():
+            response.set_cookie(
+                key=name,
+                value=value,
+                domain='.canva.com',  # This might not work on your domain
+                path='/',
+                secure=True,
+                httponly=False
+            )
+        
+        return response
+        
+    except Exception as e:
+        return f"Error: {str(e)}", 500
 
 @app.route('/health')
 def health():
-    return {'status': 'alive', 'cookies_loaded': len(YOUR_COOKIES)}
+    return {'status': 'alive'}
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
