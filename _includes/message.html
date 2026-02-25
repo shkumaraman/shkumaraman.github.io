@@ -83,9 +83,14 @@
     const toastViewBtn = document.getElementById("toastViewBtn");
     if (!toast) return;
 
-    const notifySound = new Audio("/assets/notify.mp3");
-    notifySound.preload = "auto";
+const notifySound = new Audio("/assets/notify.mp3");
+notifySound.preload = "auto";
 
+let soundMuted = localStorage.getItem("soundMuted") === "true";
+let notificationOff = localStorage.getItem("notificationOff") === "true";
+
+notifySound.muted = soundMuted;
+    
     let lastNotifiedMessages = JSON.parse(localStorage.getItem("lastNotifiedMessages") || "{}");
     let toastQueue = [];
     let toastShowing = false;
@@ -154,9 +159,15 @@
       console.error("Firebase listener error:", error);
     });
 
-    function processToastQueue() {
-      if (toastShowing || toastQueue.length === 0) return;
+  function processToastQueue() {
 
+  soundMuted = localStorage.getItem("soundMuted") === "true";
+  notificationOff = localStorage.getItem("notificationOff") === "true";
+
+  if (notificationOff) return;
+
+  if (toastShowing || toastQueue.length === 0) return;
+      
       toastShowing = true;
       const { senderName, message } = toastQueue.shift();
 
@@ -165,9 +176,11 @@
       toastName.textContent = senderName;
       toastMessage.textContent = shortMessage;
 
-      notifySound.currentTime = 0;
-      notifySound.play().catch(() => {});
-
+  if (!soundMuted) {
+  notifySound.currentTime = 0;
+  notifySound.play().catch(() => {});
+  }
+    
       toast.style.top = "20px";
 
       toastViewBtn.onclick = () => {
