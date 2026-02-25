@@ -1,96 +1,49 @@
-import requests
-from flask import Flask, Response
+from flask import Flask, make_response, redirect
 import os
-import random
 
 app = Flask(__name__)
 
-COOKIES = {
-    'ASI': '01KJBA1RJGZ1JF96FAD5ANWEJT',
+# ================== YOUR FULL COOKIES ==================
+YOUR_COOKIES = {
     'CL': 'en-IN',
-    'FPLC': 'cwN7a%2FOD5xvJhhox8%2F0qxqhg6bFAWFtUE7gmmBij2VN9Q%2BRCNC7QgfMv7EU%2FUY2UkQYhS9VxIphagUEgqrh%2BaO5cQydyOBrcd%2FTuMIWHnDTY7PAwwdqEscXcIL5UhQ%3D%3D'
+    'ASI': '01KJBA1RJGZ1JF96FAD5ANWEJT',
+    'FPLC': 'cwN7a%2FOD5xvJhhox8%2F0qxqhg6bFAWFtUE7gmmBij2VN9Q%2BRCNC7QgfMv7EU%2FUY2UkQYhS9VxIphagUEgqrh%2BaO5cQydyOBrcd%2FTuMIWHnDTY7PAwwdqEscXcIL5UhQ%3D%3D',
+    'gtm_custom_user_engagement_lock_4': 'yes',
+    '_ga': 'GA1.1.633366.1772053654',
+    '_fbp': 'fb.1.1772053653819.648187711697904676',
+    'FPAU': '1.2.1066189869.1772053654',
+    'ab.storage.userId.320f7332-8571-45d7-b342-c54192dae547': 'g%3AUAEQadH2Jjk%7Ce%3Aundefined%7Cc%3A1772053658342%7Cl%3A1772053658352',
+    'ab.storage.deviceId.320f7332-8571-45d7-b342-c54192dae547': 'g%3Abff99a8f-c2de-40a8-a6ad-c9d67f6d1a93%7Ce%3Aundefined%7Cc%3A1772053658356%7Cl%3A1772053658356',
+    'gtm_custom_user_engagement': '{"lock":"yes","page":2,"landingPageURL":"https://www.canva.com/create-new","newSession":"no"}',
+    'gtm_fpc_engagement_event': '{"url":"https://www.canva.com/create-new","ts":1772054283559,"utm_s":-1,"utm_m":-1}',
+    '_uetsid': '01ee63e0128e11f1ad23614df1dc93c3',
+    '_uetvid': '01eebb30128e11f19af3911e6aaf3b88',
+    '_ga_EPWEMH6717': 'GS2.1.s1772053653$o1$g1$t1772054284$j57$l0$h2109609942$dW0oPzEoDrZivRfvodtCoAaga00hZLi79Ew',
+    'ab.storage.sessionId.320f7332-8571-45d7-b342-c54192dae547': 'g%3Ab389319c-a1d7-454d-a93b-37aa447c15a9%7Ce%3A1772056088427%7Cc%3A1772053658349%7Cl%3A1772054288427'
 }
 
-PROXY_SOURCES = [
-    "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=10000&country=all&ssl=all&anonymity=all",
-    "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt",
-    "https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/http.txt"
-]
-
-def get_working_proxy():
-    """Multiple sources se proxy dhundo"""
-    
-    for source in PROXY_SOURCES:
-        try:
-            r = requests.get(source, timeout=5)
-            proxies = r.text.strip().split('\n')[:20]
-            
-            for proxy in proxies:
-                proxy = proxy.strip()
-                if not proxy:
-                    continue
-                    
-                proxy_url = f"http://{proxy}"
-                
-                # Test proxy
-                try:
-                    test = requests.get(
-                        'http://httpbin.org/ip', 
-                        proxies={'http': proxy_url, 'https': proxy_url},
-                        timeout=3
-                    )
-                    if test.status_code == 200:
-                        print(f"✅ Found: {proxy}")
-                        return proxy_url
-                except:
-                    continue
-        except:
-            continue
-    
-    return None
-
 @app.route('/')
-@app.route('/<path:path>')
-def proxy(path=''):
-    """Main proxy handler"""
+def home():
+    # Step 1: Redirect to Canva
+    response = make_response(redirect("https://www.canva.com"))
     
-    target = f'https://www.canva.com/{path}' if path else 'https://www.canva.com'
-    
-    # Proxy dhundo
-    proxy = get_working_proxy()
-    if not proxy:
-        return "No proxy available. Refresh to try again.", 503
-    
-    # Headers
-    headers = {
-        'User-Agent': random.choice([
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-        ])
-    }
-    
-    try:
-        # Request with proxy
-        session = requests.Session()
-        session.proxies = {'http': proxy, 'https': proxy}
-        session.cookies.update(COOKIES)
-        session.headers.update(headers)
-        
-        resp = session.get(target, timeout=10)
-        
-        # Return response
-        return Response(
-            resp.text,
-            status=resp.status_code,
-            content_type=resp.headers.get('content-type', 'text/html')
+    # Step 2: Attach all cookies
+    for name, value in YOUR_COOKIES.items():
+        response.set_cookie(
+            key=name,
+            value=value,
+            domain='.canva.com',        # Important!
+            path='/',
+            secure=True,
+            httponly=False,
+            samesite='None'
         )
-        
-    except Exception as e:
-        return f"Proxy error: {str(e)}. Refresh to try again.", 500
+    
+    return response
 
 @app.route('/health')
 def health():
-    return {"status": "ok"}
+    return {'status': 'alive', 'cookies_loaded': len(YOUR_COOKIES)}
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
