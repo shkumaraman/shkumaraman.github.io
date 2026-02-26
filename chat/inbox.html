@@ -1022,20 +1022,22 @@ function loadFriends() {
 }
 
 function openChat(chatId, friendName) {
-  if (messagesListener) {
+  if (messagesListener && currentChatId) {
     off(ref(db, `friends/${currentChatId}/messages`), 'child_added', messagesListener);
     messagesListener = null;
   }
   
-  if (typingListener) {
+  if (typingListener && currentChatId) {
     off(ref(db, `typing/${currentChatId}`), 'value', typingListener);
     typingListener = null;
   }
   
+  document.getElementById('chatLog').innerHTML = '';
   hideTypingIndicator();
   
   currentChatId = chatId;
   currentFriendName = friendName;
+  lastMessageTimestamp = 0;
   
   document.getElementById('chatAvatar').textContent = friendName.charAt(0).toUpperCase();
   document.getElementById('chatName').textContent = friendName;
@@ -1043,9 +1045,6 @@ function openChat(chatId, friendName) {
   
   document.getElementById('friendsContainer').style.display = 'none';
   document.getElementById('chatContainer').style.display = 'flex';
-  
-  document.getElementById('chatLog').innerHTML = '';
-  lastMessageTimestamp = 0;
   
   loadMessages();
   listenForMessages();
@@ -1076,6 +1075,8 @@ function loadMessages() {
       });
     }
     scrollToBottom();
+  }).catch(error => {
+    console.error('Error loading messages:', error);
   });
 }
 
@@ -1086,10 +1087,16 @@ function listenForMessages() {
   
   if (messagesListener) {
     off(messagesRef, 'child_added', messagesListener);
+    messagesListener = null;
   }
   
   messagesListener = onChildAdded(messagesRef, (snapshot) => {
     const msg = snapshot.val();
+    
+    if (!currentChatId || snapshot.ref.parent.parent.key !== currentChatId) {
+      return;
+    }
+    
     if (msg && msg.timestamp > lastMessageTimestamp) {
       const isMe = msg.nickname === myNickname;
       appendMessageToChat(msg, isMe);
@@ -1239,13 +1246,15 @@ window.closeChat = function() {
   
   hideTypingIndicator();
   
-  document.getElementById('friendsContainer').style.display = 'block';
-  document.getElementById('chatContainer').style.display = 'none';
-  document.getElementById('pageTitle').textContent = 'Messages';
+  document.getElementById('chatLog').innerHTML = '';
   
   currentChatId = null;
   currentFriendName = "";
   lastMessageTimestamp = 0;
+  
+  document.getElementById('friendsContainer').style.display = 'block';
+  document.getElementById('chatContainer').style.display = 'none';
+  document.getElementById('pageTitle').textContent = 'Messages';
 }
 
 function appendMessageToChat(msg, isMe) {
