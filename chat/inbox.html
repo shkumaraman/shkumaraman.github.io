@@ -732,11 +732,9 @@ const db = getDatabase(app);
 
 function getAvatarLetter(name) {
   if (!name) return "?";
-  
   if (name.startsWith("TR|")) {
     return name.charAt(3) || "?";
   }
-  
   return name.charAt(0).toUpperCase();
 }
 
@@ -751,27 +749,20 @@ function formatTime(timestamp) {
   const date = new Date(timestamp);
   const now = new Date();
   const diff = now - date;
-  
   if (diff < 86400000 && date.getDate() === now.getDate()) {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  }
-  else if (diff < 172800000) {
+  } else if (diff < 172800000) {
     return 'Yesterday';
-  }
-  else if (diff < 604800000) {
+  } else if (diff < 604800000) {
     return date.toLocaleDateString([], { weekday: 'short' });
-  }
-  else {
+  } else {
     return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
   }
 }
 
 function formatMessageTime(timestamp) {
   if (!timestamp) return "";
-  return new Date(timestamp).toLocaleTimeString([], { 
-    hour: '2-digit', 
-    minute: '2-digit' 
-  });
+  return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
 function scrollToBottom() {
@@ -798,21 +789,16 @@ function hideTypingIndicator() {
 
 function updateFriendListOrder(chatId, lastMessage, timestamp) {
   if (!myFriendsData[chatId]) return;
-  
   const friendItem = document.querySelector(`.friend-item[data-chat-id="${chatId}"]`);
   if (!friendItem) return;
-  
   const lastMsgElement = friendItem.querySelector('.last-message');
   const timeElement = friendItem.querySelector('.message-time');
-  
   if (lastMsgElement) {
     lastMsgElement.textContent = lastMessage;
   }
-  
   if (timeElement) {
     timeElement.textContent = formatTime(timestamp);
   }
-  
   const friendList = document.getElementById('friendList');
   friendList.insertBefore(friendItem, friendList.firstChild);
 }
@@ -820,7 +806,6 @@ function updateFriendListOrder(chatId, lastMessage, timestamp) {
 document.addEventListener("DOMContentLoaded", () => {
   myNickname = localStorage.getItem("talkrush_nickname") || "Guest";
   currentUserId = 'user_' + Math.random().toString(36).substr(2, 9);
-  
   loadFriends();
   setupEventListeners();
 });
@@ -838,12 +823,9 @@ function setupEventListeners() {
   let typingTimeout;
   msgInput.addEventListener('input', () => {
     if (!currentChatId) return;
-    
     const typingRef = ref(db, `friends/${currentChatId}/typing/${currentUserId}`);
     set(typingRef, true);
-    
     if (typingTimeout) clearTimeout(typingTimeout);
-    
     typingTimeout = setTimeout(() => {
       remove(typingRef);
     }, 2000);
@@ -855,20 +837,16 @@ function setupEventListeners() {
   });
 
   document.getElementById('imgInput').addEventListener('change', handleImageUpload);
-
   document.getElementById('gifBtn').onclick = (e) => {
     e.preventDefault();
     const gifModal = document.getElementById("gifModal");
     gifModal.style.display = gifModal.style.display === "block" ? "none" : "block";
     if (gifModal.style.display === "block") fetchTrendingGifs();
   };
-
   document.getElementById('gifSearch').addEventListener('keypress', (e) => {
     if (e.key === 'Enter') searchGifs(document.getElementById('gifSearch').value);
   });
-
   document.getElementById('sendBtn').onclick = sendMessage;
-
   window.addEventListener("click", (e) => {
     if (e.target === document.getElementById('gifModal')) {
       document.getElementById('gifModal').style.display = 'none';
@@ -904,9 +882,7 @@ function loadFriends() {
     Object.entries(data).forEach(([chatId, friend]) => {
       const friendNickname1 = friend.nickname1;
       const friendNickname2 = friend.nickname2;
-      
       const pairKey = [friendNickname1, friendNickname2].sort().join('_');
-      
       if (friendPairs.has(pairKey)) {
         duplicateChatIds.push(chatId);
       } else {
@@ -919,7 +895,6 @@ function loadFriends() {
       duplicateChatIds.forEach(chatId => {
         updates[`friends/${chatId}`] = null;
       });
-      
       try {
         await update(ref(db), updates);
       } catch (error) {
@@ -943,7 +918,6 @@ function loadFriends() {
     Object.entries(freshData).forEach(([chatId, friend]) => {
       const friendNickname = friend.nickname2 === myNickname ? friend.nickname1 : 
                            friend.nickname1 === myNickname ? friend.nickname2 : null;
-      
       if (!friendNickname) return;
 
       let lastMessage = "Say Hi!";
@@ -955,7 +929,6 @@ function loadFriends() {
           const sorted = messages.sort((a, b) => b.timestamp - a.timestamp);
           const latest = sorted[0];
           lastTimestamp = latest.timestamp;
-          
           if (latest.type === 'image') lastMessage = '📷 Image';
           else if (latest.type === 'gif') lastMessage = '🎯 GIF';
           else if (latest.type === 'text') {
@@ -1132,8 +1105,14 @@ function listenForTyping() {
   
   typingListener = onValue(typingRef, (snapshot) => {
     const data = snapshot.val();
+    const typingChatId = snapshot.ref.parent.key;
     
-    if (!data || !currentChatId) {
+    if (typingChatId !== currentChatId) {
+      hideTypingIndicator();
+      return;
+    }
+    
+    if (!data) {
       hideTypingIndicator();
       return;
     }
@@ -1141,12 +1120,7 @@ function listenForTyping() {
     const typingUsers = Object.keys(data).filter(id => id !== currentUserId);
     
     if (typingUsers.length > 0) {
-      const typingChatId = snapshot.ref.parent.key;
-      if (typingChatId === currentChatId) {
-        showTypingIndicator();
-      } else {
-        hideTypingIndicator();
-      }
+      showTypingIndicator();
     } else {
       hideTypingIndicator();
     }
@@ -1258,13 +1232,10 @@ window.closeChat = function() {
   }
   
   hideTypingIndicator();
-  
   document.getElementById('chatLog').innerHTML = '';
-  
   currentChatId = null;
   currentFriendName = "";
   lastMessageTimestamp = 0;
-  
   document.getElementById('friendsContainer').style.display = 'block';
   document.getElementById('chatContainer').style.display = 'none';
   document.getElementById('pageTitle').textContent = 'Messages';
@@ -1330,7 +1301,6 @@ window.unfriend = function(chatId) {
       if (currentChatId === chatId) {
         window.closeChat();
       }
-      
       remove(ref(db, "friends/" + chatId)).then(() => {
         delete myFriendsData[chatId];
       });
