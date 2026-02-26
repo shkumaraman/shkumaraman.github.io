@@ -707,7 +707,7 @@ body.light-mode {
 {% include scripts.html %}
 
 <script type="module">
-  import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
 import { getDatabase, ref, onValue, get, set, update, remove, push, off, onChildAdded } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
 
 const firebaseConfig = {
@@ -812,7 +812,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
 function setupEventListeners() {
   const msgInput = document.getElementById('msgInput');
-  
+
   msgInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -822,33 +822,35 @@ function setupEventListeners() {
 
   let typingTimeout;
   msgInput.addEventListener('input', () => {
-  if (!currentChatId) return;
+    if (!currentChatId) return;
+    const typingRef = ref(db, `friends/${currentChatId}/typing/${currentUserId}`);
+    set(typingRef, true);
+    if (typingTimeout) clearTimeout(typingTimeout);
+    typingTimeout = setTimeout(() => {
+      remove(typingRef);
+    }, 2000);
+  });
 
-  const typingRef = ref(db, `friends/${currentChatId}/typing/${currentUserId}`);
-  set(typingRef, true);
-
-  if (typingTimeout) clearTimeout(typingTimeout);
-  typingTimeout = setTimeout(() => {
-    remove(typingRef);
-  }, 2000);
-});
-
-msgInput.addEventListener('blur', () => {
-  if (!currentChatId) return;
-  remove(ref(db, `friends/${currentChatId}/typing/${currentUserId}`));
-});
+  msgInput.addEventListener('blur', () => {
+    if (!currentChatId) return;
+    remove(ref(db, `friends/${currentChatId}/typing/${currentUserId}`));
+  });
 
   document.getElementById('imgInput').addEventListener('change', handleImageUpload);
+
   document.getElementById('gifBtn').onclick = (e) => {
     e.preventDefault();
     const gifModal = document.getElementById("gifModal");
     gifModal.style.display = gifModal.style.display === "block" ? "none" : "block";
     if (gifModal.style.display === "block") fetchTrendingGifs();
   };
+
   document.getElementById('gifSearch').addEventListener('keypress', (e) => {
     if (e.key === 'Enter') searchGifs(document.getElementById('gifSearch').value);
   });
+
   document.getElementById('sendBtn').onclick = sendMessage;
+
   window.addEventListener("click", (e) => {
     if (e.target === document.getElementById('gifModal')) {
       document.getElementById('gifModal').style.display = 'none';
@@ -858,11 +860,11 @@ msgInput.addEventListener('blur', () => {
 
 function loadFriends() {
   const friendsRef = ref(db, "friends");
-  
+
   if (friendListListener) {
     off(friendsRef, "value", friendListListener);
   }
-  
+
   friendListListener = onValue(friendsRef, async (snap) => {
     const data = snap.val();
     const list = document.getElementById("friendList");
@@ -906,7 +908,7 @@ function loadFriends() {
 
     const freshSnap = await get(friendsRef);
     const freshData = freshSnap.val();
-    
+
     if (!freshData) {
       empty.style.display = "block";
       list.style.display = "none";
@@ -918,13 +920,13 @@ function loadFriends() {
     const friendsArray = [];
 
     Object.entries(freshData).forEach(([chatId, friend]) => {
-      const friendNickname = friend.nickname2 === myNickname ? friend.nickname1 : 
-                           friend.nickname1 === myNickname ? friend.nickname2 : null;
+      const friendNickname = friend.nickname2 === myNickname ? friend.nickname1 :
+                             friend.nickname1 === myNickname ? friend.nickname2 : null;
       if (!friendNickname) return;
 
       let lastMessage = "Say Hi!";
       let lastTimestamp = 0;
-      
+
       if (friend.messages) {
         const messages = Object.values(friend.messages);
         if (messages.length > 0) {
@@ -940,7 +942,6 @@ function loadFriends() {
       }
 
       const avatarLetter = getAvatarLetter(friendNickname);
-      const displayName = friendNickname;
 
       friendsArray.push({
         chatId,
@@ -950,7 +951,7 @@ function loadFriends() {
         timestamp: lastTimestamp || Date.now(),
         friendData: friend
       });
-      
+
       myFriendsData[chatId] = {
         displayName: friendNickname,
         isUserNickname1: myNickname === friend.nickname1,
@@ -973,9 +974,7 @@ function loadFriends() {
       div.innerHTML = `
         <div class="friend-avatar">${friend.avatarLetter}</div>
         <div class="friend-info">
-          <h3 class="friend-name">
-            ${escapeHtml(friend.displayName)}
-          </h3>
+          <h3 class="friend-name">${escapeHtml(friend.displayName)}</h3>
           <p class="last-message">${escapeHtml(friend.displayMsg)}</p>
         </div>
         <span class="message-time">${formatTime(friend.timestamp)}</span>
@@ -983,13 +982,10 @@ function loadFriends() {
           <i class="fas fa-times"></i>
         </button>
       `;
-
       div.setAttribute('data-chat-id', friend.chatId);
-
       div.onclick = () => {
         openChat(friend.chatId, friend.displayName);
       };
-
       list.appendChild(div);
     });
 
@@ -1006,31 +1002,31 @@ function openChat(chatId, friendName) {
   if (currentChatId) {
     remove(ref(db, `friends/${currentChatId}/typing/${currentUserId}`));
   }
-  
+
   if (messagesListener && currentChatId) {
     off(ref(db, `friends/${currentChatId}/messages`), 'child_added', messagesListener);
     messagesListener = null;
   }
-  
+
   if (typingListener && currentChatId) {
     off(ref(db, `friends/${currentChatId}/typing`), 'value', typingListener);
     typingListener = null;
   }
-  
+
   document.getElementById('chatLog').innerHTML = '';
   hideTypingIndicator();
-  
+
   currentChatId = chatId;
   currentFriendName = friendName;
   lastMessageTimestamp = 0;
-  
+
   document.getElementById('chatAvatar').textContent = getAvatarLetter(friendName);
   document.getElementById('chatName').textContent = friendName;
   document.getElementById('pageTitle').textContent = `Messages - ${friendName}`;
-  
+
   document.getElementById('friendsContainer').style.display = 'none';
   document.getElementById('chatContainer').style.display = 'flex';
-  
+
   loadMessages();
   listenForMessages();
   listenForTyping();
@@ -1040,17 +1036,16 @@ function loadMessages() {
   const chatDiv = document.getElementById('chatLog');
   chatDiv.innerHTML = '';
   lastMessageTimestamp = 0;
-  
+
   if (!currentChatId) return;
-  
+
   const messagesRef = ref(db, `friends/${currentChatId}/messages`);
-  
+
   get(messagesRef).then((snapshot) => {
     const messages = snapshot.val();
     if (messages) {
       const messageArray = Object.values(messages);
       messageArray.sort((a, b) => a.timestamp - b.timestamp);
-      
       messageArray.forEach(msg => {
         if (msg.timestamp > lastMessageTimestamp) {
           const isMe = msg.nickname === myNickname;
@@ -1067,34 +1062,34 @@ function loadMessages() {
 
 function listenForMessages() {
   if (!currentChatId) return;
-  
+
   const messagesRef = ref(db, `friends/${currentChatId}/messages`);
-  
+
   if (messagesListener) {
     off(messagesRef, 'child_added', messagesListener);
     messagesListener = null;
   }
-  
+
   messagesListener = onChildAdded(messagesRef, (snapshot) => {
     const msg = snapshot.val();
-    
+
     if (!currentChatId || snapshot.ref.parent.parent.key !== currentChatId) {
       return;
     }
-    
+
     if (msg && msg.timestamp > lastMessageTimestamp) {
       const isMe = msg.nickname === myNickname;
       appendMessageToChat(msg, isMe);
       lastMessageTimestamp = msg.timestamp;
       scrollToBottom();
-      
+
       let displayMsg = '';
       if (msg.type === 'image') displayMsg = '📷 Image';
       else if (msg.type === 'gif') displayMsg = '🎯 GIF';
       else if (msg.type === 'text') {
         displayMsg = msg.text.length > 30 ? msg.text.substring(0, 30) + '...' : msg.text;
       }
-      
+
       updateFriendListOrder(currentChatId, displayMsg, msg.timestamp);
     }
   });
@@ -1102,11 +1097,18 @@ function listenForMessages() {
 
 function listenForTyping() {
   if (!currentChatId) return;
-  const typingRef = ref(db, `friends/${currentChatId}/typing`);
+
+  const listenedChatId = currentChatId;
+  const typingRef = ref(db, `friends/${listenedChatId}/typing`);
+
   if (typingListener) {
-    off(typingRef, 'value', typingListener);
+    off(ref(db, `friends/${listenedChatId}/typing`), 'value', typingListener);
+    typingListener = null;
   }
+
   typingListener = onValue(typingRef, (snapshot) => {
+    if (currentChatId !== listenedChatId) return;
+
     const data = snapshot.val();
     if (!data) {
       hideTypingIndicator();
@@ -1120,12 +1122,12 @@ function listenForTyping() {
     }
   });
 }
-  
+
 function maintainMessageLimit() {
   if (!currentChatId) return;
-  
+
   const messagesRef = ref(db, `friends/${currentChatId}/messages`);
-  
+
   get(messagesRef).then((snapshot) => {
     const messages = [];
     snapshot.forEach((childSnapshot) => {
@@ -1134,16 +1136,14 @@ function maintainMessageLimit() {
         timestamp: childSnapshot.val().timestamp
       });
     });
-    
+
     if (messages.length > MESSAGE_LIMIT) {
       messages.sort((a, b) => a.timestamp - b.timestamp);
       const messagesToRemove = messages.slice(0, messages.length - MESSAGE_LIMIT);
       const updates = {};
-      
       messagesToRemove.forEach(msg => {
         updates[msg.key] = null;
       });
-      
       update(ref(db, `friends/${currentChatId}/messages`), updates);
     }
   });
@@ -1152,9 +1152,9 @@ function maintainMessageLimit() {
 function sendMessage() {
   const input = document.getElementById('msgInput');
   const content = input.value.trim();
-  
+
   if (!content || !currentChatId) return;
-  
+
   const timestamp = Date.now();
   const message = {
     nickname: myNickname,
@@ -1162,23 +1162,22 @@ function sendMessage() {
     timestamp: timestamp,
     type: "text"
   };
-  
+
   const messagesRef = ref(db, `friends/${currentChatId}/messages`);
   const newMsgRef = push(messagesRef);
-  
+
   set(newMsgRef, message).then(() => {
     maintainMessageLimit();
   });
-  
+
   remove(ref(db, `friends/${currentChatId}/typing/${currentUserId}`));
-  
   input.value = '';
 }
 
 function handleImageUpload(e) {
   const file = e.target.files[0];
   if (!file || !currentChatId) return;
-  
+
   if (file.size > 5 * 1024 * 1024) {
     Swal.fire({
       icon: 'error',
@@ -1190,11 +1189,10 @@ function handleImageUpload(e) {
     e.target.value = '';
     return;
   }
-  
+
   const reader = new FileReader();
   reader.onload = (event) => {
     const imgData = event.target.result;
-    
     const timestamp = Date.now();
     const message = {
       nickname: myNickname,
@@ -1202,10 +1200,10 @@ function handleImageUpload(e) {
       timestamp: timestamp,
       type: "image"
     };
-    
+
     const messagesRef = ref(db, `friends/${currentChatId}/messages`);
     const newMsgRef = push(messagesRef);
-    
+
     set(newMsgRef, message).then(() => {
       maintainMessageLimit();
     });
@@ -1219,16 +1217,16 @@ window.closeChat = function() {
     off(ref(db, `friends/${currentChatId}/messages`), 'child_added', messagesListener);
     messagesListener = null;
   }
-  
+
   if (typingListener && currentChatId) {
     off(ref(db, `friends/${currentChatId}/typing`), 'value', typingListener);
     typingListener = null;
   }
 
   if (currentChatId) {
-  remove(ref(db, `friends/${currentChatId}/typing/${currentUserId}`));
+    remove(ref(db, `friends/${currentChatId}/typing/${currentUserId}`));
   }
-  
+
   hideTypingIndicator();
   document.getElementById('chatLog').innerHTML = '';
   currentChatId = null;
@@ -1237,13 +1235,13 @@ window.closeChat = function() {
   document.getElementById('friendsContainer').style.display = 'block';
   document.getElementById('chatContainer').style.display = 'none';
   document.getElementById('pageTitle').textContent = 'Messages';
-}
+};
 
 function appendMessageToChat(msg, isMe) {
   const chatDiv = document.getElementById('chatLog');
   const div = document.createElement("div");
   div.className = `msg ${isMe ? 'me' : 'stranger'}`;
-  
+
   if (!isMe) {
     const nicknameDiv = document.createElement("div");
     nicknameDiv.className = "msg-nickname";
@@ -1254,7 +1252,7 @@ function appendMessageToChat(msg, isMe) {
     nicknameDiv.textContent = msg.nickname;
     div.appendChild(nicknameDiv);
   }
-  
+
   if (msg.type === 'image') {
     const img = document.createElement("img");
     img.src = msg.blob;
@@ -1274,12 +1272,12 @@ function appendMessageToChat(msg, isMe) {
     textDiv.textContent = msg.text;
     div.appendChild(textDiv);
   }
-  
+
   const timeDiv = document.createElement("div");
   timeDiv.className = "timestamp";
   timeDiv.textContent = formatMessageTime(msg.timestamp);
   div.appendChild(timeDiv);
-  
+
   chatDiv.appendChild(div);
   scrollToBottom();
 }
@@ -1333,7 +1331,7 @@ async function searchGifs(query) {
 function displayGifs(gifs) {
   const gifResults = document.getElementById('gifResults');
   gifResults.innerHTML = "";
-  
+
   gifs.forEach(gif => {
     const gifUrl = gif.images.fixed_height.url;
     const img = document.createElement("img");
@@ -1341,7 +1339,7 @@ function displayGifs(gifs) {
     img.className = "gif-item";
     img.onclick = () => {
       if (!currentChatId) return;
-      
+
       const timestamp = Date.now();
       const message = {
         nickname: myNickname,
@@ -1349,14 +1347,14 @@ function displayGifs(gifs) {
         timestamp: timestamp,
         type: "gif"
       };
-      
+
       const messagesRef = ref(db, `friends/${currentChatId}/messages`);
       const newMsgRef = push(messagesRef);
-      
+
       set(newMsgRef, message).then(() => {
         maintainMessageLimit();
       });
-      
+
       document.getElementById('gifModal').style.display = 'none';
     };
     gifResults.appendChild(img);
