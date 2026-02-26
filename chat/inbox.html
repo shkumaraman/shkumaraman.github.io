@@ -707,7 +707,7 @@ body.light-mode {
 {% include scripts.html %}
 
 <script type="module">
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
 import { getDatabase, ref, onValue, get, set, update, remove, push, off, onChildAdded } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
 
 const firebaseConfig = {
@@ -729,6 +729,16 @@ let lastMessageTimestamp = 0;
 
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
+
+function getAvatarLetter(name) {
+  if (!name) return "?";
+  
+  if (name.startsWith("TR|")) {
+    return name.charAt(3) || "?";
+  }
+  
+  return name.charAt(0).toUpperCase();
+}
 
 function escapeHtml(text) {
   const div = document.createElement('div');
@@ -954,7 +964,7 @@ function loadFriends() {
         }
       }
 
-      const avatarLetter = friendNickname.charAt(0).toUpperCase();
+      const avatarLetter = getAvatarLetter(friendNickname);
       const displayName = friendNickname;
 
       friendsArray.push({
@@ -1035,7 +1045,7 @@ function openChat(chatId, friendName) {
   currentFriendName = friendName;
   lastMessageTimestamp = 0;
   
-  document.getElementById('chatAvatar').textContent = friendName.charAt(0).toUpperCase();
+  document.getElementById('chatAvatar').textContent = getAvatarLetter(friendName);
   document.getElementById('chatName').textContent = friendName;
   document.getElementById('pageTitle').textContent = `Messages - ${friendName}`;
   
@@ -1122,7 +1132,8 @@ function listenForTyping() {
   
   typingListener = onValue(typingRef, (snapshot) => {
     const data = snapshot.val();
-    if (!data) {
+    
+    if (!data || !currentChatId) {
       hideTypingIndicator();
       return;
     }
@@ -1130,7 +1141,12 @@ function listenForTyping() {
     const typingUsers = Object.keys(data).filter(id => id !== currentUserId);
     
     if (typingUsers.length > 0) {
-      showTypingIndicator();
+      const typingChatId = snapshot.ref.parent.key;
+      if (typingChatId === currentChatId) {
+        showTypingIndicator();
+      } else {
+        hideTypingIndicator();
+      }
     } else {
       hideTypingIndicator();
     }
