@@ -747,7 +747,6 @@ main {
 {% include scripts.html %}
 
 <script type="module">
-// Import Firebase modules
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
 import { getDatabase, ref, onValue, get, set, remove } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
 
@@ -861,37 +860,38 @@ document.addEventListener('DOMContentLoaded', async function() {
   });
   
   window.deleteRoom = function(roomName) {
-    Swal.fire({
-      title: 'Delete Room?',
-      text: `Are you sure you want to delete "${roomName}"? This action cannot be undone.`,
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonColor: '#dc3545',
-      cancelButtonColor: '#6c757d',
-      confirmButtonText: 'Yes, delete it',
-      cancelButtonText: 'Cancel',
-      background: document.body.classList.contains('light-mode') ? '#fff' : '#1e1e1e',
-      color: document.body.classList.contains('light-mode') ? '#333' : '#fff'
-    }).then((result) => {
-      if (result.isConfirmed) {
-        remove(ref(db, 'groups/' + roomName));
-      }
-    });
+    if (confirm(`Are you sure you want to delete "${roomName}"? This action cannot be undone.`)) {
+      remove(ref(db, 'groups/' + roomName));
+    }
   };
   
   window.copyRoomLink = function(roomName) {
     const url = window.location.origin + `/chat/group.html?group=${encodeURIComponent(roomName)}`;
-    navigator.clipboard.writeText(url);
-    Swal.fire({
-      icon: 'success',
-      title: 'Link Copied!',
-      text: 'Room link copied to clipboard',
-      timer: 1500,
-      showConfirmButton: false,
-      background: document.body.classList.contains('light-mode') ? '#fff' : '#1e1e1e',
-      color: document.body.classList.contains('light-mode') ? '#333' : '#fff'
-    });
+    const shareData = {
+      title: 'Chat Room: ' + roomName,
+      text: 'Join me in this chat room!',
+      url: url
+    };
+
+    if (navigator.share && window.innerWidth <= 768) {
+      navigator.share(shareData).catch(() => {
+        copyToClipboard(url);
+      });
+    } else {
+      copyToClipboard(url);
+    }
   };
+
+  function copyToClipboard(url) {
+    navigator.clipboard.writeText(url).catch(() => {
+      const textarea = document.createElement('textarea');
+      textarea.value = url;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+    });
+  }
   
   function createRoomCard(roomName, roomData, showDelete = false) {
     const roomCard = document.createElement('div');
@@ -939,8 +939,8 @@ document.addEventListener('DOMContentLoaded', async function() {
           <i class="fas fa-sign-in-alt"></i>
           Join Room
         </a>
-        <button class="btn btn-secondary" onclick="copyRoomLink('${roomName.replace(/'/g, "\\'")}')" title="Copy Link">
-          <i class="fas fa-link"></i>
+        <button class="btn btn-secondary" onclick="copyRoomLink('${roomName.replace(/'/g, "\\'")}')" title="Share Room">
+          <i class="fa-solid fa-arrow-up-from-bracket"></i>
         </button>
         ${deleteButton}
       </div>
