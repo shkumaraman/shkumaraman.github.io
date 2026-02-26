@@ -822,19 +822,21 @@ function setupEventListeners() {
 
   let typingTimeout;
   msgInput.addEventListener('input', () => {
-    if (!currentChatId) return;
-    const typingRef = ref(db, `friends/${currentChatId}/typing/${currentUserId}`);
-    set(typingRef, true);
-    if (typingTimeout) clearTimeout(typingTimeout);
-    typingTimeout = setTimeout(() => {
-      remove(typingRef);
-    }, 2000);
-  });
+  if (!currentChatId) return;
 
-  msgInput.addEventListener('blur', () => {
-    if (!currentChatId) return;
-    remove(ref(db, `friends/${currentChatId}/typing/${currentUserId}`));
-  });
+  const typingRef = ref(db, `friends/${currentChatId}/typing/${currentUserId}`);
+  set(typingRef, true);
+
+  if (typingTimeout) clearTimeout(typingTimeout);
+  typingTimeout = setTimeout(() => {
+    remove(typingRef);
+  }, 2000);
+});
+
+msgInput.addEventListener('blur', () => {
+  if (!currentChatId) return;
+  remove(ref(db, `friends/${currentChatId}/typing/${currentUserId}`));
+});
 
   document.getElementById('imgInput').addEventListener('change', handleImageUpload);
   document.getElementById('gifBtn').onclick = (e) => {
@@ -1096,29 +1098,17 @@ function listenForMessages() {
 
 function listenForTyping() {
   if (!currentChatId) return;
-  
   const typingRef = ref(db, `friends/${currentChatId}/typing`);
-  
   if (typingListener) {
     off(typingRef, 'value', typingListener);
   }
-  
   typingListener = onValue(typingRef, (snapshot) => {
     const data = snapshot.val();
-    const typingChatId = snapshot.ref.parent.key;
-    
-    if (typingChatId !== currentChatId) {
-      hideTypingIndicator();
-      return;
-    }
-    
     if (!data) {
       hideTypingIndicator();
       return;
     }
-    
     const typingUsers = Object.keys(data).filter(id => id !== currentUserId);
-    
     if (typingUsers.length > 0) {
       showTypingIndicator();
     } else {
@@ -1126,7 +1116,7 @@ function listenForTyping() {
     }
   });
 }
-
+  
 function maintainMessageLimit() {
   if (!currentChatId) return;
   
