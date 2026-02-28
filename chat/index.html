@@ -644,25 +644,61 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     });
   }
 
+  // ─────────────────────────────────────────────────────────
+  // MATCHING LOGIC (Updated)
+  //
+  // Priority order:
+  //  1. Opposite gender + shared tags   → best match
+  //  2. Opposite gender + no tags       → good match
+  //  3. everyone + everyone             → fallback (as before)
+  //
+  // Rules:
+  //  - Male+Male or Female+Female       → NEVER connect
+  //  - If no opposite gender found      → enter waiting list as "everyone"
+  //  - Tags: if no shared tags found    → still connect (tags are bonus only)
+  // ─────────────────────────────────────────────────────────
+
   function tryToFindMatch() {
     waitingRef = ref(db, "waiting");
     get(waitingRef).then((snapshot) => {
       const list = snapshot.val();
-      let bestMatch = null;
+
+      let tagMatch = null;      // opposite gender + shared tags
+      let noTagMatch = null;    // opposite gender + no shared tags
+      let everyoneMatch = null; // everyone + everyone
 
       if (list) {
         for (let [key, entry] of Object.entries(list)) {
+          // Remove stale entries
           if (entry.timestamp && (Date.now() - entry.timestamp) > 30000) {
             remove(ref(db, "waiting/" + key));
             continue;
           }
-          if (entry.id !== myId && !isConnected && isGenderCompatible(myGenderInterest, entry.interest)) {
-            const sharedTags = myTags.filter(tag => entry.tags?.includes(tag));
-            if (sharedTags.length > 0) { bestMatch = { key, otherId: entry.id, sharedTags }; break; }
-            else if (!bestMatch) bestMatch = { key, otherId: entry.id, sharedTags: [] };
+
+          if (entry.id === myId || isConnected) continue;
+
+          const sharedTags = myTags.filter(tag => entry.tags?.includes(tag));
+
+          // Check strict opposite-gender compatibility
+          const strictCompat = isStrictGenderCompatible(myGenderInterest, entry.interest);
+          // Check everyone+everyone
+          const everyoneCompat = (myGenderInterest === "everyone" && entry.interest === "everyone");
+
+          if (strictCompat) {
+            // Opposite gender found
+            if (sharedTags.length > 0 && !tagMatch) {
+              tagMatch = { key, otherId: entry.id, sharedTags };
+            } else if (!noTagMatch) {
+              noTagMatch = { key, otherId: entry.id, sharedTags: [] };
+            }
+          } else if (everyoneCompat && !everyoneMatch) {
+            everyoneMatch = { key, otherId: entry.id, sharedTags };
           }
         }
       }
+
+      // Pick best available match
+      const bestMatch = tagMatch || noTagMatch || everyoneMatch;
 
       if (bestMatch) {
         remove(ref(db, "waiting/" + bestMatch.key));
@@ -670,22 +706,42 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
         return;
       }
 
+      // No match found — enter waiting list.
+      // If user has gender preference but no opposite found yet,
+      // enter as "everyone" so they can be found by anyone compatible.
+      const entryInterest = (myGenderInterest === "male" || myGenderInterest === "female")
+        ? "everyone"
+        : "everyone"; // everyone stays everyone
+
       const newRef = push(waitingRef);
       waitingEntryRef = newRef;
-      set(newRef, { id: myId, interest: myGenderInterest, tags: myTags, nickname: myNickname, timestamp: Date.now() });
+      set(newRef, {
+        id: myId,
+        interest: entryInterest,           // always enter as "everyone" when waiting
+        originalInterest: myGenderInterest, // remember real preference
+        tags: myTags,
+        nickname: myNickname,
+        timestamp: Date.now()
+      });
 
       if (heartbeatInterval) clearInterval(heartbeatInterval);
       heartbeatInterval = setInterval(() => {
         if (waitingEntryRef && !isConnected) update(waitingEntryRef, { timestamp: Date.now() });
       }, 10000);
 
+      // After 5s, try a broader fallback sweep
       setTimeout(() => {
         if (isConnected) return;
         get(waitingRef).then((snap) => {
           if (isConnected) return;
           snap.forEach(child => {
             const entry = child.val();
-            if (entry.id !== myId && isGenderCompatible(myGenderInterest, entry.interest)) {
+            if (entry.id === myId) return;
+
+            const strictOk = isStrictGenderCompatible(myGenderInterest, entry.originalInterest || entry.interest);
+            const everyoneOk = (entry.interest === "everyone"); // they're also waiting as everyone
+
+            if (strictOk || everyoneOk) {
               remove(child.ref);
               connectToPeer(entry.id, []);
               return true;
@@ -694,6 +750,19 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
         });
       }, 5000);
     });
+  }
+
+  // Strict: only Male+Female or Female+Male
+  function isStrictGenderCompatible(me, other) {
+    if (me === "male" && other === "female") return true;
+    if (me === "female" && other === "male") return true;
+    return false;
+  }
+
+  // General: used for everyone+everyone (as before) + strict pairs
+  function isGenderCompatible(me, other) {
+    if (me === "everyone" && other === "everyone") return true;
+    return isStrictGenderCompatible(me, other);
   }
 
   function connectToPeer(otherId, sharedTags = []) {
@@ -756,12 +825,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   function cleanUpWaitingList() {
     if (waitingEntryRef) { remove(waitingEntryRef); waitingEntryRef = null; }
     if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
-  }
-
-  function isGenderCompatible(me, other) {
-    return me === "everyone" && other === "everyone"
-      || me === "male" && other === "female"
-      || me === "female" && other === "male";
   }
 
   function showFriendButton() { friendBtn.style.display = 'flex'; friendBtn.disabled = false; }
