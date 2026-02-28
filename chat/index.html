@@ -511,7 +511,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   let peer, myConn, myId, waitingRef, waitingEntryRef;
   let currentSystemMessage = null;
   let isConnected = false;
-  let escStage = 0;
+  let escPressedOnce = false;
   let escTimer = null;
   let heartbeatInterval;
 
@@ -555,29 +555,20 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
-    clearTimeout(escTimer);
-
-    if (escStage === 0) {
-      if (!isConnected) return;
-      escStage = 1;
+    if (!escPressedOnce) {
+      escPressedOnce = true;
+      logSystem("Press Esc again to skip this chat and find someone new");
+      escTimer = setTimeout(() => { escPressedOnce = false; clearSystemMessage(); }, 3000);
+    } else {
+      clearTimeout(escTimer);
+      escPressedOnce = false;
       if (myConn) { myConn.close(); myConn = null; }
       cleanUpWaitingList();
       isConnected = false;
       friendRequestPending = false;
       friendRequestFrom = null;
-      hideFriendButton();
       showNewChatButton();
-      logSystem("Chat ended. Press Esc again to find a new stranger.");
-      escTimer = setTimeout(() => { escStage = 0; }, 4000);
-    } else if (escStage === 1) {
-      escStage = 0;
-      document.getElementById("chatLog").innerHTML = "";
-      hideFriendButton();
-      hideNewChatButton();
-      if (myConn) { myConn.close(); myConn = null; }
-      cleanUpWaitingList();
-      isConnected = false;
-      startPeer();
+      logSystem("Chat ended. Click 'Start New Chat' to find someone new.");
     }
   });
 
@@ -653,7 +644,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     });
   }
 
-
   function tryToFindMatch() {
     waitingRef = ref(db, "waiting");
     get(waitingRef).then((snapshot) => {
@@ -665,6 +655,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
       if (list) {
         for (let [key, entry] of Object.entries(list)) {
+          // Remove stale entries
           if (entry.timestamp && (Date.now() - entry.timestamp) > 30000) {
             remove(ref(db, "waiting/" + key));
             continue;
@@ -674,10 +665,13 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
           const sharedTags = myTags.filter(tag => entry.tags?.includes(tag));
 
+          // Check strict opposite-gender compatibility
           const strictCompat = isStrictGenderCompatible(myGenderInterest, entry.interest);
+          // Check everyone+everyone
           const everyoneCompat = (myGenderInterest === "everyone" && entry.interest === "everyone");
 
           if (strictCompat) {
+            // Opposite gender found
             if (sharedTags.length > 0 && !tagMatch) {
               tagMatch = { key, otherId: entry.id, sharedTags };
             } else if (!noTagMatch) {
@@ -689,6 +683,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
         }
       }
 
+      // Pick best available match
       const bestMatch = tagMatch || noTagMatch || everyoneMatch;
 
       if (bestMatch) {
@@ -697,14 +692,16 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
         return;
       }
 
-      const entryInterest = "everyone";
+      const entryInterest = (myGenderInterest === "male" || myGenderInterest === "female")
+        ? "everyone"
+        : "everyone";
 
       const newRef = push(waitingRef);
       waitingEntryRef = newRef;
       set(newRef, {
         id: myId,
-        interest: entryInterest,
-        originalInterest: myGenderInterest,
+        interest: entryInterest,           // always enter as "everyone" when waiting
+        originalInterest: myGenderInterest, // remember real preference
         tags: myTags,
         nickname: myNickname,
         timestamp: Date.now()
@@ -715,6 +712,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
         if (waitingEntryRef && !isConnected) update(waitingEntryRef, { timestamp: Date.now() });
       }, 10000);
 
+      // After 5s, try a broader fallback sweep
       setTimeout(() => {
         if (isConnected) return;
         get(waitingRef).then((snap) => {
@@ -724,7 +722,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
             if (entry.id === myId) return;
 
             const strictOk = isStrictGenderCompatible(myGenderInterest, entry.originalInterest || entry.interest);
-            const everyoneOk = (entry.interest === "everyone");
+            const everyoneOk = (entry.interest === "everyone"); // they're also waiting as everyone
 
             if (strictOk || everyoneOk) {
               remove(child.ref);
@@ -737,12 +735,14 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     });
   }
 
+  // Strict: only Male+Female or Female+Male
   function isStrictGenderCompatible(me, other) {
     if (me === "male" && other === "female") return true;
     if (me === "female" && other === "male") return true;
     return false;
   }
 
+  // General: used for everyone+everyone (as before) + strict pairs
   function isGenderCompatible(me, other) {
     if (me === "everyone" && other === "everyone") return true;
     return isStrictGenderCompatible(me, other);
