@@ -558,7 +558,10 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     if (!escPressedOnce) {
       escPressedOnce = true;
       logSystem("Press Esc again to skip this chat and find someone new");
-      escTimer = setTimeout(() => { escPressedOnce = false; clearSystemMessage(); }, 3000);
+      escTimer = setTimeout(() => {
+        escPressedOnce = false;
+        clearSystemMessage();
+      }, 3000);
     } else {
       clearTimeout(escTimer);
       escPressedOnce = false;
@@ -567,10 +570,19 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       isConnected = false;
       friendRequestPending = false;
       friendRequestFrom = null;
-      showNewChatButton();
-      logSystem("Chat ended. Click 'Start New Chat' to find someone new.");
+      hideFriendButton();
+      document.getElementById("chatLog").innerHTML = "";
+      hideNewChatButton();
+      startPeer();
     }
   });
+
+  function isGenderCompatible(myGender, otherGender) {
+    if (myGender === 'everyone' && otherGender === 'everyone') return true;
+    if (myGender === 'male' && otherGender === 'female') return true;
+    if (myGender === 'female' && otherGender === 'male') return true;
+    return false;
+  }
 
   function startPeer() {
     clearSystemMessage();
@@ -609,7 +621,15 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       tryToFindMatch();
     });
 
-    peer.on('connection', handleNewConnection);
+    peer.on('connection', (conn) => {
+      if (isConnected) {
+        conn.close();
+        return;
+      }
+      conn.on('open', () => {
+        handleNewConnection(conn, []);
+      });
+    });
 
     peer.on('error', (err) => {
       if (err.type === 'unavailable-id' || err.type === 'socket-error') {
@@ -639,7 +659,8 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       if (!snapshot.exists()) return;
       snapshot.forEach((child) => {
         const entry = child.val();
-        if (entry.timestamp && (Date.now() - entry.timestamp) > 60000) remove(child.ref);
+        const isOld = entry.timestamp && (Date.now() - entry.timestamp) > 60000;
+        if (entry.id === myId || isOld) remove(child.ref);
       });
     });
   }
@@ -648,7 +669,8 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     waitingRef = ref(db, "waiting");
     get(waitingRef).then((snapshot) => {
       const list = snapshot.val();
-      let bestMatch = null;
+      let tagMatch = null;
+      let noTagMatch = null;
 
       if (list) {
         for (let [key, entry] of Object.entries(list)) {
@@ -656,13 +678,20 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
             remove(ref(db, "waiting/" + key));
             continue;
           }
-          if (entry.id !== myId && !isConnected && isGenderCompatible(myGenderInterest, entry.interest)) {
+          if (entry.id === myId || isConnected) continue;
+
+          if (isGenderCompatible(myGenderInterest, entry.interest)) {
             const sharedTags = myTags.filter(tag => entry.tags?.includes(tag));
-            if (sharedTags.length > 0) { bestMatch = { key, otherId: entry.id, sharedTags }; break; }
-            else if (!bestMatch) bestMatch = { key, otherId: entry.id, sharedTags: [] };
+            if (sharedTags.length > 0 && !tagMatch) {
+              tagMatch = { key, otherId: entry.id, sharedTags };
+            } else if (!noTagMatch) {
+              noTagMatch = { key, otherId: entry.id, sharedTags: [] };
+            }
           }
         }
       }
+
+      const bestMatch = tagMatch || noTagMatch;
 
       if (bestMatch) {
         remove(ref(db, "waiting/" + bestMatch.key));
@@ -672,7 +701,13 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
       const newRef = push(waitingRef);
       waitingEntryRef = newRef;
-      set(newRef, { id: myId, interest: myGenderInterest, tags: myTags, nickname: myNickname, timestamp: Date.now() });
+      set(newRef, {
+        id: myId,
+        interest: myGenderInterest,
+        tags: myTags,
+        nickname: myNickname,
+        timestamp: Date.now()
+      });
 
       if (heartbeatInterval) clearInterval(heartbeatInterval);
       heartbeatInterval = setInterval(() => {
@@ -683,14 +718,30 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
         if (isConnected) return;
         get(waitingRef).then((snap) => {
           if (isConnected) return;
+          let tagM = null;
+          let noTagM = null;
+
           snap.forEach(child => {
             const entry = child.val();
-            if (entry.id !== myId && isGenderCompatible(myGenderInterest, entry.interest)) {
-              remove(child.ref);
-              connectToPeer(entry.id, []);
-              return true;
+            if (entry.id === myId) return;
+
+            if (isGenderCompatible(myGenderInterest, entry.interest)) {
+              const sharedTags = myTags.filter(tag => entry.tags?.includes(tag));
+              if (sharedTags.length > 0 && !tagM) {
+                tagM = { key: child.key, otherId: entry.id, sharedTags };
+              } else if (!noTagM) {
+                noTagM = { key: child.key, otherId: entry.id, sharedTags: [] };
+              }
+            } else if (!noTagM && myGenderInterest !== 'everyone' && entry.interest === 'everyone') {
+              noTagM = { key: child.key, otherId: entry.id, sharedTags: [] };
             }
           });
+
+          const chosen = tagM || noTagM;
+          if (chosen) {
+            remove(ref(db, "waiting/" + chosen.key));
+            connectToPeer(chosen.otherId, chosen.sharedTags || []);
+          }
         });
       }, 5000);
     });
@@ -701,7 +752,9 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     clearSystemMessage();
     logSystem("😍 Connecting to stranger...");
     const conn = peer.connect(otherId);
-    conn.on("open", () => handleNewConnection(conn, sharedTags));
+    conn.on('open', () => {
+      handleNewConnection(conn, sharedTags);
+    });
     conn.on("error", () => {
       if (!isConnected) {
         showNewChatButton();
@@ -723,7 +776,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   }
 
   function setupConnection(conn) {
-    if (myConn) myConn.close();
+    if (myConn && myConn !== conn) myConn.close();
     myConn = conn;
     isConnected = true;
     hideNewChatButton();
@@ -756,12 +809,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   function cleanUpWaitingList() {
     if (waitingEntryRef) { remove(waitingEntryRef); waitingEntryRef = null; }
     if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
-  }
-
-  function isGenderCompatible(me, other) {
-    return me === "everyone" && other === "everyone"
-      || me === "male" && other === "female"
-      || me === "female" && other === "male";
   }
 
   function showFriendButton() { friendBtn.style.display = 'flex'; friendBtn.disabled = false; }
@@ -923,9 +970,9 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     isConnected = false;
     friendRequestPending = false;
     friendRequestFrom = null;
+    hideFriendButton();
     logSystem("Chat ended. Click 'Start New Chat' to find someone new.");
     showNewChatButton();
-    hideFriendButton();
   };
 
   document.getElementById("newChatBtn").onclick = () => {
