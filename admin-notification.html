@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Notification</title>
+  <style>
+    body { font-family: Arial; background: #f5f5f5; padding: 40px; }
+    h1 { text-align: center; color: #333; }
+    form { max-width: 500px; margin: 0 auto; background: #fff; padding: 30px; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+    input, button { width: 100%; padding: 12px; margin: 10px 0; border-radius: 6px; border: 1px solid #ccc; font-size: 16px; }
+    button { background: #4CAF50; color: white; border: none; cursor: pointer; transition: 0.2s; }
+    button:hover { background: #45a049; }
+  </style>
+</head>
+<body>
+  <h1>Admin Notification</h1>
+
+  <form id="notifyForm">
+    <input type="text" id="title" placeholder="Notification Title" required>
+    <input type="text" id="message" placeholder="Notification Message" required>
+    <input type="text" id="imageUrl" placeholder="Image URL (optional)">
+    <button type="submit">Send Notification</button>
+  </form>
+
+  <script>
+    async function loadKeys() {
+      try {
+        const response = await fetch('/key.json');
+        const data = await response.json();
+        return {
+          appId: data.ONESIGNAL_APP_ID,
+          apiKey: data.ONESIGNAL_REST_API_KEY
+        };
+      } catch (err) {
+        console.error("Failed to load keys:", err);
+        alert("Failed to load keys. Check /key.json");
+      }
+    }
+
+    const form = document.getElementById('notifyForm');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const title = document.getElementById('title').value.trim();
+      const message = document.getElementById('message').value.trim();
+      const imageUrl = document.getElementById('imageUrl').value.trim();
+
+      if (!title || !message) return alert("Title and Message are required!");
+
+      const keys = await loadKeys();
+      if (!keys) return;
+
+      try {
+        const res = await fetch("https://onesignal.com/api/v1/notifications", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json; charset=utf-8",
+            "Authorization": "Basic " + keys.apiKey
+          },
+          body: JSON.stringify({
+            app_id: keys.appId,
+            headings: { en: title },
+            contents: { en: message },
+            included_segments: ["Subscribed Users"],
+            chrome_web_image: imageUrl || undefined
+          })
+        });
+
+        const data = await res.json();
+        if (res.ok) {
+          alert("Notification sent successfully!");
+          form.reset();
+        } else {
+          alert("Error sending notification: " + JSON.stringify(data));
+        }
+      } catch (err) {
+        console.error(err);
+        alert("Network/server error: " + err.message);
+      }
+    });
+  </script>
+</body>
+</html>
