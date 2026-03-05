@@ -1,0 +1,949 @@
+<div class="preferences-modal" id="preferencesModal">
+  <div class="modal-content">
+    <div class="modal-handle" id="modalHandle">
+      <div class="handle-bar"></div>
+    </div>
+    
+    <div class="modal-header">
+      <h2>Preference</h2>
+      <div class="notification-controls">
+        <button class="notification-btn" id="soundToggleBtn" onclick="toggleSound()" title="Notification Sound">
+          <i class="fas fa-volume-up"></i>
+        </button>
+        <button class="notification-btn" id="notificationToggleBtn" onclick="toggleNotification()" title="Notifications">
+          <i class="fas fa-bell"></i>
+        </button>
+      </div>
+    </div>
+    
+    <div class="modal-body">
+      <div class="preference-section">
+        <h3>Your Nickname</h3>
+        <input type="text" id="nicknameInput" class="nickname-input" placeholder="Enter your Nickname" required>
+        <div class="input-hint">Max 20 characters</div>
+      </div>
+      
+      <div class="preference-section advanced-section">
+        <div class="advanced-header" onclick="toggleAdvancedSection()">
+          <h3>Advanced Preferences</h3>
+          <span class="advanced-arrow">▼</span>
+        </div>
+        
+        <div class="advanced-content" id="advancedContent">
+          <div class="preference-subsection">
+            <h4>I want to chat with:</h4>
+            <div class="gender-options">
+              <div class="gender-option" data-value="male" onclick="selectGender(this)">Male</div>
+              <div class="gender-option" data-value="female" onclick="selectGender(this)">Female</div>
+              <div class="gender-option selected" data-value="everyone" onclick="selectGender(this)">Everyone</div>
+            </div>
+          </div>
+          
+          <div class="preference-subsection">
+            <h4>My Interests (Tags):</h4>
+            <div class="tags-input-container" id="tagsContainer">
+              <input type="text" class="tags-input" id="tagInput" placeholder="Type interest and press Enter" onkeypress="handleTagInput(event)">
+            </div>
+            <div class="input-hint">Press Enter to add tags (max 5)</div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="preference-feedback" id="preferenceSuccess">
+        Preferences saved successfully!
+      </div>
+      <div class="preference-feedback" id="preferenceError">
+        Please enter a nickname
+      </div>
+      <div class="preference-feedback error" id="preferenceBanned">
+        Nickname contains inappropriate content
+      </div>
+    </div>
+    
+    <div class="modal-footer">
+      <button class="save-preferences-btn" onclick="savePreferences()">Save</button>
+    </div>
+  </div>
+</div>
+
+<style>
+:root {
+  --dark-bg: #121212;
+  --dark-card: #1e1e1e;
+  --dark-text: #ffffff;
+  --dark-muted: #aaaaaa;
+  --light-bg: #f5f5f5;
+  --light-card: #f9f9f9;
+  --light-text: #333333;
+  --light-muted: #666666;
+}
+
+.preferences-modal {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+  align-items: flex-end;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.preferences-modal.show {
+  opacity: 1;
+}
+
+.modal-content {
+  background-color: var(--dark-card);
+  border-radius: 20px 20px 0 0;
+  width: 100%;
+  max-width: 600px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
+  transform: translateY(100%);
+  transition: transform 0.3s ease-out;
+  position: relative;
+}
+
+.preferences-modal.show .modal-content {
+  transform: translateY(0);
+}
+
+.light-mode .modal-content {
+  background-color: var(--light-card);
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.2);
+}
+
+
+.modal-handle {
+  width: 100%;
+  padding: 12px 0;
+  display: flex;
+  justify-content: center;
+  cursor: grab;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.modal-handle:active {
+  cursor: grabbing;
+}
+
+.handle-bar {
+  width: 40px;
+  height: 5px;
+  background-color: var(--dark-muted);
+  border-radius: 3px;
+  transition: background-color 0.3s;
+}
+
+.light-mode .handle-bar {
+  background-color: var(--light-muted);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 20px 15px 20px;
+}
+  
+.modal-header h2 {
+  margin: 0;
+  color: var(--dark-text);
+  font-size: 1.4rem;
+  flex: 1;
+  text-align: center;
+}
+
+.light-mode .modal-header h2 {
+  color: var(--light-text);
+}
+
+.notification-controls {
+  display: flex;
+  gap: 10px;
+}
+
+.notification-btn {
+  background: transparent;
+  border: 1px solid var(--dark-muted);
+  color: var(--dark-text);
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  transition: all 0.3s ease;
+}
+
+.notification-btn:hover {
+  background-color: rgba(255,255,255,0.1);
+  border-color: var(--dark-text);
+}
+
+.notification-btn.muted {
+  color: var(--dark-muted);
+  opacity: 0.5;
+}
+
+.notification-btn.off {
+  color: var(--dark-muted);
+  opacity: 0.5;
+}
+
+.light-mode .notification-btn {
+  border: 1px solid var(--light-muted);
+  color: var(--light-text);
+}
+
+.light-mode .notification-btn:hover {
+  background-color: rgba(0,0,0,0.05);
+  border-color: var(--light-text);
+}
+
+.light-mode .notification-btn.muted,
+.light-mode .notification-btn.off {
+  color: var(--light-muted);
+  opacity: 0.5;
+}
+
+.modal-body {
+  padding: 20px;
+}
+
+.preference-section {
+  margin-bottom: 20px;
+}
+
+.preference-section h3 {
+  margin: 0 0 10px 0;
+  color: var(--dark-text);
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.light-mode .preference-section h3 {
+  color: var(--light-text);
+}
+
+.nickname-input {
+  padding: 10px;
+  border: 1px solid var(--dark-muted);
+  outline: none;
+  border-radius: 5px;
+  font-size: 0.9rem;
+  width: 100%;
+  color: var(--dark-text);
+  background-color: var(--dark-card);
+  text-align: center;
+  transition: all 0.3s;
+  box-sizing: border-box;
+}
+
+.nickname-input:focus {
+  border-color: var(--dark-text);
+  background-color: #333333;
+}
+
+.nickname-input.highlight-required {
+  border-color: #ff4d4d !important;
+  box-shadow: 0 0 0 2px rgba(255, 77, 77, 0.3);
+}
+
+.light-mode .nickname-input {
+  border: 1px solid var(--light-muted);
+  color: var(--light-text);
+  background-color: var(--light-card);
+}
+
+.light-mode .nickname-input:focus {
+  border-color: var(--light-text);
+  background-color: #e9e9e9;
+}
+
+.input-hint {
+  font-size: 0.7rem;
+  color: var(--dark-muted);
+  margin-top: 5px;
+  text-align: center;
+}
+
+.light-mode .input-hint {
+  color: var(--light-muted);
+}
+
+.advanced-section {
+  border: 1px solid var(--dark-muted);
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.light-mode .advanced-section {
+  border: 1px solid var(--light-muted);
+}
+
+.advanced-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 15px;
+  background-color: var(--dark-card);
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.3s;
+}
+
+.advanced-header:hover {
+  background-color: #333333;
+}
+
+.light-mode .advanced-header {
+  background-color: var(--light-card);
+}
+
+.light-mode .advanced-header:hover {
+  background-color: #e9e9e9;
+}
+
+.advanced-header h3 {
+  margin: 0;
+  color: var(--dark-text);
+  font-size: 0.9rem;
+  text-align: left;
+}
+
+.light-mode .advanced-header h3 {
+  color: var(--light-text);
+}
+
+.advanced-arrow {
+  color: var(--dark-muted);
+  font-size: 0.8rem;
+  transition: transform 0.3s;
+}
+
+.light-mode .advanced-arrow {
+  color: var(--light-muted);
+}
+
+.advanced-content {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease-out;
+}
+
+.advanced-content.expanded {
+  max-height: 500px;
+}
+
+.preference-subsection {
+  padding: 15px;
+  border-top: 1px solid var(--dark-muted);
+}
+
+.light-mode .preference-subsection {
+  border-top: 1px solid var(--light-muted);
+}
+
+.preference-subsection h4 {
+  margin: 0 0 10px 0;
+  color: var(--dark-text);
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.light-mode .preference-subsection h4 {
+  color: var(--light-text);
+}
+
+.gender-options {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-bottom: 15px;
+}
+
+.gender-option {
+  padding: 8px 15px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.3s;
+  border: 1px solid var(--dark-text);
+  background-color: transparent;
+  color: var(--dark-text);
+  font-size: 0.9rem;
+}
+
+.gender-option:hover {
+  background-color: rgba(255,255,255,0.1);
+}
+
+.gender-option.selected {
+  background-color: var(--dark-text);
+  color: var(--dark-bg);
+  border-color: var(--dark-text);
+}
+
+.light-mode .gender-option {
+  border: 1px solid var(--light-text);
+  background-color: var(--light-card);
+  color: var(--light-text);
+}
+
+.light-mode .gender-option:hover {
+  background-color: rgba(0,0,0,0.05);
+}
+
+.light-mode .gender-option.selected {
+  background-color: var(--light-text);
+  color: var(--light-card);
+  border-color: var(--light-text);
+}
+
+.tags-input-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--dark-muted);
+  border-radius: 5px;
+  background-color: var(--dark-card);
+  min-height: 45px;
+  transition: all 0.3s;
+}
+
+.tags-input-container:focus-within {
+  border-color: var(--dark-text);
+  background-color: #333;
+}
+
+.light-mode .tags-input-container {
+  border: 1px solid var(--light-muted);
+  background-color: var(--light-card);
+}
+
+.light-mode .tags-input-container:focus-within {
+  border-color: var(--light-text);
+  background-color: #e9e9e9;
+}
+
+.tag-item {
+  display: flex;
+  align-items: center;
+  background-color: var(--dark-text);
+  color: var(--dark-bg);
+  padding: 5px 10px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  border: 1px solid var(--dark-text);
+}
+
+.tag-item .close {
+  margin-left: 5px;
+  cursor: pointer;
+  font-weight: bold;
+  color: var(--dark-bg);
+  font-size: 0.9rem;
+}
+
+.light-mode .tag-item {
+  background-color: var(--light-text);
+  color: var(--light-card);
+  border: 1px solid var(--light-text);
+}
+
+.light-mode .tag-item .close {
+  color: var(--light-card);
+}
+
+.tags-input {
+  flex-grow: 1;
+  padding: 5px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--dark-text);
+  min-width: 120px;
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+.light-mode .tags-input {
+  color: var(--light-text);
+}
+
+.preference-feedback {
+  padding: 10px;
+  text-align: center;
+  font-weight: bold;
+  display: none;
+  color: var(--dark-text);
+  font-size: 0.9rem;
+}
+
+.preference-feedback.error {
+  color: #ff4d4d;
+}
+
+.light-mode .preference-feedback {
+  color: var(--light-text);
+}
+
+.modal-footer {
+  display: flex;
+  padding: 15px 20px;
+  justify-content: center;
+}
+  
+.save-preferences-btn {
+  background: var(--dark-text);
+  color: var(--dark-bg);
+  border: none;
+  padding: 12px 0;
+  border-radius: 5px;
+  cursor: pointer;
+  font-weight: 700;
+  transition: background 0.2s;
+  font-size: 0.9rem;
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
+}
+
+.save-preferences-btn:hover {
+  background: #e0e0e0;
+}
+
+.light-mode .save-preferences-btn {
+  background: var(--light-text);
+  color: var(--light-card);
+}
+
+.light-mode .save-preferences-btn:hover {
+  background: #555555;
+}
+</style>
+
+<script>
+let prefsMyNickname = "";
+let prefsGenderInterest = "everyone";
+let prefsMyTags = [];
+let prefsBannedWords = [];
+let prefsBannedWordsLoaded = false;
+let touchStartY = 0;
+let touchCurrentY = 0;
+let isDragging = false;
+let modalContent = null;
+let modal = null;
+
+function hasNicknameSaved() {
+  return !!localStorage.getItem("talkrush_nickname");
+}
+
+function highlightNickname() {
+  const input = document.getElementById('nicknameInput');
+  input.classList.add('highlight-required');
+  setTimeout(() => input.classList.remove('highlight-required'), 1500);
+  hideAllFeedback();
+  document.getElementById('preferenceError').style.display = 'block';
+}
+
+async function loadPrefsBannedWords() {
+  try {
+    const response = await fetch('filter.txt');
+    const text = await response.text();
+    prefsBannedWords = text.split('\n')
+      .map(word => word.trim().toLowerCase())
+      .filter(word => word.length > 0);
+    prefsBannedWordsLoaded = true;
+  } catch (err) {
+    prefsBannedWords = [];
+    prefsBannedWordsLoaded = true;
+  }
+}
+
+function prefsContainsBannedWords(message) {
+  if (!prefsBannedWordsLoaded || !message || typeof message !== 'string') return false;
+  const lowerMsg = message.toLowerCase();
+  return prefsBannedWords.some(word => {
+    if (!word || word.length < 2) return false;
+    const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const pattern = new RegExp(`\\b${escapedWord}\\b`, 'i');
+    return pattern.test(message);
+  });
+}
+
+function updateNotificationButtons() {
+  const notificationOff = localStorage.getItem("notificationOff") === "true";
+  const soundMuted = localStorage.getItem("soundMuted") === "true" || notificationOff;
+  const soundBtn = document.getElementById('soundToggleBtn');
+  const notificationBtn = document.getElementById('notificationToggleBtn');
+  
+  if (soundBtn) {
+    const icon = soundBtn.querySelector('i');
+    if (soundMuted) {
+      icon.className = 'fas fa-volume-mute';
+      soundBtn.classList.add('muted');
+    } else {
+      icon.className = 'fas fa-volume-up';
+      soundBtn.classList.remove('muted');
+    }
+  }
+  
+  if (notificationBtn) {
+    const icon = notificationBtn.querySelector('i');
+    if (notificationOff) {
+      icon.className = 'fas fa-bell-slash';
+      notificationBtn.classList.add('off');
+    } else {
+      icon.className = 'fas fa-bell';
+      notificationBtn.classList.remove('off');
+    }
+  }
+}
+
+function toggleSound() {
+  const currentState = localStorage.getItem("soundMuted") === "true";
+  localStorage.setItem("soundMuted", (!currentState).toString());
+  updateNotificationButtons();
+}
+
+function toggleNotification() {
+  const currentState = localStorage.getItem("notificationOff") === "true";
+  const newState = !currentState;
+  localStorage.setItem("notificationOff", newState.toString());
+  if (newState) {
+    localStorage.setItem("soundMuted", "true");
+  }
+  updateNotificationButtons();
+}
+
+function openPreferencesModal() {
+  modal = document.getElementById('preferencesModal');
+  modalContent = document.querySelector('.modal-content');
+  modal.style.display = 'flex';
+  modal.offsetHeight;
+  modal.classList.add('show');
+  loadSavedPreferences();
+  updateNotificationButtons();
+  
+  const handle = document.getElementById('modalHandle');
+  handle.addEventListener('touchstart', handleTouchStart, { passive: false });
+  handle.addEventListener('touchmove', handleTouchMove, { passive: false });
+  handle.addEventListener('touchend', handleTouchEnd);
+  handle.addEventListener('mousedown', handleMouseDown);
+  
+  document.addEventListener('keydown', handleEscKey);
+}
+
+function closePreferencesModal() {
+  if (!hasNicknameSaved()) {
+    highlightNickname();
+    return;
+  }
+
+  modal = document.getElementById('preferencesModal');
+  modal.classList.remove('show');
+  
+  const handle = document.getElementById('modalHandle');
+  handle.removeEventListener('touchstart', handleTouchStart);
+  handle.removeEventListener('touchmove', handleTouchMove);
+  handle.removeEventListener('touchend', handleTouchEnd);
+  handle.removeEventListener('mousedown', handleMouseDown);
+  document.removeEventListener('mousemove', handleMouseMove);
+  document.removeEventListener('mouseup', handleMouseUp);
+  document.removeEventListener('keydown', handleEscKey);
+  
+  setTimeout(() => {
+    modal.style.display = 'none';
+    modalContent.style.transform = 'translateY(0)';
+  }, 300);
+  
+  hideAllFeedback();
+}
+
+function handleOutsideClick(e) {
+  if (e.target === modal) {
+    if (!hasNicknameSaved()) {
+      highlightNickname();
+      return;
+    }
+    closePreferencesModal();
+  }
+}
+
+function handleEscKey(e) {
+  if (e.key === 'Escape') {
+    if (!hasNicknameSaved()) {
+      highlightNickname();
+      return;
+    }
+    closePreferencesModal();
+  }
+}
+
+function handleTouchStart(e) {
+  e.preventDefault();
+  touchStartY = e.touches[0].clientY;
+  isDragging = true;
+  modalContent.style.transition = 'none';
+}
+
+function handleTouchMove(e) {
+  if (!isDragging) return;
+  e.preventDefault();
+  touchCurrentY = e.touches[0].clientY;
+  const deltaY = touchCurrentY - touchStartY;
+  if (deltaY > 0) {
+    const translateY = Math.min(deltaY, window.innerHeight);
+    modalContent.style.transform = `translateY(${translateY}px)`;
+  }
+}
+
+function handleTouchEnd(e) {
+  if (!isDragging) return;
+  e.preventDefault();
+  const deltaY = touchCurrentY - touchStartY;
+  modalContent.style.transition = 'transform 0.3s ease-out';
+
+  if (!hasNicknameSaved()) {
+    modalContent.style.transform = 'translateY(0)';
+    highlightNickname();
+    isDragging = false;
+    return;
+  }
+
+  if (deltaY > 100 || deltaY > modalContent.offsetHeight * 0.3) {
+    closePreferencesModal();
+  } else {
+    modalContent.style.transform = 'translateY(0)';
+  }
+  isDragging = false;
+}
+
+function handleMouseDown(e) {
+  e.preventDefault();
+  touchStartY = e.clientY;
+  isDragging = true;
+  modalContent.style.transition = 'none';
+  document.addEventListener('mousemove', handleMouseMove);
+  document.addEventListener('mouseup', handleMouseUp);
+}
+
+function handleMouseMove(e) {
+  if (!isDragging) return;
+  e.preventDefault();
+  touchCurrentY = e.clientY;
+  const deltaY = touchCurrentY - touchStartY;
+  if (deltaY > 0) {
+    const translateY = Math.min(deltaY, window.innerHeight);
+    modalContent.style.transform = `translateY(${translateY}px)`;
+  }
+}
+
+function handleMouseUp(e) {
+  if (!isDragging) return;
+  e.preventDefault();
+  const deltaY = touchCurrentY - touchStartY;
+  modalContent.style.transition = 'transform 0.3s ease-out';
+
+  // ─── BLOCK: Mouse drag se bhi band nahi hoga bina nickname ke ────────────
+  if (!hasNicknameSaved()) {
+    modalContent.style.transform = 'translateY(0)';
+    highlightNickname();
+    isDragging = false;
+    document.removeEventListener('mousemove', handleMouseMove);
+    document.removeEventListener('mouseup', handleMouseUp);
+    return;
+  }
+
+  if (deltaY > 100 || deltaY > modalContent.offsetHeight * 0.3) {
+    closePreferencesModal();
+  } else {
+    modalContent.style.transform = 'translateY(0)';
+  }
+  isDragging = false;
+  document.removeEventListener('mousemove', handleMouseMove);
+  document.removeEventListener('mouseup', handleMouseUp);
+}
+
+function hideAllFeedback() {
+  document.getElementById('preferenceSuccess').style.display = 'none';
+  document.getElementById('preferenceError').style.display = 'none';
+  document.getElementById('preferenceBanned').style.display = 'none';
+}
+
+function toggleAdvancedSection() {
+  const advancedContent = document.getElementById('advancedContent');
+  const advancedArrow = document.querySelector('.advanced-arrow');
+  if (advancedContent.classList.contains('expanded')) {
+    advancedContent.classList.remove('expanded');
+    advancedArrow.textContent = '▼';
+  } else {
+    advancedContent.classList.add('expanded');
+    advancedArrow.textContent = '▲';
+  }
+}
+
+function loadSavedPreferences() {
+  const savedNickname = localStorage.getItem("talkrush_nickname");
+  const input = document.getElementById("nicknameInput");
+  if (savedNickname) {
+    prefsMyNickname = savedNickname.replace(/^TR\|/, '');
+    input.value = prefsMyNickname;
+  } else {
+    input.value = "";
+  }
+  const savedGenderInterest = localStorage.getItem("talkrush_gender_interest");
+  if (savedGenderInterest) {
+    prefsGenderInterest = savedGenderInterest;
+    document.querySelectorAll('.gender-option').forEach(option => {
+      if (option.getAttribute('data-value') === savedGenderInterest) {
+        option.classList.add('selected');
+      } else {
+        option.classList.remove('selected');
+      }
+    });
+  }
+  const savedTags = localStorage.getItem("talkrush_tags");
+  if (savedTags) {
+    prefsMyTags = JSON.parse(savedTags);
+  } else {
+    prefsMyTags = [];
+  }
+  renderTags();
+  hideAllFeedback();
+}
+
+function selectGender(element) {
+  document.querySelectorAll('.gender-option').forEach(option => {
+    option.classList.remove('selected');
+  });
+  element.classList.add('selected');
+  prefsGenderInterest = element.getAttribute('data-value');
+}
+
+function handleTagInput(event) {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    const tagInput = document.getElementById('tagInput');
+    const tagValue = tagInput.value.trim();
+    if (tagValue && !prefsMyTags.includes(tagValue) && prefsMyTags.length < 5) {
+      prefsMyTags.push(tagValue);
+      renderTags();
+      tagInput.value = '';
+    }
+  }
+}
+
+function renderTags() {
+  const tagsContainer = document.getElementById('tagsContainer');
+  const tagInput = document.getElementById('tagInput');
+  tagsContainer.innerHTML = '';
+  prefsMyTags.forEach((tag, index) => {
+    const tagElement = document.createElement('div');
+    tagElement.className = 'tag-item';
+    tagElement.innerHTML = `${tag} <span class="close" onclick="removeTag(${index})">×</span>`;
+    tagsContainer.appendChild(tagElement);
+  });
+  tagsContainer.appendChild(tagInput);
+}
+
+function removeTag(index) {
+  prefsMyTags.splice(index, 1);
+  renderTags();
+}
+
+function savePreferences() {
+  hideAllFeedback();
+  const input = document.getElementById("nicknameInput");
+  let newNickname = input.value.trim();
+  if (!newNickname) {
+    document.getElementById('preferenceError').style.display = 'block';
+    input.classList.add('highlight-required');
+    setTimeout(() => input.classList.remove('highlight-required'), 1500);
+    return;
+  }
+  if (prefsContainsBannedWords(newNickname)) {
+    document.getElementById('preferenceBanned').style.display = 'block';
+    return;
+  }
+  prefsMyNickname = "TR|" + newNickname.substring(0, 20);
+  localStorage.setItem("talkrush_nickname", prefsMyNickname);
+  localStorage.setItem("talkrush_gender_interest", prefsGenderInterest);
+  localStorage.setItem("talkrush_tags", JSON.stringify(prefsMyTags));
+  updateNicknameDisplay();
+  document.getElementById('preferenceSuccess').style.display = 'block';
+  setTimeout(() => {
+    modal = document.getElementById('preferencesModal');
+    modal.classList.remove('show');
+    const handle = document.getElementById('modalHandle');
+    handle.removeEventListener('touchstart', handleTouchStart);
+    handle.removeEventListener('touchmove', handleTouchMove);
+    handle.removeEventListener('touchend', handleTouchEnd);
+    handle.removeEventListener('mousedown', handleMouseDown);
+    document.removeEventListener('mousemove', handleMouseMove);
+    document.removeEventListener('mouseup', handleMouseUp);
+    document.removeEventListener('keydown', handleEscKey);
+    setTimeout(() => {
+      modal.style.display = 'none';
+      if (modalContent) modalContent.style.transform = 'translateY(0)';
+      setTimeout(() => {
+        window.location.reload();
+      }, 500);
+    }, 300);
+  }, 1500);
+}
+
+function updateNicknameDisplay() {
+  const nicknameDisplay = document.getElementById('currentNickname');
+  if (nicknameDisplay) {
+    nicknameDisplay.textContent = prefsMyNickname || 'Guest';
+  }
+}
+
+function checkNicknameExists() {
+  const savedNickname = localStorage.getItem("talkrush_nickname");
+  if (!savedNickname) {
+    setTimeout(() => {
+      openPreferencesModal();
+    }, 500);
+  } else {
+    prefsMyNickname = savedNickname;
+    updateNicknameDisplay();
+  }
+}
+
+document.addEventListener("DOMContentLoaded", function() {
+  loadPrefsBannedWords();
+  checkNicknameExists();
+  if (!localStorage.getItem("soundMuted")) {
+    localStorage.setItem("soundMuted", "false");
+  }
+  if (!localStorage.getItem("notificationOff")) {
+    localStorage.setItem("notificationOff", "false");
+  }
+  const savedGenderInterest = localStorage.getItem("talkrush_gender_interest");
+  if (savedGenderInterest) {
+    prefsGenderInterest = savedGenderInterest;
+  }
+  const savedTags = localStorage.getItem("talkrush_tags");
+  if (savedTags) {
+    prefsMyTags = JSON.parse(savedTags);
+  }
+  modal = document.getElementById('preferencesModal');
+  if (modal) {
+    modal.addEventListener('click', handleOutsideClick);
+  }
+  updateNotificationButtons();
+});
+</script>
