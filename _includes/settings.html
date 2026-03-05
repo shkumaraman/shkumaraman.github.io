@@ -119,6 +119,7 @@
   box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.2);
 }
 
+
 .modal-handle {
   width: 100%;
   padding: 12px 0;
@@ -251,6 +252,11 @@
 .nickname-input:focus {
   border-color: var(--dark-text);
   background-color: #333333;
+}
+
+.nickname-input.highlight-required {
+  border-color: #ff4d4d !important;
+  box-shadow: 0 0 0 2px rgba(255, 77, 77, 0.3);
 }
 
 .light-mode .nickname-input {
@@ -539,6 +545,18 @@ let isDragging = false;
 let modalContent = null;
 let modal = null;
 
+function hasNicknameSaved() {
+  return !!localStorage.getItem("talkrush_nickname");
+}
+
+function highlightNickname() {
+  const input = document.getElementById('nicknameInput');
+  input.classList.add('highlight-required');
+  setTimeout(() => input.classList.remove('highlight-required'), 1500);
+  hideAllFeedback();
+  document.getElementById('preferenceError').style.display = 'block';
+}
+
 async function loadPrefsBannedWords() {
   try {
     const response = await fetch('filter.txt');
@@ -628,6 +646,11 @@ function openPreferencesModal() {
 }
 
 function closePreferencesModal() {
+  if (!hasNicknameSaved()) {
+    highlightNickname();
+    return;
+  }
+
   modal = document.getElementById('preferencesModal');
   modal.classList.remove('show');
   
@@ -650,12 +673,20 @@ function closePreferencesModal() {
 
 function handleOutsideClick(e) {
   if (e.target === modal) {
+    if (!hasNicknameSaved()) {
+      highlightNickname();
+      return;
+    }
     closePreferencesModal();
   }
 }
 
 function handleEscKey(e) {
   if (e.key === 'Escape') {
+    if (!hasNicknameSaved()) {
+      highlightNickname();
+      return;
+    }
     closePreferencesModal();
   }
 }
@@ -683,6 +714,14 @@ function handleTouchEnd(e) {
   e.preventDefault();
   const deltaY = touchCurrentY - touchStartY;
   modalContent.style.transition = 'transform 0.3s ease-out';
+
+  if (!hasNicknameSaved()) {
+    modalContent.style.transform = 'translateY(0)';
+    highlightNickname();
+    isDragging = false;
+    return;
+  }
+
   if (deltaY > 100 || deltaY > modalContent.offsetHeight * 0.3) {
     closePreferencesModal();
   } else {
@@ -716,6 +755,17 @@ function handleMouseUp(e) {
   e.preventDefault();
   const deltaY = touchCurrentY - touchStartY;
   modalContent.style.transition = 'transform 0.3s ease-out';
+
+  // ─── BLOCK: Mouse drag se bhi band nahi hoga bina nickname ke ────────────
+  if (!hasNicknameSaved()) {
+    modalContent.style.transform = 'translateY(0)';
+    highlightNickname();
+    isDragging = false;
+    document.removeEventListener('mousemove', handleMouseMove);
+    document.removeEventListener('mouseup', handleMouseUp);
+    return;
+  }
+
   if (deltaY > 100 || deltaY > modalContent.offsetHeight * 0.3) {
     closePreferencesModal();
   } else {
@@ -819,6 +869,8 @@ function savePreferences() {
   let newNickname = input.value.trim();
   if (!newNickname) {
     document.getElementById('preferenceError').style.display = 'block';
+    input.classList.add('highlight-required');
+    setTimeout(() => input.classList.remove('highlight-required'), 1500);
     return;
   }
   if (prefsContainsBannedWords(newNickname)) {
@@ -832,10 +884,23 @@ function savePreferences() {
   updateNicknameDisplay();
   document.getElementById('preferenceSuccess').style.display = 'block';
   setTimeout(() => {
-    closePreferencesModal();
+    modal = document.getElementById('preferencesModal');
+    modal.classList.remove('show');
+    const handle = document.getElementById('modalHandle');
+    handle.removeEventListener('touchstart', handleTouchStart);
+    handle.removeEventListener('touchmove', handleTouchMove);
+    handle.removeEventListener('touchend', handleTouchEnd);
+    handle.removeEventListener('mousedown', handleMouseDown);
+    document.removeEventListener('mousemove', handleMouseMove);
+    document.removeEventListener('mouseup', handleMouseUp);
+    document.removeEventListener('keydown', handleEscKey);
     setTimeout(() => {
-      window.location.reload();
-    }, 2000);
+      modal.style.display = 'none';
+      if (modalContent) modalContent.style.transform = 'translateY(0)';
+      setTimeout(() => {
+        window.location.reload();
+      }, 500);
+    }, 300);
   }, 1500);
 }
 
