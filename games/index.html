@@ -93,6 +93,7 @@ input[type="text"]::placeholder{color:#2a3f56;}
 .p{background:var(--path);}
 .safe{background:var(--path);}
 .safe::after{content:'★';font-size:12px;color:#bbb;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:0;}
+.exit-star::after{content:'★';font-size:14px;color:#e8b800;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:0;text-shadow:0 0 6px rgba(232,184,0,.7);}
 .win-house{grid-column:7/10;grid-row:7/10;width:138px;height:138px;border-radius:10px;z-index:10;background:var(--path);box-shadow:0 0 0 3px var(--board),0 4px 16px rgba(0,0,0,.6);display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;}
 .win-house-emoji{font-size:42px;line-height:1;}
 .win-house-names{font-family:'Rajdhani',sans-serif;font-size:9px;font-weight:700;color:#555;letter-spacing:1px;text-align:center;padding:2px 4px;line-height:1.3;}
@@ -356,13 +357,8 @@ function sndDice(){
   }catch(e){}
 }
 
-function sndMove(){
-  playTone(380+Math.random()*120,0.07,'square',0.18);
-}
-
-function sndStar(){
-  [523,659,784,1047].forEach((f,i)=>playTone(f,0.14,'sine',0.32,i*0.08));
-}
+function sndMove(){playTone(380+Math.random()*120,0.07,'square',0.18);}
+function sndStar(){[523,659,784,1047].forEach((f,i)=>playTone(f,0.14,'sine',0.32,i*0.08));}
 
 function sndWin(){
   try{
@@ -385,7 +381,7 @@ if(urlCode){switchTab('join');document.getElementById('join-code').value=urlCode
 
 function subscribeToRoom(code){
   if(roomUnsub){roomUnsub();roomUnsub=null;}
-  roomUnsub=onValue(ref(db,'rooms/'+code),snap=>{
+  roomUnsub=onValue(ref(db,'games/'+code),snap=>{
     const room=snap.val();
     if(!room){showScreen('lobby-screen');localStorage.removeItem('ludo_session');return;}
     const players=Object.values(room.players||{}).sort((a,b)=>a.joinedAt-b.joinedAt);
@@ -407,7 +403,7 @@ window.sendEmoji=async function(emoji){
   if(!roomCode||!myUid)return;
   getACtx();
   const key=myUid+'-'+Date.now();
-  await update(ref(db,'rooms/'+roomCode),{lastEmoji:{emoji,name:myName,uid:myUid,key,at:Date.now()}});
+  await update(ref(db,'games/'+roomCode),{lastEmoji:{emoji,name:myName,uid:myUid,key,at:Date.now()}});
 };
 
 function showEmojiToast(emoji,name){
@@ -431,7 +427,7 @@ window.createRoom=async function(){
   myUid=mkUid();myName=name;myColor=COLORS[0];roomCode=mkCode();
   const ig={};COLORS.forEach(c=>{ig[c]=[{pos:-1},{pos:-1},{pos:-1},{pos:-1}];});
   try{
-    await set(ref(db,'rooms/'+roomCode),{name:rName,mode:selectedMode,status:'waiting',createdAt:Date.now(),players:{[myUid]:{uid:myUid,name:myName,color:myColor,joinedAt:Date.now()}},goties:ig,winners:[],currentTurn:COLORS[0]});
+    await set(ref(db,'games/'+roomCode),{name:rName,mode:selectedMode,status:'waiting',createdAt:Date.now(),players:{[myUid]:{uid:myUid,name:myName,color:myColor,joinedAt:Date.now()}},goties:ig,winners:[],currentTurn:COLORS[0]});
     saveSession();setBtnLoad('create-btn',false,'Create Room');subscribeToRoom(roomCode);
   }catch(e){err.textContent='Failed. Check connection.';setBtnLoad('create-btn',false,'Create Room');}
 };
@@ -444,25 +440,25 @@ window.joinRoom=async function(){
   if(!rCode){err.textContent='Please enter a room code.';return;}
   setBtnLoad('join-btn',true,'Join Room');
   try{
-    const snap=await get(ref(db,'rooms/'+rCode));const room=snap.val();
+    const snap=await get(ref(db,'games/'+rCode));const room=snap.val();
     if(!room){err.textContent='Room not found.';setBtnLoad('join-btn',false,'Join Room');return;}
     if(room.status!=='waiting'){err.textContent='Game already started.';setBtnLoad('join-btn',false,'Join Room');return;}
     const players=Object.values(room.players||{});
     if(players.length>=(MODE_SLOTS[room.mode]||2)){err.textContent='Room is full.';setBtnLoad('join-btn',false,'Join Room');return;}
     myUid=mkUid();myName=name;myColor=COLORS[players.length];roomCode=rCode;
-    await set(ref(db,'rooms/'+rCode+'/players/'+myUid),{uid:myUid,name:myName,color:myColor,joinedAt:Date.now()});
+    await set(ref(db,'games/'+rCode+'/players/'+myUid),{uid:myUid,name:myName,color:myColor,joinedAt:Date.now()});
     saveSession();setBtnLoad('join-btn',false,'Join Room');subscribeToRoom(rCode);
   }catch(e){err.textContent='Failed. Check connection.';setBtnLoad('join-btn',false,'Join Room');}
 };
 
 window.leaveRoom=async function(){
-  try{const snap=await get(ref(db,'rooms/'+roomCode));const room=snap.val();const players=Object.values(room?.players||{}).sort((a,b)=>a.joinedAt-b.joinedAt);if(players[0]?.uid===myUid)await remove(ref(db,'rooms/'+roomCode));else await remove(ref(db,'rooms/'+roomCode+'/players/'+myUid));}catch(e){}
+  try{const snap=await get(ref(db,'games/'+roomCode));const room=snap.val();const players=Object.values(room?.players||{}).sort((a,b)=>a.joinedAt-b.joinedAt);if(players[0]?.uid===myUid)await remove(ref(db,'games/'+roomCode));else await remove(ref(db,'games/'+roomCode+'/players/'+myUid));}catch(e){}
   cleanup();showScreen('lobby-screen');
 };
 
 window.exitToLobby=async function(){
   document.getElementById('win-overlay').classList.remove('active');
-  try{const snap=await get(ref(db,'rooms/'+roomCode));const room=snap.val();if(room){const players=Object.values(room.players||{}).sort((a,b)=>a.joinedAt-b.joinedAt);if(players[0]?.uid===myUid)await remove(ref(db,'rooms/'+roomCode));else await remove(ref(db,'rooms/'+roomCode+'/players/'+myUid));}}catch(e){}
+  try{const snap=await get(ref(db,'games/'+roomCode));const room=snap.val();if(room){const players=Object.values(room.players||{}).sort((a,b)=>a.joinedAt-b.joinedAt);if(players[0]?.uid===myUid)await remove(ref(db,'games/'+roomCode));else await remove(ref(db,'games/'+roomCode+'/players/'+myUid));}}catch(e){}
   cleanup();showScreen('lobby-screen');
 };
 
@@ -498,7 +494,7 @@ function renderWaiting(players,mode,rCode){
   if(filled>=slots){wt.textContent='All players joined! Starting…';if(players[0]?.uid===myUid)setTimeout(startGame,1500);}
   else wt.textContent='Waiting for players… ('+filled+'/'+slots+')';
 }
-async function startGame(){await update(ref(db,'rooms/'+roomCode),{status:'playing'});}
+async function startGame(){await update(ref(db,'games/'+roomCode),{status:'playing'});}
 
 function handleGameUpdate(players,room){
   showScreen('game-screen');
@@ -667,9 +663,20 @@ function getCellEl(r,c){return document.querySelector(`.cell[data-rc="${r}-${c}"
 function getRC(color,pos){
   const cfg=COLOR_CFG[color];
   if(pos>=0&&pos<=51){const mi=(pos+cfg.startIdx)%52;return mi<MAIN_PATH.length?MAIN_PATH[mi]:null;}
-  if(pos===52){return cfg.homeCol[0];}
   if(pos>=52&&pos<=57){const hi=pos-52;return hi<cfg.homeCol.length?cfg.homeCol[hi]:null;}
   return null;
+}
+
+function canMove(color,idx,pos,roll,goties){
+  if(pos===-1)return roll===6;
+  if(pos===57)return false;
+  if(pos<=51&&pos+roll>57)return false;
+  if(pos<=51&&pos+roll>51){
+    const stepsOnMain=51-pos;
+    const stepsInHome=roll-stepsOnMain-1;
+    return stepsInHome>=0&&stepsInHome<=5;
+  }
+  return pos+roll<=57;
 }
 
 function applyTurn(color,playerMap,goties,roll){
@@ -696,25 +703,27 @@ function applyTurn(color,playerMap,goties,roll){
   }
 }
 
-function canMove(color,idx,pos,roll,goties){
-  if(pos===-1)return roll===6;
-  if(pos===57)return false;
-  return pos+roll<=57;
-}
-
 async function moveGoti(color,idx,roll){
   if(!waitingForMove)return;
   waitingForMove=false;
   document.querySelectorAll('.goti.selectable').forEach(g=>{g.classList.remove('selectable');g.onclick=null;});
   document.querySelectorAll('.token.selectable').forEach(g=>{g.classList.remove('selectable');g.onclick=null;});
 
-  const snap=await get(ref(db,'rooms/'+roomCode));const room=snap.val();if(!room)return;
+  const snap=await get(ref(db,'games/'+roomCode));const room=snap.val();if(!room)return;
   const goties=room.goties||{};const gt=(goties[color]||[])[idx];
   const players=Object.values(room.players||{}).sort((a,b)=>a.joinedAt-b.joinedAt);
   const playerMap={};players.forEach(p=>{playerMap[p.color]=p;});
 
   const fromPos=gt.pos;let newPos=fromPos,extraTurn=false,captured=false;
-  if(fromPos===-1&&roll===6){newPos=0;extraTurn=true;}else newPos=fromPos+roll;
+  if(fromPos===-1&&roll===6){
+    newPos=0;extraTurn=true;
+  } else if(fromPos<=51&&fromPos+roll>51){
+    const stepsOnMain=51-fromPos;
+    const stepsInHome=roll-stepsOnMain-1;
+    newPos=52+stepsInHome;
+  } else {
+    newPos=fromPos+roll;
+  }
 
   let winners=room.winners||[];
   if(newPos>=57){newPos=57;if(!winners.includes(color))winners=[...winners,color];}
@@ -741,7 +750,7 @@ async function moveGoti(color,idx,roll){
     updates.winner=winners[0];
     updates.lastEvent={type:'win',color:winners[0],key:evKey+'w',at:Date.now()};
   }
-  await update(ref(db,'rooms/'+roomCode),updates);
+  await update(ref(db,'games/'+roomCode),updates);
 }
 
 function allFinished(goties,color){return(goties[color]||[]).every(g=>g.pos===57);}
@@ -768,19 +777,19 @@ function buildDice(colorName){
     rolling=true;
     const val=Math.floor(Math.random()*6)+1;
     const evKey=myUid+'-'+Date.now();
-    await update(ref(db,'rooms/'+roomCode),{lastEvent:{type:'dice',color:colorName,value:val,key:evKey,at:Date.now()}});
+    await update(ref(db,'games/'+roomCode),{lastEvent:{type:'dice',color:colorName,value:val,key:evKey,at:Date.now()}});
     cube.style.setProperty('--df',FACE_T[val]);cube.classList.remove('spinning');void cube.offsetWidth;cube.classList.add('spinning');
     cube.addEventListener('animationend',async()=>{
       cube.classList.remove('spinning');cube.style.transform=FACE_T[val];rolling=false;
       COLORS.forEach(c=>{const d=document.getElementById('dice-cell-'+c);if(d)d.classList.add('disabled');});
-      const snap=await get(ref(db,'rooms/'+roomCode));const room=snap.val();if(!room)return;
+      const snap=await get(ref(db,'games/'+roomCode));const room=snap.val();if(!room)return;
       const goties=room.goties||{};const gtArr=goties[colorName]||[];
       const canAny=gtArr.some((gt,i)=>canMove(colorName,i,gt.pos,val,goties));
       if(!canAny){
         const players=Object.values(room.players||{}).sort((a,b)=>a.joinedAt-b.joinedAt);
         const cols=players.map(p=>p.color).filter(c=>!allFinished(goties,c));
         const ci=cols.indexOf(colorName);const nextTurn=cols[(ci+1)%cols.length];
-        await update(ref(db,'rooms/'+roomCode),{currentTurn:nextTurn,lastRoll:{uid:myUid,color:colorName,value:val,at:Date.now()}});
+        await update(ref(db,'games/'+roomCode),{currentTurn:nextTurn,lastRoll:{uid:myUid,color:colorName,value:val,at:Date.now()}});
         return;
       }
       pendingRoll=val;waitingForMove=true;
@@ -793,10 +802,23 @@ function buildDice(colorName){
 
 function buildBoard(){
   const SS=new Set(['6,12','8,2','2,6','12,8','6,1','8,13','1,8','13,6']);
+  const EXIT_CELLS=new Set(['6,1','1,8','8,13','13,6']);
   const board=document.getElementById('board');
   const isHQ=(r,c)=>(r<=5&&c<=5)||(r<=5&&c>=9)||(r>=9&&c<=5)||(r>=9&&c>=9);
   const isCtr=(r,c)=>r>=6&&r<=8&&c>=6&&c<=8;
-  const cls=(r,c)=>{const k=r+','+c;if(r===6&&c===1)return'p s-r';if(r===1&&c===8)return'p s-g';if(r===8&&c===13)return'p s-b';if(r===13&&c===6)return'p s-y';if(r===7&&c>=1&&c<=5)return'f-r';if(c===7&&r>=1&&r<=5)return'f-g';if(r===7&&c>=9&&c<=13)return'f-b';if(c===7&&r>=9&&r<=13)return'f-y';if(SS.has(k))return'safe';return'p';};
+  const cls=(r,c)=>{
+    const k=r+','+c;
+    if(r===6&&c===1)return'p s-r exit-star';
+    if(r===1&&c===8)return'p s-g exit-star';
+    if(r===8&&c===13)return'p s-b exit-star';
+    if(r===13&&c===6)return'p s-y exit-star';
+    if(r===7&&c>=1&&c<=5)return'f-r';
+    if(c===7&&r>=1&&r<=5)return'f-g';
+    if(r===7&&c>=9&&c<=13)return'f-b';
+    if(c===7&&r>=9&&r<=13)return'f-y';
+    if(SS.has(k))return'safe';
+    return'p';
+  };
   for(let r=0;r<15;r++)for(let c=0;c<15;c++){
     if(isCtr(r,c)||isHQ(r,c))continue;
     const d=document.createElement('div');d.className='cell '+cls(r,c);d.style.gridColumn=c+1;d.style.gridRow=r+1;d.setAttribute('data-rc',r+'-'+c);board.appendChild(d);
