@@ -92,8 +92,8 @@ input[type="text"]::placeholder{color:#2a3f56;}
 .s-b{background:var(--b)!important;box-shadow:inset 0 0 0 2px var(--bl)!important;}
 .p{background:var(--path);}
 .safe{background:var(--path);}
-.safe::after{content:'★';font-size:12px;color:#bbb;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:0;}
-.exit-star::after{content:'★';font-size:14px;color:#e8b800;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:0;text-shadow:0 0 6px rgba(232,184,0,.7);}
+.safe::after{content:'★';font-size:12px;color:#e8b800;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:0;text-shadow:0 0 6px rgba(232,184,0,.7);}
+.exit-star::after{content:'★';font-size:12px;color:#e8b800;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:0;text-shadow:0 0 6px rgba(232,184,0,.7);}
 .win-house{grid-column:7/10;grid-row:7/10;width:138px;height:138px;border-radius:10px;z-index:10;background:var(--path);box-shadow:0 0 0 3px var(--board),0 4px 16px rgba(0,0,0,.6);display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;}
 .win-house-emoji{font-size:42px;line-height:1;}
 .win-house-names{font-family:'Rajdhani',sans-serif;font-size:9px;font-weight:700;color:#555;letter-spacing:1px;text-align:center;padding:2px 4px;line-height:1.3;}
@@ -518,8 +518,10 @@ function handleGameUpdate(players,room){
   if(ev&&evKey!==lastEventKey&&!isAnimating){
     lastEventKey=evKey;
     if(ev.type==='dice'){
-      sndDice();
-      triggerDiceAnim(ev.color,ev.value);
+      if(ev.uid!==myUid){
+        sndDice();
+        triggerDiceAnim(ev.color,ev.value);
+      }
     } else if(ev.type==='move'){
       const goties=room.goties||{};
       animateMove(ev.color,ev.idx,ev.fromPos,ev.toPos,goties,ev.captured||false,()=>{
@@ -663,21 +665,42 @@ function getCellEl(r,c){return document.querySelector(`.cell[data-rc="${r}-${c}"
 
 function getRC(color,pos){
   const cfg=COLOR_CFG[color];
-  if(pos>=0&&pos<=51){const mi=(pos+cfg.startIdx)%52;return mi<MAIN_PATH.length?MAIN_PATH[mi]:null;}
-  if(pos>=52&&pos<=57){const hi=pos-52;return hi<cfg.homeCol.length?cfg.homeCol[hi]:null;}
+  if(pos>=0&&pos<=50){
+    const mi=(pos+cfg.startIdx)%52;return mi<MAIN_PATH.length?MAIN_PATH[mi]:null;
+  }
+  if(pos>=52&&pos<=57){
+    const hi=pos-52;return hi<cfg.homeCol.length?cfg.homeCol[hi]:null;
+  }
+  return null;
+}
+
+ function calcNewPos(currentPos,roll){
+  if(currentPos<=-1)return null; // handled separately
+  if(currentPos<=50){
+    const remaining=50-currentPos; // steps left on main path
+    if(roll<=remaining){
+      // Still on main path
+      return currentPos+roll;
+    } else {
+      const stepsIntoHome=roll-remaining-1; // -1 because pos51 is skipped
+      const newPos=52+stepsIntoHome;
+      if(newPos>57)return null; // overshoot
+      return newPos;
+    }
+  }
+  if(currentPos>=52&&currentPos<=56){
+    const newPos=currentPos+roll;
+    if(newPos>57)return null; // overshoot
+    return newPos;
+  }
   return null;
 }
 
 function canMove(color,idx,pos,roll,goties){
   if(pos===-1)return roll===6;
   if(pos===57)return false;
-  if(pos<=51&&pos+roll>57)return false;
-  if(pos<=51&&pos+roll>51){
-    const stepsOnMain=51-pos;
-    const stepsInHome=roll-stepsOnMain-1;
-    return stepsInHome>=0&&stepsInHome<=5;
-  }
-  return pos+roll<=57;
+  const np=calcNewPos(pos,roll);
+  return np!==null;
 }
 
 function applyTurn(color,playerMap,goties,roll){
@@ -715,24 +738,23 @@ async function moveGoti(color,idx,roll){
   const players=Object.values(room.players||{}).sort((a,b)=>a.joinedAt-b.joinedAt);
   const playerMap={};players.forEach(p=>{playerMap[p.color]=p;});
 
-  const fromPos=gt.pos;let newPos=fromPos,extraTurn=false,captured=false;
+  const fromPos=gt.pos;
+  let newPos,extraTurn=false,captured=false;
+
   if(fromPos===-1&&roll===6){
     newPos=0;extraTurn=true;
-  } else if(fromPos<=51&&fromPos+roll>51){
-    const stepsOnMain=51-fromPos;
-    const stepsInHome=roll-stepsOnMain-1;
-    newPos=52+stepsInHome;
   } else {
-    newPos=fromPos+roll;
+    newPos=calcNewPos(fromPos,roll);
+    if(newPos===null)return; // safety check
   }
 
   let winners=room.winners||[];
   if(newPos>=57){newPos=57;if(!winners.includes(color))winners=[...winners,color];}
 
-  if(newPos>=0&&newPos<=51){
+  if(newPos>=0&&newPos<=50){
     const rc=getRC(color,newPos);const rcKey=rc?rc[0]+','+rc[1]:'';
     if(!SAFE_CELLS.has(rcKey)){
-      for(const oc of COLORS){if(oc===color)continue;const og=goties[oc]||[];for(let oi=0;oi<og.length;oi++){if(og[oi].pos<0||og[oi].pos>=52)continue;const orc=getRC(oc,og[oi].pos);if(orc&&rc&&orc[0]===rc[0]&&orc[1]===rc[1]){goties[oc][oi]={pos:-1};captured=true;}}}
+      for(const oc of COLORS){if(oc===color)continue;const og=goties[oc]||[];for(let oi=0;oi<og.length;oi++){if(og[oi].pos<0||og[oi].pos>=51)continue;const orc=getRC(oc,og[oi].pos);if(orc&&rc&&orc[0]===rc[0]&&orc[1]===rc[1]){goties[oc][oi]={pos:-1};captured=true;}}}
     }
   }
 
@@ -779,7 +801,7 @@ function buildDice(colorName){
     rolling=true;
     const val=Math.floor(Math.random()*6)+1;
     const evKey=myUid+'-'+Date.now();
-    await update(ref(db,'games/'+roomCode),{lastEvent:{type:'dice',color:colorName,value:val,key:evKey,at:Date.now()}});
+    await update(ref(db,'games/'+roomCode),{lastEvent:{type:'dice',color:colorName,value:val,uid:myUid,key:evKey,at:Date.now()}});
     cube.style.setProperty('--df',FACE_T[val]);cube.classList.remove('spinning');void cube.offsetWidth;cube.classList.add('spinning');
     cube.addEventListener('animationend',async()=>{
       cube.classList.remove('spinning');cube.style.transform=FACE_T[val];rolling=false;
@@ -820,12 +842,12 @@ function buildDice(colorName){
 
 function buildBoard(){
   const SS=new Set(['6,12','8,2','2,6','12,8','6,1','8,13','1,8','13,6']);
-  const EXIT_CELLS=new Set(['6,1','1,8','8,13','13,6']);
   const board=document.getElementById('board');
   const isHQ=(r,c)=>(r<=5&&c<=5)||(r<=5&&c>=9)||(r>=9&&c<=5)||(r>=9&&c>=9);
   const isCtr=(r,c)=>r>=6&&r<=8&&c>=6&&c<=8;
   const cls=(r,c)=>{
     const k=r+','+c;
+    // FIX 1: Exit star cells same style as safe cells (same star color)
     if(r===6&&c===1)return'p s-r exit-star';
     if(r===1&&c===8)return'p s-g exit-star';
     if(r===8&&c===13)return'p s-b exit-star';
@@ -847,7 +869,6 @@ function showWin(winnerColor,room){
   showScreen('game-screen');
   const pm={};Object.values(room.players||{}).forEach(p=>{pm[p.color]=p;});
   document.getElementById('win-title').textContent=(pm[winnerColor]?.name||winnerColor).toUpperCase()+' WINS!';
-  sndWin();
   document.getElementById('win-overlay').classList.add('active');
 }
 
