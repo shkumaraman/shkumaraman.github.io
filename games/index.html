@@ -3,32 +3,32 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Ludo Classic</title>
+  <title>Ludo Classic – Multiplayer</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
       --clr-red:          #c62828;
       --clr-red-dark:     #b71c1c;
       --clr-red-light:    #ff8a80;
-
       --clr-green:        #2e7d32;
       --clr-green-dark:   #1b5e20;
       --clr-green-light:  #69f0ae;
-
       --clr-yellow:       #f9a825;
       --clr-yellow-dark:  #e65100;
       --clr-yellow-light: #ffe57f;
-
       --clr-blue:         #1565c0;
       --clr-blue-dark:    #0d47a1;
       --clr-blue-light:   #82b1ff;
-
       --clr-path:   #f5f0e8;
-      --clr-bg:     #1a2535;
+      --clr-bg:     #0d1117;
       --clr-board:  #0d1620;
-      --clr-wrap:   #20303f;
-      --clr-border: #3a5570;
-
+      --clr-wrap:   #161d2b;
+      --clr-border: #2a3f56;
+      --clr-gold:   #c9a84c;
+      --clr-gold2:  #e8d5b0;
       --dice-size: 38px;
+      --panel-bg: #111827;
+      --panel-border: #1f2d3d;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -38,43 +38,465 @@
       min-height: 100vh;
       display: flex;
       flex-direction: column;
-      justify-content: center;
       align-items: center;
-      font-family: 'Segoe UI', sans-serif;
-      gap: 14px;
-      padding: 20px;
+      font-family: 'Rajdhani', sans-serif;
+      padding: 0;
+      overflow-x: hidden;
     }
 
-    h1 {
-      color: #e8d5b0;
-      font-size: 0.85rem;
-      font-weight: 400;
-      letter-spacing: 6px;
+    /* ── SCANLINE OVERLAY ── */
+    body::before {
+      content:'';
+      position:fixed; inset:0;
+      background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.04) 2px, rgba(0,0,0,0.04) 4px);
+      pointer-events:none; z-index:9999;
+    }
+
+    /* ── LOBBY SCREEN ── */
+    #lobby-screen {
+      width: 100%;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 30px 20px;
+      gap: 0;
+    }
+
+    .lobby-title {
+      font-family: 'Cinzel Decorative', serif;
+      font-size: clamp(1.4rem, 4vw, 2.4rem);
+      color: var(--clr-gold);
+      text-shadow: 0 0 30px rgba(201,168,76,0.4), 0 2px 4px rgba(0,0,0,0.8);
+      letter-spacing: 3px;
+      margin-bottom: 6px;
+      text-align: center;
+    }
+
+    .lobby-sub {
+      color: #4a6080;
+      font-size: 0.75rem;
+      letter-spacing: 5px;
       text-transform: uppercase;
-      text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+      margin-bottom: 36px;
+      text-align: center;
+    }
+
+    .lobby-card {
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      border-radius: 18px;
+      padding: 30px 32px;
+      width: 100%;
+      max-width: 440px;
+      box-shadow: 0 32px 64px rgba(0,0,0,0.8);
+    }
+
+    .tabs {
+      display: flex;
+      gap: 4px;
+      background: rgba(255,255,255,0.04);
+      border-radius: 10px;
+      padding: 4px;
+      margin-bottom: 28px;
+    }
+
+    .tab-btn {
+      flex: 1;
+      padding: 9px;
+      border: none;
+      border-radius: 7px;
+      background: transparent;
+      color: #4a6080;
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 0.9rem;
+      font-weight: 600;
+      letter-spacing: 1px;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-transform: uppercase;
+    }
+
+    .tab-btn.active {
+      background: var(--clr-gold);
+      color: #0d1117;
+    }
+
+    .tab-panel { display: none; flex-direction: column; gap: 14px; }
+    .tab-panel.active { display: flex; }
+
+    label {
+      display: block;
+      color: #4a7090;
+      font-size: 0.72rem;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+
+    input[type="text"] {
+      width: 100%;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--panel-border);
+      border-radius: 8px;
+      color: var(--clr-gold2);
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 1rem;
+      font-weight: 600;
+      padding: 11px 14px;
+      letter-spacing: 1px;
+      transition: border-color 0.2s;
+      outline: none;
+    }
+
+    input[type="text"]:focus {
+      border-color: var(--clr-gold);
+    }
+
+    input[type="text"]::placeholder { color: #2a3f56; }
+
+    /* Mode select */
+    .mode-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .mode-btn {
+      padding: 10px 6px;
+      border: 1px solid var(--panel-border);
+      border-radius: 8px;
+      background: transparent;
+      color: #4a6080;
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 0.85rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s;
+      letter-spacing: 0.5px;
+      text-align: center;
+    }
+
+    .mode-btn.selected {
+      border-color: var(--clr-gold);
+      color: var(--clr-gold);
+      background: rgba(201,168,76,0.08);
+    }
+
+    .mode-btn:hover:not(.selected) {
+      border-color: #2a3f56;
+      color: #6a8090;
+    }
+
+    .action-btn {
+      width: 100%;
+      padding: 13px;
+      border: none;
+      border-radius: 9px;
+      background: linear-gradient(135deg, #a07828, var(--clr-gold));
+      color: #0d1117;
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 1rem;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: all 0.2s;
+      margin-top: 4px;
+    }
+
+    .action-btn:hover { transform: translateY(-1px); box-shadow: 0 8px 20px rgba(201,168,76,0.3); }
+    .action-btn:active { transform: translateY(0); }
+    .action-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+    .error-msg {
+      color: #e57373;
+      font-size: 0.8rem;
+      text-align: center;
+      min-height: 18px;
+      letter-spacing: 0.5px;
+    }
+
+    /* ── WAITING ROOM ── */
+    #waiting-screen {
+      display: none;
+      width: 100%;
+      min-height: 100vh;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 30px 20px;
+    }
+
+    .waiting-card {
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      border-radius: 18px;
+      padding: 30px 32px;
+      width: 100%;
+      max-width: 460px;
+      box-shadow: 0 32px 64px rgba(0,0,0,0.8);
+    }
+
+    .room-header {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+
+    .room-label {
+      color: #4a6080;
+      font-size: 0.7rem;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .room-code {
+      font-family: 'Cinzel Decorative', serif;
+      font-size: 1.8rem;
+      color: var(--clr-gold);
+      letter-spacing: 8px;
+      text-shadow: 0 0 20px rgba(201,168,76,0.3);
+    }
+
+    .room-mode-badge {
+      display: inline-block;
+      margin-top: 8px;
+      padding: 3px 12px;
+      border-radius: 20px;
+      background: rgba(201,168,76,0.12);
+      border: 1px solid rgba(201,168,76,0.3);
+      color: var(--clr-gold);
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+
+    .players-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    .player-slot {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--panel-border);
+      transition: border-color 0.3s;
+    }
+
+    .player-slot.filled {
+      border-color: rgba(201,168,76,0.25);
+    }
+
+    .player-color-dot {
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .player-name {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--clr-gold2);
+      letter-spacing: 0.5px;
+      flex: 1;
+    }
+
+    .player-name.empty {
+      color: #2a3f56;
+      font-style: italic;
+      font-weight: 400;
+    }
+
+    .player-you-tag {
+      font-size: 0.65rem;
+      letter-spacing: 2px;
+      color: var(--clr-gold);
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .host-tag {
+      font-size: 0.65rem;
+      letter-spacing: 2px;
+      color: #4a6080;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .waiting-footer {
+      text-align: center;
+    }
+
+    .waiting-dots {
+      color: #4a6080;
+      font-size: 0.8rem;
+      letter-spacing: 3px;
+      animation: blink 1.4s ease-in-out infinite;
+    }
+
+    @keyframes blink {
+      0%,100% { opacity: 0.3; }
+      50% { opacity: 1; }
+    }
+
+    .copy-btn {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--panel-border);
+      border-radius: 7px;
+      color: #4a7090;
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      padding: 7px 16px;
+      cursor: pointer;
+      transition: all 0.2s;
+      margin-top: 10px;
+    }
+
+    .copy-btn:hover { border-color: var(--clr-gold); color: var(--clr-gold); }
+
+    .leave-btn {
+      background: transparent;
+      border: 1px solid #2a2a2a;
+      border-radius: 7px;
+      color: #4a4a4a;
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      padding: 7px 16px;
+      cursor: pointer;
+      transition: all 0.2s;
+      margin-top: 8px;
+    }
+
+    .leave-btn:hover { border-color: #c62828; color: #e57373; }
+
+    /* ── GAME SCREEN ── */
+    #game-screen {
+      display: none;
+      width: 100%;
+      flex-direction: column;
+      align-items: center;
+      padding: 14px 12px 30px;
+      gap: 12px;
+    }
+
+    .game-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      max-width: 760px;
+      padding: 0 4px;
+    }
+
+    .game-title {
+      font-family: 'Cinzel Decorative', serif;
+      font-size: 1rem;
+      color: var(--clr-gold);
+      letter-spacing: 2px;
+    }
+
+    .game-room-badge {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--panel-border);
+      border-radius: 6px;
+      color: #4a6080;
+      font-size: 0.7rem;
+      letter-spacing: 3px;
+      padding: 4px 10px;
+      font-weight: 600;
+    }
+
+    /* Player name tags around board */
+    .player-tags {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      grid-template-rows: auto 1fr auto;
+      gap: 6px;
+      width: 100%;
+      max-width: 760px;
+      align-items: center;
+      justify-items: center;
+    }
+
+    .ptag {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      border-radius: 8px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--panel-border);
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+      opacity: 0.4;
+      transition: opacity 0.3s, border-color 0.3s;
+    }
+
+    .ptag.active {
+      opacity: 1;
+      box-shadow: 0 0 12px rgba(201,168,76,0.15);
+    }
+
+    .ptag-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .ptag-red    { color: var(--clr-red-light); border-color: rgba(198,40,40,0.3); }
+    .ptag-red.active { border-color: rgba(198,40,40,0.6); }
+    .ptag-green  { color: var(--clr-green-light); border-color: rgba(46,125,50,0.3); }
+    .ptag-green.active { border-color: rgba(46,125,50,0.6); }
+    .ptag-yellow { color: var(--clr-yellow-light); border-color: rgba(249,168,37,0.3); }
+    .ptag-yellow.active { border-color: rgba(249,168,37,0.6); }
+    .ptag-blue   { color: var(--clr-blue-light); border-color: rgba(21,101,192,0.3); }
+    .ptag-blue.active { border-color: rgba(21,101,192,0.6); }
+
+    /* Board wrapper */
+    .board-outer {
+      grid-column: 2;
+      grid-row: 2;
     }
 
     .board-wrap {
       background: var(--clr-wrap);
-      padding: 14px;
-      border-radius: 20px;
+      padding: 12px;
+      border-radius: 18px;
       box-shadow: 0 24px 48px rgba(0,0,0,0.8), inset 0 0 0 2px var(--clr-border);
     }
 
     .ludo-board {
       display: grid;
-      grid-template-columns: repeat(15, 48px);
-      grid-template-rows: repeat(15, 48px);
-      gap: 3px;
+      grid-template-columns: repeat(15, 44px);
+      grid-template-rows: repeat(15, 44px);
+      gap: 2px;
       background: var(--clr-board);
-      padding: 3px;
-      border-radius: 10px;
+      padding: 2px;
+      border-radius: 8px;
       position: relative;
     }
 
     .cell {
-      width: 48px; height: 48px;
-      border-radius: 6px;
+      width: 44px; height: 44px;
+      border-radius: 5px;
       position: relative;
       display: flex;
       justify-content: center;
@@ -85,29 +507,18 @@
     .f-g { background: var(--clr-green);  box-shadow: inset 0 0 0 1px var(--clr-green-light); }
     .f-y { background: var(--clr-yellow); box-shadow: inset 0 0 0 1px var(--clr-yellow-light); }
     .f-b { background: var(--clr-blue);   box-shadow: inset 0 0 0 1px var(--clr-blue-light); }
-
     .s-r { background: var(--clr-red)    !important; box-shadow: inset 0 0 0 2px var(--clr-red-light)    !important; }
     .s-g { background: var(--clr-green)  !important; box-shadow: inset 0 0 0 2px var(--clr-green-light)  !important; }
     .s-y { background: var(--clr-yellow) !important; box-shadow: inset 0 0 0 2px var(--clr-yellow-light) !important; }
     .s-b { background: var(--clr-blue)   !important; box-shadow: inset 0 0 0 2px var(--clr-blue-light)   !important; }
-
     .p { background: var(--clr-path); }
-
     .safe { background: var(--clr-path); }
-    .safe::after {
-      content: '★';
-      font-size: 15px;
-      color: #aaa;
-      position: absolute;
-      top: 50%; left: 50%;
-      transform: translate(-50%, -50%);
-    }
+    .safe::after { content: '★'; font-size: 13px; color: #aaa; position: absolute; }
 
-    /* ── WIN HOUSE ── */
     .win-house {
       grid-column: 7 / 10;
       grid-row: 7 / 10;
-      width: 150px; height: 150px;
+      width: 138px; height: 138px;
       border-radius: 10px;
       overflow: hidden;
       z-index: 10;
@@ -116,11 +527,9 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 64px;
+      font-size: 56px;
     }
-    .win-house img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
-    /* ── HOME CARDS ── */
     .home-card {
       border-radius: 12px;
       position: relative;
@@ -128,8 +537,8 @@
       display: grid;
       grid-template-columns: repeat(4, 1fr);
       grid-template-rows: repeat(4, 1fr);
-      gap: 4px;
-      padding: 8px;
+      gap: 3px;
+      padding: 6px;
       box-shadow: 0 4px 20px rgba(0,0,0,0.5), inset 0 0 0 2px rgba(255,255,255,0.15);
     }
 
@@ -139,7 +548,7 @@
     .home-card.blue   { background: linear-gradient(135deg, var(--clr-blue-dark),   var(--clr-blue));   grid-column: 10/16; grid-row: 10/16; }
 
     .home-cell {
-      border-radius: 4px;
+      border-radius: 3px;
       background: rgba(255,255,255,0.1);
       border: 1px solid rgba(255,255,255,0.15);
       display: flex;
@@ -147,7 +556,6 @@
       justify-content: center;
     }
 
-    /* Center dice cell spans 2x2 in the middle of 4x4 grid (cols 2-3, rows 2-3) */
     .dice-cell {
       grid-column: 2 / 4;
       grid-row: 2 / 4;
@@ -157,6 +565,8 @@
       align-items: center;
       justify-content: center;
       cursor: pointer;
+      flex-direction: column;
+      gap: 2px;
     }
 
     /* ── 3D DICE ── */
@@ -199,15 +609,12 @@
       box-shadow: inset 0 0 6px rgba(0,0,0,0.12);
     }
 
-    /* Face positions */
     .face-1 { transform: translateZ(calc(var(--dice-size) / 2)); }
     .face-6 { transform: rotateY(180deg) translateZ(calc(var(--dice-size) / 2)); }
     .face-2 { transform: rotateY(90deg)  translateZ(calc(var(--dice-size) / 2)); }
     .face-5 { transform: rotateY(-90deg) translateZ(calc(var(--dice-size) / 2)); }
     .face-3 { transform: rotateX(-90deg) translateZ(calc(var(--dice-size) / 2)); }
     .face-4 { transform: rotateX(90deg)  translateZ(calc(var(--dice-size) / 2)); }
-
-    /* Dot layout grids per face */
     .face-1 { grid-template-areas: '. . .' '. c .' '. . .'; }
     .face-2 { grid-template-areas: '. . a' '. . .' 'b . .'; }
     .face-3 { grid-template-areas: '. . a' '. c .' 'b . .'; }
@@ -216,7 +623,7 @@
     .face-6 { grid-template-areas: 'a . b' 'c . d' 'e . f'; }
 
     .dot {
-      width: 7px; height: 7px;
+      width: 6px; height: 6px;
       border-radius: 50%;
       background: #1a1a1a;
       box-shadow: 0 1px 2px rgba(0,0,0,0.4);
@@ -246,7 +653,6 @@
     .face-6 .dot:nth-child(5) { grid-area: e; }
     .face-6 .dot:nth-child(6) { grid-area: f; }
 
-    /* ── TOKENS ── */
     .token {
       width: 70%; height: 70%;
       border-radius: 50%;
@@ -257,71 +663,466 @@
     .t-g { background: radial-gradient(circle at 35% 35%, var(--clr-green-light),  var(--clr-green-dark)); }
     .t-y { background: radial-gradient(circle at 35% 35%, var(--clr-yellow-light), var(--clr-yellow-dark)); }
     .t-b { background: radial-gradient(circle at 35% 35%, var(--clr-blue-light),   var(--clr-blue-dark)); }
+
+    /* Dice not-my-turn state */
+    .dice-cell.disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+
+    /* Turn indicator */
+    .turn-label {
+      font-size: 0.72rem;
+      color: var(--clr-gold);
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      text-align: center;
+      font-weight: 700;
+      min-height: 18px;
+    }
+
+    /* Toast notification */
+    #toast {
+      position: fixed;
+      bottom: 28px;
+      left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      background: #1f2d3d;
+      border: 1px solid var(--panel-border);
+      border-radius: 10px;
+      padding: 11px 22px;
+      color: var(--clr-gold2);
+      font-size: 0.85rem;
+      letter-spacing: 1px;
+      font-weight: 600;
+      z-index: 9998;
+      transition: transform 0.35s cubic-bezier(0.34,1.56,0.64,1);
+      white-space: nowrap;
+    }
+
+    #toast.show {
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* Loading spinner */
+    .spinner {
+      display: inline-block;
+      width: 16px; height: 16px;
+      border: 2px solid rgba(201,168,76,0.3);
+      border-top-color: var(--clr-gold);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Divider */
+    .divider {
+      border: none;
+      border-top: 1px solid var(--panel-border);
+      margin: 4px 0;
+    }
+
+    /* Responsive */
+    @media (max-width: 700px) {
+      .ludo-board {
+        grid-template-columns: repeat(15, 30px);
+        grid-template-rows: repeat(15, 30px);
+      }
+      .cell { width: 30px; height: 30px; border-radius: 3px; }
+      .win-house { width: 94px; height: 94px; }
+      .player-tags { gap: 4px; }
+      .ptag { font-size: 0.7rem; padding: 4px 7px; }
+    }
   </style>
 </head>
 <body>
 
-<!-- Dice roll sound — replace src with your sound file path -->
-<audio id="dice-sound" src="dice-roll.mp3" preload="auto"></audio>
+<!-- ══════════════ LOBBY SCREEN ══════════════ -->
+<div id="lobby-screen">
+  <div class="lobby-title">◈ Ludo Classic ◈</div>
+  <div class="lobby-sub">Multiplayer Edition</div>
 
-<h1>◈ Ludo Classic ◈</h1>
-
-<div class="board-wrap">
-  <div class="ludo-board" id="board">
-
-    <div class="win-house">
-      <img
-        src="https://images.unsplash.com/photo-1567427017947-545c5f8d16ad?w=200&h=200&fit=crop&crop=center"
-        alt="Win"
-        onerror="this.replaceWith(document.createTextNode('🏆'))">
+  <div class="lobby-card">
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('create')">Create Room</button>
+      <button class="tab-btn" onclick="switchTab('join')">Join Room</button>
     </div>
 
-    <div class="home-card red"    id="card-r"></div>
-    <div class="home-card green"  id="card-g"></div>
-    <div class="home-card yellow" id="card-y"></div>
-    <div class="home-card blue"   id="card-b"></div>
+    <!-- CREATE TAB -->
+    <div class="tab-panel active" id="tab-create">
+      <div>
+        <label>Your Name</label>
+        <input type="text" id="create-name" placeholder="Enter your name" maxlength="16">
+      </div>
+      <div>
+        <label>Room Name</label>
+        <input type="text" id="room-name" placeholder="e.g. Friday Night Ludo" maxlength="24">
+      </div>
+      <div>
+        <label>Game Mode</label>
+        <div class="mode-grid">
+          <button class="mode-btn selected" data-mode="1v1">1 vs 1</button>
+          <button class="mode-btn" data-mode="2v2">2 vs 2</button>
+          <button class="mode-btn" data-mode="1v1v1v1">Free For All</button>
+        </div>
+      </div>
+      <hr class="divider">
+      <div class="error-msg" id="create-error"></div>
+      <button class="action-btn" id="create-btn" onclick="createRoom()">Create Room</button>
+    </div>
 
+    <!-- JOIN TAB -->
+    <div class="tab-panel" id="tab-join">
+      <div>
+        <label>Your Name</label>
+        <input type="text" id="join-name" placeholder="Enter your name" maxlength="16">
+      </div>
+      <div>
+        <label>Room Code</label>
+        <input type="text" id="join-code" placeholder="e.g. ABCD" maxlength="6" style="text-transform:uppercase;letter-spacing:4px;">
+      </div>
+      <hr class="divider">
+      <div class="error-msg" id="join-error"></div>
+      <button class="action-btn" id="join-btn" onclick="joinRoom()">Join Room</button>
+    </div>
   </div>
 </div>
 
-<script>
-/* ── BOARD CELLS ── */
-const SIZE = 15;
-const SAFE = new Set(['6,12','8,2','2,6','12,8']);
+<!-- ══════════════ WAITING ROOM ══════════════ -->
+<div id="waiting-screen">
+  <div class="waiting-card">
+    <div class="room-header">
+      <div class="room-label">Room Code</div>
+      <div class="room-code" id="display-room-code">XXXX</div>
+      <div class="room-mode-badge" id="display-mode">1v1</div>
+    </div>
 
-function isHomeQuadrant(r, c) {
-  return (r <= 5 && c <= 5) || (r <= 5 && c >= 9) ||
-         (r >= 9 && c <= 5) || (r >= 9 && c >= 9);
+    <div class="players-list" id="players-list"></div>
+
+    <div class="waiting-footer">
+      <div class="waiting-dots" id="waiting-text">Waiting for players</div>
+      <br>
+      <button class="copy-btn" onclick="copyCode()">⧉ Copy Code</button>
+      &nbsp;
+      <button class="leave-btn" onclick="leaveRoom()">Leave</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ GAME SCREEN ══════════════ -->
+<div id="game-screen">
+  <div class="game-header">
+    <div class="game-title">◈ Ludo Classic</div>
+    <div class="game-room-badge" id="game-room-badge">ROOM: XXXX</div>
+  </div>
+
+  <div class="player-tags" id="player-tags-wrap">
+    <!-- Filled by JS -->
+  </div>
+
+  <div style="text-align:center">
+    <div class="turn-label" id="turn-label">—</div>
+  </div>
+
+  <div class="board-wrap">
+    <div class="ludo-board" id="board">
+      <div class="win-house">🏆</div>
+      <div class="home-card red"    id="card-r"></div>
+      <div class="home-card green"  id="card-g"></div>
+      <div class="home-card yellow" id="card-y"></div>
+      <div class="home-card blue"   id="card-b"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<!-- Firebase -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getDatabase, ref, set, get, update, onValue, remove, push, serverTimestamp }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+
+/* ── Firebase config ── */
+const firebaseConfig = {
+  databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
+};
+const app = initializeApp(firebaseConfig);
+const db  = getDatabase(app);
+
+/* ── COLOR ASSIGNMENTS per mode ── */
+const COLORS = ['red','green','yellow','blue'];
+const COLOR_CLASS = { red:'t-r', green:'t-g', yellow:'t-y', blue:'t-b' };
+const COLOR_HEX   = { red:'#c62828', green:'#2e7d32', yellow:'#f9a825', blue:'#1565c0' };
+
+const MODE_SLOTS = {
+  '1v1':    2,
+  '2v2':    4,
+  '1v1v1v1':4,
+};
+
+/* ── State ── */
+let myUid       = null;
+let myName      = '';
+let myColor     = '';
+let roomCode    = '';
+let roomRef     = null;
+let roomUnsub   = null;
+let selectedMode = '1v1';
+
+/* ── Restore from localStorage ── */
+const saved = (() => {
+  try { return JSON.parse(localStorage.getItem('ludo_session') || 'null'); } catch(e){ return null; }
+})();
+
+/* ── UTILITIES ── */
+function uid() {
+  return Math.random().toString(36).slice(2,10) + Date.now().toString(36);
 }
-function isCenter(r, c) { return r >= 6 && r <= 8 && c >= 6 && c <= 8; }
-
-function classOf(r, c) {
-  const k = r + ',' + c;
-  if (r === 6  && c === 1)  return 'p s-r';
-  if (r === 1  && c === 8)  return 'p s-g';
-  if (r === 8  && c === 13) return 'p s-b';
-  if (r === 13 && c === 6)  return 'p s-y';
-  if (r === 7 && c >= 1 && c <= 5)  return 'f-r';
-  if (c === 7 && r >= 1 && r <= 5)  return 'f-g';
-  if (r === 7 && c >= 9 && c <= 13) return 'f-b';
-  if (c === 7 && r >= 9 && r <= 13) return 'f-y';
-  if (SAFE.has(k)) return 'safe';
-  return 'p';
+function genCode() {
+  return Math.random().toString(36).slice(2,6).toUpperCase();
+}
+function showToast(msg, dur=2600) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), dur);
+}
+function setLoading(btnId, state) {
+  const btn = document.getElementById(btnId);
+  if (!btn) return;
+  btn.disabled = state;
+  if (state) btn.innerHTML = `<span class="spinner"></span> Please wait…`;
+  else btn.textContent = btn.id === 'create-btn' ? 'Create Room' : 'Join Room';
 }
 
-const board = document.getElementById('board');
-for (let r = 0; r < SIZE; r++) {
-  for (let c = 0; c < SIZE; c++) {
-    if (isCenter(r, c) || isHomeQuadrant(r, c)) continue;
-    const div = document.createElement('div');
-    div.className = 'cell ' + classOf(r, c);
-    div.style.gridColumn = c + 1;
-    div.style.gridRow    = r + 1;
-    board.appendChild(div);
+/* ── TAB SWITCH ── */
+window.switchTab = function(tab) {
+  document.querySelectorAll('.tab-btn').forEach((b,i) => b.classList.toggle('active', (i===0&&tab==='create')||(i===1&&tab==='join')));
+  document.querySelectorAll('.tab-panel').forEach((p,i) => p.classList.toggle('active', (i===0&&tab==='create')||(i===1&&tab==='join')));
+};
+
+/* ── MODE BUTTONS ── */
+document.querySelectorAll('.mode-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    selectedMode = btn.dataset.mode;
+  });
+});
+
+/* ── SCREEN SWITCHING ── */
+function showScreen(id) {
+  ['lobby-screen','waiting-screen','game-screen'].forEach(s => {
+    const el = document.getElementById(s);
+    el.style.display = s === id ? 'flex' : 'none';
+  });
+}
+
+/* ── PLAYERS LIST (Waiting Room) ── */
+function renderWaitingRoom(players, mode, code, roomName) {
+  const slots = MODE_SLOTS[mode] || 2;
+  document.getElementById('display-room-code').textContent = code;
+  document.getElementById('display-mode').textContent = mode.replace(/v/gi,' vs ').toUpperCase();
+
+  const list = document.getElementById('players-list');
+  list.innerHTML = '';
+
+  for (let i = 0; i < slots; i++) {
+    const p = players[i];
+    const color = COLORS[i];
+    const slot = document.createElement('div');
+    slot.className = 'player-slot' + (p ? ' filled' : '');
+
+    const dot = document.createElement('div');
+    dot.className = 'player-color-dot';
+    dot.style.background = COLOR_HEX[color];
+
+    const name = document.createElement('div');
+    name.className = 'player-name' + (p ? '' : ' empty');
+    name.textContent = p ? p.name : 'Waiting…';
+
+    slot.appendChild(dot);
+    slot.appendChild(name);
+
+    if (p) {
+      if (p.uid === myUid) {
+        const you = document.createElement('span');
+        you.className = 'player-you-tag';
+        you.textContent = 'YOU';
+        slot.appendChild(you);
+      } else if (i === 0) {
+        const host = document.createElement('span');
+        host.className = 'host-tag';
+        host.textContent = 'HOST';
+        slot.appendChild(host);
+      }
+    }
+
+    list.appendChild(slot);
+  }
+
+  // Waiting or starting
+  const filled = players.filter(Boolean).length;
+  const wt = document.getElementById('waiting-text');
+  if (filled >= slots) {
+    wt.textContent = 'All players joined!';
+    // Auto-start game after 1.5s (host only)
+    if (players[0]?.uid === myUid) {
+      setTimeout(() => startGame(), 1500);
+    }
+  } else {
+    wt.textContent = `Waiting for players… (${filled}/${slots})`;
   }
 }
 
-/* ── DICE FACE TRANSFORMS (front face = value shown) ── */
+/* ── SUBSCRIBE TO ROOM ── */
+function subscribeToRoom(code) {
+  if (roomUnsub) { roomUnsub(); roomUnsub = null; }
+  roomRef = ref(db, `rooms/${code}`);
+  roomUnsub = onValue(roomRef, snap => {
+    const room = snap.val();
+    if (!room) {
+      // Room deleted
+      showToast('Room closed.');
+      showScreen('lobby-screen');
+      localStorage.removeItem('ludo_session');
+      return;
+    }
+
+    const players = Object.values(room.players || {});
+    players.sort((a,b) => a.joinedAt - b.joinedAt);
+
+    if (room.status === 'waiting') {
+      showScreen('waiting-screen');
+      renderWaitingRoom(players.slice(0, MODE_SLOTS[room.mode] || 2), room.mode, code, room.name);
+    } else if (room.status === 'playing') {
+      showScreen('game-screen');
+      renderGameScreen(players, room);
+    }
+  });
+}
+
+/* ── CREATE ROOM ── */
+window.createRoom = async function() {
+  const name = document.getElementById('create-name').value.trim();
+  const rName = document.getElementById('room-name').value.trim();
+  const err = document.getElementById('create-error');
+  err.textContent = '';
+
+  if (!name)  { err.textContent = 'Please enter your name.'; return; }
+  if (!rName) { err.textContent = 'Please enter a room name.'; return; }
+
+  setLoading('create-btn', true);
+
+  myUid  = uid();
+  myName = name;
+  myColor = COLORS[0];
+  roomCode = genCode();
+
+  const roomData = {
+    name: rName,
+    mode: selectedMode,
+    status: 'waiting',
+    createdAt: Date.now(),
+    players: {
+      [myUid]: { uid: myUid, name: myName, color: myColor, joinedAt: Date.now() }
+    }
+  };
+
+  try {
+    await set(ref(db, `rooms/${roomCode}`), roomData);
+    saveSession();
+    setLoading('create-btn', false);
+    subscribeToRoom(roomCode);
+  } catch(e) {
+    err.textContent = 'Failed to create room. Check connection.';
+    setLoading('create-btn', false);
+  }
+};
+
+/* ── JOIN ROOM ── */
+window.joinRoom = async function() {
+  const name = document.getElementById('join-name').value.trim();
+  const code = document.getElementById('join-code').value.trim().toUpperCase();
+  const err  = document.getElementById('join-error');
+  err.textContent = '';
+
+  if (!name) { err.textContent = 'Please enter your name.'; return; }
+  if (!code) { err.textContent = 'Please enter a room code.'; return; }
+
+  setLoading('join-btn', true);
+
+  try {
+    const snap = await get(ref(db, `rooms/${code}`));
+    const room = snap.val();
+
+    if (!room) { err.textContent = 'Room not found. Check the code.'; setLoading('join-btn', false); return; }
+    if (room.status !== 'waiting') { err.textContent = 'Game already started.'; setLoading('join-btn', false); return; }
+
+    const players = Object.values(room.players || {});
+    const maxSlots = MODE_SLOTS[room.mode] || 2;
+    if (players.length >= maxSlots) { err.textContent = 'Room is full.'; setLoading('join-btn', false); return; }
+
+    myUid   = uid();
+    myName  = name;
+    myColor = COLORS[players.length];
+    roomCode = code;
+
+    await set(ref(db, `rooms/${code}/players/${myUid}`), {
+      uid: myUid, name: myName, color: myColor, joinedAt: Date.now()
+    });
+
+    saveSession();
+    setLoading('join-btn', false);
+    subscribeToRoom(code);
+  } catch(e) {
+    err.textContent = 'Failed to join. Check connection.';
+    setLoading('join-btn', false);
+  }
+};
+
+/* ── SAVE / RESTORE SESSION ── */
+function saveSession() {
+  localStorage.setItem('ludo_session', JSON.stringify({ myUid, myName, myColor, roomCode }));
+}
+
+/* ── LEAVE ROOM ── */
+window.leaveRoom = async function() {
+  if (roomRef) {
+    // Check if host — if so, delete room
+    const snap = await get(ref(db, `rooms/${roomCode}`));
+    const room = snap.val();
+    const players = Object.values(room?.players || {});
+    players.sort((a,b) => a.joinedAt - b.joinedAt);
+
+    if (players[0]?.uid === myUid) {
+      await remove(ref(db, `rooms/${roomCode}`));
+    } else {
+      await remove(ref(db, `rooms/${roomCode}/players/${myUid}`));
+    }
+  }
+  if (roomUnsub) { roomUnsub(); roomUnsub = null; }
+  localStorage.removeItem('ludo_session');
+  showScreen('lobby-screen');
+};
+
+/* ── COPY CODE ── */
+window.copyCode = function() {
+  navigator.clipboard.writeText(roomCode).then(() => showToast('Room code copied!'));
+};
+
+/* ── START GAME (host triggers) ── */
+async function startGame() {
+  await update(ref(db, `rooms/${roomCode}`), { status: 'playing' });
+}
+
+/* ── GAME SCREEN RENDER ── */
 const FACE_TRANSFORMS = {
   1: 'rotateX(-20deg) rotateY(30deg)',
   2: 'rotateX(-20deg) rotateY(-90deg)',
@@ -331,96 +1132,218 @@ const FACE_TRANSFORMS = {
   6: 'rotateX(-20deg) rotateY(210deg)',
 };
 
-function makeDiceFace(n) {
-  const face = document.createElement('div');
-  face.className = `dice-face face-${n}`;
-  for (let i = 0; i < n; i++) {
-    const dot = document.createElement('div');
-    dot.className = 'dot';
-    face.appendChild(dot);
+let boardBuilt = false;
+
+function renderGameScreen(players, room) {
+  document.getElementById('game-room-badge').textContent = `ROOM: ${roomCode}`;
+
+  // Build player tags
+  const wrap = document.getElementById('player-tags-wrap');
+  wrap.innerHTML = '';
+
+  // Layout: top-left=red, top-right=green, bottom-left=yellow, bottom-right=blue
+  // We do a 3-column, 3-row grid: corners + board in center
+  // top row
+  const topRow = document.createElement('div');
+  topRow.style.cssText = 'grid-column:1/4;display:flex;justify-content:space-between;gap:6px;width:100%;';
+
+  // left col (empty top)
+  // center = board
+  // bottom row
+
+  // Simple: just render tags above/below board
+  wrap.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:8px;width:100%;';
+
+  const topBar = document.createElement('div');
+  topBar.style.cssText = 'display:flex;justify-content:space-between;width:100%;max-width:690px;';
+
+  const bottomBar = document.createElement('div');
+  bottomBar.style.cssText = 'display:flex;justify-content:space-between;width:100%;max-width:690px;';
+
+  const colorNames = { red:'Red', green:'Green', yellow:'Yellow', blue:'Blue' };
+  const colorClass = { red:'ptag-red', green:'ptag-green', yellow:'ptag-yellow', blue:'ptag-blue' };
+
+  // Map players to their color slots
+  const playerMap = {};
+  players.forEach(p => { playerMap[p.color] = p; });
+
+  function makeTag(color, align) {
+    const p = playerMap[color];
+    const tag = document.createElement('div');
+    tag.className = `ptag ${colorClass[color]}`;
+    tag.id = `ptag-${color}`;
+    if (!p) { tag.style.opacity = '0'; tag.innerHTML = `<div class="ptag-dot" style="background:${COLOR_HEX[color]}"></div><span>—</span>`; return tag; }
+
+    tag.innerHTML = `<div class="ptag-dot" style="background:${COLOR_HEX[color]}"></div><span>${p.name}${p.uid===myUid?' (You)':''}</span>`;
+    return tag;
   }
-  return face;
+
+  topBar.appendChild(makeTag('red', 'left'));
+  topBar.appendChild(makeTag('green', 'right'));
+  bottomBar.appendChild(makeTag('yellow', 'left'));
+  bottomBar.appendChild(makeTag('blue', 'right'));
+
+  wrap.appendChild(topBar);
+
+  // Board
+  const boardOuter = document.createElement('div');
+  boardOuter.appendChild(document.querySelector('.board-wrap'));
+  wrap.appendChild(document.querySelector('.board-wrap'));
+
+  wrap.appendChild(bottomBar);
+
+  // Build board cells once
+  if (!boardBuilt) {
+    boardBuilt = true;
+    buildBoardCells();
+    buildDice('card-r', 't-r', 'red');
+    buildDice('card-g', 't-g', 'green');
+    buildDice('card-y', 't-y', 'yellow');
+    buildDice('card-b', 't-b', 'blue');
+  }
+
+  // Determine whose turn it is (simple: first player for now)
+  const currentTurn = room.currentTurn || players[0]?.color || 'red';
+  highlightTurn(currentTurn, players, playerMap);
 }
 
-function makeDice(cardId, tokenCls) {
-  const card = document.getElementById(cardId);
+function highlightTurn(color, players, playerMap) {
+  const p = playerMap[color];
+  const name = p ? p.name : color;
+  const isMe = p?.uid === myUid;
 
-  /* 4×4 = 16 cells; center 2×2 = dice-cell at positions we skip manually */
-  /* We build cells in row-major order, inserting dice-cell for center */
-  for (let i = 0; i < 16; i++) {
-    const row = Math.floor(i / 4); // 0-3
-    const col = i % 4;             // 0-3
+  document.getElementById('turn-label').textContent = isMe ? '🎲 Your Turn!' : `${name}'s Turn`;
 
-    const isCenter2x2 = (row === 1 || row === 2) && (col === 1 || col === 2);
+  COLORS.forEach(c => {
+    const tag = document.getElementById(`ptag-${c}`);
+    if (tag) tag.classList.toggle('active', c === color);
 
-    if (isCenter2x2) continue; /* dice-cell will span these */
-
-    const cell = document.createElement('div');
-    cell.className = 'home-cell';
-
-    /* Token corners: (0,0),(0,3),(3,0),(3,3) */
-    if ((row === 0 || row === 3) && (col === 0 || col === 3)) {
-      const t = document.createElement('div');
-      t.className = 'token ' + tokenCls;
-      cell.appendChild(t);
-    }
-
-    /* Place in correct grid position */
-    cell.style.gridColumn = col + 1;
-    cell.style.gridRow    = row + 1;
-    card.appendChild(cell);
-  }
-
-  /* Dice cell: spans cols 2-3, rows 2-3 */
-  const diceCell = document.createElement('div');
-  diceCell.className = 'home-cell dice-cell';
-  diceCell.style.gridColumn = '2 / 4';
-  diceCell.style.gridRow    = '2 / 4';
-  diceCell.style.flexDirection = 'column';
-  diceCell.style.gap = '3px';
-
-  /* Dice scene */
-  const scene = document.createElement('div');
-  scene.className = 'dice-scene';
-
-  const cube = document.createElement('div');
-  cube.className = 'dice-cube';
-  cube.style.setProperty('--dice-final', FACE_TRANSFORMS[1]);
-
-  for (let f = 1; f <= 6; f++) cube.appendChild(makeDiceFace(f));
-  scene.appendChild(cube);
-
-  diceCell.appendChild(scene);
-  card.appendChild(diceCell);
-
-  /* Click handler */
-  let rolling = false;
-  diceCell.addEventListener('click', () => {
-    if (rolling) return;
-    rolling = true;
-
-    /* Play dice sound */
-    const audio = document.getElementById('dice-sound');
-    if (audio) { audio.currentTime = 0; audio.play().catch(() => {}); }
-
-    const val = Math.floor(Math.random() * 6) + 1;
-    cube.style.setProperty('--dice-final', FACE_TRANSFORMS[val]);
-    cube.classList.remove('spinning');
-    void cube.offsetWidth;
-    cube.classList.add('spinning');
-
-    cube.addEventListener('animationend', () => {
-      cube.classList.remove('spinning');
-      cube.style.transform = FACE_TRANSFORMS[val];
-      rolling = false;
-    }, { once: true });
+    const diceCell = document.getElementById(`dice-cell-${c}`);
+    if (diceCell) diceCell.classList.toggle('disabled', !(c === color && isMe));
   });
 }
 
-makeDice('card-r', 't-r');
-makeDice('card-g', 't-g');
-makeDice('card-y', 't-y');
-makeDice('card-b', 't-b');
+function buildBoardCells() {
+  const SIZE = 15;
+  const SAFE = new Set(['6,12','8,2','2,6','12,8']);
+  const board = document.getElementById('board');
+
+  function isHomeQ(r,c) {
+    return (r<=5&&c<=5)||(r<=5&&c>=9)||(r>=9&&c<=5)||(r>=9&&c>=9);
+  }
+  function isCtr(r,c){ return r>=6&&r<=8&&c>=6&&c<=8; }
+  function classOf(r,c){
+    const k=r+','+c;
+    if(r===6&&c===1)   return 'p s-r';
+    if(r===1&&c===8)   return 'p s-g';
+    if(r===8&&c===13)  return 'p s-b';
+    if(r===13&&c===6)  return 'p s-y';
+    if(r===7&&c>=1&&c<=5)  return 'f-r';
+    if(c===7&&r>=1&&r<=5)  return 'f-g';
+    if(r===7&&c>=9&&c<=13) return 'f-b';
+    if(c===7&&r>=9&&r<=13) return 'f-y';
+    if(SAFE.has(k)) return 'safe';
+    return 'p';
+  }
+
+  for(let r=0;r<SIZE;r++){
+    for(let c=0;c<SIZE;c++){
+      if(isCtr(r,c)||isHomeQ(r,c)) continue;
+      const div=document.createElement('div');
+      div.className='cell '+classOf(r,c);
+      div.style.gridColumn=c+1;
+      div.style.gridRow=r+1;
+      board.appendChild(div);
+    }
+  }
+}
+
+function makeDiceFace(n) {
+  const face=document.createElement('div');
+  face.className=`dice-face face-${n}`;
+  for(let i=0;i<n;i++){const d=document.createElement('div');d.className='dot';face.appendChild(d);}
+  return face;
+}
+
+function buildDice(cardId, tokenCls, colorName) {
+  const card=document.getElementById(cardId);
+  card.innerHTML='';
+
+  for(let i=0;i<16;i++){
+    const row=Math.floor(i/4),col=i%4;
+    if((row===1||row===2)&&(col===1||col===2)) continue;
+    const cell=document.createElement('div');
+    cell.className='home-cell';
+    if((row===0||row===3)&&(col===0||col===3)){
+      const t=document.createElement('div');
+      t.className='token '+tokenCls;
+      cell.appendChild(t);
+    }
+    cell.style.gridColumn=col+1;
+    cell.style.gridRow=row+1;
+    card.appendChild(cell);
+  }
+
+  const diceCell=document.createElement('div');
+  diceCell.className='home-cell dice-cell disabled';
+  diceCell.id=`dice-cell-${colorName}`;
+  diceCell.style.gridColumn='2/4';
+  diceCell.style.gridRow='2/4';
+  diceCell.style.flexDirection='column';
+  diceCell.style.gap='2px';
+
+  const scene=document.createElement('div');
+  scene.className='dice-scene';
+  const cube=document.createElement('div');
+  cube.className='dice-cube';
+  cube.style.setProperty('--dice-final',FACE_TRANSFORMS[1]);
+  for(let f=1;f<=6;f++) cube.appendChild(makeDiceFace(f));
+  scene.appendChild(cube);
+  diceCell.appendChild(scene);
+  card.appendChild(diceCell);
+
+  let rolling=false;
+  diceCell.addEventListener('click',async ()=>{
+    if(rolling||diceCell.classList.contains('disabled')) return;
+    rolling=true;
+    const val=Math.floor(Math.random()*6)+1;
+    cube.style.setProperty('--dice-final',FACE_TRANSFORMS[val]);
+    cube.classList.remove('spinning');
+    void cube.offsetWidth;
+    cube.classList.add('spinning');
+    cube.addEventListener('animationend',async ()=>{
+      cube.classList.remove('spinning');
+      cube.style.transform=FACE_TRANSFORMS[val];
+      rolling=false;
+      showToast(`🎲 ${myName} rolled ${val}!`);
+
+      // Write roll to Firebase and advance turn
+      await update(ref(db,`rooms/${roomCode}`),{
+        lastRoll: { uid: myUid, color: colorName, value: val, at: Date.now() }
+      });
+
+      // Advance turn (simple round-robin — full game logic placeholder)
+      const snap = await get(ref(db,`rooms/${roomCode}`));
+      const room = snap.val();
+      const players = Object.values(room.players||{}).sort((a,b)=>a.joinedAt-b.joinedAt);
+      const colors = players.map(p=>p.color);
+      const idx = colors.indexOf(colorName);
+      const nextColor = colors[(idx+1)%colors.length];
+      await update(ref(db,`rooms/${roomCode}`),{ currentTurn: nextColor });
+    },{once:true});
+  });
+}
+
+/* ── AUTO-REJOIN ── */
+if (saved) {
+  myUid     = saved.myUid;
+  myName    = saved.myName;
+  myColor   = saved.myColor;
+  roomCode  = saved.roomCode;
+  subscribeToRoom(roomCode);
+} else {
+  showScreen('lobby-screen');
+}
 </script>
 </body>
 </html>
