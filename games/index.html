@@ -314,6 +314,7 @@ let myUid='',myName='',myColor='',roomCode='';
 let roomUnsub=null,boardBuilt=false,selectedMode='1v1';
 let waitingForMove=false,pendingRoll=0,lastEventKey='',isAnimating=false;
 let lastEmojiKey='';
+let consecutiveSixes=0;
 
 let audioCtx=null;
 function getACtx(){
@@ -465,7 +466,7 @@ window.exitToLobby=async function(){
 function cleanup(){
   if(roomUnsub){roomUnsub();roomUnsub=null;}
   localStorage.removeItem('ludo_session');
-  boardBuilt=false;waitingForMove=false;pendingRoll=0;lastEventKey='';isAnimating=false;lastEmojiKey='';
+  boardBuilt=false;waitingForMove=false;pendingRoll=0;lastEventKey='';isAnimating=false;lastEmojiKey='';consecutiveSixes=0;
   document.getElementById('board').querySelectorAll('.cell').forEach(c=>c.remove());
   const fg=document.getElementById('floating-goti');if(fg)fg.style.display='none';
   document.getElementById('emoji-toast-wrap').innerHTML='';
@@ -737,6 +738,7 @@ async function moveGoti(color,idx,roll){
 
   goties[color][idx]={pos:newPos};
   if(roll===6||captured)extraTurn=true;
+  if(!extraTurn) consecutiveSixes=0;
 
   let nextTurn=room.currentTurn;
   if(!extraTurn){const cols=players.map(p=>p.color).filter(c=>!allFinished(goties,c));if(cols.length>0){const i2=cols.indexOf(color);nextTurn=cols[(i2+1)%cols.length];}}
@@ -784,8 +786,24 @@ function buildDice(colorName){
       COLORS.forEach(c=>{const d=document.getElementById('dice-cell-'+c);if(d)d.classList.add('disabled');});
       const snap=await get(ref(db,'games/'+roomCode));const room=snap.val();if(!room)return;
       const goties=room.goties||{};const gtArr=goties[colorName]||[];
+
+      if(val===6){
+        consecutiveSixes+=1;
+        if(consecutiveSixes>=3){
+          consecutiveSixes=0;
+          const players=Object.values(room.players||{}).sort((a,b)=>a.joinedAt-b.joinedAt);
+          const cols=players.map(p=>p.color).filter(c=>!allFinished(goties,c));
+          const ci=cols.indexOf(colorName);const nextTurn=cols[(ci+1)%cols.length];
+          await update(ref(db,'games/'+roomCode),{currentTurn:nextTurn,lastRoll:{uid:myUid,color:colorName,value:val,at:Date.now()}});
+          return;
+        }
+      } else {
+        consecutiveSixes=0;
+      }
+
       const canAny=gtArr.some((gt,i)=>canMove(colorName,i,gt.pos,val,goties));
       if(!canAny){
+        if(val!==6) consecutiveSixes=0;
         const players=Object.values(room.players||{}).sort((a,b)=>a.joinedAt-b.joinedAt);
         const cols=players.map(p=>p.color).filter(c=>!allFinished(goties,c));
         const ci=cols.indexOf(colorName);const nextTurn=cols[(ci+1)%cols.length];
