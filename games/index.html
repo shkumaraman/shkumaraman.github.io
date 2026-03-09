@@ -185,7 +185,7 @@ input[type="text"]::placeholder{color:#2a3f56;}
 .timer-ring circle{fill:none;stroke-width:3.5;stroke-linecap:round;}
 .timer-ring .bg-ring{stroke:rgba(255,255,255,.08);}
 .timer-ring .fg-ring{stroke:var(--gold);transition:stroke-dashoffset .9s linear,stroke .3s;}
-.timer-ring .timer-num{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.88rem;font-weight:700;color:var(--gold2);font-family:'Rajdhani',sans-serif;}
+.timer-ring .timer-num{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:1.2rem;font-weight:900;color:var(--gold2);font-family:'Rajdhani',sans-serif;line-height:1;}
 .timer-label{font-size:.68rem;color:#4a7090;letter-spacing:2px;text-transform:uppercase;font-weight:600;line-height:1.3;}
 .timer-label span{display:block;color:var(--gold2);font-size:.82rem;font-weight:700;letter-spacing:0;}
 
@@ -807,7 +807,11 @@ function applyTurn(color,playerMap,goties,roll){
     startTurnTimer(color,playerMap);
   }
 
-  document.getElementById('turn-label').textContent=isMe?(roll>0?`🎲 Rolled ${roll} — pick a goti`:'🎲 Your Turn — Roll Dice!'):((p?.name||color)+"'s Turn");
+  // If we're already waiting for a goti move (roll was set), and this call
+  // came from a Firebase re-render (roll===0), preserve the pending state.
+  const effectiveRoll = (roll===0 && waitingForMove && isMe) ? pendingRoll : roll;
+
+  document.getElementById('turn-label').textContent=isMe?(effectiveRoll>0?`🎲 Rolled ${effectiveRoll} — pick a goti`:'🎲 Your Turn — Roll Dice!'):((p?.name||color)+"'s Turn");
   COLORS.forEach(c=>{
     const tag=document.getElementById('ptag-'+c);if(tag)tag.classList.toggle('active',c===color);
   });
@@ -815,26 +819,42 @@ function applyTurn(color,playerMap,goties,roll){
   const bdw=document.getElementById('bottom-dice-wrap');
   if(bdw)bdw.classList.toggle('disabled',!(color===myColor&&isMe&&!waitingForMove));
 
-  // Clear previous selectable
-  document.querySelectorAll('.goti.selectable').forEach(g=>{g.classList.remove('selectable');g.onclick=null;});
-  document.querySelectorAll('.token.selectable').forEach(g=>{g.classList.remove('selectable');g.onclick=null;});
-
-  if(isMe&&roll>0&&waitingForMove){
+  // Only clear+reapply selectable when we have a real roll to act on.
+  // If it's a re-render (roll===0) while we're already waitingForMove, skip clearing.
+  if(roll===0 && waitingForMove && isMe){
+    // Re-attach onclick handlers in case DOM was re-rendered by renderGoties
     const myGoties=goties[myColor]||[];
-    // Check if any goti is at home (pos === -1) and can come out (roll === 6)
-    const hasHomeGoti=roll===6&&myGoties.some(gt=>gt.pos===-1);
-
     myGoties.forEach((gt,idx)=>{
-      if(!canMove(myColor,idx,gt.pos,roll,goties))return;
+      if(!canMove(myColor,idx,gt.pos,pendingRoll,goties))return;
       if(gt.pos===-1){
-        // Home token — highlight in home card
         const[hr,hc]=COLOR_CFG[myColor].homeCells[idx];
         const hEl=document.querySelector(`[data-hcell="${myColor}-${hr}-${hc}"] .token`);
-        if(hEl){hEl.classList.add('selectable');hEl.onclick=()=>moveGoti(myColor,idx,roll);}
+        if(hEl){hEl.classList.add('selectable');hEl.onclick=()=>moveGoti(myColor,idx,pendingRoll);}
       } else {
         const rc=getRC(myColor,gt.pos);if(!rc)return;
         const cell=getCellEl(rc[0],rc[1]);if(!cell)return;
-        cell.querySelectorAll('.goti').forEach(gel=>{if(gel.dataset.color===myColor){gel.classList.add('selectable');gel.onclick=()=>moveGoti(myColor,idx,roll);}});
+        cell.querySelectorAll('.goti').forEach(gel=>{if(gel.dataset.color===myColor){gel.classList.add('selectable');gel.onclick=()=>moveGoti(myColor,idx,pendingRoll);}});
+      }
+    });
+    return;
+  }
+
+  // Normal clear + reapply
+  document.querySelectorAll('.goti.selectable').forEach(g=>{g.classList.remove('selectable');g.onclick=null;});
+  document.querySelectorAll('.token.selectable').forEach(g=>{g.classList.remove('selectable');g.onclick=null;});
+
+  if(isMe&&effectiveRoll>0&&waitingForMove){
+    const myGoties=goties[myColor]||[];
+    myGoties.forEach((gt,idx)=>{
+      if(!canMove(myColor,idx,gt.pos,effectiveRoll,goties))return;
+      if(gt.pos===-1){
+        const[hr,hc]=COLOR_CFG[myColor].homeCells[idx];
+        const hEl=document.querySelector(`[data-hcell="${myColor}-${hr}-${hc}"] .token`);
+        if(hEl){hEl.classList.add('selectable');hEl.onclick=()=>moveGoti(myColor,idx,effectiveRoll);}
+      } else {
+        const rc=getRC(myColor,gt.pos);if(!rc)return;
+        const cell=getCellEl(rc[0],rc[1]);if(!cell)return;
+        cell.querySelectorAll('.goti').forEach(gel=>{if(gel.dataset.color===myColor){gel.classList.add('selectable');gel.onclick=()=>moveGoti(myColor,idx,effectiveRoll);}});
       }
     });
   }
