@@ -115,9 +115,10 @@ input[type="text"]::placeholder{color:#2a3f56;}
 .home-card.blue{background:linear-gradient(135deg,var(--bd),var(--b));grid-column:10/16;grid-row:10/16;}
 .home-cell{border-radius:3px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.14);display:flex;align-items:center;justify-content:center;}
 
-.goti{width:var(--goti-size);height:var(--goti-size);border-radius:50%;border:2.5px solid rgba(255,255,255,.75);box-shadow:0 2px 6px rgba(0,0,0,.8);cursor:pointer;flex-shrink:0;transition:transform .15s;position:relative;z-index:2;}
-.goti:hover{transform:scale(1.12);}
-.goti.selectable{animation:pulse .7s ease-in-out infinite alternate;cursor:pointer;}
+.goti{width:var(--goti-size);height:var(--goti-size);border-radius:50%;border:2.5px solid rgba(255,255,255,.75);box-shadow:0 2px 6px rgba(0,0,0,.8);cursor:default;flex-shrink:0;transition:transform .15s;position:absolute;z-index:2;pointer-events:none;}
+.goti:hover{transform:scale(1.18);}
+.goti.selectable{animation:pulse .7s ease-in-out infinite alternate;cursor:pointer;z-index:20;pointer-events:all;}
+.goti.selectable:hover{transform:scale(1.18);}
 @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,255,0,.85),0 2px 6px rgba(0,0,0,.8);}100%{box-shadow:0 0 0 7px rgba(255,255,0,0),0 2px 6px rgba(0,0,0,.8);}}
 .goti-r{background:radial-gradient(circle at 35% 35%,var(--rl),var(--rd));}
 .goti-g{background:radial-gradient(circle at 35% 35%,var(--gl),var(--gd));}
@@ -316,6 +317,7 @@ input[type="text"]::placeholder{color:#2a3f56;}
       <button class="emoji-btn" onclick="sendEmoji('❤️')">❤️</button>
       <button class="emoji-btn" onclick="sendEmoji('😂')">😂</button>
       <button class="emoji-btn" onclick="sendEmoji('🥺')">🥺</button>
+      <button class="emoji-btn" onclick="sendEmoji('😭')">😭</button>
       <button class="emoji-btn" onclick="sendEmoji('💩')">💩</button>
       <button class="emoji-btn" onclick="sendEmoji('🤬')">🤬</button>
     </div>
@@ -653,28 +655,49 @@ function renderGoties(goties,playerMap){
       occ[key].push({color,idx,pos:gt.pos});
     });
   });
+
+  const OFFSETS=[
+    [0,0],[-4,-4],[4,-4],[-4,4],[4,4]
+  ];
+
   Object.entries(occ).forEach(([key,list])=>{
     const[r,c]=key.split(',').map(Number);
     const cell=getCellEl(r,c);if(!cell)return;
     const isSafe=SAFE_CELLS.has(key)||FIRST_EXIT_CELLS.has(key);
+    const cellSize=cell.offsetWidth||44;
+    const gSize=parseInt(getComputedStyle(document.documentElement).getPropertyValue('--goti-size'))||28;
+    const center=(cellSize-gSize)/2;
+
     if(isSafe){
       const byColor={};
       list.forEach(o=>{if(!byColor[o.color])byColor[o.color]=[];byColor[o.color].push(o);});
-      Object.entries(byColor).forEach(([color,items])=>{
+      const colorKeys=Object.keys(byColor);
+      colorKeys.forEach((color,ci)=>{
+        const items=byColor[color];
+        const off=OFFSETS[ci]||[0,0];
         const el=document.createElement('div');
         el.className='goti '+COLOR_CFG[color].cls;
         el.dataset.color=color;el.dataset.idx=items[0].idx;
+        el.style.left=(center+off[0])+'px';
+        el.style.top=(center+off[1])+'px';
+        el.style.zIndex=ci+2;
         if(items.length>1){const b=document.createElement('div');b.className='stack-badge';b.textContent=items.length;el.appendChild(b);}
         cell.appendChild(el);
       });
     } else {
-      const el=document.createElement('div');
-      el.className='goti '+COLOR_CFG[list[0].color].cls;
-      el.dataset.color=list[0].color;el.dataset.idx=list[0].idx;
-      if(list.length>1){const b=document.createElement('div');b.className='stack-badge';b.textContent=list.length;el.appendChild(b);}
-      cell.appendChild(el);
+      list.forEach((o,i)=>{
+        const off=OFFSETS[i]||[0,0];
+        const el=document.createElement('div');
+        el.className='goti '+COLOR_CFG[o.color].cls;
+        el.dataset.color=o.color;el.dataset.idx=o.idx;
+        el.style.left=(center+off[0])+'px';
+        el.style.top=(center+off[1])+'px';
+        el.style.zIndex=i+2;
+        cell.appendChild(el);
+      });
     }
   });
+
   COLORS.forEach(color=>{
     const cfg=COLOR_CFG[color];
     const cardEl=document.getElementById('card-'+color[0]);
@@ -742,7 +765,13 @@ function applyTurn(color,playerMap,goties,roll){
       } else {
         const rc=getRC(myColor,gt.pos);if(!rc)return;
         const cell=getCellEl(rc[0],rc[1]);if(!cell)return;
-        cell.querySelectorAll('.goti').forEach(gel=>{if(gel.dataset.color===myColor){gel.classList.add('selectable');gel.onclick=()=>moveGoti(myColor,idx,roll);}});
+        cell.querySelectorAll('.goti').forEach(gel=>{
+          if(gel.dataset.color===myColor){
+            gel.classList.add('selectable');
+            cell.appendChild(gel);
+            gel.onclick=()=>moveGoti(myColor,idx,roll);
+          }
+        });
       }
     });
   }
