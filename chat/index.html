@@ -487,549 +487,548 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 {% include scripts.html %}
 
 <script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
-  import { getDatabase, ref, set, get, remove, update, push, onValue, query, orderByChild, equalTo } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
+import { getDatabase, ref, set, get, remove, update, push, onValue, query, orderByChild, equalTo } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
 
-  const firebaseConfig = {
-    databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
+const firebaseConfig = {
+  databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+let GIPHY_API_KEY = '';
+
+async function loadKeys() {
+  const res = await fetch('/key.json');
+  const keys = await res.json();
+  GIPHY_API_KEY = keys.giphy;
+}
+
+let peer, myConn, myId, waitingRef, waitingEntryRef;
+let currentSystemMessage = null;
+let isConnected = false;
+let escPressedOnce = false;
+let escTimer = null;
+let heartbeatInterval;
+
+const typingIndicator = document.getElementById("typingIndicator");
+let typingTimeout;
+
+let myNickname = localStorage.getItem("talkrush_nickname") || "Guest";
+let myGenderInterest = localStorage.getItem("talkrush_gender_interest") || "everyone";
+let myTags = JSON.parse(localStorage.getItem("talkrush_tags") || "[]");
+
+let friendRequestPending = false;
+let friendRequestFrom = null;
+
+const friendBtn = document.getElementById('friendBtn');
+const friendModal = document.getElementById('friendModal');
+const acceptFriendBtn = document.getElementById('acceptFriendBtn');
+const rejectFriendBtn = document.getElementById('rejectFriendBtn');
+const friendRequestText = document.getElementById('friendRequestText');
+
+window.addEventListener('load', async () => {
+  await loadKeys();
+  showNewChatButton();
+  logSystem("Click 'Start New Chat' to begin chatting with a stranger!");
+});
+
+window.addEventListener('beforeunload', (e) => {
+  if (isConnected) {
+    e.preventDefault();
+    e.returnValue = 'Are you sure you want to leave? Your chat will be disconnected.';
+    return e.returnValue;
+  }
+  cleanUpWaitingList();
+});
+
+window.addEventListener('pagehide', () => {
+  cleanUpWaitingList();
+  if (heartbeatInterval) clearInterval(heartbeatInterval);
+  if (myConn) myConn.close();
+  if (peer && !peer.destroyed) peer.disconnect();
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (!escPressedOnce) {
+    escPressedOnce = true;
+    logSystem("Press Esc again to skip this chat and find someone new");
+    escTimer = setTimeout(() => {
+      escPressedOnce = false;
+      clearSystemMessage();
+    }, 3000);
+  } else {
+    clearTimeout(escTimer);
+    escPressedOnce = false;
+    if (myConn) { myConn.close(); myConn = null; }
+    cleanUpWaitingList();
+    isConnected = false;
+    friendRequestPending = false;
+    friendRequestFrom = null;
+    hideFriendButton();
+    document.getElementById("chatLog").innerHTML = "";
+    hideNewChatButton();
+    startPeer();
+  }
+});
+
+function isGenderCompatible(myGender, otherGender) {
+  if (myGender === 'everyone' && otherGender === 'everyone') return true;
+  if (myGender === 'male' && otherGender === 'female') return true;
+  if (myGender === 'female' && otherGender === 'male') return true;
+  return false;
+}
+
+function startPeer() {
+  clearSystemMessage();
+  isConnected = false;
+  logSystem("🔍 Looking for a stranger...");
+
+  if (peer && peer.id && !peer.destroyed && !peer.disconnected) {
+    cleanUpStaleConnections();
+    tryToFindMatch();
+    return;
+  }
+
+  const peerOptions = {
+    config: {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' },
+        { urls: 'stun:stun4.l.google.com:19302' }
+      ]
+    }
   };
 
-  const app = initializeApp(firebaseConfig);
-  const db = getDatabase(app);
-
-  let GIPHY_API_KEY = '';
-
-  async function loadKeys() {
-    const res = await fetch('/key.json');
-    const keys = await res.json();
-    GIPHY_API_KEY = keys.giphy;
-  }
-
-  let peer, myConn, myId, waitingRef, waitingEntryRef;
-  let currentSystemMessage = null;
-  let isConnected = false;
-  let escPressedOnce = false;
-  let escTimer = null;
-  let heartbeatInterval;
-
-  const typingIndicator = document.getElementById("typingIndicator");
-  let typingTimeout;
-
-  let myNickname = localStorage.getItem("talkrush_nickname") || "Guest";
-  let myGenderInterest = localStorage.getItem("talkrush_gender_interest") || "everyone";
-  let myTags = JSON.parse(localStorage.getItem("talkrush_tags") || "[]");
-
-  let friendRequestPending = false;
-  let friendRequestFrom = null;
-
-  const friendBtn = document.getElementById('friendBtn');
-  const friendModal = document.getElementById('friendModal');
-  const acceptFriendBtn = document.getElementById('acceptFriendBtn');
-  const rejectFriendBtn = document.getElementById('rejectFriendBtn');
-  const friendRequestText = document.getElementById('friendRequestText');
-
-  window.addEventListener('load', async () => {
-    await loadKeys();
+  try {
+    peer = new Peer(peerOptions);
+  } catch {
+    logSystem("Failed to start. Click 'Start New Chat' to try again.");
     showNewChatButton();
-    logSystem("Click 'Start New Chat' to begin chatting with a stranger!");
-  });
-
-  window.addEventListener('beforeunload', (e) => {
-    if (isConnected) {
-      e.preventDefault();
-      e.returnValue = 'Are you sure you want to leave? Your chat will be disconnected.';
-      return e.returnValue;
-    }
-    cleanUpWaitingList();
-  });
-
-  window.addEventListener('pagehide', () => {
-    cleanUpWaitingList();
-    if (heartbeatInterval) clearInterval(heartbeatInterval);
-    if (myConn) myConn.close();
-    if (peer && !peer.destroyed) peer.disconnect();
-  });
-
-  document.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape') return;
-    if (!escPressedOnce) {
-      escPressedOnce = true;
-      logSystem("Press Esc again to skip this chat and find someone new");
-      escTimer = setTimeout(() => {
-        escPressedOnce = false;
-        clearSystemMessage();
-      }, 3000);
-    } else {
-      clearTimeout(escTimer);
-      escPressedOnce = false;
-      if (myConn) { myConn.close(); myConn = null; }
-      cleanUpWaitingList();
-      isConnected = false;
-      friendRequestPending = false;
-      friendRequestFrom = null;
-      hideFriendButton();
-      document.getElementById("chatLog").innerHTML = "";
-      hideNewChatButton();
-      startPeer();
-    }
-  });
-
-  function isGenderCompatible(myGender, otherGender) {
-    if (myGender === 'everyone' && otherGender === 'everyone') return true;
-    if (myGender === 'male' && otherGender === 'female') return true;
-    if (myGender === 'female' && otherGender === 'male') return true;
-    return false;
+    return;
   }
 
-  function startPeer() {
-    clearSystemMessage();
-    isConnected = false;
-    logSystem("🔍 Looking for a stranger...");
+  peer.on('open', (id) => {
+    myId = id;
+    cleanUpStaleConnections();
+    tryToFindMatch();
+  });
 
-    if (peer && peer.id && !peer.destroyed && !peer.disconnected) {
-      cleanUpStaleConnections();
-      tryToFindMatch();
+  peer.on('connection', (conn) => {
+    if (isConnected) { conn.close(); return; }
+    conn.on('open', () => { handleNewConnection(conn, []); });
+  });
+
+  peer.on('error', (err) => {
+    if (err.type === 'unavailable-id' || err.type === 'socket-error') {
+      try { if (peer) peer.destroy(); } catch {}
+      peer = null;
+      setTimeout(() => startPeer(), 1000);
       return;
     }
-
-    const peerOptions = {
-      config: {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun2.l.google.com:19302' },
-          { urls: 'stun:stun3.l.google.com:19302' },
-          { urls: 'stun:stun4.l.google.com:19302' }
-        ]
-      }
-    };
-
-    try {
-      peer = new Peer(peerOptions);
-    } catch {
-      logSystem("Failed to start. Click 'Start New Chat' to try again.");
+    if (!isConnected) {
       showNewChatButton();
+      logSystem("Connection error. Click 'Start New Chat' to try again.");
+    }
+  });
+
+  peer.on('disconnected', () => {
+    setTimeout(() => {
+      if (peer && peer.disconnected && !peer.destroyed) {
+        try { peer.reconnect(); } catch { startPeer(); }
+      }
+    }, 2000);
+  });
+}
+
+function cleanUpStaleConnections() {
+  if (!myId) return;
+  get(ref(db, "waiting")).then((snapshot) => {
+    if (!snapshot.exists()) return;
+    snapshot.forEach((child) => {
+      const entry = child.val();
+      const isOld = entry.timestamp && (Date.now() - entry.timestamp) > 60000;
+      if (entry.id === myId || isOld) remove(child.ref);
+    });
+  });
+}
+
+function tryToFindMatch() {
+  waitingRef = ref(db, "waiting");
+  get(waitingRef).then((snapshot) => {
+    const list = snapshot.val();
+    let tagMatch = null;
+    let noTagMatch = null;
+
+    if (list) {
+      for (let [key, entry] of Object.entries(list)) {
+        if (entry.timestamp && (Date.now() - entry.timestamp) > 30000) {
+          remove(ref(db, "waiting/" + key));
+          continue;
+        }
+        if (entry.id === myId || isConnected) continue;
+
+        if (isGenderCompatible(myGenderInterest, entry.interest)) {
+          const sharedTags = myTags.filter(tag => entry.tags?.includes(tag));
+          if (sharedTags.length > 0 && !tagMatch) {
+            tagMatch = { key, otherId: entry.id, sharedTags };
+          } else if (!noTagMatch) {
+            noTagMatch = { key, otherId: entry.id, sharedTags: [] };
+          }
+        }
+      }
+    }
+
+    const bestMatch = tagMatch || noTagMatch;
+
+    if (bestMatch) {
+      remove(ref(db, "waiting/" + bestMatch.key));
+      connectToPeer(bestMatch.otherId, bestMatch.sharedTags);
       return;
     }
 
-    peer.on('open', (id) => {
-      myId = id;
-      cleanUpStaleConnections();
-      tryToFindMatch();
+    const newRef = push(waitingRef);
+    waitingEntryRef = newRef;
+    set(newRef, {
+      id: myId,
+      interest: myGenderInterest,
+      tags: myTags,
+      nickname: myNickname,
+      timestamp: Date.now()
     });
 
-    peer.on('connection', (conn) => {
-      if (isConnected) {
-        conn.close();
-        return;
-      }
-      conn.on('open', () => {
-        handleNewConnection(conn, []);
-      });
-    });
+    if (heartbeatInterval) clearInterval(heartbeatInterval);
+    heartbeatInterval = setInterval(() => {
+      if (waitingEntryRef && !isConnected) update(waitingEntryRef, { timestamp: Date.now() });
+    }, 10000);
 
-    peer.on('error', (err) => {
-      if (err.type === 'unavailable-id' || err.type === 'socket-error') {
-        try { if (peer) peer.destroy(); } catch {}
-        peer = null;
-        setTimeout(() => startPeer(), 1000);
-        return;
-      }
-      if (!isConnected) {
-        showNewChatButton();
-        logSystem("Connection error. Click 'Start New Chat' to try again.");
-      }
-    });
+    setTimeout(() => {
+      if (isConnected) return;
+      get(waitingRef).then((snap) => {
+        if (isConnected) return;
+        let tagM = null;
+        let noTagM = null;
 
-    peer.on('disconnected', () => {
-      setTimeout(() => {
-        if (peer && peer.disconnected && !peer.destroyed) {
-          try { peer.reconnect(); } catch { startPeer(); }
-        }
-      }, 2000);
-    });
-  }
-
-  function cleanUpStaleConnections() {
-    if (!myId) return;
-    get(ref(db, "waiting")).then((snapshot) => {
-      if (!snapshot.exists()) return;
-      snapshot.forEach((child) => {
-        const entry = child.val();
-        const isOld = entry.timestamp && (Date.now() - entry.timestamp) > 60000;
-        if (entry.id === myId || isOld) remove(child.ref);
-      });
-    });
-  }
-
-  function tryToFindMatch() {
-    waitingRef = ref(db, "waiting");
-    get(waitingRef).then((snapshot) => {
-      const list = snapshot.val();
-      let tagMatch = null;
-      let noTagMatch = null;
-
-      if (list) {
-        for (let [key, entry] of Object.entries(list)) {
-          if (entry.timestamp && (Date.now() - entry.timestamp) > 30000) {
-            remove(ref(db, "waiting/" + key));
-            continue;
-          }
-          if (entry.id === myId || isConnected) continue;
+        snap.forEach(child => {
+          const entry = child.val();
+          if (entry.id === myId) return;
 
           if (isGenderCompatible(myGenderInterest, entry.interest)) {
             const sharedTags = myTags.filter(tag => entry.tags?.includes(tag));
-            if (sharedTags.length > 0 && !tagMatch) {
-              tagMatch = { key, otherId: entry.id, sharedTags };
-            } else if (!noTagMatch) {
-              noTagMatch = { key, otherId: entry.id, sharedTags: [] };
-            }
-          }
-        }
-      }
-
-      const bestMatch = tagMatch || noTagMatch;
-
-      if (bestMatch) {
-        remove(ref(db, "waiting/" + bestMatch.key));
-        connectToPeer(bestMatch.otherId, bestMatch.sharedTags);
-        return;
-      }
-
-      const newRef = push(waitingRef);
-      waitingEntryRef = newRef;
-      set(newRef, {
-        id: myId,
-        interest: myGenderInterest,
-        tags: myTags,
-        nickname: myNickname,
-        timestamp: Date.now()
-      });
-
-      if (heartbeatInterval) clearInterval(heartbeatInterval);
-      heartbeatInterval = setInterval(() => {
-        if (waitingEntryRef && !isConnected) update(waitingEntryRef, { timestamp: Date.now() });
-      }, 10000);
-
-      setTimeout(() => {
-        if (isConnected) return;
-        get(waitingRef).then((snap) => {
-          if (isConnected) return;
-          let tagM = null;
-          let noTagM = null;
-
-          snap.forEach(child => {
-            const entry = child.val();
-            if (entry.id === myId) return;
-
-            if (isGenderCompatible(myGenderInterest, entry.interest)) {
-              const sharedTags = myTags.filter(tag => entry.tags?.includes(tag));
-              if (sharedTags.length > 0 && !tagM) {
-                tagM = { key: child.key, otherId: entry.id, sharedTags };
-              } else if (!noTagM) {
-                noTagM = { key: child.key, otherId: entry.id, sharedTags: [] };
-              }
-            } else if (!noTagM && myGenderInterest !== 'everyone' && entry.interest === 'everyone') {
+            if (sharedTags.length > 0 && !tagM) {
+              tagM = { key: child.key, otherId: entry.id, sharedTags };
+            } else if (!noTagM) {
               noTagM = { key: child.key, otherId: entry.id, sharedTags: [] };
             }
-          });
-
-          const chosen = tagM || noTagM;
-          if (chosen) {
-            remove(ref(db, "waiting/" + chosen.key));
-            connectToPeer(chosen.otherId, chosen.sharedTags || []);
+          } else if (!noTagM && myGenderInterest !== 'everyone' && entry.interest === 'everyone') {
+            noTagM = { key: child.key, otherId: entry.id, sharedTags: [] };
           }
         });
-      }, 5000);
-    });
-  }
 
-  function connectToPeer(otherId, sharedTags = []) {
-    if (isConnected) return;
-    clearSystemMessage();
-    logSystem("😍 Connecting to stranger...");
-    const conn = peer.connect(otherId);
-    conn.on('open', () => {
-      handleNewConnection(conn, sharedTags);
-    });
-    conn.on("error", () => {
-      if (!isConnected) {
-        showNewChatButton();
-        logSystem("Failed to connect. Click 'Start New Chat' to try again.");
-      }
-    });
-  }
-
-  function handleNewConnection(conn, sharedTags = []) {
-    if (isConnected) { conn.close(); return; }
-    clearSystemMessage();
-    logSystem("Stranger Connected! Say Hi 👋");
-    if (sharedTags.length > 0) logSystem("🎯 You both like: " + sharedTags.join(", "));
-    conn.otherNickname = "Stranger";
-    conn.isFriend = false;
-    setupConnection(conn);
-    cleanUpWaitingList();
-    if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
-  }
-
-  function setupConnection(conn) {
-    if (myConn && myConn !== conn) myConn.close();
-    myConn = conn;
-    isConnected = true;
-    hideNewChatButton();
-    showFriendButton();
-
-    conn.on("data", (data) => {
-      if (typeof data === "string") appendMessage("stranger", data);
-      else if (data.type === "image") appendImage("stranger", data.blob);
-      else if (data.type === "gif") appendGif("stranger", data.url);
-      else if (data.type === "typing") showTypingIndicator();
-      else if (data.type === "friend_request") handleFriendRequest(data);
-      else if (data.type === "friend_accepted") handleFriendAccepted(data);
-      else if (data.type === "friend_rejected") handleFriendRejected();
-    });
-
-    conn.on("close", endConnection);
-    conn.on("error", endConnection);
-  }
-
-  function endConnection() {
-    appendSystemImage("/assets/chat_end.png");
-    logSystem("Stranger disconnected! 💔");
-    if (myConn) { myConn.close(); myConn = null; }
-    isConnected = false;
-    showNewChatButton();
-    hideFriendButton();
-    cleanUpWaitingList();
-  }
-
-  function cleanUpWaitingList() {
-    if (waitingEntryRef) { remove(waitingEntryRef); waitingEntryRef = null; }
-    if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
-  }
-
-  function showFriendButton() { friendBtn.style.display = 'flex'; friendBtn.disabled = false; }
-  function hideFriendButton() { friendBtn.style.display = 'none'; friendBtn.disabled = false; }
-
-  friendBtn.onclick = () => {
-    if (!myConn || !isConnected || !peer?.id) return;
-    friendRequestPending = true;
-    myConn.send({ type: 'friend_request', fromPeer: peer.id, fromNickname: myNickname, toPeer: myConn.peer, timestamp: Date.now() });
-    logSystem("Friend request sent! Waiting for response...");
-    friendBtn.disabled = true;
-  };
-
-  function handleFriendRequest(data) {
-    friendRequestFrom = data;
-    friendRequestFrom.otherNickname = data.fromNickname;
-    friendRequestText.textContent = "Stranger wants to add you as a friend!";
-
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
-    overlay.id = 'friendModalOverlay';
-    document.body.appendChild(overlay);
-    friendModal.style.display = 'block';
-
-    setTimeout(() => {
-      if (friendModal.style.display === 'block') {
-        closeFriendModal();
-        if (myConn) myConn.send({ type: 'friend_rejected' });
-        logSystem('Friend request expired.');
-      }
-    }, 30000);
-  }
-
-  acceptFriendBtn.onclick = async () => {
-    if (!friendRequestFrom || !myConn) return;
-    try {
-      const newChatRef = push(ref(db, 'friends'));
-      await set(newChatRef, { nickname1: myNickname, nickname2: friendRequestFrom.fromNickname, messages: {} });
-      myConn.send({ type: 'friend_accepted', friendId: newChatRef.key, nickname: myNickname });
-      hideFriendButton();
-      myConn.isFriend = true;
-      myConn.otherNickname = friendRequestFrom.fromNickname;
-      logSystem(`🎉 You are now friends with ${friendRequestFrom.fromNickname}!`);
-      closeFriendModal();
-    } catch {
-      logSystem('Failed to save friend. Please try again.');
-    }
-  };
-
-  rejectFriendBtn.onclick = () => {
-    if (myConn) myConn.send({ type: 'friend_rejected' });
-    logSystem('Friend request rejected.');
-    closeFriendModal();
-  };
-
-  function handleFriendAccepted(data) {
-    hideFriendButton();
-    if (myConn) { myConn.isFriend = true; myConn.otherNickname = data.nickname || "Friend"; }
-    logSystem("🎉 Stranger accepted your friend request!");
-    friendBtn.disabled = false;
-    friendRequestPending = false;
-  }
-
-  function handleFriendRejected() {
-    logSystem('Friend request was rejected.');
-    friendBtn.disabled = false;
-    friendRequestPending = false;
-  }
-
-  function closeFriendModal() {
-    friendModal.style.display = 'none';
-    document.getElementById('friendModalOverlay')?.remove();
-    friendRequestFrom = null;
-  }
-
-  function appendMessage(sender, content, type = "text") {
-    const div = document.createElement("div");
-    div.className = "msg " + sender;
-    if (type === "text") {
-      div.textContent = content;
-    } else {
-      const img = document.createElement("img");
-      img.src = content;
-      div.appendChild(img);
-    }
-    const time = document.createElement("div");
-    time.className = "timestamp";
-    time.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    div.appendChild(time);
-    document.getElementById("chatLog").appendChild(div);
-    scrollToBottom();
-  }
-
-  const appendImage = (sender, blob) => appendMessage(sender, blob, "image");
-  const appendGif = (sender, url) => appendMessage(sender, url, "gif");
-  const scrollToBottom = () => { const log = document.getElementById("chatLog"); log.scrollTop = log.scrollHeight; };
-
-  function appendSystemImage(src) {
-    const wrapper = document.createElement("div");
-    wrapper.className = "system-message system-image";
-    const img = document.createElement("img");
-    img.src = src;
-    img.className = "chat-end-image";
-    wrapper.appendChild(img);
-    document.getElementById("chatLog").appendChild(wrapper);
-    scrollToBottom();
-  }
-
-  function logSystem(msg) {
-    clearSystemMessage();
-    const div = document.createElement("div");
-    div.className = "msg system-msg";
-    div.textContent = msg;
-    document.getElementById("chatLog").appendChild(div);
-    currentSystemMessage = div;
-    scrollToBottom();
-  }
-
-  function clearSystemMessage() {
-    currentSystemMessage?.parentNode?.removeChild(currentSystemMessage);
-    currentSystemMessage = null;
-  }
-
-  const showNewChatButton = () => { document.getElementById("newChatBtn").style.display = "block"; };
-  const hideNewChatButton = () => { document.getElementById("newChatBtn").style.display = "none"; };
-
-  function showTypingIndicator() {
-    typingIndicator.style.display = "block";
-    clearTimeout(typingTimeout);
-    typingTimeout = setTimeout(() => { typingIndicator.style.display = "none"; }, 1000);
-  }
-
-  document.getElementById("msgInput").addEventListener("keypress", (e) => { if (e.key === "Enter") sendMessage(); });
-  document.getElementById("msgInput").addEventListener("input", () => { if (myConn && isConnected) myConn.send({ type: "typing" }); });
-  document.getElementById("sendBtn").onclick = sendMessage;
-
-  function sendMessage() {
-    const input = document.getElementById("msgInput");
-    const msg = input.value.trim();
-    if (msg && myConn && isConnected) {
-      myConn.send(msg);
-      appendMessage("me", msg);
-      input.value = "";
-    }
-  }
-
-  document.getElementById("imgInput").addEventListener("change", (e) => {
-    const file = e.target.files[0];
-    if (!file || !myConn || !isConnected) return;
-    const reader = new FileReader();
-    reader.onload = () => { myConn.send({ type: "image", blob: reader.result }); appendImage("me", reader.result); };
-    reader.readAsDataURL(file);
-    e.target.value = "";
-  });
-
-  document.getElementById("skipBtn").onclick = () => {
-    if (myConn) { myConn.close(); myConn = null; }
-    cleanUpWaitingList();
-    isConnected = false;
-    friendRequestPending = false;
-    friendRequestFrom = null;
-    hideFriendButton();
-    logSystem("Chat ended. Click 'Start New Chat' to find someone new.");
-    showNewChatButton();
-  };
-
-  document.getElementById("newChatBtn").onclick = () => {
-    document.getElementById("chatLog").innerHTML = "";
-    hideFriendButton();
-    hideNewChatButton();
-    if (myConn) { myConn.close(); myConn = null; }
-    cleanUpWaitingList();
-    isConnected = false;
-    startPeer();
-  };
-
-  const gifModal = document.getElementById("gifModal");
-  const gifSearch = document.getElementById("gifSearch");
-  const gifResults = document.getElementById("gifResults");
-  const gifBtn = document.querySelector('[for="gifInput"]');
-
-  gifBtn.onclick = (e) => {
-    e.preventDefault();
-    gifModal.style.display = gifModal.style.display === "block" ? "none" : "block";
-    if (gifModal.style.display === "block") fetchTrendingGifs();
-  };
-
-  gifSearch.addEventListener("keypress", (e) => { if (e.key === "Enter") searchGifs(gifSearch.value); });
-
-  async function fetchTrendingGifs() {
-    try {
-      const res = await fetch(`https://api.giphy.com/v1/gifs/trending?api_key=${GIPHY_API_KEY}&limit=20`);
-      displayGifs((await res.json()).data);
-    } catch { logSystem("Failed to load GIFs"); }
-  }
-
-  async function searchGifs(query) {
-    if (!query.trim()) { fetchTrendingGifs(); return; }
-    try {
-      const res = await fetch(`https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_API_KEY}&q=${encodeURIComponent(query)}&limit=20`);
-      displayGifs((await res.json()).data);
-    } catch { logSystem("Failed to search GIFs"); }
-  }
-
-  function displayGifs(gifs) {
-    gifResults.innerHTML = "";
-    gifs.forEach(gif => {
-      const gifUrl = gif.images.fixed_height.url;
-      const img = document.createElement("img");
-      img.src = gifUrl;
-      img.className = "gif-item";
-      img.onclick = () => {
-        if (myConn && isConnected) {
-          myConn.send({ type: "gif", url: gifUrl });
-          appendGif("me", gifUrl);
-          gifModal.style.display = "none";
+        const chosen = tagM || noTagM;
+        if (chosen) {
+          remove(ref(db, "waiting/" + chosen.key));
+          connectToPeer(chosen.otherId, chosen.sharedTags || []);
         }
-      };
-      gifResults.appendChild(img);
-    });
-  }
-
-  window.addEventListener("click", (e) => {
-    if (e.target === gifModal) gifModal.style.display = "none";
-    if (e.target.id === 'friendModalOverlay') closeFriendModal();
+      });
+    }, 5000);
   });
+}
+
+function connectToPeer(otherId, sharedTags = []) {
+  if (isConnected) return;
+  clearSystemMessage();
+  logSystem("😍 Connecting to stranger...");
+  const conn = peer.connect(otherId);
+  conn.on('open', () => { handleNewConnection(conn, sharedTags); });
+  conn.on("error", () => {
+    if (!isConnected) {
+      showNewChatButton();
+      logSystem("Failed to connect. Click 'Start New Chat' to try again.");
+    }
+  });
+}
+
+function handleNewConnection(conn, sharedTags = []) {
+  if (isConnected) { conn.close(); return; }
+  clearSystemMessage();
+  logSystem("Stranger Connected! Say Hi 👋");
+  if (sharedTags.length > 0) logSystem("🎯 You both like: " + sharedTags.join(", "));
+  conn.otherNickname = "Stranger";
+  conn.isFriend = false;
+  setupConnection(conn);
+  cleanUpWaitingList();
+  if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
+}
+
+function setupConnection(conn) {
+  if (myConn && myConn !== conn) myConn.close();
+  myConn = conn;
+  isConnected = true;
+  hideNewChatButton();
+  showFriendButton();
+
+  conn.on("data", (data) => {
+    if (typeof data === "string") appendMessage("stranger", data);
+    else if (data.type === "image") appendImage("stranger", data.blob);
+    else if (data.type === "gif") appendGif("stranger", data.url);
+    else if (data.type === "typing") showTypingIndicator();
+    else if (data.type === "friend_request") handleFriendRequest(data);
+    else if (data.type === "friend_accepted") handleFriendAccepted(data);
+    else if (data.type === "friend_rejected") handleFriendRejected();
+  });
+
+  conn.on("close", endConnection);
+  conn.on("error", endConnection);
+}
+
+function endConnection() {
+  appendSystemImage("/assets/chat_end.png");
+  logSystem("Stranger disconnected! 💔");
+  if (myConn) { myConn.close(); myConn = null; }
+  isConnected = false;
+  showNewChatButton();
+  hideFriendButton();
+  cleanUpWaitingList();
+}
+
+function cleanUpWaitingList() {
+  if (waitingEntryRef) { remove(waitingEntryRef); waitingEntryRef = null; }
+  if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
+}
+
+function showFriendButton() { friendBtn.style.display = 'flex'; friendBtn.disabled = false; }
+function hideFriendButton() { friendBtn.style.display = 'none'; friendBtn.disabled = false; }
+
+friendBtn.onclick = () => {
+  if (!myConn || !isConnected || !peer?.id) return;
+  friendRequestPending = true;
+  myConn.send({ type: 'friend_request', fromPeer: peer.id, fromNickname: myNickname, toPeer: myConn.peer, timestamp: Date.now() });
+  logSystem("Friend request sent! Waiting for response...");
+  friendBtn.disabled = true;
+};
+
+function handleFriendRequest(data) {
+  friendRequestFrom = data;
+  friendRequestFrom.otherNickname = data.fromNickname;
+  friendRequestText.textContent = "Stranger wants to add you as a friend!";
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'friendModalOverlay';
+  document.body.appendChild(overlay);
+  friendModal.style.display = 'block';
+
+  setTimeout(() => {
+    if (friendModal.style.display === 'block') {
+      closeFriendModal();
+      if (myConn) myConn.send({ type: 'friend_rejected' });
+      logSystem('Friend request expired.');
+    }
+  }, 30000);
+}
+
+acceptFriendBtn.onclick = async () => {
+  if (!friendRequestFrom || !myConn) return;
+  try {
+    const newChatRef = push(ref(db, 'friends'));
+    await set(newChatRef, { nickname1: myNickname, nickname2: friendRequestFrom.fromNickname, messages: {} });
+    myConn.send({ type: 'friend_accepted', friendId: newChatRef.key, nickname: myNickname });
+    hideFriendButton();
+    myConn.isFriend = true;
+    myConn.otherNickname = friendRequestFrom.fromNickname;
+    logSystem(`🎉 You are now friends with ${friendRequestFrom.fromNickname}!`);
+    closeFriendModal();
+  } catch {
+    logSystem('Failed to save friend. Please try again.');
+  }
+};
+
+rejectFriendBtn.onclick = () => {
+  if (myConn) myConn.send({ type: 'friend_rejected' });
+  logSystem('Friend request rejected.');
+  closeFriendModal();
+};
+
+function handleFriendAccepted(data) {
+  hideFriendButton();
+  if (myConn) { myConn.isFriend = true; myConn.otherNickname = data.nickname || "Friend"; }
+  logSystem("🎉 Stranger accepted your friend request!");
+  friendBtn.disabled = false;
+  friendRequestPending = false;
+}
+
+function handleFriendRejected() {
+  logSystem('Friend request was rejected.');
+  friendBtn.disabled = false;
+  friendRequestPending = false;
+}
+
+function closeFriendModal() {
+  friendModal.style.display = 'none';
+  document.getElementById('friendModalOverlay')?.remove();
+  friendRequestFrom = null;
+}
+
+function appendMessage(sender, content, type = "text") {
+  const div = document.createElement("div");
+  div.className = "msg " + sender;
+  if (type === "text") {
+    div.textContent = content;
+  } else {
+    const img = document.createElement("img");
+    img.src = content;
+    div.appendChild(img);
+  }
+  const time = document.createElement("div");
+  time.className = "timestamp";
+  time.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  div.appendChild(time);
+  document.getElementById("chatLog").appendChild(div);
+  scrollToBottom();
+}
+
+const appendImage = (sender, blob) => appendMessage(sender, blob, "image");
+const appendGif = (sender, url) => appendMessage(sender, url, "gif");
+const scrollToBottom = () => { const log = document.getElementById("chatLog"); log.scrollTop = log.scrollHeight; };
+
+function appendSystemImage(src) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "system-message system-image";
+  const img = document.createElement("img");
+  img.src = src;
+  img.className = "chat-end-image";
+  wrapper.appendChild(img);
+  document.getElementById("chatLog").appendChild(wrapper);
+  scrollToBottom();
+}
+
+function logSystem(msg) {
+  clearSystemMessage();
+  const div = document.createElement("div");
+  div.className = "msg system-msg";
+  div.textContent = msg;
+  document.getElementById("chatLog").appendChild(div);
+  currentSystemMessage = div;
+  scrollToBottom();
+}
+
+function clearSystemMessage() {
+  currentSystemMessage?.parentNode?.removeChild(currentSystemMessage);
+  currentSystemMessage = null;
+}
+
+const showNewChatButton = () => { document.getElementById("newChatBtn").style.display = "block"; };
+const hideNewChatButton = () => { document.getElementById("newChatBtn").style.display = "none"; };
+
+function showTypingIndicator() {
+  typingIndicator.style.display = "block";
+  clearTimeout(typingTimeout);
+  typingTimeout = setTimeout(() => { typingIndicator.style.display = "none"; }, 1000);
+}
+
+document.getElementById("msgInput").addEventListener("keypress", (e) => { if (e.key === "Enter") sendMessage(); });
+document.getElementById("msgInput").addEventListener("input", () => { if (myConn && isConnected) myConn.send({ type: "typing" }); });
+document.getElementById("sendBtn").onclick = sendMessage;
+
+function sendMessage() {
+  const input = document.getElementById("msgInput");
+  const msg = input.value.trim();
+  if (msg && myConn && isConnected) {
+    myConn.send(msg);
+    appendMessage("me", msg);
+    input.value = "";
+  }
+}
+
+document.getElementById("imgInput").addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  if (!file || !myConn || !isConnected) return;
+  const reader = new FileReader();
+  reader.onload = () => { myConn.send({ type: "image", blob: reader.result }); appendImage("me", reader.result); };
+  reader.readAsDataURL(file);
+  e.target.value = "";
+});
+
+document.getElementById("skipBtn").onclick = () => {
+  if (myConn) { myConn.close(); myConn = null; }
+  cleanUpWaitingList();
+  isConnected = false;
+  friendRequestPending = false;
+  friendRequestFrom = null;
+  hideFriendButton();
+  logSystem("Chat ended. Click 'Start New Chat' to find someone new.");
+  showNewChatButton();
+};
+
+document.getElementById("newChatBtn").onclick = () => {
+  document.getElementById("chatLog").innerHTML = "";
+  hideFriendButton();
+  hideNewChatButton();
+  if (myConn) { myConn.close(); myConn = null; }
+  cleanUpWaitingList();
+  isConnected = false;
+  startPeer();
+};
+
+const gifModal = document.getElementById("gifModal");
+const gifSearch = document.getElementById("gifSearch");
+const gifResults = document.getElementById("gifResults");
+const gifBtn = document.querySelector('[for="gifInput"]');
+
+gifBtn.onclick = (e) => {
+  e.preventDefault();
+  gifModal.style.display = gifModal.style.display === "block" ? "none" : "block";
+  if (gifModal.style.display === "block") fetchTrendingGifs();
+};
+
+gifSearch.addEventListener("keypress", (e) => { if (e.key === "Enter") searchGifs(gifSearch.value); });
+
+async function fetchTrendingGifs() {
+  try {
+    const res = await fetch(`https://api.giphy.com/v1/gifs/trending?api_key=${GIPHY_API_KEY}&limit=20`);
+    displayGifs((await res.json()).data);
+  } catch { logSystem("Failed to load GIFs"); }
+}
+
+async function searchGifs(query) {
+  if (!query.trim()) { fetchTrendingGifs(); return; }
+  try {
+    const res = await fetch(`https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_API_KEY}&q=${encodeURIComponent(query)}&limit=20`);
+    displayGifs((await res.json()).data);
+  } catch { logSystem("Failed to search GIFs"); }
+}
+
+function displayGifs(gifs) {
+  gifResults.innerHTML = "";
+  gifs.forEach(gif => {
+    const gifUrl = gif.images.fixed_height.url;
+    const img = document.createElement("img");
+    img.src = gifUrl;
+    img.className = "gif-item";
+    img.onclick = () => {
+      if (myConn && isConnected) {
+        myConn.send({ type: "gif", url: gifUrl });
+        appendGif("me", gifUrl);
+        gifModal.style.display = "none";
+      }
+    };
+    gifResults.appendChild(img);
+  });
+}
+
+window.addEventListener("click", (e) => {
+  if (e.target === gifModal) gifModal.style.display = "none";
+  if (e.target.id === 'friendModalOverlay') closeFriendModal();
+});
+
+window.addEventListener('nicknameUpdated', function(e) {
+  myNickname = e.detail.nickname;
+  myGenderInterest = localStorage.getItem("talkrush_gender_interest") || "everyone";
+  myTags = JSON.parse(localStorage.getItem("talkrush_tags") || "[]");
+});
 </script>
