@@ -496,11 +496,23 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   const db = getDatabase(app);
 
   let GIPHY_API_KEY = '';
+  let BOTS_DATA = null;
 
   async function loadKeys() {
     const res = await fetch('/key.json');
     const keys = await res.json();
     GIPHY_API_KEY = keys.giphy;
+  }
+
+  async function loadBots() {
+    try {
+      const res = await fetch('/bot.json');
+      BOTS_DATA = await res.json();
+      console.log("Bots loaded successfully");
+    } catch {
+      console.log("Bot file not found, continuing without bots");
+      BOTS_DATA = null;
+    }
   }
 
   let peer, myConn, myId, waitingRef, waitingEntryRef;
@@ -509,6 +521,14 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   let escPressedOnce = false;
   let escTimer = null;
   let heartbeatInterval;
+  
+  // Bot mode variables
+  let botMode = false;
+  let currentBot = null;
+  let botConversationHistory = [];
+  let botThinkingTimeout = null;
+  let botTypingInterval = null;
+  let connectionTimeout = null;
 
   const typingIndicator = document.getElementById("typingIndicator");
   let typingTimeout;
@@ -528,28 +548,63 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
   window.addEventListener('load', async () => {
     await loadKeys();
+    await loadBots();
     showNewChatButton();
     logSystem("Click 'Start New Chat' to begin chatting with a stranger!");
   });
 
   window.addEventListener('beforeunload', (e) => {
-    if (isConnected) {
+    if (isConnected && !botMode) {
       e.preventDefault();
       e.returnValue = 'Are you sure you want to leave? Your chat will be disconnected.';
       return e.returnValue;
     }
     cleanUpWaitingList();
+    cleanupBot();
   });
 
   window.addEventListener('pagehide', () => {
     cleanUpWaitingList();
+    cleanupBot();
     if (heartbeatInterval) clearInterval(heartbeatInterval);
     if (myConn) myConn.close();
     if (peer && !peer.destroyed) peer.disconnect();
   });
 
+  function cleanupBot() {
+    if (botThinkingTimeout) clearTimeout(botThinkingTimeout);
+    if (botTypingInterval) clearInterval(botTypingInterval);
+    botMode = false;
+    currentBot = null;
+    botConversationHistory = [];
+  }
+
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
+    
+    if (botMode) {
+      // In bot mode, escape ends bot chat
+      if (!escPressedOnce) {
+        escPressedOnce = true;
+        logSystem("Press Esc again to end this chat and find someone new");
+        escTimer = setTimeout(() => {
+          escPressedOnce = false;
+          clearSystemMessage();
+        }, 3000);
+      } else {
+        clearTimeout(escTimer);
+        escPressedOnce = false;
+        cleanupBot();
+        isConnected = false;
+        hideFriendButton();
+        document.getElementById("chatLog").innerHTML = "";
+        showNewChatButton();
+        logSystem("Bot chat ended. Click 'Start New Chat' to find someone new.");
+      }
+      return;
+    }
+    
+    // Original escape logic for real connections
     if (!escPressedOnce) {
       escPressedOnce = true;
       logSystem("Press Esc again to skip this chat and find someone new");
@@ -567,7 +622,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       friendRequestFrom = null;
       hideFriendButton();
       document.getElementById("chatLog").innerHTML = "";
-      hideNewChatButton();
+      showNewChatButton();
       startPeer();
     }
   });
@@ -579,9 +634,25 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     return false;
   }
 
+  // Modified startPeer function with bot fallback
   function startPeer() {
     clearSystemMessage();
+    
+    // Clear any existing connection timeout
+    if (connectionTimeout) clearTimeout(connectionTimeout);
+    
+    // Random chance for direct bot (30%) when real users might be less
+    if (BOTS_DATA && Math.random() > 0.7) { // 30% chance direct bot
+      startBotChat();
+      return;
+    }
+    
+    attemptRealConnection();
+  }
+
+  function attemptRealConnection() {
     isConnected = false;
+    botMode = false;
     logSystem("🔍 Looking for a stranger...");
 
     if (peer && peer.id && !peer.destroyed && !peer.disconnected) {
@@ -605,8 +676,12 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     try {
       peer = new Peer(peerOptions);
     } catch {
-      logSystem("Failed to start. Click 'Start New Chat' to try again.");
-      showNewChatButton();
+      logSystem("Failed to start. Trying bot chat...");
+      if (BOTS_DATA) {
+        startBotChat();
+      } else {
+        showNewChatButton();
+      }
       return;
     }
 
@@ -614,6 +689,15 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       myId = id;
       cleanUpStaleConnections();
       tryToFindMatch();
+      
+      // Set timeout for real connection
+      connectionTimeout = setTimeout(() => {
+        if (!isConnected && !botMode && BOTS_DATA) {
+          logSystem("No real users available. Connecting you with a friendly bot...");
+          cleanUpWaitingList();
+          startBotChat();
+        }
+      }, 8000); // 8 second timeout
     });
 
     peer.on('connection', (conn) => {
@@ -621,6 +705,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
         conn.close();
         return;
       }
+      if (connectionTimeout) clearTimeout(connectionTimeout);
       conn.on('open', () => {
         handleNewConnection(conn, []);
       });
@@ -630,12 +715,20 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       if (err.type === 'unavailable-id' || err.type === 'socket-error') {
         try { if (peer) peer.destroy(); } catch {}
         peer = null;
-        setTimeout(() => startPeer(), 1000);
+        if (!isConnected && !botMode && BOTS_DATA) {
+          startBotChat();
+        } else {
+          setTimeout(() => startPeer(), 1000);
+        }
         return;
       }
-      if (!isConnected) {
-        showNewChatButton();
-        logSystem("Connection error. Click 'Start New Chat' to try again.");
+      if (!isConnected && !botMode) {
+        if (BOTS_DATA) {
+          startBotChat();
+        } else {
+          showNewChatButton();
+          logSystem("Connection error. Click 'Start New Chat' to try again.");
+        }
       }
     });
 
@@ -646,6 +739,221 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
         }
       }, 2000);
     });
+  }
+
+  function startBotChat() {
+    cleanupBot();
+    botMode = true;
+    isConnected = true;
+    botConversationHistory = [];
+    
+    if (!BOTS_DATA) {
+      logSystem("Failed to start chat. Please try again.");
+      showNewChatButton();
+      return;
+    }
+    
+    // Select random bot
+    const botKeys = Object.keys(BOTS_DATA);
+    const randomBotKey = botKeys[Math.floor(Math.random() * botKeys.length)];
+    currentBot = BOTS_DATA[randomBotKey];
+    
+    // Add bot ID
+    currentBot.id = randomBotKey;
+    
+    hideNewChatButton();
+    hideFriendButton(); // No friend requests for bots
+    
+    // Show connection message
+    logSystem(`😍 Connected with ${currentBot.name} (${currentBot.gender === 'M' ? 'Male' : 'Female'}, ${currentBot.location})`);
+    
+    // Bot sends greeting after thinking
+    setTimeout(() => {
+      if (!botMode || !currentBot) return;
+      
+      // 70% chance bot starts conversation
+      if (Math.random() > 0.3) {
+        const greeting = getRandomBotMessage('greeting');
+        if (greeting) {
+          appendMessage("stranger", greeting);
+          botConversationHistory.push({ role: "bot", message: greeting, timestamp: Date.now() });
+        }
+        
+        // Bot might ask a question after greeting
+        setTimeout(() => {
+          if (!botMode || !currentBot) return;
+          
+          // 60% chance to ask location or generic question
+          if (Math.random() > 0.4) {
+            const questions = ['ask_location', 'ask_gender', 'ask_interest', 'question'];
+            const randomQuestionType = questions[Math.floor(Math.random() * questions.length)];
+            const question = getRandomBotMessage(randomQuestionType) || getRandomBotMessage('generic');
+            
+            if (question) {
+              appendMessage("stranger", question);
+              botConversationHistory.push({ role: "bot", message: question, timestamp: Date.now() });
+            }
+          }
+        }, getBotThinkingTime());
+      }
+    }, 2000);
+  }
+
+  function getRandomBotMessage(messageType) {
+    if (!currentBot || !currentBot.messages || !currentBot.messages[messageType]) {
+      // Fallback to generic messages
+      return currentBot?.messages?.generic?.[Math.floor(Math.random() * currentBot.messages.generic.length)] || "Hi";
+    }
+    
+    const messages = currentBot.messages[messageType];
+    return messages[Math.floor(Math.random() * messages.length)];
+  }
+
+  function getBotThinkingTime() {
+    if (!currentBot) return 2000;
+    
+    const min = currentBot.thinking_time?.min || 1000;
+    const max = currentBot.thinking_time?.max || 3000;
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+
+  function processBotResponse(userMessage) {
+    if (!botMode || !currentBot) return;
+    
+    // Clear any existing timeout
+    if (botThinkingTimeout) clearTimeout(botThinkingTimeout);
+    
+    // Show typing indicator
+    showBotTypingIndicator();
+    
+    // Bot "thinks" before responding
+    botThinkingTimeout = setTimeout(() => {
+      hideBotTypingIndicator();
+      
+      if (!botMode || !currentBot) return;
+      
+      let botResponse = generateBotResponse(userMessage);
+      
+      // Add natural variations
+      if (Math.random() > 0.7 && botConversationHistory.length > 2) {
+        botResponse = botResponse + " " + (getRandomBotMessage('question') || "What about you?");
+      }
+      
+      appendMessage("stranger", botResponse);
+      botConversationHistory.push({ role: "bot", message: botResponse, timestamp: Date.now() });
+      
+      // Check if conversation should end naturally
+      if (botConversationHistory.length > 10 && Math.random() > 0.8) {
+        setTimeout(() => {
+          if (!botMode || !currentBot) return;
+          const goodbye = getRandomBotMessage('goodbye') || "Nice talking to you! Gotta go, bye!";
+          appendMessage("stranger", goodbye);
+          botConversationHistory.push({ role: "bot", message: goodbye, timestamp: Date.now() });
+          
+          // End chat after goodbye
+          setTimeout(() => {
+            if (botMode) {
+              endBotChat();
+            }
+          }, 3000);
+        }, getBotThinkingTime());
+      }
+      
+    }, getBotThinkingTime());
+  }
+
+  function generateBotResponse(userMessage) {
+    const msg = userMessage.toLowerCase();
+    
+    // Check for goodbye
+    if (msg.includes('bye') || msg.includes('goodbye') || msg.includes('see you') || msg.includes('tata') || msg.includes('byebye')) {
+      return getRandomBotMessage('goodbye') || "Bye! Nice talking to you!";
+    }
+    
+    // Check for greetings
+    if (msg.includes('hi') || msg.includes('hello') || msg.includes('hey') || msg.includes('hola') || msg.includes('namaste')) {
+      return getRandomBotMessage('greeting_response') || getRandomBotMessage('greeting') || "Hi there!";
+    }
+    
+    // Check for location questions
+    if ((msg.includes('where') || msg.includes('from')) && (msg.includes('you') || msg.includes('ur'))) {
+      const response = getRandomBotMessage('location_response');
+      if (response) {
+        return response.replace('{location}', currentBot.location);
+      }
+      return `I'm from ${currentBot.location}`;
+    }
+    
+    // Check for gender questions
+    if ((msg.includes('gender') || msg.includes('male') || msg.includes('female') || 
+         msg.includes('m or f') || msg.includes('boy') || msg.includes('girl')) && 
+        (msg.includes('you') || msg.includes('ur'))) {
+      const response = getRandomBotMessage('gender_response');
+      if (response) {
+        return response.replace('{gender}', currentBot.gender === 'M' ? 'Male' : 'Female');
+      }
+      return `I'm ${currentBot.gender === 'M' ? 'Male' : 'Female'}`;
+    }
+    
+    // Check for interests
+    if ((msg.includes('interest') || msg.includes('hobby') || msg.includes('like to') || 
+         msg.includes('love to') || msg.includes('passion')) && 
+        (msg.includes('you') || msg.includes('ur'))) {
+      const response = getRandomBotMessage('interest_response');
+      if (response && currentBot.interests) {
+        return response.replace('{interests}', currentBot.interests.join(', '));
+      }
+      return currentBot.interests ? `I like ${currentBot.interests.join(', ')}` : getRandomBotMessage('generic');
+    }
+    
+    // Check for questions
+    if (msg.includes('?')) {
+      return getRandomBotMessage('generic') + " " + (getRandomBotMessage('question') || "");
+    }
+    
+    // Check for thanks
+    if (msg.includes('thank') || msg.includes('thanks')) {
+      return Math.random() > 0.5 ? "You're welcome!" : "No problem!";
+    }
+    
+    // Check for how are you
+    if ((msg.includes('how are') || msg.includes('how r u') || msg.includes('how do')) && 
+        (msg.includes('you') || msg.includes('u'))) {
+      const responses = ["I'm good, thanks!", "Doing great!", "Pretty good!", "All good here!", "Can't complain!"];
+      return responses[Math.floor(Math.random() * responses.length)];
+    }
+    
+    // Check for age
+    if ((msg.includes('age') || msg.includes('old')) && (msg.includes('you') || msg.includes('ur'))) {
+      const ages = ["I'm 25", "I'm 24", "I'm 26", "I'm 23", "I'd rather not say"];
+      return ages[Math.floor(Math.random() * ages.length)];
+    }
+    
+    // Check for name
+    if ((msg.includes('name') || msg.includes('call you')) && (msg.includes('what') || msg.includes('your'))) {
+      return `I'm ${currentBot.name}`;
+    }
+    
+    // Default responses
+    return getRandomBotMessage('generic') || "Interesting!";
+  }
+
+  function showBotTypingIndicator() {
+    typingIndicator.style.display = "block";
+    typingIndicator.textContent = `${currentBot?.name || 'Stranger'} is typing...`;
+  }
+
+  function hideBotTypingIndicator() {
+    typingIndicator.style.display = "none";
+  }
+
+  function endBotChat() {
+    appendSystemImage("/assets/chat_end.png");
+    logSystem(`${currentBot?.name || 'Stranger'} disconnected! 💔`);
+    cleanupBot();
+    isConnected = false;
+    showNewChatButton();
+    hideFriendButton();
   }
 
   function cleanUpStaleConnections() {
@@ -690,6 +998,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
       if (bestMatch) {
         remove(ref(db, "waiting/" + bestMatch.key));
+        if (connectionTimeout) clearTimeout(connectionTimeout);
         connectToPeer(bestMatch.otherId, bestMatch.sharedTags);
         return;
       }
@@ -710,9 +1019,9 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       }, 10000);
 
       setTimeout(() => {
-        if (isConnected) return;
+        if (isConnected || botMode) return;
         get(waitingRef).then((snap) => {
-          if (isConnected) return;
+          if (isConnected || botMode) return;
           let tagM = null;
           let noTagM = null;
 
@@ -735,6 +1044,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
           const chosen = tagM || noTagM;
           if (chosen) {
             remove(ref(db, "waiting/" + chosen.key));
+            if (connectionTimeout) clearTimeout(connectionTimeout);
             connectToPeer(chosen.otherId, chosen.sharedTags || []);
           }
         });
@@ -743,7 +1053,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   }
 
   function connectToPeer(otherId, sharedTags = []) {
-    if (isConnected) return;
+    if (isConnected || botMode) return;
     clearSystemMessage();
     logSystem("😍 Connecting to stranger...");
     const conn = peer.connect(otherId);
@@ -751,7 +1061,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       handleNewConnection(conn, sharedTags);
     });
     conn.on("error", () => {
-      if (!isConnected) {
+      if (!isConnected && !botMode) {
         showNewChatButton();
         logSystem("Failed to connect. Click 'Start New Chat' to try again.");
       }
@@ -759,7 +1069,8 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   }
 
   function handleNewConnection(conn, sharedTags = []) {
-    if (isConnected) { conn.close(); return; }
+    if (isConnected || botMode) { conn.close(); return; }
+    if (connectionTimeout) clearTimeout(connectionTimeout);
     clearSystemMessage();
     logSystem("Stranger Connected! Say Hi 👋");
     if (sharedTags.length > 0) logSystem("🎯 You both like: " + sharedTags.join(", "));
@@ -774,6 +1085,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     if (myConn && myConn !== conn) myConn.close();
     myConn = conn;
     isConnected = true;
+    botMode = false;
     hideNewChatButton();
     showFriendButton();
 
@@ -804,12 +1116,17 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   function cleanUpWaitingList() {
     if (waitingEntryRef) { remove(waitingEntryRef); waitingEntryRef = null; }
     if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
+    if (connectionTimeout) { clearTimeout(connectionTimeout); connectionTimeout = null; }
   }
 
   function showFriendButton() { friendBtn.style.display = 'flex'; friendBtn.disabled = false; }
   function hideFriendButton() { friendBtn.style.display = 'none'; friendBtn.disabled = false; }
 
   friendBtn.onclick = () => {
+    if (botMode) {
+      logSystem("Can't add bot as friend!");
+      return;
+    }
     if (!myConn || !isConnected || !peer?.id) return;
     friendRequestPending = true;
     myConn.send({ type: 'friend_request', fromPeer: peer.id, fromNickname: myNickname, toPeer: myConn.peer, timestamp: Date.now() });
@@ -818,6 +1135,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   };
 
   function handleFriendRequest(data) {
+    if (botMode) return;
     friendRequestFrom = data;
     friendRequestFrom.otherNickname = data.fromNickname;
     friendRequestText.textContent = "Stranger wants to add you as a friend!";
@@ -838,7 +1156,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   }
 
   acceptFriendBtn.onclick = async () => {
-    if (!friendRequestFrom || !myConn) return;
+    if (botMode || !friendRequestFrom || !myConn) return;
     try {
       const newChatRef = push(ref(db, 'friends'));
       await set(newChatRef, { nickname1: myNickname, nickname2: friendRequestFrom.fromNickname, messages: {} });
@@ -854,12 +1172,14 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   };
 
   rejectFriendBtn.onclick = () => {
+    if (botMode || !myConn) return;
     if (myConn) myConn.send({ type: 'friend_rejected' });
     logSystem('Friend request rejected.');
     closeFriendModal();
   };
 
   function handleFriendAccepted(data) {
+    if (botMode) return;
     hideFriendButton();
     if (myConn) { myConn.isFriend = true; myConn.otherNickname = data.nickname || "Friend"; }
     logSystem("🎉 Stranger accepted your friend request!");
@@ -868,6 +1188,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   }
 
   function handleFriendRejected() {
+    if (botMode) return;
     logSystem('Friend request was rejected.');
     friendBtn.disabled = false;
     friendRequestPending = false;
@@ -887,6 +1208,9 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     } else {
       const img = document.createElement("img");
       img.src = content;
+      img.style.maxWidth = "200px";
+      img.style.maxHeight = "200px";
+      img.style.borderRadius = "8px";
       div.appendChild(img);
     }
     const time = document.createElement("div");
@@ -907,6 +1231,8 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     const img = document.createElement("img");
     img.src = src;
     img.className = "chat-end-image";
+    img.style.maxWidth = "150px";
+    img.style.margin = "10px auto";
     wrapper.appendChild(img);
     document.getElementById("chatLog").appendChild(wrapper);
     scrollToBottom();
@@ -931,19 +1257,37 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   const hideNewChatButton = () => { document.getElementById("newChatBtn").style.display = "none"; };
 
   function showTypingIndicator() {
+    if (botMode) return;
     typingIndicator.style.display = "block";
+    typingIndicator.textContent = "Stranger is typing...";
     clearTimeout(typingTimeout);
     typingTimeout = setTimeout(() => { typingIndicator.style.display = "none"; }, 1000);
   }
 
   document.getElementById("msgInput").addEventListener("keypress", (e) => { if (e.key === "Enter") sendMessage(); });
-  document.getElementById("msgInput").addEventListener("input", () => { if (myConn && isConnected) myConn.send({ type: "typing" }); });
+  
+  document.getElementById("msgInput").addEventListener("input", () => { 
+    if (myConn && isConnected && !botMode) {
+      myConn.send({ type: "typing" });
+    }
+  });
+  
   document.getElementById("sendBtn").onclick = sendMessage;
 
   function sendMessage() {
     const input = document.getElementById("msgInput");
     const msg = input.value.trim();
-    if (msg && myConn && isConnected) {
+    
+    if (!msg) return;
+    
+    if (botMode && currentBot) {
+      // Bot mode
+      appendMessage("me", msg);
+      botConversationHistory.push({ role: "user", message: msg, timestamp: Date.now() });
+      processBotResponse(msg);
+      input.value = "";
+    } else if (myConn && isConnected) {
+      // Real connection mode
       myConn.send(msg);
       appendMessage("me", msg);
       input.value = "";
@@ -952,21 +1296,41 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
   document.getElementById("imgInput").addEventListener("change", (e) => {
     const file = e.target.files[0];
-    if (!file || !myConn || !isConnected) return;
+    if (!file) return;
+    
+    if (botMode) {
+      logSystem("Bots can't receive images!");
+      e.target.value = "";
+      return;
+    }
+    
+    if (!myConn || !isConnected) return;
+    
     const reader = new FileReader();
-    reader.onload = () => { myConn.send({ type: "image", blob: reader.result }); appendImage("me", reader.result); };
+    reader.onload = () => { 
+      myConn.send({ type: "image", blob: reader.result }); 
+      appendImage("me", reader.result); 
+    };
     reader.readAsDataURL(file);
     e.target.value = "";
   });
 
   document.getElementById("skipBtn").onclick = () => {
-    if (myConn) { myConn.close(); myConn = null; }
+    if (botThinkingTimeout) clearTimeout(botThinkingTimeout);
+    if (botTypingInterval) clearInterval(botTypingInterval);
+    
+    if (botMode) {
+      endBotChat();
+    } else if (myConn) {
+      myConn.close();
+      myConn = null;
+    }
+    
     cleanUpWaitingList();
     isConnected = false;
     friendRequestPending = false;
     friendRequestFrom = null;
     hideFriendButton();
-    logSystem("Chat ended. Click 'Start New Chat' to find someone new.");
     showNewChatButton();
   };
 
@@ -974,9 +1338,22 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     document.getElementById("chatLog").innerHTML = "";
     hideFriendButton();
     hideNewChatButton();
-    if (myConn) { myConn.close(); myConn = null; }
+    
+    if (botThinkingTimeout) clearTimeout(botThinkingTimeout);
+    if (botTypingInterval) clearInterval(botTypingInterval);
+    
+    if (myConn) {
+      myConn.close();
+      myConn = null;
+    }
+    
     cleanUpWaitingList();
     isConnected = false;
+    botMode = false;
+    currentBot = null;
+    botConversationHistory = [];
+    
+    // Start new chat with bot fallback
     startPeer();
   };
 
@@ -987,6 +1364,10 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
   gifBtn.onclick = (e) => {
     e.preventDefault();
+    if (botMode) {
+      logSystem("Bots can't receive GIFs!");
+      return;
+    }
     gifModal.style.display = gifModal.style.display === "block" ? "none" : "block";
     if (gifModal.style.display === "block") fetchTrendingGifs();
   };
@@ -1015,7 +1396,14 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       const img = document.createElement("img");
       img.src = gifUrl;
       img.className = "gif-item";
+      img.style.cursor = "pointer";
+      img.style.margin = "5px";
+      img.style.borderRadius = "5px";
       img.onclick = () => {
+        if (botMode) {
+          logSystem("Bots can't receive GIFs!");
+          return;
+        }
         if (myConn && isConnected) {
           myConn.send({ type: "gif", url: gifUrl });
           appendGif("me", gifUrl);
@@ -1032,8 +1420,8 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   });
 
   window.addEventListener('nicknameUpdated', function(e) {
-  myNickname = e.detail.nickname;
-  myGenderInterest = localStorage.getItem("talkrush_gender_interest") || "everyone";
-  myTags = JSON.parse(localStorage.getItem("talkrush_tags") || "[]");
-});
+    myNickname = e.detail.nickname;
+    myGenderInterest = localStorage.getItem("talkrush_gender_interest") || "everyone";
+    myTags = JSON.parse(localStorage.getItem("talkrush_tags") || "[]");
+  });
 </script>
