@@ -509,6 +509,9 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   let escPressedOnce = false;
   let escTimer = null;
   let heartbeatInterval;
+  let botActive = false;
+  let botFallbackTimer = null;
+  let currentBotData = null;
 
   const typingIndicator = document.getElementById("typingIndicator");
   let typingTimeout;
@@ -560,6 +563,8 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     } else {
       clearTimeout(escTimer);
       escPressedOnce = false;
+      if (botFallbackTimer) { clearTimeout(botFallbackTimer); botFallbackTimer = null; }
+      if (botActive) { botActive = false; currentBotData = null; }
       if (myConn) { myConn.close(); myConn = null; }
       cleanUpWaitingList();
       isConnected = false;
@@ -709,6 +714,11 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
         if (waitingEntryRef && !isConnected) update(waitingEntryRef, { timestamp: Date.now() });
       }, 10000);
 
+      if (botFallbackTimer) clearTimeout(botFallbackTimer);
+      botFallbackTimer = setTimeout(() => {
+        if (!isConnected) startBotSession();
+      }, 8000);
+
       setTimeout(() => {
         if (isConnected) return;
         get(waitingRef).then((snap) => {
@@ -734,12 +744,61 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
           const chosen = tagM || noTagM;
           if (chosen) {
+            if (botFallbackTimer) clearTimeout(botFallbackTimer);
             remove(ref(db, "waiting/" + chosen.key));
             connectToPeer(chosen.otherId, chosen.sharedTags || []);
           }
         });
       }, 5000);
     });
+  }
+
+  async function startBotSession() {
+    if (isConnected || botActive) return;
+
+    let botData;
+    try {
+      const res = await fetch('/bot.json');
+      botData = await res.json();
+    } catch {
+      return;
+    }
+
+    const botKeys = Object.keys(botData);
+    const randomKey = botKeys[Math.floor(Math.random() * botKeys.length)];
+    const botMessages = botData[randomKey];
+
+    if (!botMessages || botMessages.length === 0) return;
+
+    cleanUpWaitingList();
+    botActive = true;
+    isConnected = true;
+    currentBotData = { messages: [...botMessages], index: 0 };
+
+    clearSystemMessage();
+    logSystem("Stranger Connected! Say Hi 👋");
+    hideNewChatButton();
+    showFriendButton();
+
+    setTimeout(() => {
+      if (!botActive) return;
+      showTypingIndicator();
+      setTimeout(() => {
+        if (!botActive) return;
+        appendMessage("stranger", currentBotData.messages[currentBotData.index]);
+        currentBotData.index++;
+      }, 800);
+    }, 1000);
+  }
+
+  function endBotSession() {
+    botActive = false;
+    isConnected = false;
+    currentBotData = null;
+    appendSystemImage("/assets/chat_end.png");
+    logSystem("Stranger disconnected! 💔");
+    showNewChatButton();
+    hideFriendButton();
   }
 
   function connectToPeer(otherId, sharedTags = []) {
@@ -937,12 +996,38 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   }
 
   document.getElementById("msgInput").addEventListener("keypress", (e) => { if (e.key === "Enter") sendMessage(); });
-  document.getElementById("msgInput").addEventListener("input", () => { if (myConn && isConnected) myConn.send({ type: "typing" }); });
+  document.getElementById("msgInput").addEventListener("input", () => { if (myConn && isConnected && !botActive) myConn.send({ type: "typing" }); });
   document.getElementById("sendBtn").onclick = sendMessage;
 
   function sendMessage() {
     const input = document.getElementById("msgInput");
     const msg = input.value.trim();
+    if (!msg) return;
+
+    if (botActive) {
+      appendMessage("me", msg);
+      input.value = "";
+
+      if (currentBotData.index >= currentBotData.messages.length) {
+        setTimeout(() => endBotSession(), 1500);
+        return;
+      }
+
+      setTimeout(() => {
+        if (!botActive) return;
+        showTypingIndicator();
+        setTimeout(() => {
+          if (!botActive) return;
+          appendMessage("stranger", currentBotData.messages[currentBotData.index]);
+          currentBotData.index++;
+          if (currentBotData.index >= currentBotData.messages.length) {
+            setTimeout(() => endBotSession(), 1500);
+          }
+        }, 800);
+      }, 1200 + Math.random() * 800);
+      return;
+    }
+
     if (msg && myConn && isConnected) {
       myConn.send(msg);
       appendMessage("me", msg);
@@ -960,6 +1045,8 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   });
 
   document.getElementById("skipBtn").onclick = () => {
+    if (botFallbackTimer) { clearTimeout(botFallbackTimer); botFallbackTimer = null; }
+    if (botActive) { botActive = false; currentBotData = null; }
     if (myConn) { myConn.close(); myConn = null; }
     cleanUpWaitingList();
     isConnected = false;
@@ -974,6 +1061,8 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     document.getElementById("chatLog").innerHTML = "";
     hideFriendButton();
     hideNewChatButton();
+    if (botFallbackTimer) { clearTimeout(botFallbackTimer); botFallbackTimer = null; }
+    if (botActive) { botActive = false; currentBotData = null; }
     if (myConn) { myConn.close(); myConn = null; }
     cleanUpWaitingList();
     isConnected = false;
@@ -1032,8 +1121,8 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   });
 
   window.addEventListener('nicknameUpdated', function(e) {
-  myNickname = e.detail.nickname;
-  myGenderInterest = localStorage.getItem("talkrush_gender_interest") || "everyone";
-  myTags = JSON.parse(localStorage.getItem("talkrush_tags") || "[]");
-});
+    myNickname = e.detail.nickname;
+    myGenderInterest = localStorage.getItem("talkrush_gender_interest") || "everyone";
+    myTags = JSON.parse(localStorage.getItem("talkrush_tags") || "[]");
+  });
 </script>
