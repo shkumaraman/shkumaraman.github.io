@@ -567,7 +567,6 @@ let friendRequestFrom = null;
 
 let myNickname = localStorage.getItem("talkrush_nickname") || "Guest";
 let myGenderInterest = localStorage.getItem("talkrush_gender_interest") || "everyone";
-let myTags = JSON.parse(localStorage.getItem("talkrush_tags") || "[]");
 
 const remoteVideo = document.getElementById('remoteVideo');
 const localVideo = document.getElementById('localVideo');
@@ -979,8 +978,6 @@ function tryToFindMatch() {
   get(waitingRef).then((snapshot) => {
     const list = snapshot.val();
     let bestMatch = null;
-    let tagMatch = null;
-    let noTagMatch = null;
 
     if (list) {
       for (let [key, entry] of Object.entries(list)) {
@@ -991,15 +988,11 @@ function tryToFindMatch() {
         if (entry.id === myId || isConnected) continue;
 
         if (isGenderCompatible(myGenderInterest, entry.interest)) {
-          const sharedTags = myTags.filter(tag => entry.tags && entry.tags.includes(tag));
-          if (sharedTags.length > 0 && !tagMatch) {
-            tagMatch = { key, otherId: entry.id, sharedTags };
-          } else if (!noTagMatch) {
-            noTagMatch = { key, otherId: entry.id, sharedTags: [] };
+          if (!bestMatch) {
+            bestMatch = { key, otherId: entry.id };
           }
         }
       }
-      bestMatch = tagMatch || noTagMatch;
     }
 
     if (bestMatch) {
@@ -1014,7 +1007,6 @@ function tryToFindMatch() {
     set(newRef, {
       id: myId,
       interest: effectiveInterest,
-      tags: myTags,
       nickname: myNickname,
       timestamp: Date.now(),
       hasCamera: cameraAvailable
@@ -1031,8 +1023,7 @@ function tryToFindMatch() {
       if (!isConnected) {
         get(waitingRef).then((snap) => {
           let found = false;
-          let tagM = null;
-          let noTagM = null;
+          let chosen = null;
 
           snap.forEach(child => {
             if (found) return;
@@ -1040,20 +1031,16 @@ function tryToFindMatch() {
             if (entry.id === myId) return;
 
             if (isGenderCompatible(myGenderInterest, entry.interest)) {
-              const sharedTags = myTags.filter(tag => entry.tags && entry.tags.includes(tag));
-              if (sharedTags.length > 0 && !tagM) {
-                tagM = { key: child.key, otherId: entry.id };
-              } else if (!noTagM) {
-                noTagM = { key: child.key, otherId: entry.id };
+              if (!chosen) {
+                chosen = { key: child.key, otherId: entry.id };
               }
-            } else if (!noTagM && myGenderInterest !== 'everyone') {
+            } else if (!chosen && myGenderInterest !== 'everyone') {
               if (entry.interest === 'everyone') {
-                noTagM = { key: child.key, otherId: entry.id };
+                chosen = { key: child.key, otherId: entry.id };
               }
             }
           });
 
-          const chosen = tagM || noTagM;
           if (chosen) {
             remove(ref(db, "videoWaiting/" + chosen.key));
             connectToPeer(chosen.otherId);
@@ -1163,6 +1150,5 @@ window.addEventListener('resize', () => {
 window.addEventListener('nicknameUpdated', function(e) {
   myNickname = e.detail.nickname;
   myGenderInterest = localStorage.getItem("talkrush_gender_interest") || "everyone";
-  myTags = JSON.parse(localStorage.getItem("talkrush_tags") || "[]");
 });
 </script>
