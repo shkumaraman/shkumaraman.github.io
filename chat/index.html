@@ -44,6 +44,7 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  height: 100dvh;
   transition: background 0.3s, color 0.3s;
 }
 
@@ -89,7 +90,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 .light-mode .header-toggle { color: var(--light-icon-color); }
 .light-mode .header-toggle:hover { background: var(--light-icon-hover-bg); }
 
-.chat-container { display: flex; flex-direction: column; position: relative; padding: 50px 0 0 0; }
+.chat-container { display: flex; flex-direction: column; position: relative; padding: 50px 0 0 0; flex: 1; overflow: hidden; }
 
 #strangerCard {
   display: none;
@@ -157,10 +158,13 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
 #chatLog {
   padding: 12px;
+  padding-bottom: 70px;
   overflow-y: auto;
   background: var(--dark-chat-bg);
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
 .light-mode #chatLog { background: var(--light-chat-bg); }
@@ -168,13 +172,19 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 .msg {
   margin: 5px 0;
   padding: 5px 8px;
-  background: var(--light-msg-bg);
-  color: var(--light-text);
-  border: 1px solid var(--dark-secondary-text);
+  background: #2b2b2b;
+  color: var(--dark-text);
+  border: 1px solid rgba(255,255,255,0.08);
   border-radius: 15px;
   max-width: 80%;
   word-wrap: break-word;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
+
+.light-mode .msg {
+  background: var(--light-msg-bg);
+  color: var(--light-text);
+  border: 1px solid rgba(0,0,0,0.08);
 }
 
 .me { align-self: flex-end; border-bottom-right-radius: 5px; }
@@ -303,7 +313,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   bottom: 80px; right: 20px;
   width: 300px;
   max-height: 400px;
-  background: var(--dark-msg-bg);
+  background: var(--dark-chat-bg);
   border-radius: 10px;
   box-shadow: 0 4px 8px rgba(0,0,0,0.3);
   z-index: 1001;
@@ -348,9 +358,19 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   border-radius: 20px;
   padding: 8px 16px;
   font-size: 14px;
-  color: var(--light-text);
+  color: #444;
   border: 1px solid var(--keyword-border);
-  transition: background 0.3s;
+  transition: background 0.3s, color 0.3s;
+}
+
+.light-mode .keyword-bubble {
+  color: #333;
+}
+
+body:not(.light-mode) .keyword-bubble {
+  background-color: #2a2a2a;
+  border-color: #444;
+  color: #ccc;
 }
 
 #typingIndicator {
@@ -405,6 +425,30 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   .gif-modal { width: 90%; left: 5%; right: 5%; }
   .header-right { gap: 5px; }
   .friend-modal { width: 90%; max-width: 300px; }
+}
+
+@media (min-width: 769px) {
+  .chat-container {
+    max-width: 720px;
+    margin: 0 auto;
+    width: 100%;
+  }
+  .chat-controls {
+    max-width: 720px;
+    left: 50%;
+    transform: translateX(-50%);
+    right: auto;
+    border-radius: 0 0 12px 12px;
+  }
+  #newChatBtn {
+    max-width: 500px;
+    left: 50%;
+    transform: translateX(-50%);
+    right: auto;
+  }
+  .gif-modal {
+    right: calc(50% - 360px + 20px);
+  }
 }
 </style>
 
@@ -563,7 +607,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
-  import { getDatabase, ref, set, get, remove, update, push, onValue, query, orderByChild, equalTo } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
+  import { getDatabase, ref, set, get, remove, update, push } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
 
   const firebaseConfig = {
     databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
@@ -905,8 +949,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   function handleNewConnection(conn, sharedTags = []) {
     if (isConnected) { conn.close(); return; }
     clearSystemMessage();
-    conn.otherNickname = "Stranger";
-    conn.isFriend = false;
     setupConnection(conn);
     cleanUpWaitingList();
     if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
@@ -970,7 +1012,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
   function handleFriendRequest(data) {
     friendRequestFrom = data;
-    friendRequestFrom.otherNickname = data.fromNickname;
     friendRequestText.textContent = "Stranger wants to add you as a friend!";
 
     const overlay = document.createElement('div');
@@ -995,8 +1036,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       await set(newChatRef, { nickname1: myNickname, nickname2: friendRequestFrom.fromNickname, messages: {} });
       myConn.send({ type: 'friend_accepted', friendId: newChatRef.key, nickname: myNickname });
       hideFriendButton();
-      myConn.isFriend = true;
-      myConn.otherNickname = friendRequestFrom.fromNickname;
       logSystem(`🎉 You are now friends with ${friendRequestFrom.fromNickname}!`);
       closeFriendModal();
     } catch {
@@ -1012,7 +1051,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
   function handleFriendAccepted(data) {
     hideFriendButton();
-    if (myConn) { myConn.isFriend = true; myConn.otherNickname = data.nickname || "Friend"; }
     logSystem("🎉 Stranger accepted your friend request!");
     friendBtn.disabled = false;
     friendRequestPending = false;
