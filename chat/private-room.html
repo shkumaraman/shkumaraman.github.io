@@ -104,19 +104,13 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
 .msg {
   margin: 5px 0; padding: 5px 8px;
-  background: #2b2b2b;
-  color: var(--dark-text);
-  border: 1px solid rgba(255,255,255,0.08);
+  background: var(--light-msg-bg);
+  color: var(--light-text);
+  border: 1px solid var(--dark-secondary-text);
   border-radius: 15px;
   max-width: 80%;
   word-wrap: break-word;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
-}
-
-.light-mode .msg {
-  background: var(--light-msg-bg);
-  color: var(--light-text);
-  border: 1px solid rgba(0,0,0,0.08);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
 }
 
 .me { align-self: flex-end; border-bottom-right-radius: 5px; }
@@ -180,7 +174,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 .light-mode .icon-btn { color: var(--light-icon-color); }
 .light-mode .icon-btn:hover { color: var(--light-text); background: var(--light-icon-hover-bg); }
 
-#imgInput { display: none; }
+#imgInput, #gifInput { display: none; }
 .msg img { max-width: 100%; max-height: 300px; border-radius: 8px; margin-bottom: 5px; }
 
 .system-msg {
@@ -205,7 +199,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   display: none;
   position: fixed; bottom: 80px; right: 20px;
   width: 300px; max-height: 400px;
-  background: var(--dark-chat-bg);
+  background: var(--dark-msg-bg);
   border-radius: 10px;
   box-shadow: 0 4px 8px rgba(0,0,0,0.3);
   z-index: 1001; padding: 15px; overflow: hidden;
@@ -254,7 +248,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
 .pr-modal-content {
   position: relative;
-  background-color: var(--dark-header-bg);
+  background-color: var(--dark-msg-bg);
   color: var(--dark-text);
   margin: 100px auto; padding: 20px;
   border-radius: 10px;
@@ -415,21 +409,11 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   border-radius: 20px;
   padding: 8px 16px;
   font-size: 14px;
-  color: #444;
+  color: var(--light-text);
   border: 1px solid var(--keyword-border);
-  transition: background 0.3s, color 0.3s;
+  transition: background 0.3s;
 }
-
-.light-mode .keyword-bubble {
-  color: #333;
-}
-
-body:not(.light-mode) .keyword-bubble {
-  background-color: #2a2a2a;
-  border-color: #444;
-  color: #ccc;
-}
-
+  
 @media (max-width: 600px) {
   .msg { max-width: 85%; }
   #skipBtn { padding: 15px; font-size: 0.9em; }
@@ -469,7 +453,7 @@ body:not(.light-mode) .keyword-bubble {
 
 <div id="callRequestModal" class="call-request-modal">
   <h3>Incoming Video Call</h3>
-  <p>Stranger wants to start a video call!</p>
+  <p id="callRequestText">Stranger wants to start a video call!</p>
   <div class="call-request-buttons">
     <button class="call-btn accept" id="acceptCallBtn"><i class="fas fa-phone"></i> Accept</button>
     <button class="call-btn decline" id="declineCallBtn"><i class="fas fa-phone-slash"></i> Decline</button>
@@ -524,6 +508,7 @@ body:not(.light-mode) .keyword-bubble {
   </div>
 
   <input type="file" id="imgInput" accept="image/*" />
+  <input type="file" id="gifInput" accept="image/gif" />
 
   <div class="gif-modal" id="gifModal">
     <input type="text" class="gif-search" id="gifSearch" placeholder="Search GIFs..." />
@@ -622,7 +607,7 @@ body:not(.light-mode) .keyword-bubble {
     currentSystemMessage: null, isConnected: false,
     escPressedOnce: false, escTimer: null,
     currentRoomCode: null, typingTimeout: null,
-    localStream: null,
+    localStream: null, remoteStream: null,
     isVideoCallActive: false,
     isVideoCallRequested: false,
     isVideoCallRequestPending: false
@@ -1126,18 +1111,9 @@ body:not(.light-mode) .keyword-bubble {
     });
 
     window.addEventListener("click", (e) => {
-      if (el.gifModal.style.display === "block" &&
-          !el.gifModal.contains(e.target) &&
-          e.target !== el.gifBtn) {
-        utils.hide(el.gifModal);
-      }
-      if (e.target.id === 'callModalOverlay') {
-        video.closeModal();
-        if (state.myConn) state.myConn.send({ type: 'video-call-declined' });
-        msg.system('Video call declined.');
-      }
+      if (e.target === el.gifModal) utils.hide(el.gifModal);
+      if (e.target.id === 'callModalOverlay') { video.closeModal(); if (state.myConn) state.myConn.send({ type: 'video-call-declined' }); msg.system('Video call declined.'); }
     });
-
     window.addEventListener('beforeunload', (e) => {
       if (state.isConnected) { e.preventDefault(); e.returnValue = 'Are you sure you want to leave? Your chat will be disconnected.'; }
     });
