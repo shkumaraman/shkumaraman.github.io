@@ -40,6 +40,7 @@ body {
     display: flex;
     flex-direction: column;
     height: 100vh;
+    height: 100dvh;
     transition: background 0.3s, color 0.3s;
 }
 
@@ -125,8 +126,9 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     flex-direction: column;
     flex-grow: 1;
     position: relative;
-    max-width: 400px;
     width: 100%;
+    max-width: 420px;
+    margin: 0 auto;
     padding: 50px 0 0 0;
 }
 
@@ -220,17 +222,27 @@ video { width: 100%; height: 100%; object-fit: cover; }
     border-radius: 20px;
     padding: 8px 16px;
     font-size: 14px;
-    color: var(--light-text);
+    color: #444;
     border: 1px solid var(--keyword-border);
-    transition: background 0.3s;
+    transition: background 0.3s, color 0.3s;
+}
+
+.light-mode .keyword-bubble {
+    color: #333;
+}
+
+body:not(.light-mode) .keyword-bubble {
+    background-color: #2a2a2a;
+    border-color: #444;
+    color: #ccc;
 }
 
 .chat-container {
     position: fixed;
     bottom: 20px;
     right: 65px;
-    width: 280px;
-    max-height: 580px;
+    width: min(280px, calc(100vw - 80px));
+    max-height: 50vh;
     background: var(--dark-bg);
     color: var(--dark-text);
     border-radius: 10px;
@@ -258,7 +270,7 @@ video { width: 100%; height: 100%; object-fit: cover; }
 
 .chat-message { margin-bottom: 5px; word-break: break-word; }
 .message-them { text-align: left; opacity: 0.85; }
-.message-me { text-align: right; font-weight: 500; color: var(--share-btn); }
+.message-me { text-align: right; font-weight: 500; color: #E8873A; }
 
 .chat-input-container { position: relative; width: 100%; }
 
@@ -387,6 +399,41 @@ video { width: 100%; height: 100%; object-fit: cover; }
     .header-right { gap: 5px; }
     .friend-modal { width: 90%; max-width: 300px; }
 }
+
+@media (min-width: 769px) {
+    .video-container {
+        flex-direction: row;
+        max-width: 960px;
+        gap: 4px;
+        align-items: stretch;
+    }
+    .remote-video-container,
+    .local-video-container {
+        flex: 1;
+        height: calc(100dvh - 110px);
+        margin-bottom: 0;
+    }
+    .new-chat-btn {
+        max-width: 400px;
+        left: 50%;
+        transform: translateX(-50%);
+        right: auto;
+    }
+    .chat-container {
+        width: 320px;
+        right: 70px;
+        bottom: 60px;
+    }
+    .chat-toggle {
+        bottom: 18px;
+        right: 18px;
+    }
+    #skipBtn {
+        bottom: 18px;
+        left: 18px;
+    }
+}
+
 </style>
 
 <header class="app-header">
@@ -545,7 +592,7 @@ video { width: 100%; height: 100%; object-fit: cover; }
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
-import { getDatabase, ref, onValue, get, set, update, remove, push, child } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
+import { getDatabase, ref, onValue, get, set, update, remove, push } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
 
 const firebaseConfig = {
   databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
@@ -1022,11 +1069,9 @@ function tryToFindMatch() {
     setTimeout(() => {
       if (!isConnected) {
         get(waitingRef).then((snap) => {
-          let found = false;
           let chosen = null;
 
           snap.forEach(child => {
-            if (found) return;
             const entry = child.val();
             if (entry.id === myId) return;
 
@@ -1044,7 +1089,6 @@ function tryToFindMatch() {
           if (chosen) {
             remove(ref(db, "videoWaiting/" + chosen.key));
             connectToPeer(chosen.otherId);
-            found = true;
           }
         });
       }
@@ -1136,16 +1180,6 @@ window.addEventListener("click", (e) => {
   if (e.target.id === 'friendModalOverlay') closeFriendModal();
 });
 
-window.addEventListener('resize', () => {
-  if (window.innerWidth <= 600) {
-    const remoteContainer = document.querySelector('.remote-video-container');
-    const localContainer = document.querySelector('.local-video-container');
-    if (remoteContainer && localContainer) {
-      remoteContainer.style.height = '50vh';
-      localContainer.style.height = '35vh';
-    }
-  }
-});
 
 window.addEventListener('nicknameUpdated', function(e) {
   myNickname = e.detail.nickname;
