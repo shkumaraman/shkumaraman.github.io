@@ -190,17 +190,23 @@ body.light-mode {
 .msg {
   margin: 5px 0;
   padding: 5px 8px;
-  background: var(--light-msg-bg);
-  color: var(--light-text);
-  border: 1px solid var(--dark-secondary-text);
+  background: #2b2b2b;
+  color: var(--dark-text);
+  border: 1px solid rgba(255,255,255,0.08);
   border-radius: 15px;
   max-width: 80%;
   word-wrap: break-word;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
   position: relative;
   touch-action: pan-y;
   transition: transform 0.2s ease;
   user-select: none;
+}
+
+.light-mode .msg {
+  background: var(--light-msg-bg);
+  color: var(--light-text);
+  border: 1px solid rgba(0,0,0,0.08);
 }
 
 .msg.swiping { transition: none; }
@@ -427,7 +433,7 @@ body.light-mode {
   right: 20px;
   width: 300px;
   max-height: 400px;
-  background: var(--dark-msg-bg);
+  background: var(--dark-chat-bg);
   border-radius: 10px;
   box-shadow: 0 4px 8px rgba(0,0,0,0.3);
   z-index: 1001;
@@ -527,14 +533,22 @@ body.light-mode {
   cursor: pointer;
   font-size: 1rem;
   font-weight: 500;
-  background: var(--light-bg);
-  color: var(--light-text);
+  background: var(--dark-input-bg);
+  color: var(--dark-text);
   transition: 0.2s ease;
 }
 
+.password-modal-content button:hover {
+  background: var(--dark-input-focus);
+}
+
 .light-mode .password-modal-content button {
-  background: var(--dark-bg);
-  color: var(--dark-text);
+  background: var(--light-input-bg);
+  color: var(--light-text);
+}
+
+.light-mode .password-modal-content button:hover {
+  background: var(--light-input-focus);
 }
 
 .password-error {
@@ -571,7 +585,7 @@ body.light-mode {
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
-#imgInput, #gifInput { display: none; }
+#imgInput { display: none; }
 
 .pinned-modal-overlay {
   display: none;
@@ -649,6 +663,30 @@ body.light-mode {
   display: block;
 }
 
+
+@media (min-width: 769px) {
+  .chat-container {
+    max-width: 720px;
+    margin: 0 auto;
+    width: 100%;
+  }
+  .chat-controls {
+    max-width: 720px;
+    left: 50%;
+    transform: translateX(-50%);
+    right: auto;
+  }
+  .pinned-bar {
+    max-width: 720px;
+    left: 50%;
+    transform: translateX(-50%);
+    right: auto;
+  }
+  .gif-modal {
+    right: calc(50% - 360px + 20px);
+  }
+}
+
 @media (max-width: 600px) {
   .msg { max-width: 85%; }
   .gif-modal { width: 90%; left: 5%; right: 5%; }
@@ -712,7 +750,6 @@ body.light-mode {
   </div>
 
   <input type="file" id="imgInput" accept="image/*" />
-  <input type="file" id="gifInput" accept="image/gif" />
 
   <div class="gif-modal" id="gifModal">
     <input type="text" class="gif-search" id="gifSearch" placeholder="Search GIFs..." />
@@ -790,12 +827,10 @@ async function uploadToImgBB(file) {
   return data.data.url;
 }
 
-let myId;
 let myNickname = 'Guest';
 let currentGroup = null;
 let lastMessageTimestamp = 0;
 const MESSAGE_LIMIT = 25;
-let isSendingGif = false;
 let isSendingMessage = false;
 let initialMessagesLoaded = false;
 let groupPasswordRequired = false;
@@ -837,7 +872,6 @@ function getGroupFromURL() {
 }
 
 async function initializeChat() {
-  myId = 'user_' + Math.random().toString(36).substr(2, 9);
   currentGroup = getGroupFromURL();
 
   if (!currentGroup) {
@@ -1087,8 +1121,7 @@ function showUploadingBubble() {
 }
 
 function sendGifToGroup(url) {
-  if (isSendingGif || isSendingMessage || !passwordVerified) return;
-  isSendingGif = true;
+  if (isSendingMessage || !passwordVerified) return;
   isSendingMessage = true;
 
   const timestamp = Date.now();
@@ -1096,8 +1129,8 @@ function sendGifToGroup(url) {
 
   const newMsgRef = push(ref(db, `groups/${currentGroup}/messages`));
   set(newMsgRef, message)
-    .then(() => { isSendingGif = false; isSendingMessage = false; maintainMessageLimit(); })
-    .catch(() => { isSendingGif = false; isSendingMessage = false; });
+    .then(() => { isSendingMessage = false; maintainMessageLimit(); })
+    .catch(() => { isSendingMessage = false; });
 }
 
 async function pinMessage(msg) {
