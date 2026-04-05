@@ -91,6 +91,71 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
 .chat-container { display: flex; flex-direction: column; position: relative; padding: 50px 0 0 0; }
 
+#strangerCard {
+  display: none;
+  padding: 8px 12px 0;
+  background: var(--dark-chat-bg);
+  transition: opacity 0.5s ease;
+}
+
+.light-mode #strangerCard { background: var(--light-chat-bg); }
+
+#strangerCard .card-inner {
+  background: #fff0f0;
+  border: none;
+  border-radius: 12px;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+#strangerCard .card-avatar {
+  width: 44px; height: 44px;
+  flex-shrink: 0;
+}
+
+#strangerCard .card-avatar img {
+  width: 100%; height: 100%;
+  object-fit: contain;
+}
+
+#strangerCard .card-info { flex: 1; min-width: 0; }
+
+#strangerCard .card-name {
+  margin: 0 0 3px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #cc0000;
+}
+
+#strangerCard .card-status {
+  font-size: 11px;
+  color: #e05555;
+  margin: 0 0 5px;
+}
+
+#cardTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.card-tag-pill {
+  font-size: 11px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: rgba(255,77,77,0.15);
+  color: #cc0000;
+  border: none;
+}
+
+.card-tag-na {
+  font-size: 11px;
+  color: #e05555;
+  font-style: italic;
+}
+
 #chatLog {
   padding: 12px;
   overflow-y: auto;
@@ -364,6 +429,19 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   </div>
 </header>
 
+  <div id="strangerCard">
+    <div class="card-inner">
+      <div class="card-avatar">
+        <img src="/assets/user.png" onerror="this.style.display='none'" />
+      </div>
+      <div class="card-info">
+        <p class="card-name">Stranger</p>
+        <p class="card-status" id="cardStatus">Connected! Say Hi 👋</p>
+        <div id="cardTags"></div>
+      </div>
+    </div>
+  </div>
+
   <div id="chatLog"></div>
   <div id="typingIndicator">Stranger is typing...</div>
 
@@ -526,6 +604,40 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   const rejectFriendBtn = document.getElementById('rejectFriendBtn');
   const friendRequestText = document.getElementById('friendRequestText');
 
+  function showStrangerCard(tags) {
+    const card = document.getElementById("strangerCard");
+    const tagsDiv = document.getElementById("cardTags");
+    tagsDiv.innerHTML = "";
+    if (tags && tags.length > 0) {
+      tags.forEach(tag => {
+        const span = document.createElement("span");
+        span.className = "card-tag-pill";
+        span.textContent = tag;
+        tagsDiv.appendChild(span);
+      });
+    } else {
+      const na = document.createElement("span");
+      na.className = "card-tag-na";
+      na.textContent = "NA";
+      tagsDiv.appendChild(na);
+    }
+    card.style.opacity = "1";
+    card.style.display = "block";
+    setTimeout(() => {
+      card.style.opacity = "0";
+      setTimeout(() => {
+        card.style.display = "none";
+        card.style.opacity = "1";
+      }, 500);
+    }, 3000);
+  }
+
+  function hideStrangerCard() {
+    const card = document.getElementById("strangerCard");
+    card.style.display = "none";
+    card.style.opacity = "1";
+  }
+
   window.addEventListener('load', async () => {
     await loadKeys();
     showNewChatButton();
@@ -566,6 +678,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       friendRequestPending = false;
       friendRequestFrom = null;
       hideFriendButton();
+      hideStrangerCard();
       document.getElementById("chatLog").innerHTML = "";
       hideNewChatButton();
       startPeer();
@@ -768,6 +881,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     setupConnection(conn);
     cleanUpWaitingList();
     if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
+    showStrangerCard(sharedTags);
   }
 
   function setupConnection(conn) {
@@ -798,6 +912,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     isConnected = false;
     showNewChatButton();
     hideFriendButton();
+    hideStrangerCard();
     cleanUpWaitingList();
   }
 
@@ -966,6 +1081,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     friendRequestPending = false;
     friendRequestFrom = null;
     hideFriendButton();
+    hideStrangerCard();
     logSystem("Chat ended. Click 'Start New Chat' to find someone new.");
     showNewChatButton();
   };
@@ -974,6 +1090,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     document.getElementById("chatLog").innerHTML = "";
     hideFriendButton();
     hideNewChatButton();
+    hideStrangerCard();
     if (myConn) { myConn.close(); myConn = null; }
     cleanUpWaitingList();
     isConnected = false;
@@ -1032,8 +1149,8 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   });
 
   window.addEventListener('nicknameUpdated', function(e) {
-  myNickname = e.detail.nickname;
-  myGenderInterest = localStorage.getItem("talkrush_gender_interest") || "everyone";
-  myTags = JSON.parse(localStorage.getItem("talkrush_tags") || "[]");
-});
+    myNickname = e.detail.nickname;
+    myGenderInterest = localStorage.getItem("talkrush_gender_interest") || "everyone";
+    myTags = JSON.parse(localStorage.getItem("talkrush_tags") || "[]");
+  });
 </script>
