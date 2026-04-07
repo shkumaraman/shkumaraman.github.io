@@ -966,7 +966,7 @@ function joinGroupChat() {
       if (messages) {
         Object.values(messages).forEach(msg => {
           if (msg.timestamp > lastMessageTimestamp) {
-            displayMessage(msg);
+            displayMessage(msg, true);
             lastMessageTimestamp = msg.timestamp;
           }
         });
@@ -979,7 +979,7 @@ function joinGroupChat() {
   onChildAdded(messagesRefQuery, (snapshot) => {
     const msg = snapshot.val();
     if (msg.timestamp > lastMessageTimestamp) {
-      displayMessage(msg);
+      displayMessage(msg, false);
       lastMessageTimestamp = msg.timestamp;
       scrollToBottom();
     }
@@ -1263,7 +1263,63 @@ function addMessageInteractions(div, msg) {
   });
 }
 
-function displayMessage(msg) {
+// ─── Reply notification (in-page toast) ──────────────────────────────────────
+// Called when a new message arrives that is a reply to myNickname.
+// Uses the existing toast UI from toast-notification.html (included via layout).
+function triggerReplyNotification(senderName, msg) {
+  const soundMuted = localStorage.getItem("soundMuted") === "true";
+  const notificationOff = localStorage.getItem("notificationOff") === "true";
+  if (notificationOff) return;
+
+  // Play sound
+  if (!soundMuted) {
+    const notifySound = new Audio("/assets/notify.mp3");
+    notifySound.play().catch(() => {});
+  }
+
+  // Try to use the shared toast element (present if toast-notification.html is included)
+  const toast = document.getElementById("messageToast");
+  const toastName = document.getElementById("toastName");
+  const toastMessage = document.getElementById("toastMessage");
+  const toastViewBtn = document.getElementById("toastViewBtn");
+  const toastIcon = document.getElementById("toastIcon");
+  const toastIconWrapper = document.getElementById("toastIconWrapper");
+
+  if (!toast || !toastName || !toastMessage) return;
+
+  const preview =
+    msg.type === "image" ? "📷 Photo" :
+    msg.type === "gif"   ? "🎯 GIF"   :
+    (msg.text || "").length > 40
+      ? (msg.text || "").substring(0, 40) + "..."
+      : (msg.text || "");
+
+  // Change icon to reply arrow
+  if (toastIconWrapper) toastIconWrapper.style.background = "#5b9bd5";
+  if (toastIcon) {
+    toastIcon.setAttribute("viewBox", "0 0 24 24");
+    const path = toastIcon.querySelector("path");
+    if (path) path.setAttribute("d", "M10 9V5l-7 7 7 7v-4.1c5 0 8.5 1.6 11 5.1-1-5-4-10-11-11z");
+  }
+
+  toastName.textContent = senderName + " replied to you";
+  toastMessage.textContent = preview;
+
+  if (toastViewBtn) {
+    toastViewBtn.onclick = () => { toast.style.top = "-120px"; };
+  }
+
+  toast.style.top = "20px";
+
+  setTimeout(() => {
+    toast.style.top = "-120px";
+  }, 5000);
+}
+
+// ─── displayMessage ───────────────────────────────────────────────────────────
+// isInitial = true  → loading old messages on page open (no notification)
+// isInitial = false → new live message (trigger notification if reply to me)
+function displayMessage(msg, isInitial) {
   if (document.querySelector(`[data-id="${msg.timestamp}"]`)) return;
 
   const div = document.createElement("div");
@@ -1340,6 +1396,16 @@ function displayMessage(msg) {
 
   document.getElementById("chatLog").appendChild(div);
   scrollToBottom();
+
+  // ── Trigger reply notification for live (non-initial) messages ──
+  if (
+    !isInitial &&
+    !isMyMessage &&
+    msg.replyTo &&
+    msg.replyTo.nickname === myNickname
+  ) {
+    triggerReplyNotification(msg.nickname, msg);
+  }
 }
 
 function formatTimestamp(timestamp) {
