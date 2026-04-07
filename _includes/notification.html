@@ -21,7 +21,7 @@
   -webkit-backdrop-filter: blur(10px);
 ">
   <div style="display: flex; align-items: center; gap: 14px; flex: 1;">
-    <div style="
+    <div id="toastIconWrapper" style="
       width: 40px;
       height: 40px;
       border-radius: 50%;
@@ -31,7 +31,7 @@
       justify-content: center;
       flex-shrink: 0;
     ">
-      <svg style="width: 18px; height: 18px; fill: white;" viewBox="0 0 24 24">
+      <svg id="toastIcon" style="width: 18px; height: 18px; fill: white;" viewBox="0 0 24 24">
         <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/>
       </svg>
     </div>
@@ -80,6 +80,8 @@ document.addEventListener("DOMContentLoaded", function () {
   const toastName = document.getElementById("toastName");
   const toastMessage = document.getElementById("toastMessage");
   const toastViewBtn = document.getElementById("toastViewBtn");
+  const toastIcon = document.getElementById("toastIcon");
+  const toastIconWrapper = document.getElementById("toastIconWrapper");
 
   if (!toast) return;
 
@@ -97,6 +99,12 @@ document.addEventListener("DOMContentLoaded", function () {
 
   let toastQueue = [];
   let toastShowing = false;
+
+  // ─── DM icon (chat bubble) ───────────────────────────────────────
+  const DM_ICON_PATH = "M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z";
+
+  // ─── Reply icon (reply arrow) ────────────────────────────────────
+  const REPLY_ICON_PATH = "M10 9V5l-7 7 7 7v-4.1c5 0 8.5 1.6 11 5.1-1-5-4-10-11-11z";
 
   function getFriendNickname(friend) {
     if (friend.nickname1 === myNickname) return friend.nickname2;
@@ -126,6 +134,7 @@ document.addEventListener("DOMContentLoaded", function () {
     };
   }
 
+  // ─── DM listener ────────────────────────────────────────────────
   const friendsRef = ref(db, "friends");
 
   onValue(friendsRef, (snapshot) => {
@@ -150,7 +159,8 @@ document.addEventListener("DOMContentLoaded", function () {
       toastQueue.push({
         senderName: friendNickname,
         message: lastMessage.text,
-        chatId: chatId,
+        redirectUrl: "/chat/inbox.html",
+        type: "dm",
         timestamp: lastMessage.timestamp
       });
 
@@ -166,6 +176,55 @@ document.addEventListener("DOMContentLoaded", function () {
     console.error("Firebase listener error:", error);
   });
 
+  // ─── Group reply listener ────────────────────────────────────────
+  const groupsRef = ref(db, "groups");
+
+  onValue(groupsRef, (snapshot) => {
+    const groupsData = snapshot.val();
+    if (!groupsData) return;
+
+    Object.entries(groupsData).forEach(([groupName, groupData]) => {
+      if (!groupData.messages) return;
+
+      Object.entries(groupData.messages).forEach(([msgId, msg]) => {
+        if (!msg.replyTo) return;
+        if (msg.replyTo.nickname !== myNickname) return;
+        if (msg.nickname === myNickname) return;
+
+        const notificationKey = "group_reply_" + groupName + "_" + msg.timestamp;
+        if (lastNotifiedMessages[notificationKey]) return;
+
+        let preview = "New reply";
+        if (msg.type === "image") preview = "📷 Photo";
+        else if (msg.type === "gif") preview = "🎯 GIF";
+        else if (msg.type === "text" && msg.text) {
+          preview = msg.text.length > 40
+            ? msg.text.substring(0, 40) + "..."
+            : msg.text;
+        }
+
+        toastQueue.push({
+          senderName: msg.nickname,
+          message: preview,
+          redirectUrl: "/chat/group.html?group=" + encodeURIComponent(groupName),
+          type: "reply",
+          timestamp: msg.timestamp
+        });
+
+        lastNotifiedMessages[notificationKey] = true;
+        localStorage.setItem(
+          "lastNotifiedMessages",
+          JSON.stringify(lastNotifiedMessages)
+        );
+
+        processToastQueue();
+      });
+    });
+  }, (error) => {
+    console.error("Group reply listener error:", error);
+  });
+
+  // ─── Toast processor ─────────────────────────────────────────────
   function processToastQueue() {
     soundMuted = localStorage.getItem("soundMuted") === "true";
     notificationOff = localStorage.getItem("notificationOff") === "true";
@@ -178,15 +237,26 @@ document.addEventListener("DOMContentLoaded", function () {
 
     toastShowing = true;
     const data = toastQueue.shift();
-    const senderName = data.senderName;
-    const message = data.message;
 
     const shortMessage =
-      message.length > 40
-        ? message.substring(0, 40) + "..."
-        : message;
+      data.message.length > 40
+        ? data.message.substring(0, 40) + "..."
+        : data.message;
 
-    toastName.textContent = senderName;
+    // Icon: reply arrow for group replies, chat bubble for DMs
+    if (data.type === "reply") {
+      toastIconWrapper.style.background = "#5b9bd5";
+      toastIcon.setAttribute("viewBox", "0 0 24 24");
+      toastIcon.querySelector("path").setAttribute("d", REPLY_ICON_PATH);
+
+      toastName.textContent = data.senderName + " replied to you";
+    } else {
+      toastIconWrapper.style.background = "#25D366";
+      toastIcon.querySelector("path").setAttribute("d", DM_ICON_PATH);
+
+      toastName.textContent = data.senderName;
+    }
+
     toastMessage.textContent = shortMessage;
 
     if (!soundMuted) {
@@ -197,7 +267,7 @@ document.addEventListener("DOMContentLoaded", function () {
     toast.style.top = "20px";
 
     toastViewBtn.onclick = function () {
-      window.location.href = "/chat/inbox.html";
+      window.location.href = data.redirectUrl;
     };
 
     setTimeout(function () {
