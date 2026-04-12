@@ -7,11 +7,8 @@
     <div class="modal-header">
       <h2>My Preference</h2>
       <div class="notification-controls">
-        <button class="notification-btn" id="soundToggleBtn" onclick="toggleSound()" title="Notification Sound">
-          <i class="fas fa-volume-up"></i>
-        </button>
-        <button class="notification-btn" id="notificationToggleBtn" onclick="toggleNotification()" title="Notifications">
-          <i class="fas fa-bell"></i>
+        <button class="notification-btn" id="openNotifBtn" onclick="openNotifModal()" title="Notification Settings">
+          <i class="fas fa-bell" id="mainNotifIcon"></i>
         </button>
       </div>
     </div>
@@ -62,6 +59,42 @@
     
     <div class="modal-footer">
       <button class="save-preferences-btn" onclick="savePreferences()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Naya Floating Notification Modal -->
+<div class="notif-modal" id="notifModal">
+  <div class="notif-modal-content">
+    <div class="modal-handle" id="notifModalHandle">
+      <div class="handle-bar"></div>
+    </div>
+    <div class="notif-header">
+      <button class="notif-back" onclick="closeNotifModal()"><i class="fas fa-arrow-left"></i></button>
+      <h3>Notification Settings</h3>
+      <div style="width: 24px;"></div>
+    </div>
+    
+    <div class="notif-row">
+      <div class="notif-label-col">
+        <span class="notif-label-main">Notifications</span>
+        <span class="notif-label-sub">Receive message alerts</span>
+      </div>
+      <label class="toggle-switch">
+        <input type="checkbox" id="notifToggleCb" onchange="toggleNotificationSwitch(this.checked)">
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+
+    <div class="notif-row">
+      <div class="notif-label-col">
+        <span class="notif-label-main">Notification Sound</span>
+        <span class="notif-label-sub">Play sound on new messages</span>
+      </div>
+      <label class="toggle-switch">
+        <input type="checkbox" id="soundToggleCb" onchange="toggleSoundSwitch(this.checked)">
+        <span class="toggle-slider"></span>
+      </label>
     </div>
   </div>
 </div>
@@ -530,6 +563,54 @@
 .light-mode .save-preferences-btn:hover {
   background: #555555;
 }
+
+/* Notification Modal CSS */
+.notif-modal {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0,0,0,0.6);
+  z-index: 10001;
+  align-items: flex-end;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.notif-modal.show { opacity: 1; }
+.notif-modal-content {
+  background: var(--dark-card);
+  border-radius: 20px 20px 0 0;
+  width: 100%; max-width: 600px;
+  padding: 0 20px 20px 20px;
+  box-shadow: 0 -4px 20px rgba(0,0,0,0.5);
+  transform: translateY(100%);
+  transition: transform 0.3s ease-out;
+  position: relative;
+}
+.notif-modal.show .notif-modal-content { transform: translateY(0); }
+.light-mode .notif-modal-content { background: var(--light-card); box-shadow: 0 -4px 20px rgba(0,0,0,0.2); }
+.notif-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; padding-top: 5px; }
+.notif-header h3 { margin: 0; color: var(--dark-text); font-size: 1.2rem; flex: 1; text-align: center; }
+.light-mode .notif-header h3 { color: var(--light-text); }
+.notif-back { background: none; border: none; color: var(--dark-text); font-size: 1.2rem; cursor: pointer; padding: 0; line-height: 1; }
+.light-mode .notif-back { color: var(--light-text); }
+.notif-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+.notif-row:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
+.light-mode .notif-row { border-bottom-color: rgba(0,0,0,0.1); }
+.notif-label-col { display: flex; flex-direction: column; }
+.notif-label-main { color: var(--dark-text); font-weight: 600; font-size: 1.05rem; margin-bottom: 4px; }
+.light-mode .notif-label-main { color: var(--light-text); }
+.notif-label-sub { color: var(--dark-muted); font-size: 0.85rem; }
+.light-mode .notif-label-sub { color: var(--light-muted); }
+
+/* Toggle Switch UI */
+.toggle-switch { position: relative; display: inline-block; width: 50px; height: 28px; flex-shrink: 0; margin-left: 15px;}
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #555; transition: .3s; border-radius: 28px; }
+.light-mode .toggle-slider { background-color: #ccc; }
+.toggle-slider:before { position: absolute; content: ""; height: 22px; width: 22px; left: 3px; bottom: 3px; background-color: white; transition: .3s; border-radius: 50%; }
+input:checked + .toggle-slider { background-color: #25D366; }
+input:checked + .toggle-slider:before { transform: translateX(22px); }
 </style>
 
 <script>
@@ -583,43 +664,70 @@ function prefsContainsBannedWords(message) {
 function updateNotificationButtons() {
   const notificationOff = localStorage.getItem("notificationOff") === "true";
   const soundMuted = localStorage.getItem("soundMuted") === "true" || notificationOff;
-  const soundBtn = document.getElementById('soundToggleBtn');
-  const notificationBtn = document.getElementById('notificationToggleBtn');
   
-  if (soundBtn) {
-    const icon = soundBtn.querySelector('i');
-    if (soundMuted) {
-      icon.className = 'fas fa-volume-mute';
-      soundBtn.classList.add('muted');
-    } else {
-      icon.className = 'fas fa-volume-up';
-      soundBtn.classList.remove('muted');
-    }
-  }
+  const soundCb = document.getElementById('soundToggleCb');
+  const notifCb = document.getElementById('notifToggleCb');
   
-  if (notificationBtn) {
-    const icon = notificationBtn.querySelector('i');
+  if (soundCb) soundCb.checked = !soundMuted;
+  if (notifCb) notifCb.checked = !notificationOff;
+
+  const headerBtn = document.getElementById('openNotifBtn');
+  const headerIcon = document.getElementById('mainNotifIcon');
+  
+  if (headerBtn && headerIcon) {
     if (notificationOff) {
-      icon.className = 'fas fa-bell-slash';
-      notificationBtn.classList.add('off');
+      headerIcon.className = 'fas fa-bell-slash';
+      headerBtn.classList.add('off');
     } else {
-      icon.className = 'fas fa-bell';
-      notificationBtn.classList.remove('off');
+      headerIcon.className = 'fas fa-bell';
+      headerBtn.classList.remove('off');
     }
   }
 }
 
-function toggleSound() {
-  const currentState = localStorage.getItem("soundMuted") === "true";
-  localStorage.setItem("soundMuted", (!currentState).toString());
+function openNotifModal() {
+  const nm = document.getElementById('notifModal');
+  nm.style.display = 'flex';
+  nm.offsetHeight; // trigger reflow
+  nm.classList.add('show');
+
+  const handle = document.getElementById('notifModalHandle');
+  if (handle) {
+    handle.addEventListener('touchstart', handleNotifTouchStart, { passive: false });
+    handle.addEventListener('touchmove', handleNotifTouchMove, { passive: false });
+    handle.addEventListener('touchend', handleNotifTouchEnd);
+    handle.addEventListener('mousedown', handleNotifMouseDown);
+  }
+}
+
+function closeNotifModal() {
+  const nm = document.getElementById('notifModal');
+  const nmc = nm.querySelector('.notif-modal-content');
+  nm.classList.remove('show');
+  nmc.style.transform = '';
+  
+  const handle = document.getElementById('notifModalHandle');
+  if (handle) {
+    handle.removeEventListener('touchstart', handleNotifTouchStart);
+    handle.removeEventListener('touchmove', handleNotifTouchMove);
+    handle.removeEventListener('touchend', handleNotifTouchEnd);
+    handle.removeEventListener('mousedown', handleNotifMouseDown);
+  }
+  document.removeEventListener('mousemove', handleNotifMouseMove);
+  document.removeEventListener('mouseup', handleNotifMouseUp);
+
+  setTimeout(() => nm.style.display = 'none', 300);
+}
+
+function toggleSoundSwitch(isChecked) {
+  localStorage.setItem("soundMuted", (!isChecked).toString());
   updateNotificationButtons();
 }
 
-function toggleNotification() {
-  const currentState = localStorage.getItem("notificationOff") === "true";
-  const newState = !currentState;
-  localStorage.setItem("notificationOff", newState.toString());
-  if (newState) {
+function toggleNotificationSwitch(isChecked) {
+  const isOff = !isChecked;
+  localStorage.setItem("notificationOff", isOff.toString());
+  if (isOff) {
     localStorage.setItem("soundMuted", "true");
   }
   updateNotificationButtons();
@@ -670,6 +778,10 @@ function closePreferencesModal() {
 }
 
 function handleOutsideClick(e) {
+  const nm = document.getElementById('notifModal');
+  if (nm && nm.style.display === 'flex') {
+    return;
+  }
   if (e.target === modal) {
     if (!hasNicknameSaved()) {
       highlightNickname();
@@ -681,6 +793,11 @@ function handleOutsideClick(e) {
 
 function handleEscKey(e) {
   if (e.key === 'Escape') {
+    const nm = document.getElementById('notifModal');
+    if (nm && nm.style.display === 'flex') {
+      closeNotifModal();
+      return;
+    }
     if (!hasNicknameSaved()) {
       highlightNickname();
       return;
@@ -771,6 +888,78 @@ function handleMouseUp(e) {
   isDragging = false;
   document.removeEventListener('mousemove', handleMouseMove);
   document.removeEventListener('mouseup', handleMouseUp);
+}
+
+let notifTouchStartY = 0;
+let notifTouchCurrentY = 0;
+let notifIsDragging = false;
+
+function handleNotifTouchStart(e) {
+  e.preventDefault();
+  notifTouchStartY = e.touches[0].clientY;
+  notifIsDragging = true;
+  document.querySelector('#notifModal .notif-modal-content').style.transition = 'none';
+}
+
+function handleNotifTouchMove(e) {
+  if (!notifIsDragging) return;
+  e.preventDefault();
+  notifTouchCurrentY = e.touches[0].clientY;
+  const deltaY = notifTouchCurrentY - notifTouchStartY;
+  if (deltaY > 0) {
+    document.querySelector('#notifModal .notif-modal-content').style.transform = `translateY(${deltaY}px)`;
+  }
+}
+
+function handleNotifTouchEnd(e) {
+  if (!notifIsDragging) return;
+  e.preventDefault();
+  const deltaY = notifTouchCurrentY - notifTouchStartY;
+  const nmc = document.querySelector('#notifModal .notif-modal-content');
+  nmc.style.transition = 'transform 0.3s ease-out';
+
+  if (deltaY > 100 || deltaY > nmc.offsetHeight * 0.3) {
+    closeNotifModal();
+  } else {
+    nmc.style.transform = '';
+  }
+  notifIsDragging = false;
+}
+
+function handleNotifMouseDown(e) {
+  e.preventDefault();
+  notifTouchStartY = e.clientY;
+  notifIsDragging = true;
+  document.querySelector('#notifModal .notif-modal-content').style.transition = 'none';
+  document.addEventListener('mousemove', handleNotifMouseMove);
+  document.addEventListener('mouseup', handleNotifMouseUp);
+}
+
+function handleNotifMouseMove(e) {
+  if (!notifIsDragging) return;
+  e.preventDefault();
+  notifTouchCurrentY = e.clientY;
+  const deltaY = notifTouchCurrentY - notifTouchStartY;
+  if (deltaY > 0) {
+    document.querySelector('#notifModal .notif-modal-content').style.transform = `translateY(${deltaY}px)`;
+  }
+}
+
+function handleNotifMouseUp(e) {
+  if (!notifIsDragging) return;
+  e.preventDefault();
+  const deltaY = notifTouchCurrentY - notifTouchStartY;
+  const nmc = document.querySelector('#notifModal .notif-modal-content');
+  nmc.style.transition = 'transform 0.3s ease-out';
+
+  if (deltaY > 100 || deltaY > nmc.offsetHeight * 0.3) {
+    closeNotifModal();
+  } else {
+    nmc.style.transform = '';
+  }
+  notifIsDragging = false;
+  document.removeEventListener('mousemove', handleNotifMouseMove);
+  document.removeEventListener('mouseup', handleNotifMouseUp);
 }
 
 function hideAllFeedback() {
