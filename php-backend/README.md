@@ -26,6 +26,7 @@
 - [🖥️ Deploy on VPS / Local Machine](#️-deploy-on-vps--local-machine)
 - [🌐 Access URLs](#-access-urls)
 - [🗄️ Database Setup](#️-database-setup)
+- [💾 Persistent Storage](#-persistent-storage)
 - [📁 File Manager](#-file-manager)
 - [💻 Web Terminal](#-web-terminal)
 - [💡 Pro Tips](#-pro-tips)
@@ -42,6 +43,7 @@
 | 🗄️ **MariaDB** | Full database engine with phpMyAdmin UI at `/sql` |
 | 📁 **File Manager** | [TinyFileManager](https://github.com/prasathmani/tinyfilemanager) at `/files` |
 | 💻 **Web Terminal** | Custom browser-based shell at `/terminal` — no SSH needed |
+| 💾 **Persistent Storage** | `/data` mount **required** — database is stored here |
 | 🔒 **Non-root** | Runs as user `1000` for improved security |
 | 🐳 **Alpine Base** | Ultra-lightweight image with minimal footprint |
 | ☁️ **HF Spaces Ready** | Works seamlessly on Hugging Face Docker Spaces |
@@ -120,7 +122,17 @@ On Hugging Face, environment variables are configured in **Space Settings** — 
 | `MYSQL_PASSWORD` | `admin` | Database password *(change this!)* |
 | `MYSQL_DATABASE` | `admin` | Database name |
 
-### Step 4 — Done! 🎉
+### Step 4 — Mount Persistent Storage 🚨
+
+> **This step is mandatory** — without it, your database will reset on every restart.
+
+Go to Space **Settings → Persistent Storage** and add:
+- **Permission:** Read & Write
+- **Mount path:** `/data`
+
+Full setup details → [Persistent Storage section](#-persistent-storage)
+
+### Step 5 — Done! 🎉
 
 Hugging Face will build and deploy automatically. Your live URL:
 
@@ -232,6 +244,42 @@ Update ENV variables in your `docker run` command or `docker-compose.yml`.
 
 ---
 
+## 💾 Persistent Storage
+
+> 🚨 **This step is REQUIRED — the database will not work without it!**
+
+MariaDB stores all its data at `/data/mysql` inside the container. If `/data` is not mounted as persistent storage, the **entire database is wiped every time** the Space restarts or rebuilds.
+
+### Setting Up Persistent Storage on Hugging Face
+
+1. Open your Space → click the **"Settings"** tab
+2. Scroll down to the **"Persistent Storage"** section
+3. Configure it as follows:
+
+| Field | Value |
+|---|---|
+| **Permission** | Read & Write |
+| **Mount path** | `/data` |
+| **Storage size** | Choose as needed *(free tier: up to 50GB)* |
+
+4. Click **"Add storage"** and wait for the Space to restart ✅
+
+Once mounted, the `/data/mysql` directory will **survive restarts and rebuilds** — your database tables and data are fully preserved automatically. No extra configuration needed.
+
+The container handles everything internally on first boot:
+
+```bash
+# First run — initializes the database at /data/mysql
+mariadb-install-db --datadir=/data/mysql --skip-test-db --user=1000
+
+# Every run — starts MariaDB using /data/mysql as datadir
+mariadbd --datadir=/data/mysql --bind-address=127.0.0.1
+```
+
+> 💡 You don't need to run these manually — `start.sh` does it automatically.
+
+---
+
 ## 📁 File Manager
 
 This setup uses [TinyFileManager](https://github.com/prasathmani/tinyfilemanager) — accessible at `/files`.
@@ -301,6 +349,7 @@ nano file.php  # Edit a file in terminal
 ## 💡 Pro Tips
 
 - 📂 **Website Root:** Place your project files at `/var/www/localhost/htdocs`
+- 💾 **Persistent Storage Required:** Mount `/data` in Space Settings — without it, database resets on every restart
 - 🗜️ **Fast Deploys:** Upload a `.zip` via File Manager and extract it directly on the server
 - ⚡ **OPcache:** Already enabled — PHP apps run 2x–3x faster with zero extra config
 - 🔒 **Going Public?** Enable File Manager login and set a strong `MYSQL_PASSWORD`
