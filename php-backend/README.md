@@ -1,94 +1,229 @@
-====================================================================
-PHP WEB SERVER (ALPINE LAMP STACK + WEB TERMINAL)
-Welcome to the ultimate lightweight PHP Web Server setup! This Docker-based configuration gives you a complete, high-performance web environment (Apache, PHP 8+, MariaDB) along with built-in tools like a File Manager and Web Terminal—all running smoothly in a single container.
+<div align="center">
 
-Perfect for Hugging Face Spaces, VPS, or local development.
+<img src="https://img.shields.io/badge/PHP-8%2B-777BB4?style=for-the-badge&logo=php&logoColor=white" />
+<img src="https://img.shields.io/badge/Apache-Web%20Server-D22128?style=for-the-badge&logo=apache&logoColor=white" />
+<img src="https://img.shields.io/badge/MariaDB-Database-003545?style=for-the-badge&logo=mariadb&logoColor=white" />
+<img src="https://img.shields.io/badge/Docker-Alpine-2496ED?style=for-the-badge&logo=docker&logoColor=white" />
+<img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" />
 
-IMPORTANT URLS & ACCESS PATHS
+# 🐘 PHP Web Server — Alpine LAMP Stack
 
-Once your Docker container is running (exposed on port 7860), you can access your tools using the following paths:
+### ⚡ Lightweight · 🔒 Secure · 🚀 Production-Ready
 
-Main Website:    http://:7860/
+> **A complete PHP development environment in a single Docker container** — Apache, PHP 8+, MariaDB, File Manager & Web Terminal. Deploy anywhere in minutes.
 
-Database:        http://:7860/sql
+</div>
 
-File Manager:    http://:7860/files
+---
 
-Web Terminal:    http://:7860/terminal
+## 📋 Table of Contents
 
-(Note: If testing locally, replace  with localhost)
+- [✨ Features](#-features)
+- [🚀 Quick Start](#-quick-start)
+- [🌐 Access URLs](#-access-urls)
+- [🗄️ Database Setup](#️-database-setup)
+- [📁 File Manager](#-file-manager)
+- [💻 Web Terminal](#-web-terminal)
+- [⚙️ Configuration](#️-configuration)
+- [💡 Pro Tips](#-pro-tips)
+- [🤝 Contributing](#-contributing)
 
-DATABASE LOGIN & SECURITY (ENV VARIABLES)
+---
 
-Database (MySQL & phpMyAdmin)
+## ✨ Features
 
-Username: admin (Default)
+| Feature | Description |
+|---|---|
+| 🐘 **PHP 8+** | Latest PHP with OPcache pre-enabled (2x–3x faster) |
+| 🌐 **Apache** | Battle-tested web server, production-ready |
+| 🗄️ **MariaDB** | Full relational database with phpMyAdmin UI |
+| 📁 **File Manager** | Browser-based file management, no FTP needed |
+| 💻 **Web Terminal** | SSH-free server control from your browser |
+| 🐳 **Docker Alpine** | Ultra-lightweight base image, minimal footprint |
+| ☁️ **Hugging Face Ready** | Runs seamlessly on HF Spaces, VPS, or locally |
 
-Password: admin (Default)
+---
 
-SECURITY TIP (IMPORTANT):
-It is highly recommended to change these default credentials before going live. You do NOT need to edit the code to change them!
+## 🚀 Quick Start
 
-These are securely configured using Environment Variables (ENV). To change them, simply update the following variables in your Docker run command, VPS environment settings, or Hugging Face Space Variables:
+### Using Docker
 
-MYSQL_USER
+```bash
+docker run -d \
+  -p 7860:7860 \
+  -e MYSQL_USER=admin \
+  -e MYSQL_PASSWORD=yourpassword \
+  -e MYSQL_DATABASE=mydb \
+  --name php-lamp \
+  your-image-name
+```
 
-MYSQL_PASSWORD
+### Using Docker Compose
 
-MYSQL_DATABASE
+```yaml
+version: '3.8'
 
-FILE MANAGER - HOW TO ENABLE THE LOGIN SCREEN
+services:
+  php-lamp:
+    image: your-image-name
+    ports:
+      - "7860:7860"
+    environment:
+      - MYSQL_USER=admin
+      - MYSQL_PASSWORD=yourpassword
+      - MYSQL_DATABASE=mydb
+    restart: unless-stopped
+```
 
-By default, the File Manager login is bypassed (disabled) to make initial development fast and easy. However, if your server is public, anyone can access your files.
+```bash
+docker compose up -d
+```
 
-To secure your files and bring back the login page, follow these steps:
+---
 
-Step 1: Open your File Manager (/files) or Web Terminal (/terminal).
-Step 2: Navigate to this directory: /usr/share/webapps/filemanager/
-Step 3: Open the 'index.php' file to edit it.
-Step 4: Find this exact line in the code:
-$use_auth = false;
-Step 5: Change the 'false' to 'true' so it looks like this:
-$use_auth = true;
-Step 6: Save the file.
+## 🌐 Access URLs
 
-The login screen will now be active!
+Once the container is running on port `7860`, access your tools at:
 
-Default Username: admin
+| Tool | URL | Description |
+|---|---|---|
+| 🏠 **Website** | `http://localhost:7860/` | Your main web root |
+| 🗄️ **Database** | `http://localhost:7860/sql` | phpMyAdmin interface |
+| 📁 **File Manager** | `http://localhost:7860/files` | Browser-based file manager |
+| 💻 **Web Terminal** | `http://localhost:7860/terminal` | In-browser shell |
 
-Default Password: admin@123
-(You can easily change this password by clicking the 'Settings' gear icon inside the File Manager after logging in).
+> 💡 **Deployed on a server?** Replace `localhost` with your server's IP address or domain.
 
-WEB TERMINAL GUIDE & BASIC COMMANDS
+---
 
-Your setup includes a custom, browser-based Web Terminal. You don't need SSH access to manage your server! Simply go to /terminal and start typing.
+## 🗄️ Database Setup
 
-System Monitoring (Storage & RAM):
+### Default Credentials
 
-free -h   : Checks the server's RAM (Memory). Shows Total, Used, and Free RAM.
+```
+Username : admin
+Password : admin
+```
 
-df -h     : Checks your total server Hard Disk / SSD storage space.
+> ⚠️ **Security Warning:** Change these credentials before going live!
 
-du -sh *  : Checks exactly how much storage the files in your current folder are taking.
+### Changing Credentials (No Code Edits Needed!)
 
-File & Folder Navigation:
+Simply update the following **environment variables** in your Docker run command, VPS settings, or Hugging Face Space Variables:
 
-pwd       : Shows your current folder path.
+| Variable | Description | Default |
+|---|---|---|
+| `MYSQL_USER` | Database username | `admin` |
+| `MYSQL_PASSWORD` | Database password | `admin` |
+| `MYSQL_DATABASE` | Database name | *(set by you)* |
 
-ls -la    : Lists all files/folders in your current directory with permissions.
+---
 
-cd folder : Moves you into a specific folder.
+## 📁 File Manager
 
-Developer Commands:
+By default, the File Manager login is **disabled** for fast local development.
 
-php -v            : Checks the currently installed PHP version.
+### 🔐 Enable Login (Recommended for Public Servers)
 
-unzip file.zip    : Extracts a zip file directly from the terminal.
+1. Open **Web Terminal** (`/terminal`) or **File Manager** (`/files`)
+2. Navigate to:
+   ```
+   /usr/share/webapps/filemanager/
+   ```
+3. Open `index.php` and find:
+   ```php
+   $use_auth = false;
+   ```
+4. Change it to:
+   ```php
+   $use_auth = true;
+   ```
+5. Save the file — the login screen is now active!
 
-PRO TIPS FOR BUYERS
+### File Manager Default Credentials
 
-Website Root Directory: Your main website files must be placed inside '/var/www/localhost/htdocs'. You can use the File Manager to directly upload your .zip project here and extract it.
+```
+Username : admin
+Password : admin@123
+```
 
-Speed & Performance: This server comes with PHP OPcache pre-enabled. This means your PHP applications and APIs will run 2x to 3x faster right out of the box without any extra configuration!
+> 💡 You can change the password anytime via the **Settings (⚙️)** icon inside the File Manager.
 
-====================================================================
+---
+
+## 💻 Web Terminal
+
+No SSH required! Access your server shell directly from the browser at `/terminal`.
+
+### 📊 System Monitoring
+
+```bash
+free -h        # Check RAM usage (Total / Used / Free)
+df -h          # Check total disk storage
+du -sh *       # Check storage used by files in current folder
+```
+
+### 📂 File Navigation
+
+```bash
+pwd            # Show current directory path
+ls -la         # List all files with permissions
+cd folder      # Navigate into a folder
+```
+
+### 🛠️ Developer Commands
+
+```bash
+php -v         # Check installed PHP version
+unzip file.zip # Extract a zip archive
+```
+
+---
+
+## ⚙️ Configuration
+
+### Website Root Directory
+
+Upload your project files to:
+
+```
+/var/www/localhost/htdocs
+```
+
+You can upload a `.zip` file via the File Manager and extract it directly there.
+
+### PHP OPcache
+
+PHP OPcache comes **pre-enabled** out of the box — no configuration needed. This can improve PHP performance by **2x to 3x** without any extra setup.
+
+---
+
+## 💡 Pro Tips
+
+- 🚀 **Fast deploys** — Upload your project as a `.zip` and extract it in the File Manager
+- 🔒 **Secure first** — Always change default passwords before exposing to the internet
+- ☁️ **Hugging Face** — Works perfectly as an HF Space; set ENV vars in the Space settings
+- ⚡ **OPcache** is pre-configured — your PHP apps are already optimized on first run
+- 🖥️ **No SSH needed** — The Web Terminal covers all your server management needs
+
+---
+
+## 🤝 Contributing
+
+Contributions, issues, and feature requests are welcome!
+
+1. Fork the repo
+2. Create your feature branch: `git checkout -b feature/amazing-feature`
+3. Commit your changes: `git commit -m 'Add amazing feature'`
+4. Push to the branch: `git push origin feature/amazing-feature`
+5. Open a Pull Request
+
+---
+
+<div align="center">
+
+**Made with ❤️ for developers who love simplicity**
+
+⭐ **Star this repo if it helped you!** ⭐
+
+</div>
