@@ -66,6 +66,8 @@ if(isset($_POST['cmd'])){
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Web Terminal</title>
 <style>
     body { background: #1e1e1e; color: #00ff00; font-family: monospace; padding: 20px; font-size: 16px; margin: 0; }
