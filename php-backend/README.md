@@ -27,6 +27,7 @@
 - [🌐 Access URLs](#-access-urls)
 - [🗄️ Database Setup](#️-database-setup)
 - [💾 Persistent Storage](#-persistent-storage)
+- [⚙️ Environment Variables & .env](#️-environment-variables--env)
 - [📁 File Manager](#-file-manager)
 - [💻 Web Terminal](#-web-terminal)
 - [💡 Pro Tips](#-pro-tips)
@@ -43,6 +44,7 @@
 | 🗄️ **MariaDB** | Full database engine with phpMyAdmin UI at `/sql` |
 | 📁 **File Manager** | [TinyFileManager](https://github.com/prasathmani/tinyfilemanager) at `/files` |
 | 💻 **Web Terminal** | Custom browser-based shell at `/terminal` — no SSH needed |
+| ⚙️ **.env Support** | Auto-loads `/var/www/localhost/htdocs/.env` at startup |
 | 💾 **Persistent Storage** | `/data` mount **required** — database is stored here |
 | 🔒 **Non-root** | Runs as user `1000` for improved security |
 | 🐳 **Alpine Base** | Ultra-lightweight image with minimal footprint |
@@ -121,6 +123,9 @@ On Hugging Face, environment variables are configured in **Space Settings** — 
 | `MYSQL_USER` | `admin` | Database username |
 | `MYSQL_PASSWORD` | `admin` | Database password *(change this!)* |
 | `MYSQL_DATABASE` | `admin` | Database name |
+| `SQL_PATH` | `sql` | URL path for phpMyAdmin — e.g. `mysecretdb` opens at `/mysecretdb` |
+| `FILES_PATH` | `files` | URL path for File Manager |
+| `TERMINAL_PATH` | `terminal` | URL path for Web Terminal |
 
 ### Step 4 — Mount Persistent Storage 🚨
 
@@ -209,14 +214,16 @@ http://YOUR_VPS_IP:7860/   → Remote VPS
 
 ## 🌐 Access URLs
 
-| Tool | URL | Description |
+| Tool | Default URL | Env Variable |
 |---|---|---|
-| 🏠 **Website** | `/` | Your main web root |
-| 🗄️ **Database UI** | `/sql` | phpMyAdmin interface |
-| 📁 **File Manager** | `/files` | TinyFileManager |
-| 💻 **Web Terminal** | `/terminal` | Browser-based shell |
+| 🏠 **Website** | `/` | — |
+| 🗄️ **Database UI** | `/sql` | `SQL_PATH` |
+| 📁 **File Manager** | `/files` | `FILES_PATH` |
+| 💻 **Web Terminal** | `/terminal` | `TERMINAL_PATH` |
 
 > **Web root directory:** `/var/www/localhost/htdocs`
+
+All tool paths are **fully customizable** via environment variables — set them in Space Settings (or `.env`) to hide the default URLs from public discovery. For example, setting `SQL_PATH=x7k2mdb` means phpMyAdmin is only accessible at `/x7k2mdb`.
 
 ---
 
@@ -277,6 +284,58 @@ mariadbd --datadir=/data/mysql --bind-address=127.0.0.1
 ```
 
 > 💡 You don't need to run these manually — `start.sh` does it automatically.
+
+---
+
+## ⚙️ Environment Variables & .env
+
+You can configure your PHP app using a `.env` file — no need to hardcode sensitive values like API keys or database credentials in your code.
+
+### How It Works
+
+Place a `.env` file in your web root:
+
+```
+/var/www/localhost/htdocs/.env
+```
+
+The server automatically loads it at startup, before Apache and MariaDB start. All variables are then available to your PHP app via `getenv()` or `$_ENV`.
+
+### Example `.env` File
+
+```env
+# App config
+APP_NAME=MyApp
+APP_ENV=production
+APP_DEBUG=false
+
+# Third-party API keys
+STRIPE_KEY=sk_live_xxxxxxxxxxxx
+MAIL_HOST=smtp.mailtrap.io
+MAIL_PORT=587
+MAIL_USERNAME=your@email.com
+MAIL_PASSWORD=yourpassword
+```
+
+### Accessing Variables in PHP
+
+```php
+$appName  = getenv('APP_NAME');
+$stripe   = getenv('STRIPE_KEY');
+
+// Or via $_ENV superglobal
+$debug = $_ENV['APP_DEBUG'];
+```
+
+### ⚠️ Important Rules
+
+- One variable per line — `KEY=value` format
+- Use `#` for comments — `# this is a comment`
+- **No spaces** around `=` — `KEY=value` ✅ &nbsp; `KEY = value` ❌
+- **No inline comments** — `KEY=value # comment` ❌ (comment becomes part of value)
+- **Never commit `.env` to Git** — add it to `.gitignore`
+
+> 💡 `.env` variables are loaded **after** the `MYSQL_USER`, `MYSQL_PASSWORD`, and `MYSQL_DATABASE` env vars set in Space Settings — so they can override them if needed.
 
 ---
 
