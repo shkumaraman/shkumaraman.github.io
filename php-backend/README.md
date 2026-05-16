@@ -4,13 +4,14 @@
 <img src="https://img.shields.io/badge/Apache-Web%20Server-D22128?style=for-the-badge&logo=apache&logoColor=white" />
 <img src="https://img.shields.io/badge/MariaDB-Database-003545?style=for-the-badge&logo=mariadb&logoColor=white" />
 <img src="https://img.shields.io/badge/Docker-Alpine-2496ED?style=for-the-badge&logo=docker&logoColor=white" />
+<img src="https://img.shields.io/badge/Hugging%20Face-Spaces-FFD21E?style=for-the-badge&logo=huggingface&logoColor=black" />
 <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" />
 
 # 🐘 PHP Web Server — Alpine LAMP Stack
 
 ### ⚡ Lightweight · 🔒 Secure · 🚀 Production-Ready
 
-> **A complete PHP development environment in a single Docker container** — Apache, PHP 8+, MariaDB, File Manager & Web Terminal. Deploy anywhere in minutes.
+> **A complete PHP development environment in a single Docker container** — Apache, PHP 8+, MariaDB, File Manager & Web Terminal. Deploy on Hugging Face Spaces, VPS, or locally in minutes.
 
 </div>
 
@@ -19,12 +20,12 @@
 ## 📋 Table of Contents
 
 - [✨ Features](#-features)
-- [🚀 Quick Start](#-quick-start)
+- [☁️ Deploy on Hugging Face Spaces](#️-deploy-on-hugging-face-spaces) ⭐ Recommended
+- [🖥️ Deploy on VPS / Local Machine](#️-deploy-on-vps--local-machine)
 - [🌐 Access URLs](#-access-urls)
 - [🗄️ Database Setup](#️-database-setup)
 - [📁 File Manager](#-file-manager)
 - [💻 Web Terminal](#-web-terminal)
-- [⚙️ Configuration](#️-configuration)
 - [💡 Pro Tips](#-pro-tips)
 - [🤝 Contributing](#-contributing)
 
@@ -40,32 +41,106 @@
 | 📁 **File Manager** | Browser-based file management, no FTP needed |
 | 💻 **Web Terminal** | SSH-free server control from your browser |
 | 🐳 **Docker Alpine** | Ultra-lightweight base image, minimal footprint |
-| ☁️ **Hugging Face Ready** | Runs seamlessly on HF Spaces, VPS, or locally |
+| ☁️ **Hugging Face Ready** | One-click deploy on HF Spaces — free hosting! |
 
 ---
 
-## 🚀 Quick Start
+## ☁️ Deploy on Hugging Face Spaces
 
-### Using Docker
+> ⭐ **Recommended method** — Free hosting, no server required!
+
+### Step 1 — Create a New Space
+
+1. Go to [huggingface.co/spaces](https://huggingface.co/spaces)
+2. Click **"Create new Space"**
+3. Give your space a name (e.g. `my-php-server`)
+4. Select **SDK → Docker**
+5. Click **"Create Space"**
+
+### Step 2 — Upload Your Files
+
+Once the Space is created, upload your project files:
+
+```
+your-space/
+├── Dockerfile         ✅ required
+├── index.php          (or your project files)
+└── ...
+```
+
+> 💡 You can drag & drop files directly in the **Files tab**, or use Git:
 
 ```bash
+git clone https://huggingface.co/spaces/YOUR_USERNAME/YOUR_SPACE_NAME
+cd YOUR_SPACE_NAME
+
+# Add your project files here
+git add .
+git commit -m "Initial upload"
+git push
+```
+
+### Step 3 — Set ENV Variables
+
+On Hugging Face, there is no `docker run` command. Environment variables are set in **Space Settings**:
+
+1. Go to the **"Settings"** tab in your Space
+2. Find the **"Variables and Secrets"** section
+3. Add the following variables:
+
+| Variable | Value |
+|---|---|
+| `MYSQL_USER` | `admin` *(or your preferred username)* |
+| `MYSQL_PASSWORD` | `yourpassword` *(use a strong password!)* |
+| `MYSQL_DATABASE` | `mydb` *(or your preferred DB name)* |
+
+### Step 4 — Done! 🎉
+
+Hugging Face will automatically build and deploy your app. Your live URL will be:
+
+```
+https://YOUR_USERNAME-YOUR_SPACE_NAME.hf.space/
+```
+
+---
+
+## 🖥️ Deploy on VPS / Local Machine
+
+> For those who prefer their own server or want to test locally.
+
+### Prerequisites
+
+- Docker must be installed → [Get Docker](https://docs.docker.com/get-docker/)
+
+### Option A — Docker Run (Quick & Simple)
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git
+cd YOUR_REPO_NAME
+
+# 2. Build the image
+docker build -t php-lamp .
+
+# 3. Run the container
 docker run -d \
   -p 7860:7860 \
   -e MYSQL_USER=admin \
   -e MYSQL_PASSWORD=yourpassword \
   -e MYSQL_DATABASE=mydb \
   --name php-lamp \
-  your-image-name
+  php-lamp
 ```
 
-### Using Docker Compose
+### Option B — Docker Compose (Recommended for VPS)
 
 ```yaml
+# docker-compose.yml
 version: '3.8'
 
 services:
   php-lamp:
-    image: your-image-name
+    build: .
     ports:
       - "7860:7860"
     environment:
@@ -79,20 +154,32 @@ services:
 docker compose up -d
 ```
 
+### Access Your Server
+
+```
+http://localhost:7860/      → Local machine
+http://YOUR_VPS_IP:7860/   → Remote VPS
+```
+
+> ⚠️ **On VPS:** Make sure to open port `7860` in your firewall!
+
+```bash
+# Ubuntu / Debian
+sudo ufw allow 7860
+```
+
 ---
 
 ## 🌐 Access URLs
 
-Once the container is running on port `7860`, access your tools at:
+Once the container is running, access your tools at:
 
 | Tool | URL | Description |
 |---|---|---|
-| 🏠 **Website** | `http://localhost:7860/` | Your main web root |
-| 🗄️ **Database** | `http://localhost:7860/sql` | phpMyAdmin interface |
-| 📁 **File Manager** | `http://localhost:7860/files` | Browser-based file manager |
-| 💻 **Web Terminal** | `http://localhost:7860/terminal` | In-browser shell |
-
-> 💡 **Deployed on a server?** Replace `localhost` with your server's IP address or domain.
+| 🏠 **Website** | `/` | Your main web root |
+| 🗄️ **Database** | `/sql` | phpMyAdmin interface |
+| 📁 **File Manager** | `/files` | Browser-based file manager |
+| 💻 **Web Terminal** | `/terminal` | In-browser shell |
 
 ---
 
@@ -105,17 +192,21 @@ Username : admin
 Password : admin
 ```
 
-> ⚠️ **Security Warning:** Change these credentials before going live!
+> ⚠️ **Security Warning:** Change these before going live on a public server!
 
-### Changing Credentials (No Code Edits Needed!)
+### How to Change Credentials
 
-Simply update the following **environment variables** in your Docker run command, VPS settings, or Hugging Face Space Variables:
+**On Hugging Face:**
+Go to Space Settings → Variables and Secrets → update the values.
 
-| Variable | Description | Default |
-|---|---|---|
-| `MYSQL_USER` | Database username | `admin` |
-| `MYSQL_PASSWORD` | Database password | `admin` |
-| `MYSQL_DATABASE` | Database name | *(set by you)* |
+**On VPS / Local:**
+Update the ENV variables in your `docker run` command or `docker-compose.yml`.
+
+| Variable | Description |
+|---|---|
+| `MYSQL_USER` | Database username |
+| `MYSQL_PASSWORD` | Database password |
+| `MYSQL_DATABASE` | Database name |
 
 ---
 
@@ -123,14 +214,14 @@ Simply update the following **environment variables** in your Docker run command
 
 By default, the File Manager login is **disabled** for fast local development.
 
-### 🔐 Enable Login (Recommended for Public Servers)
+### 🔐 Enable Login (Required for Public Servers!)
 
-1. Open **Web Terminal** (`/terminal`) or **File Manager** (`/files`)
+1. Open the **Web Terminal** (`/terminal`) or **File Manager** (`/files`)
 2. Navigate to:
    ```
    /usr/share/webapps/filemanager/
    ```
-3. Open `index.php` and find:
+3. Open `index.php` and find this line:
    ```php
    $use_auth = false;
    ```
@@ -138,22 +229,22 @@ By default, the File Manager login is **disabled** for fast local development.
    ```php
    $use_auth = true;
    ```
-5. Save the file — the login screen is now active!
+5. Save the file — the login screen is now active! ✅
 
-### File Manager Default Credentials
+### Default File Manager Credentials
 
 ```
 Username : admin
 Password : admin@123
 ```
 
-> 💡 You can change the password anytime via the **Settings (⚙️)** icon inside the File Manager.
+> 💡 You can change the password anytime via the **Settings ⚙️** icon inside the File Manager.
 
 ---
 
 ## 💻 Web Terminal
 
-No SSH required! Access your server shell directly from the browser at `/terminal`.
+Manage your server directly from the browser — no SSH required! Go to `/terminal` and start typing.
 
 ### 📊 System Monitoring
 
@@ -180,31 +271,13 @@ unzip file.zip # Extract a zip archive
 
 ---
 
-## ⚙️ Configuration
-
-### Website Root Directory
-
-Upload your project files to:
-
-```
-/var/www/localhost/htdocs
-```
-
-You can upload a `.zip` file via the File Manager and extract it directly there.
-
-### PHP OPcache
-
-PHP OPcache comes **pre-enabled** out of the box — no configuration needed. This can improve PHP performance by **2x to 3x** without any extra setup.
-
----
-
 ## 💡 Pro Tips
 
-- 🚀 **Fast deploys** — Upload your project as a `.zip` and extract it in the File Manager
-- 🔒 **Secure first** — Always change default passwords before exposing to the internet
-- ☁️ **Hugging Face** — Works perfectly as an HF Space; set ENV vars in the Space settings
-- ⚡ **OPcache** is pre-configured — your PHP apps are already optimized on first run
-- 🖥️ **No SSH needed** — The Web Terminal covers all your server management needs
+- 📂 **Website Root:** Place your project files at `/var/www/localhost/htdocs`
+- 🗜️ **Fast Uploads:** Upload your project as a `.zip` and extract it via the File Manager
+- ⚡ **OPcache:** Pre-enabled out of the box — PHP apps run 2x–3x faster with zero config
+- 🔒 **Going Public?** Always enable File Manager login and change default DB passwords
+- 🖥️ **No SSH Needed:** The Web Terminal covers all your server management needs
 
 ---
 
@@ -212,11 +285,11 @@ PHP OPcache comes **pre-enabled** out of the box — no configuration needed. Th
 
 Contributions, issues, and feature requests are welcome!
 
-1. Fork the repo
+1. Fork the repository
 2. Create your feature branch: `git checkout -b feature/amazing-feature`
 3. Commit your changes: `git commit -m 'Add amazing feature'`
 4. Push to the branch: `git push origin feature/amazing-feature`
-5. Open a Pull Request
+5. Open a Pull Request 🎉
 
 ---
 
@@ -224,6 +297,6 @@ Contributions, issues, and feature requests are welcome!
 
 **Made with ❤️ for developers who love simplicity**
 
-⭐ **Star this repo if it helped you!** ⭐
+⭐ **If this helped you, please give it a Star!** ⭐
 
 </div>
