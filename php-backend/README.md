@@ -5,6 +5,7 @@
 <img src="https://img.shields.io/badge/MariaDB-Database-003545?style=for-the-badge&logo=mariadb&logoColor=white" />
 <img src="https://img.shields.io/badge/Alpine-Linux-0D597F?style=for-the-badge&logo=alpine-linux&logoColor=white" />
 <img src="https://img.shields.io/badge/Hugging%20Face-Spaces-FFD21E?style=for-the-badge&logo=huggingface&logoColor=black" />
+<img src="https://img.shields.io/badge/Cloudflare-Workers-F38020?style=for-the-badge&logo=cloudflare&logoColor=white" />
 <img src="https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge" />
 
 # 🐘 PHP Web Server — Alpine LAMP Stack
@@ -30,6 +31,7 @@
 - [⚙️ Environment Variables & .env](#️-environment-variables--env)
 - [📁 File Manager](#-file-manager)
 - [💻 Web Terminal](#-web-terminal)
+- [🔀 Custom Domain via Cloudflare Workers](#-custom-domain-via-cloudflare-workers) 🆕
 - [💡 Pro Tips](#-pro-tips)
 - [🤝 Contributing](#-contributing)
 
@@ -49,6 +51,7 @@
 | 🔒 **Non-root** | Runs as user `1000` for improved security |
 | 🐳 **Alpine Base** | Ultra-lightweight image with minimal footprint |
 | ☁️ **HF Spaces Ready** | Works seamlessly on Hugging Face Docker Spaces |
+| 🔀 **Custom Domain** | Mask your HF URL with a custom domain via Cloudflare Workers |
 
 ---
 
@@ -83,7 +86,10 @@ Alpine Linux (latest)
 2. Click **"Create new Space"**
 3. Give your space a name (e.g. `my-php-server`)
 4. Select **SDK → Docker**
-5. Click **"Create Space"**
+5. Set the Space visibility to **Public**
+6. Click **"Create Space"**
+
+> ⚠️ **Keep your Space set to Public.** Hugging Face requires the Space to be public for it to run continuously and be accessible via a URL. Private Spaces may sleep or become inaccessible depending on your plan.
 
 ### Step 2 — Upload the Dockerfile
 
@@ -268,6 +274,9 @@ MariaDB stores all its data at `/data/mysql` inside the container. If `/data` is
 | **Permission** | Read & Write |
 | **Mount path** | `/data` |
 | **Storage size** | Choose as needed *(free tier: up to 50GB)* |
+| **Visibility** | **Private** *(your data stays secure)* |
+
+> 🔒 **Always keep your Persistent Storage bucket set to Private.** The storage bucket holds your entire database — keeping it private ensures that no one else can access or browse your data files. Your Space itself can remain Public (so your website is accessible), while the storage bucket stays Private (so your database is protected). These are two separate settings — one does not affect the other.
 
 4. Click **"Add storage"** and wait for the Space to restart ✅
 
@@ -405,6 +414,213 @@ nano file.php  # Edit a file in terminal
 
 ---
 
+## 🔀 Custom Domain via Cloudflare Workers
+
+> 🎭 **Hide your Hugging Face URL** — Serve your app from your own domain (e.g. `yoursite.com`) while the actual server stays on Hugging Face behind the scenes.
+
+This method uses a **Cloudflare Worker** as a reverse proxy. All traffic hits your domain first, gets forwarded to your HF Space, and the response is served back — visitors never see the `*.hf.space` URL.
+
+**Prerequisites:**
+- A domain added to Cloudflare (with DNS managed by Cloudflare)
+- A free Cloudflare account → [cloudflare.com](https://cloudflare.com)
+
+---
+
+### Step 1 — Connect Your Domain to Cloudflare
+
+If your domain is not already on Cloudflare:
+
+1. Log in to [dash.cloudflare.com](https://dash.cloudflare.com)
+2. Click **"Add a Site"** → enter your domain name
+3. Select the **Free plan** → click **Continue**
+4. Cloudflare will scan your existing DNS records — review and confirm
+5. Copy the two **Cloudflare nameservers** shown (e.g. `alice.ns.cloudflare.com`)
+6. Go to your domain registrar (GoDaddy, Namecheap, etc.) → update the nameservers to the ones Cloudflare gave you
+7. Wait for propagation — usually takes **5–30 minutes** (up to 48 hours in rare cases)
+8. Once active, Cloudflare will send a confirmation email ✅
+
+---
+
+### Step 2 — Create a Cloudflare Worker
+
+1. In Cloudflare dashboard → go to **Workers & Pages** (left sidebar)
+2. Click **"Create application"**
+3. Click **"Create Worker"**
+4. Give your worker a name (e.g. `my-php-proxy`)
+5. Click **"Deploy"** — this creates a default Hello World worker
+
+---
+
+### Step 3 — Replace the Worker Code
+
+1. After deploying, click **"Edit code"**
+2. Delete all the existing code in the editor
+3. Paste the following worker script:
+
+```js
+export default {
+  async fetch(request) {
+    try {
+      const url = new URL(request.url);
+
+      // 🔁 Replace this with your actual Hugging Face Space URL
+      const backendHost = "YOUR_USERNAME-YOUR_SPACE_NAME.hf.space";
+
+      const backendUrl = new URL(request.url);
+      backendUrl.hostname = backendHost;
+      backendUrl.protocol = "https:";
+
+      const newHeaders = new Headers(request.headers);
+      newHeaders.set("X-Forwarded-Host", url.hostname);
+      newHeaders.set("X-Forwarded-Proto", "https");
+
+      if (newHeaders.has("origin")) {
+        newHeaders.set("origin", `https://${backendHost}`);
+      }
+
+      if (newHeaders.has("referer")) {
+        try {
+          const referer = new URL(newHeaders.get("referer"));
+          referer.hostname = backendHost;
+          referer.protocol = "https:";
+          newHeaders.set("referer", referer.toString());
+        } catch {}
+      }
+
+      const body = request.method === "GET" || request.method === "HEAD"
+        ? undefined
+        : await request.arrayBuffer();
+
+      const response = await fetch(new Request(backendUrl.toString(), {
+        method: request.method,
+        headers: newHeaders,
+        body: body,
+        redirect: "manual",
+      }));
+
+      const headers = new Headers();
+
+      for (const [key, value] of response.headers.entries()) {
+        if (key.toLowerCase() === "set-cookie") continue;
+        if (key.toLowerCase() === "location") {
+          try {
+            const loc = new URL(value);
+            loc.hostname = url.hostname;
+            loc.protocol = url.protocol;
+            headers.set("location", loc.toString());
+          } catch {
+            headers.set("location", value);
+          }
+          continue;
+        }
+        headers.set(key, value);
+      }
+
+      for (const cookie of response.headers.getAll("set-cookie")) {
+        headers.append("set-cookie", cookie
+          .replace(/;\s*Domain=[^;]*/gi, "")
+          .replace(/;\s*SameSite=[^;]*/gi, "")
+          .concat("; SameSite=Lax")
+        );
+      }
+
+      // Security headers
+      headers.delete("x-powered-by");
+      headers.delete("server");
+      headers.delete("cf-cache-status");
+      headers.set("X-Frame-Options", "SAMEORIGIN");
+      headers.set("X-Content-Type-Options", "nosniff");
+      headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+      headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+      headers.set("X-XSS-Protection", "1; mode=block");
+
+      return new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers,
+      });
+
+    } catch (err) {
+      return new Response(`Worker Error: ${err.message}`, { status: 500 });
+    }
+  },
+};
+```
+
+4. **Important:** Replace `YOUR_USERNAME-YOUR_SPACE_NAME.hf.space` on line 6 with your actual HF Space URL.  
+   For example: `shkumaraman-backend.hf.space`
+
+5. Click **"Deploy"** ✅
+
+---
+
+### Step 4 — Attach Your Domain to the Worker
+
+1. In the Worker detail page → go to **"Settings"** tab
+2. Under **"Domains & Routes"** → click **"Add"** → select **"Add route"**
+
+   > Alternatively: Go to **Workers & Pages → your worker → Settings → Domains & Routes → Add route**
+
+3. Fill in the route details:
+
+   | Field | Value |
+   |---|---|
+   | **Route pattern** | `*.yourdomain.com/*` |
+   | **Zone** | Select your domain from the dropdown |
+
+   > 💡 The `*` wildcard covers all subdomains and all paths. Use `yourdomain.com/*` if you want only the root domain (no subdomains).
+
+4. Click **"Save"** ✅
+
+---
+
+### Step 5 — Done! 🎉
+
+Your custom domain now proxies all traffic to your Hugging Face Space.
+
+```
+https://yourdomain.com/        → Your website
+https://yourdomain.com/sql     → phpMyAdmin
+https://yourdomain.com/files   → File Manager
+https://yourdomain.com/terminal → Web Terminal
+```
+
+The original `*.hf.space` URL still works too — the Worker doesn't disable it, it just adds your custom domain on top.
+
+---
+
+### 🔐 What the Worker Does (Security Overview)
+
+| Feature | What it does |
+|---|---|
+| **Proxy** | Forwards all requests to your HF Space and returns the response |
+| **URL masking** | Rewrites `Location` headers on redirects so visitors stay on your domain |
+| **Cookie handling** | Strips `Domain` and `SameSite` attributes so cookies work cross-domain |
+| **Security headers** | Adds `HSTS`, `X-Frame-Options`, `X-Content-Type-Options`, and more |
+| **Header cleanup** | Removes `x-powered-by` and `server` headers to reduce fingerprinting |
+
+---
+
+### 🛠️ Troubleshooting
+
+**Domain not routing to the worker?**
+- Make sure your domain's nameservers are pointing to Cloudflare
+- Check that the route pattern matches your domain exactly
+- Wait a few minutes after saving — changes propagate quickly but not instantly
+
+**Getting a Cloudflare error page?**
+- Double-check the `backendHost` in the worker code — it must match your exact HF Space URL (no `https://`, no trailing slash)
+- Make sure your HF Space is running and accessible directly at `your-username-your-space.hf.space`
+
+**Cookies or sessions not working?**
+- The worker already handles cookie rewriting. If issues persist, try clearing browser cookies for your domain.
+
+**Worker only needed on one subdomain?**
+- Change the route pattern to `app.yourdomain.com/*` instead of `*.yourdomain.com/*`
+- Make sure a DNS record exists for that subdomain (add an `A` record pointing to `192.0.2.1` as a placeholder — Cloudflare's proxy will intercept it before it reaches that IP)
+
+---
+
 ## 💡 Pro Tips
 
 - 📂 **Website Root:** Place your project files at `/var/www/localhost/htdocs`
@@ -415,6 +631,7 @@ nano file.php  # Edit a file in terminal
 - 🛠️ **Composer & Git** are pre-installed — install PHP packages directly from the terminal
 - 🖥️ **No SSH Needed:** The Web Terminal handles all server management from your browser
 - 🔄 **mod_rewrite:** Enabled by default — Laravel, WordPress, and other frameworks work out of the box
+- 🔀 **Custom Domain:** Use a Cloudflare Worker to mask your HF Space URL with your own domain — completely free
 
 ---
 
