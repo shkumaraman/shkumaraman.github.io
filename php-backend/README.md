@@ -81,28 +81,30 @@ Alpine Linux (latest)
 4. Select **SDK → Docker**
 5. Click **"Create Space"**
 
-### Step 2 — Upload Your Files
+### Step 2 — Upload the Dockerfile
 
-Upload the `Dockerfile` (and your project files) to the Space:
+Only the `Dockerfile` is needed in your Space repository:
 
 ```
 your-space/
-├── Dockerfile              ✅ required
-├── index.php               (your project entry point)
-└── ...
+└── Dockerfile    ✅ this is the only file needed here
 ```
 
-> 💡 Drag & drop files in the **Files tab**, or push via Git:
+> 💡 Drag & drop the `Dockerfile` in the **Files tab**, or push via Git:
 
 ```bash
 git clone https://huggingface.co/spaces/YOUR_USERNAME/YOUR_SPACE_NAME
 cd YOUR_SPACE_NAME
 
-# Add your Dockerfile and project files here
-git add .
-git commit -m "Initial upload"
+# Only add the Dockerfile here
+git add Dockerfile
+git commit -m "Add Dockerfile"
 git push
 ```
+
+> ⚠️ **Do NOT place your project files here.**  
+> Once the Space is live, upload your project files using the **File Manager** at `/files`.  
+> Simply go to `/files` → navigate to `/var/www/localhost/htdocs` → upload your files there.
 
 ### Step 3 — Set Environment Variables
 
