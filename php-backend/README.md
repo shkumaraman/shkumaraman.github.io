@@ -60,19 +60,66 @@
 ```
 Alpine Linux (latest)
 ├── Apache 2           → Web server (port 7860)
-├── PHP 8+
-│   ├── php-mysqli, php-pdo_mysql
-│   ├── php-gd, php-curl, php-mbstring
-│   ├── php-zip, php-xml, php-json
-│   ├── php-session, php-opcache
-│   └── php-openssl, php-iconv, php-phar
+├── PHP 8.4
 ├── MariaDB            → Database server
 ├── phpMyAdmin         → Database UI at /sql
 ├── TinyFileManager    → File manager at /files
 ├── Web Terminal       → Custom shell UI at /terminal
 ├── Composer           → PHP dependency manager
-└── Git, Nano, Zip, Unzip
+├── Git, Nano, Wget, Zip, Unzip, ImageMagick
 ```
+
+### 🐘 PHP Extensions
+
+| Extension | Purpose |
+|---|---|
+| **php-mysqli** | MySQL / MariaDB direct connection |
+| **php-pdo** | PHP Data Objects — database abstraction base |
+| **php-pdo_mysql** | PDO driver for MySQL / MariaDB |
+| **php-pdo_pgsql** | PDO driver for PostgreSQL |
+| **php-mbstring** | Multibyte string handling — required by most frameworks |
+| **php-xml** | XML parsing and generation |
+| **php-simplexml** | Simple XML object interface — used by WordPress and APIs |
+| **php-dom** | Full DOM XML/HTML parsing — required by Laravel and Symfony |
+| **php-xmlwriter** | Writing XML documents programmatically |
+| **php-xmlreader** | Streaming XML reader for large files |
+| **php-xsl** | XSLT transformations |
+| **php-gd** | Image creation and manipulation (resize, crop, watermark) |
+| **php-imagick** | Advanced image processing via ImageMagick |
+| **php-exif** | Read image metadata (camera, GPS, dimensions) |
+| **php-curl** | HTTP requests — required by APIs, Guzzle, SDKs |
+| **php-session** | Session management |
+| **php-opcache** | Bytecode caching — makes PHP 2x–3x faster |
+| **php-phar** | PHP Archive support — required by Composer |
+| **php-openssl** | SSL/TLS encryption, JWT, secure hashing |
+| **php-sodium** | Modern cryptography library |
+| **php-iconv** | Character encoding conversion |
+| **php-mbstring** | Multibyte / Unicode string support |
+| **php-json** | JSON encode/decode |
+| **php-zip** | Create and extract ZIP archives |
+| **php-bz2** | Bzip2 compression support |
+| **php-intl** | Internationalization — dates, currencies, locales |
+| **php-gettext** | Translations and i18n support |
+| **php-bcmath** | Arbitrary precision math — required by payment gateways |
+| **php-gmp** | GNU Multiple Precision — cryptography and big numbers |
+| **php-apcu** | In-memory user cache — speeds up repeated operations |
+| **php-redis** | Redis cache and session driver |
+| **php-soap** | SOAP web services client and server |
+| **php-ldap** | LDAP authentication and directory services |
+| **php-ctype** | Character type checking functions |
+| **php-fileinfo** | Detect file MIME types |
+| **php-tokenizer** | PHP code tokenizer — required by Composer and Laravel |
+| **php-sockets** | Low-level socket programming and WebSocket support |
+| **php-posix** | POSIX process functions |
+| **php-pcntl** | Process control — fork, signals, process management |
+| **php-ftp** | FTP client functions |
+| **php-calendar** | Calendar and date conversion functions |
+| **php-shmop** | Shared memory read/write |
+| **php-sysvmsg** | System V message queues |
+| **php-sysvsem** | System V semaphores |
+| **php-sysvshm** | System V shared memory |
+| **php-tidy** | HTML cleanup and repair |
+| **php-readline** | Interactive PHP shell (php -a) support |
 
 ---
 
@@ -556,21 +603,34 @@ export default {
 
 ### Step 4 — Attach Your Domain to the Worker
 
-1. In the Worker detail page → go to **"Settings"** tab
-2. Under **"Domains & Routes"** → click **"Add"** → select **"Add route"**
+You need to complete **both** parts below — Simple domain mapping AND the Route pattern. Both are required for the worker to handle your domain correctly.
 
-   > Alternatively: Go to **Workers & Pages → your worker → Settings → Domains & Routes → Add route**
+---
 
-3. Fill in the route details:
+#### Part A — Simple Domain Mapping
 
-   | Field | Value |
-   |---|---|
-   | **Route pattern** | `*.yourdomain.com/*` |
-   | **Zone** | Select your domain from the dropdown |
+1. In your Worker → go to **"Settings"** tab
+2. Under **"Domains & Routes"** → click **"Add"**
+3. A dialog appears — select **"Custom Domain"**
+4. You will see a domain input field — **leave it empty**
+5. Click **"Add domain"**
 
-   > 💡 The `*` wildcard covers all subdomains and all paths. Use `yourdomain.com/*` if you want only the root domain (no subdomains).
+> This registers your domain with the Worker directly.
 
-4. Click **"Save"** ✅
+---
+
+#### Part B — Route Pattern (Advanced URL Matching)
+
+1. Under **"Domains & Routes"** → click **"Add"** again
+2. This time select **"Route"**
+3. The **"Advanced URL matching"** section appears
+4. In the **Route pattern** field — it will **auto-fill** with:
+   ```
+   *.yourdomain.com/*
+   ```
+5. Click **"Add domain"** ✅
+
+> 💡 The `*.yourdomain.com/*` pattern covers all subdomains and all paths automatically. Do not change it unless you need a more specific rule.
 
 ---
 
