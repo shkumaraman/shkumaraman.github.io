@@ -13,6 +13,13 @@ RUN apk add --no-cache \
     php-gd php-curl php-session phpmyadmin curl \
     zip unzip php-zip php-ctype php-fileinfo php-json \
     php-opcache php-phar php-openssl php-iconv \
+    php-intl php-apcu php-redis php-soap php-ldap \
+    php-imagick imagemagick \
+    php-tokenizer php-simplexml php-dom php-bcmath php-exif \
+    php-xmlwriter php-xmlreader php-sockets php-posix \
+    php-pdo php-sodium php-ftp php-calendar \
+    php-pcntl php-gettext php-pdo_pgsql php-shmop php-sysvmsg \
+    php-sysvsem php-sysvshm php-tidy php-xsl php-bz2 php-gmp php-readline wget \
     git composer nano
 
 RUN sed -i 's/Listen 80/Listen 7860/' /etc/apache2/httpd.conf && \
@@ -135,14 +142,12 @@ RUN cat << 'EOF' > /start.sh
 set -e
 rm -f /run/mysqld/mysqld.sock /run/mysqld/mysqld.pid /run/apache2/httpd.pid /data/mysql/tc.log 2>/dev/null || true
 
-# Load .env file from web root if it exists
 if [ -f /var/www/localhost/htdocs/.env ]; then
     set -a
     . /var/www/localhost/htdocs/.env
     set +a
 fi
 
-# Generate dynamic Apache aliases from env vars (defaults: sql, files, terminal)
 cat > /etc/apache2/conf.d/tool-aliases.conf << APACHECONF
 Alias /${SQL_PATH:-sql} /usr/share/webapps/phpmyadmin
 Alias /${FILES_PATH:-files} /usr/share/webapps/filemanager
