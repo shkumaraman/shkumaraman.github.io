@@ -317,7 +317,6 @@ MariaDB stores all its data at `/data/mysql` inside the container. If `/data` is
 |---|---|
 | **Permission** | Read & Write |
 | **Mount path** | `/data` |
-| **Storage size** | Choose as needed *(free tier: up to 50GB)* |
 | **Visibility** | **Private** *(your data stays secure)* |
 
 > 🔒 **Always keep your Persistent Storage bucket set to Private.** The storage bucket holds your entire database — keeping it private ensures that no one else can access or browse your data files. Your Space itself can remain Public (so your website is accessible), while the storage bucket stays Private (so your database is protected). These are two separate settings — one does not affect the other.
