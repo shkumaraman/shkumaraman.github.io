@@ -59,7 +59,7 @@ EOF
 
 RUN find /etc/php* -name php.ini -exec sh -c 'echo "session.cookie_secure = On" >> "{}" && echo "session.cookie_samesite = \"None\"" >> "{}" && echo "opcache.enable=1" >> "{}"' \;
 
-RUN mkdir -p /run/mysqld /run/apache2 /data/mysql /var/www/localhost/htdocs /usr/share/webapps/filemanager /usr/share/webapps/terminal /etc/apache2/conf.d && \
+RUN mkdir -p /run/mysqld /run/apache2 /data/mysql /var/www/localhost/htdocs /usr/share/webapps/filemanager /usr/share/webapps/terminal /etc/apache2/conf.d /var/log/apache2 && \
     curl -sL https://raw.githubusercontent.com/prasathmani/tinyfilemanager/master/tinyfilemanager.php -o /usr/share/webapps/filemanager/index.php && \
     [ -s /usr/share/webapps/filemanager/index.php ] || { echo "ERROR: TinyFileManager download failed"; exit 1; } && \
     sed -i "s/\$use_auth = true;/\$use_auth = false;/g" /usr/share/webapps/filemanager/index.php && \
@@ -148,15 +148,8 @@ RUN chown -R 1000:1000 \
 RUN cat << 'EOF' > /start.sh
 #!/bin/sh
 
-mkdir -p /run/mysqld /run/apache2
 rm -f /run/mysqld/mysqld.sock /run/mysqld/mysqld.pid /run/apache2/httpd.pid /data/mysql/tc.log 2>/dev/null || true
 
-if [ ! -w /data ]; then
-    echo "ERROR: /data is not writable. Please mount persistent storage with Read & Write permission at /data."
-    exit 1
-fi
-
-mkdir -p /data/mysql
 
 if [ -f /var/www/localhost/htdocs/.env ]; then
     set -a
