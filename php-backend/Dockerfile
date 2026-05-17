@@ -20,7 +20,7 @@ RUN apk add --no-cache \
     php-pdo php-sodium php-ftp php-calendar \
     php-pcntl php-gettext php-shmop php-sysvmsg \
     php-sysvsem php-sysvshm php-tidy php-xsl php-bz2 php-gmp readline wget \
-    git composer nano
+    git composer nano su-exec
 
 RUN sed -i 's/Listen 80/Listen 7860/' /etc/apache2/httpd.conf && \
     sed -i 's/#LoadModule rewrite_module/LoadModule rewrite_module/' /etc/apache2/httpd.conf && \
@@ -160,7 +160,7 @@ if [ ! -w /data ]; then
 fi
 
 mkdir -p /data/mysql
-chown -R 1000:1000 /data/mysql 2>/dev/null || true
+chown -R 1000:1000 /data/mysql
 
 if [ -f /var/www/localhost/htdocs/.env ]; then
     set -a
@@ -187,7 +187,7 @@ GRANT ALL PRIVILEGES ON *.* TO '${MYSQL_USER}'@'%' WITH GRANT OPTION;
 FLUSH PRIVILEGES;
 SQL
 
-mariadbd --datadir=/data/mysql --bind-address=127.0.0.1 --port=3306 --socket=/run/mysqld/mysqld.sock --skip-networking=OFF --innodb-use-native-aio=0 --init-file=/tmp/init.sql &
+su-exec 1000:1000 mariadbd --datadir=/data/mysql --bind-address=127.0.0.1 --port=3306 --socket=/run/mysqld/mysqld.sock --skip-networking=OFF --innodb-use-native-aio=0 --init-file=/tmp/init.sql &
 
 TRIES=0
 until mariadb-admin ping --socket=/run/mysqld/mysqld.sock -u root --silent 2>/dev/null; do
@@ -200,12 +200,12 @@ until mariadb-admin ping --socket=/run/mysqld/mysqld.sock -u root --silent 2>/de
 done
 
 rm -f /tmp/init.sql
-exec httpd -D FOREGROUND
+exec su-exec 1000:1000 httpd -D FOREGROUND
 EOF
 
-RUN chmod +x /start.sh && chown 1000:1000 /start.sh
+RUN chmod +x /start.sh
 
 WORKDIR /var/www/localhost/htdocs
-USER 1000
+USER root
 EXPOSE 7860
 CMD ["/start.sh"]
