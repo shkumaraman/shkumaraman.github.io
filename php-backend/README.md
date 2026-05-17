@@ -76,7 +76,6 @@ Alpine Linux (latest)
 | **php-mysqli** | MySQL / MariaDB direct connection |
 | **php-pdo** | PHP Data Objects — database abstraction base |
 | **php-pdo_mysql** | PDO driver for MySQL / MariaDB |
-| **php-pdo_pgsql** | PDO driver for PostgreSQL |
 | **php-mbstring** | Multibyte string handling — required by most frameworks |
 | **php-xml** | XML parsing and generation |
 | **php-simplexml** | Simple XML object interface — used by WordPress and APIs |
@@ -94,8 +93,6 @@ Alpine Linux (latest)
 | **php-openssl** | SSL/TLS encryption, JWT, secure hashing |
 | **php-sodium** | Modern cryptography library |
 | **php-iconv** | Character encoding conversion |
-| **php-mbstring** | Multibyte / Unicode string support |
-| **php-json** | JSON encode/decode |
 | **php-zip** | Create and extract ZIP archives |
 | **php-bz2** | Bzip2 compression support |
 | **php-intl** | Internationalization — dates, currencies, locales |
@@ -119,7 +116,7 @@ Alpine Linux (latest)
 | **php-sysvsem** | System V semaphores |
 | **php-sysvshm** | System V shared memory |
 | **php-tidy** | HTML cleanup and repair |
-| **php-readline** | Interactive PHP shell (php -a) support |
+| **readline** | System library — enables interactive PHP shell (php -a) |
 
 ---
 
