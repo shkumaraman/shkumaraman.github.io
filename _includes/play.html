@@ -1,0 +1,331 @@
+<style>
+  #gw-floating-btn {
+    position: fixed;
+    bottom: 140px;
+    right: 20px;
+    width: 50px;
+    height: 50px;
+    background: #cc0000;
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    cursor: pointer;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+    z-index: 10000;
+    transition: transform 0.2s;
+  }
+  #gw-floating-btn:hover { transform: scale(1.1); }
+
+  /* Widget Modal Container */
+  #gw-modal {
+    display: none;
+    position: fixed;
+    bottom: 200px;
+    right: 20px;
+    width: 320px;
+    background: var(--dark-chat-bg, #1e1e1e);
+    border: 1px solid var(--dark-header-border, #2a2a2a);
+    border-radius: 12px;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+    z-index: 10001;
+    overflow: hidden;
+    color: var(--dark-text, #fff);
+  }
+  body.light-mode #gw-modal {
+    background: var(--light-chat-bg, #f9f9f9);
+    border-color: var(--light-header-border, #e0e0e0);
+    color: var(--light-text, #333);
+  }
+
+  /* Header & Tabs */
+  .gw-header {
+    display: flex;
+    background: var(--dark-header-bg, #181818);
+    border-bottom: 1px solid var(--dark-header-border, #2a2a2a);
+  }
+  body.light-mode .gw-header {
+    background: var(--light-header-bg, #fff);
+    border-color: var(--light-header-border, #e0e0e0);
+  }
+  .gw-tab {
+    flex: 1;
+    padding: 12px;
+    text-align: center;
+    background: none;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    font-weight: bold;
+    outline: none;
+    opacity: 0.6;
+    transition: opacity 0.3s;
+  }
+  .gw-tab.active { opacity: 1; border-bottom: 2px solid #cc0000; }
+  
+  /* Content Areas */
+  .gw-content { padding: 15px; display: none; }
+  .gw-content.active { display: block; }
+
+  /* Canvas Drawing */
+  #gw-canvas {
+    background: #fff;
+    border: 2px solid #ccc;
+    border-radius: 8px;
+    cursor: crosshair;
+    width: 100%;
+    height: 250px;
+    touch-action: none;
+  }
+  .gw-controls { margin-top: 10px; display: flex; justify-content: space-between; }
+  .gw-btn {
+    background: #333; color: #fff; border: none; padding: 6px 12px; border-radius: 5px; cursor: pointer;
+  }
+  body.light-mode .gw-btn { background: #e0e0e0; color: #333; }
+
+  /* Tic Tac Toe */
+  #gw-ttt-board {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 5px;
+    margin-bottom: 15px;
+  }
+  .gw-cell {
+    background: rgba(255, 255, 255, 0.1);
+    height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 36px;
+    font-weight: bold;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  body.light-mode .gw-cell { background: rgba(0, 0, 0, 0.05); }
+  .gw-cell:hover { background: rgba(255, 255, 255, 0.2); }
+  body.light-mode .gw-cell:hover { background: rgba(0, 0, 0, 0.1); }
+  .gw-ttt-status { text-align: center; font-weight: bold; margin-bottom: 10px; }
+
+  @media (max-width: 600px) {
+    #gw-modal { width: 90%; left: 5%; right: 5%; bottom: 150px; }
+  }
+</style>
+
+<div id="gw-floating-btn" title="Play Games & Draw">🎮</div>
+
+<div id="gw-modal">
+  <div class="gw-header">
+    <button class="gw-tab active" data-target="gw-draw-view">✏️ Draw</button>
+    <button class="gw-tab" data-target="gw-ttt-view">❌⭕ Tic-Tac-Toe</button>
+  </div>
+
+  <!-- Drawing View -->
+  <div id="gw-draw-view" class="gw-content active">
+    <canvas id="gw-canvas"></canvas>
+    <div class="gw-controls">
+      <input type="color" id="gw-color-picker" value="#cc0000" title="Choose Color">
+      <button class="gw-btn" id="gw-clear-btn">Clear Canvas</button>
+    </div>
+  </div>
+
+  <!-- Tic Tac Toe View -->
+  <div id="gw-ttt-view" class="gw-content">
+    <div class="gw-ttt-status" id="gw-ttt-status">Your turn! (X)</div>
+    <div id="gw-ttt-board">
+      <div class="gw-cell" data-index="0"></div><div class="gw-cell" data-index="1"></div><div class="gw-cell" data-index="2"></div>
+      <div class="gw-cell" data-index="3"></div><div class="gw-cell" data-index="4"></div><div class="gw-cell" data-index="5"></div>
+      <div class="gw-cell" data-index="6"></div><div class="gw-cell" data-index="7"></div><div class="gw-cell" data-index="8"></div>
+    </div>
+    <div class="gw-controls" style="justify-content: center;">
+      <button class="gw-btn" id="gw-ttt-reset">Restart Game</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function() {
+    // --- UI Controls ---
+    const btn = document.getElementById('gw-floating-btn');
+    const modal = document.getElementById('gw-modal');
+    const tabs = document.querySelectorAll('.gw-tab');
+    const contents = document.querySelectorAll('.gw-content');
+
+    btn.addEventListener('click', () => {
+      modal.style.display = modal.style.display === 'block' ? 'none' : 'block';
+      if(modal.style.display === 'block') initCanvas(); // Fix sizing bug when hidden
+    });
+
+    tabs.forEach(tab => {
+      tab.addEventListener('click', (e) => {
+        tabs.forEach(t => t.classList.remove('active'));
+        contents.forEach(c => c.classList.remove('active'));
+        e.target.classList.add('active');
+        document.getElementById(e.target.dataset.target).classList.add('active');
+      });
+    });
+
+    // --- WebRTC Communication Helper ---
+    function sendGameData(payload) {
+      if (window.gameWebRTCConn && window.gameWebRTCConn.open) {
+        window.gameWebRTCConn.send({ type: "game_widget", payload: payload });
+      }
+    }
+
+    // Listen for incoming data from the main script
+    window.addEventListener('webrtc_data_received', (e) => {
+      const data = e.detail;
+      if (data && data.type === 'game_widget') {
+        const payload = data.payload;
+        if (payload.game === 'draw') handleIncomingDraw(payload);
+        if (payload.game === 'ttt') handleIncomingTTT(payload);
+      }
+    });
+
+
+    // --- Drawing Logic ---
+    const canvas = document.getElementById('gw-canvas');
+    const ctx = canvas.getContext('2d');
+    let isDrawing = false;
+    let lastX = 0, lastY = 0;
+
+    function initCanvas() {
+      // Set actual size in memory to match visual size
+      canvas.width = canvas.offsetWidth;
+      canvas.height = canvas.offsetHeight;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = 3;
+    }
+    
+    window.addEventListener('resize', initCanvas);
+
+    function draw(x0, y0, x1, y1, color, send = true) {
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.lineTo(x1, y1);
+      ctx.strokeStyle = color;
+      ctx.stroke();
+      ctx.closePath();
+
+      if (send) {
+        // Send normalized coordinates so it scales on different screen sizes
+        sendGameData({
+          game: 'draw', action: 'line', color: color,
+          x0: x0 / canvas.width, y0: y0 / canvas.height,
+          x1: x1 / canvas.width, y1: y1 / canvas.height
+        });
+      }
+    }
+
+    function getMousePos(e) {
+      const rect = canvas.getBoundingClientRect();
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      return { x: clientX - rect.left, y: clientY - rect.top };
+    }
+
+    const startDraw = (e) => {
+      e.preventDefault();
+      isDrawing = true;
+      const pos = getMousePos(e);
+      lastX = pos.x; lastY = pos.y;
+    };
+
+    const doDraw = (e) => {
+      if (!isDrawing) return;
+      e.preventDefault();
+      const pos = getMousePos(e);
+      const color = document.getElementById('gw-color-picker').value;
+      draw(lastX, lastY, pos.x, pos.y, color, true);
+      lastX = pos.x; lastY = pos.y;
+    };
+
+    const stopDraw = () => { isDrawing = false; };
+
+    canvas.addEventListener('mousedown', startDraw);
+    canvas.addEventListener('mousemove', doDraw);
+    canvas.addEventListener('mouseup', stopDraw);
+    canvas.addEventListener('mouseout', stopDraw);
+    canvas.addEventListener('touchstart', startDraw, {passive: false});
+    canvas.addEventListener('touchmove', doDraw, {passive: false});
+    canvas.addEventListener('touchend', stopDraw);
+
+    document.getElementById('gw-clear-btn').addEventListener('click', () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      sendGameData({ game: 'draw', action: 'clear' });
+    });
+
+    function handleIncomingDraw(data) {
+      if (data.action === 'line') {
+        const x0 = data.x0 * canvas.width;
+        const y0 = data.y0 * canvas.height;
+        const x1 = data.x1 * canvas.width;
+        const y1 = data.y1 * canvas.height;
+        draw(x0, y0, x1, y1, data.color, false);
+      } else if (data.action === 'clear') {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+    }
+
+
+    // --- Tic-Tac-Toe Logic ---
+    let board = ["", "", "", "", "", "", "", "", ""];
+    let mySymbol = "X"; // P2P logic: local actions are always X to the user, O to the remote
+    const cells = document.querySelectorAll('.gw-cell');
+    const statusText = document.getElementById('gw-ttt-status');
+
+    function checkWin(b) {
+      const wins = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+      for (let w of wins) {
+        if (b[w[0]] && b[w[0]] === b[w[1]] && b[w[0]] === b[w[2]]) return b[w[0]];
+      }
+      return b.includes("") ? null : "Tie";
+    }
+
+    function updateBoardUI() {
+      cells.forEach((cell, i) => {
+        cell.textContent = board[i];
+        cell.style.color = board[i] === 'X' ? '#cc0000' : (board[i] === 'O' ? '#4CAF50' : '');
+      });
+      const winner = checkWin(board);
+      if (winner) {
+        statusText.textContent = winner === "Tie" ? "It's a Tie! 🤝" : `${winner} Wins! 🎉`;
+      } else {
+        statusText.textContent = "Game on!";
+      }
+    }
+
+    cells.forEach(cell => {
+      cell.addEventListener('click', () => {
+        const i = cell.dataset.index;
+        if (board[i] !== "" || checkWin(board)) return;
+        
+        board[i] = "X"; // Mark locally as X
+        updateBoardUI();
+        sendGameData({ game: 'ttt', action: 'move', index: i });
+      });
+    });
+
+    document.getElementById('gw-ttt-reset').addEventListener('click', () => {
+      board = ["", "", "", "", "", "", "", "", ""];
+      updateBoardUI();
+      statusText.textContent = "Game Restarted!";
+      sendGameData({ game: 'ttt', action: 'reset' });
+    });
+
+    function handleIncomingTTT(data) {
+      if (data.action === 'move') {
+        // When remote moves, it registers as 'O' locally
+        board[data.index] = "O"; 
+        updateBoardUI();
+      } else if (data.action === 'reset') {
+        board = ["", "", "", "", "", "", "", "", ""];
+        updateBoardUI();
+        statusText.textContent = "Stranger restarted the game!";
+      }
+    }
+  })();
+</script>
