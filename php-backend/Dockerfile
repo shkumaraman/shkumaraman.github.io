@@ -20,7 +20,7 @@ RUN apk add --no-cache \
     php-pdo php-sodium php-ftp php-calendar \
     php-pcntl php-gettext php-shmop php-sysvmsg \
     php-sysvsem php-sysvshm php-tidy php-xsl php-bz2 php-gmp readline wget \
-    git composer nano
+    git composer nano tini
 
 RUN sed -i 's/Listen 80/Listen 7860/' /etc/apache2/httpd.conf && \
     sed -i 's/#LoadModule rewrite_module/LoadModule rewrite_module/' /etc/apache2/httpd.conf && \
@@ -60,8 +60,10 @@ EOF
 RUN find /etc/php* -name php.ini -exec sh -c 'echo "session.cookie_secure = On" >> "{}" && echo "session.cookie_samesite = \"None\"" >> "{}" && echo "opcache.enable=1" >> "{}"' \;
 
 RUN mkdir -p /run/mysqld /run/apache2 /data/mysql /var/www/localhost/htdocs /usr/share/webapps/filemanager /usr/share/webapps/terminal /etc/apache2/conf.d /var/log/apache2 && \
+    ln -sf /dev/stdout /var/log/apache2/access.log && \
+    ln -sf /dev/stderr /var/log/apache2/error.log && \
     curl -sL https://raw.githubusercontent.com/prasathmani/tinyfilemanager/master/tinyfilemanager.php -o /usr/share/webapps/filemanager/index.php && \
-    [ -s /usr/share/webapps/filemanager/index.php ] || { echo "ERROR: TinyFileManager download failed"; exit 1; } && \
+    [ -s /usr/share/webapps/filemanager/index.php ] || { exit 1; } && \
     sed -i "s/\$use_auth = true;/\$use_auth = false;/g" /usr/share/webapps/filemanager/index.php && \
     rm -f /var/www/localhost/htdocs/index.html
 
@@ -150,6 +152,15 @@ RUN cat << 'EOF' > /start.sh
 
 rm -f /run/mysqld/mysqld.sock /run/mysqld/mysqld.pid /run/apache2/httpd.pid /data/mysql/tc.log 2>/dev/null || true
 
+if [ ! -d /data/htdocs ]; then
+    mkdir -p /data/htdocs || true
+fi
+
+if [ ! -L /var/www/localhost/htdocs ]; then
+    cp -a /var/www/localhost/htdocs/. /data/htdocs/ 2>/dev/null || true
+    rm -rf /var/www/localhost/htdocs
+    ln -s /data/htdocs /var/www/localhost/htdocs
+fi
 
 if [ -f /var/www/localhost/htdocs/.env ]; then
     set -a
@@ -182,7 +193,7 @@ TRIES=0
 until mariadb-admin ping --socket=/run/mysqld/mysqld.sock -u root --silent 2>/dev/null; do
     TRIES=$((TRIES+1))
     if [ $TRIES -ge 30 ]; then
-        echo "ERROR: MariaDB failed to start after 60 seconds."
+        cat /data/mysql/*.err 2>/dev/null || true
         exit 1
     fi
     sleep 2
@@ -197,4 +208,5 @@ RUN chmod +x /start.sh
 WORKDIR /var/www/localhost/htdocs
 USER 1000
 EXPOSE 7860
-CMD ["/start.sh"]
+
+CMD ["tini", "--", "/start.sh"]
