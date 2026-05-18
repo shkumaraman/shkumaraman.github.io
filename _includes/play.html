@@ -1,3 +1,4 @@
+<!-- GAME & DRAW WIDGET START -->
 <style>
   #gw-floating-btn {
     position: fixed;
@@ -204,10 +205,10 @@
   }
 </style>
 
+<!-- NAYA GAMEPAD SVG -->
 <div id="gw-floating-btn">
   <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-    <path d="M6 11h2V9h2V7H8V5H6v2H4v2h2v2zm10-4h-2v2h2v2h2V9h2V7h-2V5h-2v2zM3 17h4v-2H3v2zm14 0h4v-2h-4v2zm-7-1c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/>
-    <path fill="none" d="M0 0h24v24H0z"/>
+    <path d="M21.58 12.58l-3-7.11C18.23 4.63 17.5 4 16.66 4H7.34C6.5 4 5.77 4.63 5.42 5.47l-3 7.11c-.34.8-.08 1.75.58 2.25L5 16.5c.31.24.71.32 1.1.2L9.5 15h5l3.4 1.7c.39.12.79.04 1.1-.2l2-1.67c.66-.5.92-1.45.58-2.25zM10 11H8v2H6v-2H4V9h2V7h2v2h2v2zm6.5 0c-.83 0-1.5-.67-1.5-1.5S15.67 8 16.5 8 18 8.67 18 9.5 17.33 11 16.5 11z"/>
   </svg>
 </div>
 
@@ -247,63 +248,75 @@
     const tabs = document.querySelectorAll('.gw-tab');
     const contents = document.querySelectorAll('.gw-content');
 
+    // Drag vs Click Logic
     let isDragging = false;
+    let hasMoved = false;
     let startX, startY, startLeft, startTop;
 
+    function toggleModal() {
+      modal.style.display = modal.style.display === 'block' ? 'none' : 'block';
+      if (modal.style.display === 'block') initCanvas();
+    }
+
     function onDragStart(e) {
-      e.preventDefault();
+      isDragging = true;
+      hasMoved = false;
       const clientX = e.touches ? e.touches[0].clientX : e.clientX;
       const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-      isDragging = true;
       startX = clientX;
       startY = clientY;
       const rect = btn.getBoundingClientRect();
       startLeft = rect.left;
       startTop = rect.top;
       btn.style.transition = 'none';
-      btn.style.bottom = 'auto';
-      btn.style.right = 'auto';
-      btn.style.left = startLeft + 'px';
-      btn.style.top = startTop + 'px';
       btn.style.cursor = 'grabbing';
     }
 
     function onDragMove(e) {
       if (!isDragging) return;
-      e.preventDefault();
       const clientX = e.touches ? e.touches[0].clientX : e.clientX;
       const clientY = e.touches ? e.touches[0].clientY : e.clientY;
       const deltaX = clientX - startX;
       const deltaY = clientY - startY;
-      let newLeft = startLeft + deltaX;
-      let newTop = startTop + deltaY;
-      const maxX = window.innerWidth - btn.offsetWidth;
-      const maxY = window.innerHeight - btn.offsetHeight;
-      newLeft = Math.min(Math.max(newLeft, 0), maxX);
-      newTop = Math.min(Math.max(newTop, 0), maxY);
-      btn.style.left = newLeft + 'px';
-      btn.style.top = newTop + 'px';
+      
+      // Agar thoda sa bhi move hua toh usko drag manenge
+      if (Math.abs(deltaX) > 5 || Math.abs(deltaY) > 5) {
+        hasMoved = true;
+        if (e.cancelable) e.preventDefault(); // Scroll roko drag karte time
+      }
+
+      if (hasMoved) {
+        let newLeft = startLeft + deltaX;
+        let newTop = startTop + deltaY;
+        const maxX = window.innerWidth - btn.offsetWidth;
+        const maxY = window.innerHeight - btn.offsetHeight;
+        btn.style.bottom = 'auto';
+        btn.style.right = 'auto';
+        btn.style.left = Math.min(Math.max(newLeft, 0), maxX) + 'px';
+        btn.style.top = Math.min(Math.max(newTop, 0), maxY) + 'px';
+      }
     }
 
-    function onDragEnd() {
+    function onDragEnd(e) {
       if (!isDragging) return;
       isDragging = false;
       btn.style.cursor = 'grab';
       btn.style.transition = 'transform 0.2s, box-shadow 0.2s';
+      
+      // Agar button drag nahi hua (sirf tap hua tha), toh modal kholo
+      if (!hasMoved) {
+        toggleModal();
+      }
+      hasMoved = false;
     }
 
+    // Event Listeners for Drag & Click
     btn.addEventListener('mousedown', onDragStart);
-    btn.addEventListener('touchstart', onDragStart, { passive: false });
-    window.addEventListener('mousemove', onDragMove);
+    btn.addEventListener('touchstart', onDragStart, { passive: true });
+    window.addEventListener('mousemove', onDragMove, { passive: false });
     window.addEventListener('touchmove', onDragMove, { passive: false });
     window.addEventListener('mouseup', onDragEnd);
     window.addEventListener('touchend', onDragEnd);
-
-    btn.addEventListener('click', (e) => {
-      if (isDragging) return;
-      modal.style.display = modal.style.display === 'block' ? 'none' : 'block';
-      if (modal.style.display === 'block') initCanvas();
-    });
 
     closeBtn.addEventListener('click', () => {
       modal.style.display = 'none';
@@ -318,6 +331,7 @@
       });
     });
 
+    // WebRTC Logic
     function sendGameData(payload) {
       if (window.gameWebRTCConn && window.gameWebRTCConn.open) {
         window.gameWebRTCConn.send({ type: "game_widget", payload: payload });
@@ -333,6 +347,7 @@
       }
     });
 
+    // Canvas Logic
     const canvas = document.getElementById('gw-canvas');
     const ctx = canvas.getContext('2d');
     let isDrawing = false;
@@ -414,6 +429,7 @@
       }
     }
 
+    // Tic-Tac-Toe Logic
     let board = ["", "", "", "", "", "", "", "", ""];
     const cells = document.querySelectorAll('.gw-cell');
     const statusText = document.getElementById('gw-ttt-status');
@@ -468,3 +484,4 @@
     }
   })();
 </script>
+<!-- GAME WIDGET END -->
