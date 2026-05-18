@@ -26,25 +26,25 @@ RUN sed -i 's/Listen 80/Listen 7860/' /etc/apache2/httpd.conf && \
     sed -i 's/#LoadModule rewrite_module/LoadModule rewrite_module/' /etc/apache2/httpd.conf && \
     sed -i 's/AllowOverride None/AllowOverride All/g' /etc/apache2/httpd.conf && \
     printf "\n\
-<Directory /usr/share/webapps/phpmyadmin>\n\
-    AllowOverride All\n\
-    Require all granted\n\
-</Directory>\n\
-<Directory /usr/share/webapps/filemanager>\n\
-    AllowOverride All\n\
-    Require all granted\n\
-</Directory>\n\
-<Directory /usr/share/webapps/terminal>\n\
-    AllowOverride All\n\
-    Require all granted\n\
-</Directory>\n\
-<Directory /var/www/localhost/htdocs>\n\
-    Options Indexes FollowSymLinks\n\
-    IndexOptions FancyIndexing FoldersFirst NameWidth=* DescriptionWidth=* VersionSort\n\
-    AllowOverride All\n\
-    Require all granted\n\
-</Directory>\n\
-DirectoryIndex index.php index.html\n" >> /etc/apache2/httpd.conf
+    <Directory /usr/share/webapps/phpmyadmin>\n\
+        AllowOverride All\n\
+        Require all granted\n\
+    </Directory>\n\
+    <Directory /usr/share/webapps/filemanager>\n\
+        AllowOverride All\n\
+        Require all granted\n\
+    </Directory>\n\
+    <Directory /usr/share/webapps/terminal>\n\
+        AllowOverride All\n\
+        Require all granted\n\
+    </Directory>\n\
+    <Directory /var/www/localhost/htdocs>\n\
+        Options Indexes FollowSymLinks\n\
+        IndexOptions FancyIndexing FoldersFirst NameWidth=* DescriptionWidth=* VersionSort\n\
+        AllowOverride All\n\
+        Require all granted\n\
+    </Directory>\n\
+    DirectoryIndex index.php index.html\n" >> /etc/apache2/httpd.conf
 
 RUN BLOWFISH=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 32) && \
     sed -i "s|'localhost'|'127.0.0.1'|g" /etc/phpmyadmin/config.inc.php && \
@@ -91,75 +91,75 @@ $init_cwd = '/var/www/localhost/htdocs';
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Web Terminal</title>
-<style>
-    body { background: #1e1e1e; color: #00ff00; font-family: monospace; padding: 20px; font-size: 16px; margin: 0; }
-    input { background: transparent; color: #00ff00; border: none; outline: none; width: 80%; font-family: monospace; font-size: 16px; }
-    #output { white-space: pre-wrap; margin-bottom: 10px; }
-    #prompt { color: #00ff00; }
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Terminal</title>
+    <style>
+        body { background: #1e1e1e; color: #00ff00; font-family: monospace; padding: 20px; font-size: 16px; margin: 0; }
+        input { background: transparent; color: #00ff00; border: none; outline: none; width: 80%; font-family: monospace; font-size: 16px; }
+        #output { white-space: pre-wrap; margin-bottom: 10px; }
+        #prompt { color: #00ff00; }
+    </style>
 </head>
 <body>
-<div id="output">Alpine Server Terminal - Ready.<br></div>
-<span id="prompt">$ /var/www/localhost/htdocs </span><input type="text" id="cmd" autofocus autocomplete="off">
-<script>
-const cmdInput = document.getElementById('cmd');
-const output = document.getElementById('output');
-const prompt = document.getElementById('prompt');
-let cwd = '<?= $init_cwd ?>';
-
-function updatePrompt(dir) {
-    cwd = dir;
-    prompt.textContent = '$ ' + dir + ' ';
-}
-
-cmdInput.addEventListener('keypress', function(e) {
-    if(e.key === 'Enter') {
-        const cmd = this.value.trim();
-        if(!cmd) return;
-        this.value = '';
-        output.innerHTML += '\n<span style="color:#00ff00;">$ ' + cwd + ' ' + cmd + '</span>\n';
-        fetch('index.php', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-            body: 'cmd=' + encodeURIComponent(cmd)
-        })
-        .then(r => r.json())
-        .then(data => {
-            if(data.out) output.innerHTML += data.out;
-            updatePrompt(data.cwd);
-            window.scrollTo(0, document.body.scrollHeight);
+    <div id="output">Alpine Server Terminal - Ready.<br></div>
+    <span id="prompt">$ /var/www/localhost/htdocs </span><input type="text" id="cmd" autofocus autocomplete="off">
+    <script>
+        const cmdInput = document.getElementById('cmd');
+        const output = document.getElementById('output');
+        const prompt = document.getElementById('prompt');
+        let cwd = '<?= $init_cwd ?>';
+        function updatePrompt(dir) {
+            cwd = dir;
+            prompt.textContent = '$ ' + dir + ' ';
+        }
+        cmdInput.addEventListener('keypress', function(e) {
+            if(e.key === 'Enter') {
+                const cmd = this.value.trim();
+                if(!cmd) return;
+                this.value = '';
+                output.innerHTML += '\n<span style="color:#00ff00;">$ ' + cwd + ' ' + cmd + '</span>\n';
+                fetch('index.php', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                    body: 'cmd=' + encodeURIComponent(cmd)
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if(data.out) output.innerHTML += data.out;
+                    updatePrompt(data.cwd);
+                    window.scrollTo(0, document.body.scrollHeight);
+                });
+            }
         });
-    }
-});
-</script>
+    </script>
 </body>
 </html>
 EOF
 
+# FIXED: Changed from /var/www/localhost/htdocs to the parent /var/www/localhost and added /data
 RUN chown -R 1000:1000 \
     /run/mysqld /run/apache2 \
-    /var/www/localhost/htdocs \
+    /var/www/localhost \
     /var/log/apache2 \
     /etc/phpmyadmin \
     /etc/apache2/conf.d \
-    /usr/share/webapps
+    /usr/share/webapps \
+    /data
 
 RUN cat << 'EOF' > /start.sh
 #!/bin/sh
-
 rm -f /run/mysqld/mysqld.sock /run/mysqld/mysqld.pid /run/apache2/httpd.pid /data/mysql/tc.log 2>/dev/null || true
 
 if [ ! -d /data/htdocs ]; then
     mkdir -p /data/htdocs || true
 fi
 
+# Fixed symlink logic to be cleaner
 if [ ! -L /var/www/localhost/htdocs ]; then
     cp -a /var/www/localhost/htdocs/. /data/htdocs/ 2>/dev/null || true
-    rm -rf /var/www/localhost/htdocs
-    ln -s /data/htdocs /var/www/localhost/htdocs
+    rm -rf /var/www/localhost/htdocs 2>/dev/null || true
+    ln -sfn /data/htdocs /var/www/localhost/htdocs
 fi
 
 if [ -f /var/www/localhost/htdocs/.env ]; then
@@ -208,5 +208,4 @@ RUN chmod +x /start.sh
 WORKDIR /var/www/localhost/htdocs
 USER 1000
 EXPOSE 7860
-
 CMD ["tini", "--", "/start.sh"]
