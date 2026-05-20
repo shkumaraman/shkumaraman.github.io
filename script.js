@@ -23,35 +23,3 @@ themeToggle.addEventListener('click', () => {
     themeToggle.innerHTML = '<i class="fas fa-moon"></i>';
   }
 });
-
-// ----------------- Chat Layout + Input Focus Handling -----------------
-const msgInput = document.getElementById("msgInput");
-const chatLog = document.getElementById("chatLog");
-const chatControls = document.querySelector(".chat-controls");
-const appHeader = document.querySelector(".app-header");
-
-// Set chatLog height based on viewport and layout
-function setChatLogHeight() {
-  const windowHeight = window.innerHeight;
-  const headerHeight = appHeader.offsetHeight;
-  const controlsHeight = chatControls.offsetHeight;
-  
-  const availableHeight = windowHeight - headerHeight - controlsHeight;
-  chatLog.style.height = availableHeight + "px";
-}
-
-// Set height on load
-setChatLogHeight();
-
-// Recalculate height on window resize
-window.addEventListener("resize", setChatLogHeight);
-
-// Lock body scroll when input is focused (mobile UX)
-msgInput.addEventListener("focus", () => {
-  document.body.style.overflow = "hidden";
-});
-
-// Restore scroll when input is blurred
-msgInput.addEventListener("blur", () => {
-  document.body.style.overflow = "auto";
-});
