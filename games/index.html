@@ -55,12 +55,14 @@ input[type="text"]::placeholder{color:#2a3f56;}
 .players-list{display:flex;flex-direction:column;gap:9px;margin-bottom:20px;}
 .player-slot{display:flex;align-items:center;gap:11px;padding:11px 13px;border-radius:10px;background:rgba(255,255,255,.03);border:1px solid var(--pbr);transition:border-color .3s;}
 .player-slot.filled{border-color:rgba(201,168,76,.2);}
+.player-slot.offline { opacity: 0.5; }
 .player-color-dot{width:13px;height:13px;border-radius:50%;flex-shrink:0;}
 .player-name-w{font-size:.95rem;font-weight:600;color:var(--gold2);flex:1;}
 .player-name-w.empty{color:#2a3f56;font-style:italic;font-weight:400;}
-.player-you-tag,.host-tag{font-size:.62rem;letter-spacing:2px;font-weight:700;text-transform:uppercase;}
+.player-you-tag,.host-tag, .offline-tag{font-size:.62rem;letter-spacing:2px;font-weight:700;text-transform:uppercase;}
 .player-you-tag{color:var(--gold);}
 .host-tag{color:#3a5070;}
+.offline-tag{color:#e57373; margin-left: auto;}
 .waiting-footer{text-align:center;}
 .waiting-dots{color:#3a5070;font-size:.78rem;letter-spacing:3px;animation:blink 1.4s ease-in-out infinite;}
 @keyframes blink{0%,100%{opacity:.3}50%{opacity:1}}
@@ -80,13 +82,14 @@ input[type="text"]::placeholder{color:#2a3f56;}
 .ptag{display:flex;align-items:center;gap:7px;padding:7px 12px;border-radius:10px;background:rgba(255,255,255,.04);border:1px solid var(--pbr);font-size:.82rem;font-weight:700;white-space:nowrap;opacity:.28;transition:opacity .25s,border-color .25s,background .25s;}
 .ptag.active{opacity:1;background:rgba(255,255,255,.07);}
 .ptag.hidden{opacity:0;pointer-events:none;}
+.ptag.offline{opacity:0.4; filter: grayscale(100%);}
 .ptag-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;box-shadow:0 0 5px currentColor;}
 .ptag-red{color:var(--rl);}.ptag-red.active{border-color:rgba(198,40,40,.7);box-shadow:0 0 12px rgba(198,40,40,.15);}
 .ptag-green{color:var(--gl);}.ptag-green.active{border-color:rgba(46,125,50,.7);box-shadow:0 0 12px rgba(46,125,50,.15);}
 .ptag-yellow{color:var(--yl);}.ptag-yellow.active{border-color:rgba(249,168,37,.7);box-shadow:0 0 12px rgba(249,168,37,.15);}
 .ptag-blue{color:var(--bl);}.ptag-blue.active{border-color:rgba(21,101,192,.7);box-shadow:0 0 12px rgba(21,101,192,.15);}
 .turn-bar{width:100%;max-width:740px;display:flex;align-items:center;justify-content:center;padding:2px 0;}
-.turn-label{font-size:.82rem;color:var(--gold);letter-spacing:2px;text-transform:uppercase;font-weight:700;text-align:center;min-height:22px;background:rgba(201,168,76,.07);border:1px solid rgba(201,168,76,.15);border-radius:8px;padding:5px 16px;width:100%;}
+.turn-label{font-size:.82rem;color:var(--gold);letter-spacing:2px;text-transform:uppercase;font-weight:700;text-align:center;min-height:22px;background:rgba(201,168,76,.07);border:1px solid rgba(201,168,76,.15);border-radius:8px;padding:5px 16px;width:100%; display: flex; justify-content: center; gap: 8px;}
 
 .board-wrap{background:var(--wrap);padding:11px;border-radius:18px;box-shadow:0 20px 44px rgba(0,0,0,.8),inset 0 0 0 2px var(--border);overflow:auto;max-width:100vw;}
 .ludo-board{display:grid;grid-template-columns:repeat(15,44px);grid-template-rows:repeat(15,44px);gap:2px;background:var(--board);padding:2px;border-radius:8px;position:relative;}
@@ -339,7 +342,7 @@ input[type="text"]::placeholder{color:#2a3f56;}
 
 <script type="module">
 import{initializeApp}from"https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import{getDatabase,ref,set,get,update,onValue,remove}from"https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+import{getDatabase,ref,set,get,update,onValue,remove,onDisconnect}from"https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
 const app=initializeApp({databaseURL:"https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"});
 const db=getDatabase(app);
@@ -471,6 +474,11 @@ function subscribeToRoom(code){
   });
 }
 
+function setupPresence() {
+  const pRef = ref(db, 'games/' + roomCode + '/players/' + myUid);
+  onDisconnect(pRef).update({ isOnline: false });
+}
+
 function saveSession(){localStorage.setItem('ludo_session',JSON.stringify({myUid,myName,myColor,roomCode}));}
 
 window.sendEmoji=async function(emoji){
@@ -502,8 +510,9 @@ window.createRoom=async function(){
   const ig={};
   COLORS.forEach(c=>{ig[c]=[{pos:-1},{pos:-1},{pos:-1},{pos:-1}];});
   try{
-    await set(ref(db,'games/'+roomCode),{name:rName,mode:selectedMode,status:'waiting',createdAt:Date.now(),players:{[myUid]:{uid:myUid,name:myName,color:myColor,joinedAt:Date.now()}},goties:ig,winners:[],currentTurn:COLORS[0]});
+    await set(ref(db,'games/'+roomCode),{name:rName,mode:selectedMode,status:'waiting',createdAt:Date.now(),players:{[myUid]:{uid:myUid,name:myName,color:myColor,joinedAt:Date.now(),isOnline:true}},goties:ig,winners:[],currentTurn:COLORS[0]});
     saveSession();
+    setupPresence();
     setBtnLoad('create-btn',false,'Create Room');
     subscribeToRoom(roomCode);
   }catch(e){
@@ -527,8 +536,9 @@ window.joinRoom=async function(){
     const players=Object.values(room.players||{});
     if(players.length>=(MODE_SLOTS[room.mode]||2)){err.textContent='Room is full.';setBtnLoad('join-btn',false,'Join Room');return;}
     myUid=mkUid();myName=name;myColor=COLORS[players.length];roomCode=rCode;
-    await set(ref(db,'games/'+rCode+'/players/'+myUid),{uid:myUid,name:myName,color:myColor,joinedAt:Date.now()});
+    await set(ref(db,'games/'+rCode+'/players/'+myUid),{uid:myUid,name:myName,color:myColor,joinedAt:Date.now(),isOnline:true});
     saveSession();
+    setupPresence();
     setBtnLoad('join-btn',false,'Join Room');
     subscribeToRoom(rCode);
   }catch(e){
@@ -559,7 +569,7 @@ window.exitToLobby=async function(){
     if(room){
       const players=Object.values(room.players||{}).sort((a,b)=>a.joinedAt-b.joinedAt);
       if(players[0]?.uid===myUid)await remove(ref(db,'games/'+roomCode));
-      else await remove(ref(db,'games/'+roomCode+'/players/'+myUid));
+      else await update(ref(db,'games/'+roomCode+'/players/'+myUid), {isOnline: false});
     }
   }catch(e){}
   cleanup();
@@ -568,6 +578,7 @@ window.exitToLobby=async function(){
 
 function cleanup(){
   if(roomUnsub){roomUnsub();roomUnsub=null;}
+  if(window.gameLoop){clearInterval(window.gameLoop);window.gameLoop=null;}
   stopBGM();
   localStorage.removeItem('ludo_session');
   boardBuilt=false;waitingForMove=false;pendingRoll=0;lastEventKey='';isAnimating=false;lastEmojiKey='';consecutiveSixes=0;bgmPlaying=false;pendingGameState=null;
@@ -593,10 +604,12 @@ function renderWaiting(players,mode,rCode){
   const list=document.getElementById('players-list');list.innerHTML='';
   for(let i=0;i<slots;i++){
     const p=players[i],color=COLORS[i];
-    const slot=document.createElement('div');slot.className='player-slot'+(p?' filled':'');
+    const slot=document.createElement('div');
+    slot.className='player-slot'+(p?' filled':'')+(p&&p.isOnline===false?' offline':'');
     const dot=document.createElement('div');dot.className='player-color-dot';
     dot.style.background={red:'#c62828',green:'#2e7d32',yellow:'#f9a825',blue:'#1565c0'}[color];
-    const nm=document.createElement('div');nm.className='player-name-w'+(p?'':' empty');nm.textContent=p?p.name:'Waiting…';
+    const nm=document.createElement('div');nm.className='player-name-w'+(p?'':' empty');
+    nm.textContent=p?(p.isOnline===false?p.name+' (Offline)':p.name):'Waiting…';
     slot.appendChild(dot);slot.appendChild(nm);
     if(p){
       if(p.uid===myUid){const y=document.createElement('span');y.className='player-you-tag';y.textContent='YOU';slot.appendChild(y);}
@@ -604,13 +617,64 @@ function renderWaiting(players,mode,rCode){
     }
     list.appendChild(slot);
   }
-  const filled=players.filter(Boolean).length;
+  const onlinePlayers = players.filter(p => p.isOnline !== false);
   const wt=document.getElementById('waiting-text');
-  if(filled>=slots){wt.textContent='All players joined! Starting…';if(players[0]?.uid===myUid)setTimeout(startGame,1500);}
-  else wt.textContent='Waiting for players… ('+filled+'/'+slots+')';
+  if(onlinePlayers.length>=slots){
+    wt.textContent='All players joined! Starting…';
+    if(players[0]?.uid===myUid)setTimeout(startGame,1500);
+  }
+  else wt.textContent='Waiting for players… ('+onlinePlayers.length+'/'+slots+')';
 }
 
-async function startGame(){await update(ref(db,'games/'+roomCode),{status:'playing'});}
+async function startGame(){await update(ref(db,'games/'+roomCode),{status:'playing', turnStartTime: Date.now()});}
+
+// --- Background Rules Loop (Timer & Disconnection Logic) ---
+async function checkGameRules(room, players) {
+    if(room.status !== 'playing' || isAnimating) return;
+    const currentPlayer = players.find(p => p.color === room.currentTurn);
+    const onlinePlayers = players.filter(p => p.isOnline !== false);
+    // Find who the current active host is (to avoid multiple clients updating DB)
+    const isHost = onlinePlayers[0]?.uid === myUid; 
+
+    let shouldPass = false;
+
+    // 1. Skip Turn if Player is Offline
+    if(currentPlayer && currentPlayer.isOnline === false) {
+        shouldPass = true;
+    }
+
+    // 2. Turn Timer (20 Seconds)
+    const elapsed = Date.now() - (room.turnStartTime || Date.now());
+    const timeLeft = Math.max(0, 20 - Math.floor(elapsed/1000));
+    
+    // Update Timer UI
+    const turnLabel = document.getElementById('turn-label');
+    if (turnLabel && !turnLabel.innerHTML.includes('Rolled') && currentPlayer) {
+        turnLabel.innerHTML = `<span>${(currentPlayer.name || room.currentTurn).toUpperCase()}'s Turn</span> <span style="color:#e57373; font-weight:900;">(${timeLeft}s)</span>`;
+    }
+
+    if(elapsed > 20000) { // Time is up!
+        shouldPass = true;
+    }
+
+    // Only host triggers the turn skip to prevent DB collisions
+    if(isHost && shouldPass && !window.isPassingTurn) {
+        window.isPassingTurn = true;
+        const goties = room.goties || {};
+        const cols = onlinePlayers.map(p=>p.color).filter(c=>!allFinished(goties,c));
+        
+        if(cols.length <= 1) return; // End of game
+
+        const currentIdx = cols.indexOf(room.currentTurn);
+        const nextTurn = cols[(currentIdx + 1) % cols.length] || cols[0];
+
+        await update(ref(db, 'games/' + roomCode), {
+            currentTurn: nextTurn,
+            turnStartTime: Date.now()
+        });
+        setTimeout(() => window.isPassingTurn = false, 2000);
+    }
+}
 
 function handleGameUpdate(players,room){
   showScreen('game-screen');
@@ -618,6 +682,10 @@ function handleGameUpdate(players,room){
   startBGM();
   document.getElementById('game-room-badge').textContent=roomCode;
   if(!boardBuilt){boardBuilt=true;buildBoard();setupBottomDice();}
+
+  // Setup loop for Timer and offline checks
+  if(window.gameLoop) clearInterval(window.gameLoop);
+  window.gameLoop = setInterval(() => checkGameRules(room, players), 1000);
 
   const playerMap={};
   players.forEach(p=>{playerMap[p.color]=p;});
@@ -634,6 +702,7 @@ function handleGameUpdate(players,room){
     if(!tag||!nm)return;
     if(!p){tag.classList.add('hidden');return;}
     tag.classList.remove('hidden');
+    tag.classList.toggle('offline', p.isOnline === false);
     nm.textContent=p.name+(p.uid===myUid?' (You)':'');
   });
 
@@ -691,6 +760,13 @@ function getCellCenter(r,c){
 }
 
 function animateMove(color,idx,fromPos,toPos,goties,captured,onDone){
+  // Tab Throttling Fix: Instant finish if tab is in background
+  if(document.hidden) {
+      if(captured) sndStar();
+      onDone();
+      return;
+  }
+
   const cfg=COLOR_CFG[color];
   const fg=document.getElementById('floating-goti');
   fg.style.background=COLOR_GRAD[color];fg.style.display='block';
@@ -719,10 +795,12 @@ function animateMove(color,idx,fromPos,toPos,goties,captured,onDone){
   const first=getCenter(steps[0]);
   if(first){fg.style.left=(first.x-gSize/2)+'px';fg.style.top=(first.y-gSize/2)+'px';}
   let si=0;
+  
+  // Using requestAnimationFrame for better background handling
   const next=()=>{
     if(si>=steps.length){fg.style.display='none';if(captured)sndStar();onDone();return;}
     const s=steps[si++];const ctr=getCenter(s);
-    if(!ctr){next();return;}
+    if(!ctr){setTimeout(next, 140);return;}
     fg.style.left=(ctr.x-gSize/2)+'px';fg.style.top=(ctr.y-gSize/2)+'px';
     if(!s.isHome){
       sndMove();
@@ -851,7 +929,11 @@ function applyTurn(color,playerMap,goties,roll){
   const p=playerMap[color];
   const isMe=p?.uid===myUid&&p?.uid!==undefined;
 
-  document.getElementById('turn-label').textContent=isMe?(roll>0?`🎲 Rolled ${roll} — pick a goti`:'🎲 Your Turn — Roll Dice!'):((p?.name||color)+"'s Turn");
+  if (roll > 0 && isMe) {
+    document.getElementById('turn-label').innerHTML = `<span>🎲 Rolled ${roll} — pick a goti</span>`;
+  } else if (isMe) {
+    document.getElementById('turn-label').innerHTML = `<span>🎲 Your Turn — Roll Dice!</span>`;
+  }
 
   COLORS.forEach(c=>{
     const tag=document.getElementById('ptag-'+c);if(tag)tag.classList.toggle('active',c===color);
@@ -899,7 +981,7 @@ async function moveGoti(color,idx,roll){
   const goties=room.goties||{};
   const gt=(goties[color]||[])[idx];
   const players=Object.values(room.players||{}).sort((a,b)=>a.joinedAt-b.joinedAt);
-  const playerMap={};players.forEach(p=>{playerMap[p.color]=p;});
+  const onlinePlayers = players.filter(p => p.isOnline !== false);
 
   const fromPos=gt.pos;
   let newPos,captured=false;
@@ -938,14 +1020,14 @@ async function moveGoti(color,idx,roll){
 
   let nextTurn=room.currentTurn;
   if(!extraTurn){
-    const cols=players.map(p=>p.color).filter(c=>!allFinished(goties,c));
+    const cols=onlinePlayers.map(p=>p.color).filter(c=>!allFinished(goties,c));
     if(cols.length>0){const i2=cols.indexOf(color);nextTurn=cols[(i2+1)%cols.length];}
   }
 
   const allWon=winners.length>=players.length;
   const evKey=myUid+'-'+Date.now();
   const moveEv={type:'move',color,idx,fromPos,toPos:newPos,captured,key:evKey,at:Date.now()};
-  const updates={goties,currentTurn:nextTurn,winners,lastEvent:moveEv,lastRoll:{uid:myUid,color,value:roll,at:Date.now()}};
+  const updates={goties,currentTurn:nextTurn,turnStartTime:Date.now(),winners,lastEvent:moveEv,lastRoll:{uid:myUid,color,value:roll,at:Date.now()}};
 
   if(allWon){
     updates.status='finished';
@@ -985,16 +1067,17 @@ function setupBottomDice(){
       const room=snap.val();if(!room)return;
       const goties=room.goties||{};
       const gtArr=goties[colorName]||[];
+      const players=Object.values(room.players||{}).sort((a,b)=>a.joinedAt-b.joinedAt);
+      const onlinePlayers = players.filter(p => p.isOnline !== false);
 
       if(val===6){
         consecutiveSixes+=1;
         if(consecutiveSixes>=3){
           consecutiveSixes=0;
-          const players=Object.values(room.players||{}).sort((a,b)=>a.joinedAt-b.joinedAt);
-          const cols=players.map(p=>p.color).filter(c=>!allFinished(goties,c));
+          const cols=onlinePlayers.map(p=>p.color).filter(c=>!allFinished(goties,c));
           const ci=cols.indexOf(colorName);
           const nextTurn=cols[(ci+1)%cols.length];
-          await update(ref(db,'games/'+roomCode),{currentTurn:nextTurn,lastRoll:{uid:myUid,color:colorName,value:val,at:Date.now()}});
+          await update(ref(db,'games/'+roomCode),{currentTurn:nextTurn, turnStartTime:Date.now(), lastRoll:{uid:myUid,color:colorName,value:val,at:Date.now()}});
           return;
         }
       } else {
@@ -1003,17 +1086,15 @@ function setupBottomDice(){
 
       const canAny=gtArr.some((gt,i)=>canMove(colorName,i,gt.pos,val,goties));
       if(!canAny){
-        const players=Object.values(room.players||{}).sort((a,b)=>a.joinedAt-b.joinedAt);
-        const cols=players.map(p=>p.color).filter(c=>!allFinished(goties,c));
+        const cols=onlinePlayers.map(p=>p.color).filter(c=>!allFinished(goties,c));
         const ci=cols.indexOf(colorName);
         const nextTurn=cols[(ci+1)%cols.length];
-        await update(ref(db,'games/'+roomCode),{currentTurn:nextTurn,lastRoll:{uid:myUid,color:colorName,value:val,at:Date.now()}});
+        await update(ref(db,'games/'+roomCode),{currentTurn:nextTurn, turnStartTime:Date.now(), lastRoll:{uid:myUid,color:colorName,value:val,at:Date.now()}});
         return;
       }
 
       pendingRoll=val;
       waitingForMove=true;
-      const players=Object.values(room.players||{}).sort((a,b)=>a.joinedAt-b.joinedAt);
       const playerMap={};players.forEach(p=>{playerMap[p.color]=p;});
       applyTurn(colorName,playerMap,goties,val);
     },{once:true});
@@ -1076,6 +1157,7 @@ try{
   const saved=JSON.parse(localStorage.getItem('ludo_session')||'null');
   if(saved?.myUid){
     myUid=saved.myUid;myName=saved.myName;myColor=saved.myColor;roomCode=saved.roomCode;
+    setupPresence();
     subscribeToRoom(roomCode);
   } else {
     showScreen('lobby-screen');
