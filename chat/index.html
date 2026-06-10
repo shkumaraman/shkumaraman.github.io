@@ -675,11 +675,17 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   const db = getDatabase(app);
 
   let GIPHY_API_KEY = '';
+  let CHAT_END_IMAGE = '/assets/chat_end.png';
+  let CHAT_END_LINK = '';
 
   async function loadKeys() {
-    const res = await fetch('/key.json');
-    const keys = await res.json();
-    GIPHY_API_KEY = keys.giphy;
+    try {
+      const res = await fetch('/key.json');
+      const keys = await res.json();
+      GIPHY_API_KEY = keys.giphy || '';
+      if (keys.chatEndImage) CHAT_END_IMAGE = keys.chatEndImage;
+      if (keys.chatEndLink) CHAT_END_LINK = keys.chatEndLink;
+    } catch (e) {}
   }
 
   let peer, myConn, myId, waitingRef, waitingEntryRef;
@@ -991,7 +997,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     botActive = false;
     isConnected = false;
     currentBotData = null;
-    appendSystemImage("/assets/chat_end.png");
+    appendSystemImage(CHAT_END_IMAGE, CHAT_END_LINK);
     logSystem("Stranger disconnected! 💔");
     showNewChatButton();
     hideFriendButton();
@@ -1055,7 +1061,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   }
 
   function endConnection() {
-    appendSystemImage("/assets/chat_end.png");
+    appendSystemImage(CHAT_END_IMAGE, CHAT_END_LINK);
     logSystem("Stranger disconnected! 💔");
     if (myConn) { myConn.close(); myConn = null; }
     isConnected = false;
@@ -1161,13 +1167,25 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   const appendGif = (sender, url) => appendMessage(sender, url, "gif");
   const scrollToBottom = () => { const log = document.getElementById("chatLog"); log.scrollTop = log.scrollHeight; };
 
-  function appendSystemImage(src) {
+  function appendSystemImage(src, linkUrl) {
     const wrapper = document.createElement("div");
     wrapper.className = "system-message system-image";
+    
     const img = document.createElement("img");
     img.src = src;
     img.className = "chat-end-image";
-    wrapper.appendChild(img);
+    
+    if (linkUrl && linkUrl.trim() !== '') {
+      const a = document.createElement("a");
+      a.href = linkUrl;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      a.appendChild(img);
+      wrapper.appendChild(a);
+    } else {
+      wrapper.appendChild(img);
+    }
+    
     document.getElementById("chatLog").appendChild(wrapper);
     scrollToBottom();
   }
