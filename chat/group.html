@@ -179,6 +179,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 .light-mode .timestamp { color: var(--light-text-dim); }
 
 .msg img { max-width: 100%; max-height: 260px; border-radius: 8px; display: block; margin-bottom: 4px; }
+.msg img.verify-badge { display: inline-block !important; width: 14px !important; height: 14px !important; margin: 0 !important; border-radius: 0 !important; }
 
 .system-msg {
   align-self: center; background: transparent; color: var(--dark-text-muted);
@@ -362,7 +363,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 .drawer-group-name { display: flex; align-items: center; gap: 8px; }
 .item-red-dot { width: 8px; height: 8px; background: #ff4757; border-radius: 50%; }
 
-.verify-badge { width: 14px; height: 14px; margin-left: 5px; vertical-align: middle; }
 .uploading-bubble { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--dark-text-muted); font-style: italic; }
 .upload-spinner { width: 14px; height: 14px; border: 2px solid var(--dark-text-muted); border-top-color: var(--dark-text); border-radius: 50%; animation: spin 0.7s linear infinite; flex-shrink: 0; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -491,7 +491,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
-import { getDatabase, ref, push, set, onChildAdded, onValue, query, orderByChild, limitToLast, get, update } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
+import { getDatabase, ref, push, set, onChildAdded, onValue, query, orderByChild, limitToLast, get, update, remove } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
 
 const firebaseConfig = {
   databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
@@ -714,33 +714,37 @@ function joinGroupChat() {
 
   loadPinnedMessage();
 
+  const mySafeKey = myNickname.replace(/[.#$\[\]]/g, '_');
+  const myBanRef = ref(db, `groups/${currentGroup}/banned/${mySafeKey}`);
+  onValue(myBanRef, (snapshot) => {
+    if (snapshot.exists() && snapshot.val() === true) {
+      Swal.fire({
+        title: 'Banned!',
+        text: 'The admin has permanently banned you from this room.',
+        icon: 'error',
+        confirmButtonColor: 'var(--accent)',
+        background: 'var(--dark-surface)',
+        color: 'var(--dark-text)'
+      }).then(() => {
+        window.location.href = '/chat/rooms.html';
+      });
+    }
+  });
+
   const commandsRefQuery = query(ref(db, `groups/${currentGroup}/commands`), limitToLast(1));
   onChildAdded(commandsRefQuery, (snapshot) => {
     const cmd = snapshot.val();
-    if (Date.now() - cmd.timestamp < 10000 && cmd.target === myNickname) {
-      if (cmd.type === 'kick') {
-        Swal.fire({
-          title: 'Kicked!',
-          text: 'The admin has kicked you from the room.',
-          icon: 'warning',
-          confirmButtonColor: 'var(--accent)',
-          background: 'var(--dark-surface)',
-          color: 'var(--dark-text)'
-        }).then(() => {
-          window.location.href = '/chat/rooms.html';
-        });
-      } else if (cmd.type === 'ban') {
-        Swal.fire({
-          title: 'Banned!',
-          text: 'The admin has permanently banned you from this room.',
-          icon: 'error',
-          confirmButtonColor: 'var(--accent)',
-          background: 'var(--dark-surface)',
-          color: 'var(--dark-text)'
-        }).then(() => {
-          window.location.href = '/chat/rooms.html';
-        });
-      }
+    if (Date.now() - cmd.timestamp < 10000 && cmd.target === myNickname && cmd.type === 'kick') {
+      Swal.fire({
+        title: 'Kicked!',
+        text: 'The admin has kicked you from the room.',
+        icon: 'warning',
+        confirmButtonColor: 'var(--accent)',
+        background: 'var(--dark-surface)',
+        color: 'var(--dark-text)'
+      }).then(() => {
+        window.location.href = '/chat/rooms.html';
+      });
     }
   });
 }
@@ -967,6 +971,8 @@ document.getElementById('contextKickBtn').addEventListener('click', async () => 
     const cmdRef = push(ref(db, `groups/${currentGroup}/commands`));
     await set(cmdRef, { type: 'kick', target: targetNick, timestamp: Date.now() });
     
+    setTimeout(() => { remove(cmdRef); }, 5000);
+    
     logSystem(`Admin kicked ${targetNick}.`);
   }
   hideContextMenu();
@@ -978,9 +984,6 @@ document.getElementById('contextBanBtn').addEventListener('click', async () => {
     const safeKey = targetNick.replace(/[.#$\[\]]/g, '_');
     
     await set(ref(db, `groups/${currentGroup}/banned/${safeKey}`), true);
-    
-    const cmdRef = push(ref(db, `groups/${currentGroup}/commands`));
-    await set(cmdRef, { type: 'ban', target: targetNick, timestamp: Date.now() });
     
     logSystem(`Admin permanently banned ${targetNick}.`);
   }
@@ -1071,8 +1074,10 @@ function displayMessage(msg, isInitial) {
   const nicknameEl = document.createElement("div");
   nicknameEl.className = "msg-nickname";
   nicknameEl.style.fontWeight = "bold";
-  nicknameEl.style.marginBottom = "2px";
-  nicknameEl.style.lineHeight = "1";
+  nicknameEl.style.marginBottom = "4px";
+  nicknameEl.style.display = "flex";
+  nicknameEl.style.alignItems = "center";
+  nicknameEl.style.gap = "4px";
 
   const nicknameSpan = document.createElement("span");
   nicknameSpan.textContent = msg.nickname || 'Guest';
