@@ -459,6 +459,8 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 <div class="context-menu" id="contextMenu">
   <div class="context-menu-item" id="contextPinBtn">📌 Pin Message</div>
   <div class="context-menu-item" id="contextReplyBtn">↩ Reply</div>
+  <div class="context-menu-item" id="contextKickBtn" style="color: #ff9800; display: none;">👢 Kick User</div>
+  <div class="context-menu-item" id="contextBanBtn" style="color: #ff4757; display: none;">🔨 Ban User</div>
 </div>
 
 <div class="password-modal" id="passwordModal">
@@ -605,6 +607,24 @@ async function checkGroupPassword() {
     const passwordSnapshot = await get(ref(db, `groups/${currentGroup}/password`));
 
     groupAdminNickname = adminSnapshot.val();
+
+    const safeKey = myNickname.replace(/[.#$\[\]]/g, '_'); 
+    const banSnapshot = await get(ref(db, `groups/${currentGroup}/banned/${safeKey}`));
+    
+    if (banSnapshot.exists() && banSnapshot.val() === true) {
+      Swal.fire({
+        title: 'Banned!',
+        text: 'You have been banned from this room by the admin.',
+        icon: 'error',
+        confirmButtonColor: 'var(--accent)',
+        background: 'var(--dark-surface)',
+        color: 'var(--dark-text)'
+      }).then(() => {
+        window.location.href = '/chat/rooms.html';
+      });
+      return;
+    }
+
     const hasPassword = passwordSnapshot.exists() && passwordSnapshot.val();
 
     if (hasPassword) {
@@ -693,6 +713,36 @@ function joinGroupChat() {
   });
 
   loadPinnedMessage();
+
+  const commandsRefQuery = query(ref(db, `groups/${currentGroup}/commands`), limitToLast(1));
+  onChildAdded(commandsRefQuery, (snapshot) => {
+    const cmd = snapshot.val();
+    if (Date.now() - cmd.timestamp < 10000 && cmd.target === myNickname) {
+      if (cmd.type === 'kick') {
+        Swal.fire({
+          title: 'Kicked!',
+          text: 'The admin has kicked you from the room.',
+          icon: 'warning',
+          confirmButtonColor: 'var(--accent)',
+          background: 'var(--dark-surface)',
+          color: 'var(--dark-text)'
+        }).then(() => {
+          window.location.href = '/chat/rooms.html';
+        });
+      } else if (cmd.type === 'ban') {
+        Swal.fire({
+          title: 'Banned!',
+          text: 'The admin has permanently banned you from this room.',
+          icon: 'error',
+          confirmButtonColor: 'var(--accent)',
+          background: 'var(--dark-surface)',
+          color: 'var(--dark-text)'
+        }).then(() => {
+          window.location.href = '/chat/rooms.html';
+        });
+      }
+    }
+  });
 }
 
 function loadPinnedMessage() {
@@ -877,6 +927,20 @@ function showContextMenu(x, y, msg) {
   contextTargetMsg = msg;
   contextMenu.style.left = Math.min(x, window.innerWidth - 170) + 'px';
   contextMenu.style.top = Math.min(y, window.innerHeight - 100) + 'px';
+
+  const isAdmin = myNickname === groupAdminNickname;
+  const isSelfMsg = msg.nickname === myNickname;
+
+  document.getElementById('contextPinBtn').style.display = isAdmin ? 'flex' : 'none';
+
+  if (isAdmin && !isSelfMsg) {
+    document.getElementById('contextKickBtn').style.display = 'flex';
+    document.getElementById('contextBanBtn').style.display = 'flex';
+  } else {
+    document.getElementById('contextKickBtn').style.display = 'none';
+    document.getElementById('contextBanBtn').style.display = 'none';
+  }
+
   contextMenu.classList.add('active');
 }
 
@@ -886,12 +950,40 @@ function hideContextMenu() {
 }
 
 document.getElementById('contextPinBtn').addEventListener('click', async () => {
-  if (contextTargetMsg) await pinMessage(contextTargetMsg);
+  if (contextTargetMsg && myNickname === groupAdminNickname) {
+    await pinMessage(contextTargetMsg);
+  }
   hideContextMenu();
 });
 
 document.getElementById('contextReplyBtn').addEventListener('click', () => {
   if (contextTargetMsg) setReply(contextTargetMsg);
+  hideContextMenu();
+});
+
+document.getElementById('contextKickBtn').addEventListener('click', async () => {
+  if (contextTargetMsg && myNickname === groupAdminNickname) {
+    const targetNick = contextTargetMsg.nickname;
+    const cmdRef = push(ref(db, `groups/${currentGroup}/commands`));
+    await set(cmdRef, { type: 'kick', target: targetNick, timestamp: Date.now() });
+    
+    logSystem(`Admin kicked ${targetNick}.`);
+  }
+  hideContextMenu();
+});
+
+document.getElementById('contextBanBtn').addEventListener('click', async () => {
+  if (contextTargetMsg && myNickname === groupAdminNickname) {
+    const targetNick = contextTargetMsg.nickname;
+    const safeKey = targetNick.replace(/[.#$\[\]]/g, '_');
+    
+    await set(ref(db, `groups/${currentGroup}/banned/${safeKey}`), true);
+    
+    const cmdRef = push(ref(db, `groups/${currentGroup}/commands`));
+    await set(cmdRef, { type: 'ban', target: targetNick, timestamp: Date.now() });
+    
+    logSystem(`Admin permanently banned ${targetNick}.`);
+  }
   hideContextMenu();
 });
 
