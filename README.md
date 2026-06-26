@@ -8,7 +8,7 @@
 **No login. No registration.** Just instant, anonymous chats!  
 
 **Text & Media Sharing** – Exchange messages, images, and more.  
-**Video Calls** – Connect face-to-face instantly.  
+**Personal Audio & Video Calls** – Connect instantly with private voice and face-to-face calling.  
 **Private Room & Chat Rooms** – Create a Personal Private Room or Join rooms based on interests.  
 **Gender & Tags Matching** – Find people who match your preferences.  
 **100% Anonymous** – No personal data required.  
