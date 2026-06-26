@@ -119,8 +119,18 @@
     const globalNickname = localStorage.getItem("talkrush_nickname");
     if (!globalNickname) return;
 
-    const myPeerId = "user_" + globalNickname.replace(/[^a-zA-Z0-9]/g, '_');
-    const peer = new Peer(myPeerId);
+    const peer = new Peer(undefined, {
+      config: {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' },
+          { urls: 'stun:stun3.l.google.com:19302' },
+          { urls: 'stun:stun4.l.google.com:19302' }
+        ]
+      }
+    });
+    window.myCallPeer = peer;
 
     let localStream = null;
     let currentActiveCall = null;
@@ -222,6 +232,13 @@
 
         if (data.status === 'accepted') {
           callingStatusText.innerText = "Connecting media...";
+
+          if (data.type === 'audio' && callType === 'video') {
+            callType = 'audio';
+            toggleVideoBtn.style.display = 'none';
+            localVideo.style.display = 'none';
+          }
+
           const targetPeerId = data.receiverPeerId || ("user_" + targetNickname.replace(/[^a-zA-Z0-9]/g, '_'));
           const call = peer.call(targetPeerId, localStream);
           currentActiveCall = call;
@@ -248,24 +265,35 @@
           video: callType === 'video',
           audio: true
         });
-
-        if (callType === 'audio') {
-          toggleVideoBtn.style.display = 'none';
-        } else {
-          toggleVideoBtn.style.display = 'flex';
-        }
-
-        localVideo.srcObject = localStream;
-        localVideo.style.display = callType === 'video' ? 'block' : 'none';
-        remoteVideo.srcObject = null;
-        callingStatusText.innerText = "Connecting...";
-        callingStatusText.style.display = 'block';
-        callModal.style.display = 'flex';
-        return true;
       } catch (err) {
-        set(ref(window.firebaseDB, `calls/${globalNickname}/status`), 'rejected');
-        return false;
+        if (callType === 'video') {
+          try {
+            localStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+            callType = 'audio';
+            update(ref(window.firebaseDB, `calls/${globalNickname}`), { type: 'audio' });
+          } catch (audioErr) {
+            set(ref(window.firebaseDB, `calls/${globalNickname}/status`), 'rejected');
+            return false;
+          }
+        } else {
+          set(ref(window.firebaseDB, `calls/${globalNickname}/status`), 'rejected');
+          return false;
+        }
       }
+
+      if (callType === 'audio') {
+        toggleVideoBtn.style.display = 'none';
+      } else {
+        toggleVideoBtn.style.display = 'flex';
+      }
+
+      localVideo.srcObject = localStream;
+      localVideo.style.display = callType === 'video' ? 'block' : 'none';
+      remoteVideo.srcObject = null;
+      callingStatusText.innerText = "Connecting...";
+      callingStatusText.style.display = 'block';
+      callModal.style.display = 'flex';
+      return true;
     };
 
     window.forceEndCallUI = () => {
