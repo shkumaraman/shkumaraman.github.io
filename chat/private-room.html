@@ -1075,11 +1075,13 @@ conversations anytime, anywhere."
         const snapshot = await new Promise((res, rej) => onValue(ref(db, "rooms/" + code), res, { onlyOnce: true }));
         if (!snapshot.exists()) throw new Error("Room not found");
         const data = snapshot.val();
-        if (data.participants?.length >= 2) throw new Error("Room is full");
+        const rawParticipants = data.participants || [];
+        const cleanParticipants = rawParticipants.map(p => (p && typeof p === 'object') ? p.id : p).filter(Boolean);
+        if (cleanParticipants.length >= 2) throw new Error("Room is full");
         state.currentRoomCode = code;
         storage.saveRoomCode();
 
-        const newParticipants = [...(data.participants || []), state.myId];
+        const newParticipants = [...cleanParticipants, state.myId];
         const newNicknames = { ...(data.nicknames || {}), [state.myId]: myNickname };
 
         await set(ref(db, "rooms/" + code), { 
@@ -1088,12 +1090,12 @@ conversations anytime, anywhere."
           nicknames: newNicknames
         });
 
-        const partnerId = (data.participants || []).find(id => id !== state.myId);
+        const partnerId = cleanParticipants.find(id => id !== state.myId);
         if (partnerId && data.nicknames && data.nicknames[partnerId]) {
           state.partnerNickname = data.nicknames[partnerId];
         }
 
-        for (const id of (data.participants || [])) {
+        for (const id of cleanParticipants) {
           if (id !== state.myId) await conn.connectTo(id);
         }
         utils.hide(el.prRoomModal);
@@ -1106,7 +1108,8 @@ conversations anytime, anywhere."
       onValue(ref(db, "rooms/" + code), (snap) => {
         const roomData = snap.val();
         if (!roomData) return;
-        const participants = roomData.participants || [];
+        const rawParticipants = roomData.participants || [];
+        const participants = rawParticipants.map(p => (p && typeof p === 'object') ? p.id : p).filter(Boolean);
         const nicknames = roomData.nicknames || {};
         
         participants.forEach((id) => {
@@ -1132,7 +1135,8 @@ conversations anytime, anywhere."
         const snap = await new Promise((res) => onValue(ref(db, "rooms/" + state.currentRoomCode), res, { onlyOnce: true }));
         if (!snap.exists()) throw new Error("Room no longer exists");
         const data = snap.val();
-        const participants = data.participants || [];
+        const rawParticipants = data.participants || [];
+        const participants = rawParticipants.map(p => (p && typeof p === 'object') ? p.id : p).filter(Boolean);
 
         if (!participants.includes(state.myId)) {
           const newNicknames = { ...(data.nicknames || {}), [state.myId]: myNickname };
