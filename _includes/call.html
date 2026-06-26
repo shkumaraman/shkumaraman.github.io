@@ -128,63 +128,74 @@ document.addEventListener('DOMContentLoaded', () => {
 
   window.startOutgoingCall = async (targetNickname, callType) => {
     activeTarget = targetNickname;
+    callModal.style.display = 'flex';
+    callingStatusText.innerText = "Calling " + targetNickname + "...";
+    callingStatusText.style.display = 'block';
+    remoteVideo.srcObject = null;
+
     try {
       localStream = await navigator.mediaDevices.getUserMedia({
         video: callType === 'video',
         audio: true
       });
-      
-      if (callType === 'audio') {
-        toggleVideoBtn.style.display = 'none';
-      } else {
-        toggleVideoBtn.style.display = 'flex';
-      }
-
-      localVideo.srcObject = localStream;
-      localVideo.style.display = callType === 'video' ? 'block' : 'none';
-      remoteVideo.srcObject = null;
-      callingStatusText.innerText = "Calling " + targetNickname + "...";
-      callingStatusText.style.display = 'block';
-      callModal.style.display = 'flex';
-
-      const targetCallRef = ref(window.firebaseDB, `calls/${targetNickname}`);
-      await set(targetCallRef, {
-        caller: globalNickname,
-        callerPeerId: myPeerId,
-        receiver: targetNickname,
-        type: callType,
-        status: 'calling',
-        timestamp: Date.now()
-      });
-
-      if (outboundCallListener) outboundCallListener();
-      outboundCallListener = onValue(targetCallRef, (snap) => {
-        const data = snap.val();
-        if (!data) return;
-
-        if (data.status === 'accepted') {
-          callingStatusText.innerText = "Connecting media...";
-          const targetPeerId = data.receiverPeerId || ("user_" + targetNickname.replace(/[^a-zA-Z0-9]/g, '_'));
-          const call = peer.call(targetPeerId, localStream);
-          currentActiveCall = call;
-          
-          call.on('stream', (remoteStream) => {
-            callingStatusText.style.display = 'none';
-            remoteVideo.srcObject = remoteStream;
-          });
-          call.on('close', cleanupCallUI);
-          call.on('error', cleanupCallUI);
-
-          if (outboundCallListener) { outboundCallListener(); outboundCallListener = null; }
-
-        } else if (data.status === 'rejected') {
-          cleanupCallUI();
-        }
-      });
-
     } catch (err) {
-      cleanupCallUI();
+      if (callType === 'video') {
+        try {
+          localStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+          callType = 'audio';
+        } catch (audioErr) {
+          cleanupCallUI();
+          return;
+        }
+      } else {
+        cleanupCallUI();
+        return;
+      }
     }
+LocalStream;
+    if (callType === 'audio') {
+      toggleVideoBtn.style.display = 'none';
+    } else {
+      toggleVideoBtn.style.display = 'flex';
+    }
+
+    localVideo.srcObject = localStream;
+    localVideo.style.display = callType === 'video' ? 'block' : 'none';
+
+    const targetCallRef = ref(window.firebaseDB, `calls/${targetNickname}`);
+    await set(targetCallRef, {
+      caller: globalNickname,
+      callerPeerId: myPeerId,
+      receiver: targetNickname,
+      type: callType,
+      status: 'calling',
+      timestamp: Date.now()
+    });
+
+    if (outboundCallListener) outboundCallListener();
+    outboundCallListener = onValue(targetCallRef, (snap) => {
+      const data = snap.val();
+      if (!data) return;
+
+      if (data.status === 'accepted') {
+        callingStatusText.innerText = "Connecting media...";
+        const targetPeerId = data.receiverPeerId || ("user_" + targetNickname.replace(/[^a-zA-Z0-9]/g, '_'));
+        const call = peer.call(targetPeerId, localStream);
+        currentActiveCall = call;
+        
+        call.on('stream', (remoteStream) => {
+          callingStatusText.style.display = 'none';
+          remoteVideo.srcObject = remoteStream;
+        });
+        call.on('close', cleanupCallUI);
+        call.on('error', cleanupCallUI);
+
+        if (outboundCallListener) { outboundCallListener(); outboundCallListener = null; }
+
+      } else if (data.status === 'rejected' || data.status === 'ended') {
+        cleanupCallUI();
+      }
+    });
   };
 
   window.acceptIncomingCall = async (callerNickname, callType) => {
@@ -219,10 +230,10 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   window.endCall = () => {
-    if (activeTarget && document.getElementById('callingStatusText').style.display !== 'none') {
-       set(ref(window.firebaseDB, `calls/${activeTarget}/status`), 'ended');
+    if (activeTarget) {
+       remove(ref(window.firebaseDB, `calls/${activeTarget}`));
     }
-    set(ref(window.firebaseDB, `calls/${globalNickname}/status`), 'ended');
+    remove(ref(window.firebaseDB, `calls/${globalNickname}`));
     
     if (currentActiveCall) {
        currentActiveCall.close();
@@ -249,6 +260,11 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   function cleanupCallUI() {
+    if (activeTarget) {
+       remove(ref(window.firebaseDB, `calls/${activeTarget}`));
+    }
+    remove(ref(window.firebaseDB, `calls/${globalNickname}`));
+
     callModal.style.display = 'none';
     if (localStream) localStream.getTracks().forEach(track => track.stop());
     localVideo.srcObject = null;
