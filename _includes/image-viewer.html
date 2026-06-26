@@ -1,0 +1,199 @@
+<style>
+  .custom-image-viewer-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(10, 10, 12, 0.9);
+    backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px);
+    z-index: 9999999;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+
+  .custom-image-viewer-overlay.show {
+    opacity: 1;
+    display: flex;
+  }
+
+  .custom-image-viewer-content {
+    position: relative;
+    max-width: 90%;
+    max-height: 85%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transform: scale(0.9);
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .custom-image-viewer-overlay.show .custom-image-viewer-content {
+    transform: scale(1);
+  }
+
+  .custom-image-viewer-img {
+    max-width: 100%;
+    max-height: 80vh;
+    border-radius: 16px;
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.8);
+    object-fit: contain;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    transition: transform 0.3s ease;
+  }
+
+  .custom-image-viewer-close-btn,
+  .custom-image-viewer-download-btn {
+    position: fixed;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: white;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 18px;
+    z-index: 10000000;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+  }
+
+  .custom-image-viewer-close-btn {
+    top: 20px;
+    right: 20px;
+  }
+
+  .custom-image-viewer-download-btn {
+    top: 20px;
+    right: 80px;
+  }
+
+  .custom-image-viewer-close-btn:hover {
+    background: rgba(255, 59, 48, 0.2);
+    border-color: rgba(255, 59, 48, 0.4);
+    color: #ff3b30;
+    transform: scale(1.1) rotate(90deg);
+  }
+
+  .custom-image-viewer-download-btn:hover {
+    background: rgba(37, 211, 102, 0.2);
+    border-color: rgba(37, 211, 102, 0.4);
+    color: #25d366;
+    transform: scale(1.1) translateY(2px);
+  }
+
+  .custom-image-viewer-close-btn:active,
+  .custom-image-viewer-download-btn:active {
+    transform: scale(0.9);
+  }
+</style>
+
+<div id="customImageViewerOverlay" class="custom-image-viewer-overlay" onclick="closeCustomImageViewer()">
+  <button class="custom-image-viewer-download-btn" id="customImageViewerDownloadBtn" title="Download Image" onclick="event.stopPropagation(); downloadViewerImage()">
+    <i class="fa-solid fa-download"></i>
+  </button>
+  <button class="custom-image-viewer-close-btn" title="Close" onclick="closeCustomImageViewer()">
+    <i class="fa-solid fa-xmark"></i>
+  </button>
+  <div class="custom-image-viewer-content" onclick="event.stopPropagation()">
+    <img id="customImageViewerImg" class="custom-image-viewer-img" src="" alt="Viewed Image">
+  </div>
+</div>
+
+<script>
+  function openCustomImageViewer(src) {
+    const overlay = document.getElementById('customImageViewerOverlay');
+    const img = document.getElementById('customImageViewerImg');
+    if (!overlay || !img) return;
+
+    img.src = src;
+    overlay.style.display = 'flex';
+    // Force a reflow to trigger transition
+    overlay.offsetHeight;
+    overlay.classList.add('show');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeCustomImageViewer() {
+    const overlay = document.getElementById('customImageViewerOverlay');
+    if (!overlay) return;
+
+    overlay.classList.remove('show');
+    document.body.style.overflow = '';
+    setTimeout(() => {
+      if (!overlay.classList.contains('show')) {
+        overlay.style.display = 'none';
+        document.getElementById('customImageViewerImg').src = '';
+      }
+    }, 300);
+  }
+
+  async function downloadViewerImage() {
+    const img = document.getElementById('customImageViewerImg');
+    if (!img || !img.src) return;
+
+    try {
+      const response = await fetch(img.src);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      
+      // Extract file name or generate one
+      let fileName = 'image_' + Date.now() + '.jpg';
+      if (img.src.startsWith('data:')) {
+        const ext = img.src.substring(img.src.indexOf('/') + 1, img.src.indexOf(';'));
+        fileName = 'chat_image_' + Date.now() + '.' + ext;
+      }
+      
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      // Fallback if fetch fails (e.g. CORS)
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = img.src;
+      a.target = '_blank';
+      a.download = 'chat_image.jpg';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+  }
+
+  // Global click listener to bind image click events
+  document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('click', (e) => {
+      // Look for IMG tags
+      if (e.target.tagName === 'IMG') {
+        // Exclude icons, avatars, logo, ads etc.
+        const shouldExclude = e.target.closest('.logo, .friend-avatar, .chat-avatar, .header-toggle, .menu-btn, .adsbygoogle');
+        if (!shouldExclude) {
+          openCustomImageViewer(e.target.src);
+        }
+      }
+    });
+
+    // Close on escape key
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        const overlay = document.getElementById('customImageViewerOverlay');
+        if (overlay && (overlay.style.display === 'flex' || overlay.classList.contains('show'))) {
+          closeCustomImageViewer();
+        }
+      }
+    });
+  });
+</script>
