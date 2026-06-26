@@ -197,39 +197,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 .share-buttons { display: flex; gap: 12px; justify-content: center; margin: 20px 0; }
 .share-buttons .btn-secondary { flex: 1; max-width: 200px; }
 
-.fullscreen-viewer {
-  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-  background: rgba(0,0,0,0.95); display: flex; align-items: center; justify-content: center;
-  z-index: 2000; opacity: 0; pointer-events: none; transition: opacity 0.3s;
-}
-.fullscreen-viewer.active { opacity: 1; pointer-events: all; }
-.fullscreen-viewer img { max-width: 85%; max-height: 85%; object-fit: contain; border-radius: 10px; user-select: none; }
-
-.close-btn {
-  position: absolute; top: 60px; right: 20px;
-  background: rgba(255,255,255,0.1); color: white; border: none;
-  width: 40px; height: 40px; border-radius: 50%; font-size: 18px;
-  cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;
-}
-.close-btn:hover { background: var(--error); transform: rotate(90deg); }
-
-.nav-btn {
-  position: absolute; top: 50%; transform: translateY(-50%);
-  background: rgba(255,255,255,0.1); color: white; border: none;
-  width: 44px; height: 44px; border-radius: 50%; font-size: 18px;
-  cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s;
-}
-.nav-btn:hover { background: var(--accent); }
-.nav-btn.prev { left: 20px; }
-.nav-btn.next { right: 20px; }
-.nav-btn:disabled { opacity: 0.2; cursor: default; }
-
-.fs-counter {
-  position: absolute; bottom: 25px; left: 50%; transform: translateX(-50%);
-  color: rgba(255,255,255,0.8); font-size: 13px;
-  background: rgba(0,0,0,0.5); padding: 6px 14px; border-radius: 20px;
-}
-
 .system-msg {
   position: fixed; top: 70px; left: 50%; transform: translateX(-50%);
   background: var(--accent); color: white; padding: 10px 20px;
@@ -243,9 +210,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   .code-display { font-size: 26px; padding: 15px; }
   .viewer-input { flex-direction: column; }
   .viewer-container { padding: 15px; }
-  .nav-btn { width: 36px; height: 36px; font-size: 14px; }
-  .nav-btn.prev { left: 10px; }
-  .nav-btn.next { right: 10px; }
   .share-buttons { flex-direction: column; gap: 10px; width: 100%; }
   .share-buttons .btn-secondary { width: 100%; max-width: 100%; }
 }
@@ -315,14 +279,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   </div>
 </div>
 
-<div class="fullscreen-viewer" id="fullscreenViewer">
-  <button class="close-btn" id="closeFullscreen"><i class="fas fa-times"></i></button>
-  <button class="nav-btn prev" id="prevBtn"><i class="fas fa-chevron-left"></i></button>
-  <img id="fullscreenImage" src="" alt="Fullscreen view">
-  <button class="nav-btn next" id="nextBtn"><i class="fas fa-chevron-right"></i></button>
-  <div class="fs-counter" id="fsCounter"></div>
-</div>
-
 <div class="system-msg" id="systemMsg"></div>
 
 <ins class="adsbygoogle"
@@ -361,7 +317,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 </main>
 
 <ins class="adsbygoogle"
-     style="display:block"
+     style="display:block; margin-top: 20px;"
      data-ad-client="ca-pub-7059052735946479"
      data-ad-slot="8592327962"
      data-ad-format="auto"
@@ -421,12 +377,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   const tabView = document.getElementById('tabView');
   const uploadTab = document.getElementById('upload-tab');
   const viewTab = document.getElementById('view-tab');
-  const fullscreenViewer = document.getElementById('fullscreenViewer');
-  const fullscreenImage = document.getElementById('fullscreenImage');
-  const closeFullscreen = document.getElementById('closeFullscreen');
-  const prevBtn = document.getElementById('prevBtn');
-  const nextBtn = document.getElementById('nextBtn');
-  const fsCounter = document.getElementById('fsCounter');
   const progressWrap = document.getElementById('progressWrap');
   const progressLabel = document.getElementById('progressLabel');
   const progressFill = document.getElementById('progressFill');
@@ -434,8 +384,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   const MAX_IMAGES = 10;
   let uploadedFiles = [];
   let shareCode = '';
-  let fsImages = [];
-  let fsIndex = 0;
   let msgTimer = null;
 
   uploadArea.addEventListener('click', () => fileInput.click());
@@ -444,9 +392,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   copyBtn.addEventListener('click', copyCode);
   shareBtn.addEventListener('click', shareCodeViaAPI);
   viewBtn.addEventListener('click', viewPhotos);
-  closeFullscreen.addEventListener('click', closeFs);
-  prevBtn.addEventListener('click', () => navigateFs(-1));
-  nextBtn.addEventListener('click', () => navigateFs(1));
 
   tabUpload.addEventListener('click', () => {
     tabUpload.classList.add('active');
@@ -524,11 +469,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
         item.className = 'grid-item';
         item.dataset.index = idx;
         item.innerHTML = `<img src="${e.target.result}" alt="Preview"><div class="remove-btn"><i class="fas fa-times"></i></div>`;
-
-        item.querySelector('img').addEventListener('click', () => {
-          const allPreviews = [...previewContainer.querySelectorAll('.grid-item img')].map(i => i.src);
-          openFs(allPreviews, parseInt(item.dataset.index));
-        });
 
         item.querySelector('.remove-btn').addEventListener('click', (ev) => {
           ev.stopPropagation();
@@ -643,7 +583,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
         img.alt = `Photo ${idx + 1}`;
         img.loading = 'lazy';
         item.appendChild(img);
-        item.addEventListener('click', () => openFs(images, idx));
         viewerGallery.appendChild(item);
       });
     } catch (error) {
@@ -652,43 +591,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       showMsg('No photos found for this code');
     }
   }
-
-  function openFs(images, index) {
-    fsImages = images;
-    fsIndex = index;
-    renderFs();
-    fullscreenViewer.classList.add('active');
-    document.body.style.overflow = 'hidden';
-  }
-
-  function renderFs() {
-    fullscreenImage.src = fsImages[fsIndex];
-    const multiple = fsImages.length > 1;
-    fsCounter.textContent = multiple ? `${fsIndex + 1} / ${fsImages.length}` : '';
-    prevBtn.style.display = multiple ? 'flex' : 'none';
-    nextBtn.style.display = multiple ? 'flex' : 'none';
-    prevBtn.disabled = fsIndex === 0;
-    nextBtn.disabled = fsIndex === fsImages.length - 1;
-  }
-
-  function navigateFs(dir) {
-    const n = fsIndex + dir;
-    if (n < 0 || n >= fsImages.length) return;
-    fsIndex = n;
-    renderFs();
-  }
-
-  function closeFs() {
-    fullscreenViewer.classList.remove('active');
-    document.body.style.overflow = '';
-  }
-
-  document.addEventListener('keydown', (e) => {
-    if (!fullscreenViewer.classList.contains('active')) return;
-    if (e.key === 'Escape') closeFs();
-    if (e.key === 'ArrowLeft') navigateFs(-1);
-    if (e.key === 'ArrowRight') navigateFs(1);
-  });
 
   function showMsg(msg) {
     clearTimeout(msgTimer);
