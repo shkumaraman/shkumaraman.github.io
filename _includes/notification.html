@@ -29,7 +29,7 @@
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
-import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
+import { getDatabase, ref, onValue, set, remove } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
 
 document.addEventListener("DOMContentLoaded", function () {
   const firebaseConfig = { databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/" };
@@ -38,6 +38,8 @@ document.addEventListener("DOMContentLoaded", function () {
   const myNickname = localStorage.getItem("talkrush_nickname");
   if (!myNickname) return;
 
+  window.firebaseDB = db;
+
   const toast = document.getElementById("messageToast");
   const toastName = document.getElementById("toastName");
   const toastMessage = document.getElementById("toastMessage");
@@ -45,11 +47,7 @@ document.addEventListener("DOMContentLoaded", function () {
   const toastIcon = document.getElementById("toastIcon");
   const toastIconWrapper = document.getElementById("toastIconWrapper");
 
-  if (!toast) return;
-
   const notifySound = new Audio("/assets/notify.mp3");
-  notifySound.preload = "auto";
-
   let soundMuted = localStorage.getItem("soundMuted") === "true";
   let notificationOff = localStorage.getItem("notificationOff") === "true";
   notifySound.muted = soundMuted;
@@ -57,174 +55,87 @@ document.addEventListener("DOMContentLoaded", function () {
   let lastNotifiedMessages = JSON.parse(localStorage.getItem("lastNotifiedMessages") || "{}");
   let toastQueue = [];
   let toastShowing = false;
-
   const DM_ICON_PATH = "M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z";
   const REPLY_ICON_PATH = "M10 9V5l-7 7 7 7v-4.1c5 0 8.5 1.6 11 5.1-1-5-4-10-11-11z";
 
-  function getFriendNickname(friend) {
-    if (friend.nickname1 === myNickname) return friend.nickname2;
-    if (friend.nickname2 === myNickname) return friend.nickname1;
-    return null;
-  }
-
+  function getFriendNickname(friend) { return friend.nickname1 === myNickname ? friend.nickname2 : friend.nickname2 === myNickname ? friend.nickname1 : null; }
   function getLastMessageFromFriend(friend) {
     if (!friend.messages) return null;
-    const messages = Object.values(friend.messages);
-    if (messages.length === 0) return null;
-    messages.sort((a, b) => b.timestamp - a.timestamp);
-    const latestMessage = messages[0];
-    if (latestMessage.nickname === myNickname) return null;
-
-    let text = "New message";
-    if (latestMessage.type === "image") text = "📷 Photo";
-    else if (latestMessage.type === "gif") text = "🎯 GIF";
-    else if (latestMessage.type === "text") text = latestMessage.text;
-    return { text: text, timestamp: latestMessage.timestamp };
+    const msgs = Object.values(friend.messages).sort((a, b) => b.timestamp - a.timestamp);
+    if (msgs.length === 0 || msgs[0].nickname === myNickname) return null;
+    let text = msgs[0].type === "image" ? "📷 Photo" : msgs[0].type === "gif" ? "🎯 GIF" : msgs[0].text;
+    return { text, timestamp: msgs[0].timestamp };
   }
 
-  onValue(ref(db, "friends"), (snapshot) => {
-    const data = snapshot.val();
+  onValue(ref(db, "friends"), (snap) => {
+    const data = snap.val();
     if (!data) return;
     Object.entries(data).forEach(([chatId, friend]) => {
-      if (friend.nickname1 !== myNickname && friend.nickname2 !== myNickname) return;
-      const friendNickname = getFriendNickname(friend);
-      if (!friendNickname) return;
-      const lastMessage = getLastMessageFromFriend(friend);
-      if (!lastMessage) return;
-
-      const notificationKey = chatId + "_" + lastMessage.timestamp;
-      if (lastNotifiedMessages[chatId] === notificationKey) return;
-
-      toastQueue.push({ senderName: friendNickname, message: lastMessage.text, redirectUrl: "/chat/inbox.html", type: "dm", timestamp: lastMessage.timestamp });
-      lastNotifiedMessages[chatId] = notificationKey;
+      const friendNick = getFriendNickname(friend);
+      if (!friendNick) return;
+      const lastMsg = getLastMessageFromFriend(friend);
+      if (!lastMsg) return;
+      const key = chatId + "_" + lastMsg.timestamp;
+      if (lastNotifiedMessages[chatId] === key) return;
+      toastQueue.push({ senderName: friendNick, message: lastMsg.text, redirectUrl: "/chat/inbox.html", type: "dm", timestamp: lastMsg.timestamp });
+      lastNotifiedMessages[chatId] = key;
       localStorage.setItem("lastNotifiedMessages", JSON.stringify(lastNotifiedMessages));
       processToastQueue();
     });
   });
 
-  onValue(ref(db, "groups"), (snapshot) => {
-    const groupsData = snapshot.val();
-    if (!groupsData) return;
-    Object.entries(groupsData).forEach(([groupName, groupData]) => {
-      if (!groupData.messages) return;
-      Object.entries(groupData.messages).forEach(([msgId, msg]) => {
-        if (!msg.replyTo || msg.replyTo.nickname !== myNickname || msg.nickname === myNickname) return;
-
-        const notificationKey = "group_reply_" + groupName + "_" + msg.timestamp;
-        if (lastNotifiedMessages[notificationKey]) return;
-
-        let preview = "New reply";
-        if (msg.type === "image") preview = "📷 Photo";
-        else if (msg.type === "gif") preview = "🎯 GIF";
-        else if (msg.type === "text" && msg.text) preview = msg.text.length > 40 ? msg.text.substring(0, 40) + "..." : msg.text;
-
-        toastQueue.push({ senderName: msg.nickname, message: preview, redirectUrl: "/chat/group.html?group=" + encodeURIComponent(groupName), type: "reply", timestamp: msg.timestamp });
-        lastNotifiedMessages[notificationKey] = true;
-        localStorage.setItem("lastNotifiedMessages", JSON.stringify(lastNotifiedMessages));
-        processToastQueue();
-      });
-    });
-  });
-
-  let startY = 0;
-  let currentY = 0;
-  let isDraggingToast = false;
-
-  toast.addEventListener('touchstart', (e) => {
-    startY = e.touches[0].clientY;
-    isDraggingToast = true;
-    toast.style.transition = 'none';
-  }, { passive: true });
-
-  toast.addEventListener('touchmove', (e) => {
-    if (!isDraggingToast) return;
-    currentY = e.touches[0].clientY;
-    const deltaY = currentY - startY;
-    if (deltaY < 0) toast.style.transform = `translateX(-50%) translateY(${deltaY}px)`;
-  }, { passive: true });
-
-  toast.addEventListener('touchend', () => {
-    if (!isDraggingToast) return;
-    isDraggingToast = false;
-    toast.style.transition = 'top 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55), transform 0.3s ease';
-    if (currentY - startY < -40) dismissToast();
-    else toast.style.transform = 'translateX(-50%)';
-  });
-
-  function dismissToast() {
-    toast.style.top = "-120px";
-    toast.style.transform = 'translateX(-50%)';
-    setTimeout(() => {
-      toastShowing = false;
-      processToastQueue();
-    }, 400);
-  }
-
   function processToastQueue() {
-    soundMuted = localStorage.getItem("soundMuted") === "true";
-    notificationOff = localStorage.getItem("notificationOff") === "true";
-    notifySound.muted = soundMuted;
-
-    if (notificationOff || toastShowing || toastQueue.length === 0) return;
+    if (toastShowing || toastQueue.length === 0) return;
     toastShowing = true;
     const data = toastQueue.shift();
-
-    const shortMessage = data.message.length > 40 ? data.message.substring(0, 40) + "..." : data.message;
-    if (data.type === "reply") {
-      toastIconWrapper.style.background = "#5b9bd5";
-      toastIcon.setAttribute("viewBox", "0 0 24 24");
-      toastIcon.querySelector("path").setAttribute("d", REPLY_ICON_PATH);
-      toastName.textContent = data.senderName + " replied to you";
-    } else {
-      toastIconWrapper.style.background = "#25D366";
-      toastIcon.querySelector("path").setAttribute("d", DM_ICON_PATH);
-      toastName.textContent = data.senderName;
-    }
-
-    toastMessage.textContent = shortMessage;
-    if (!soundMuted) {
-      notifySound.currentTime = 0;
-      notifySound.play().catch(() => {});
-    }
-
+    if (data.type === "reply") { toastIconWrapper.style.background = "#5b9bd5"; toastIcon.querySelector("path").setAttribute("d", REPLY_ICON_PATH); toastName.textContent = data.senderName + " replied to you"; } 
+    else { toastIconWrapper.style.background = "#25D366"; toastIcon.querySelector("path").setAttribute("d", DM_ICON_PATH); toastName.textContent = data.senderName; }
+    toastMessage.textContent = data.message.length > 40 ? data.message.substring(0, 40) + "..." : data.message;
+    if (!soundMuted) { notifySound.currentTime = 0; notifySound.play().catch(() => {}); }
     toast.style.top = "20px";
-    toast.style.transform = 'translateX(-50%)';
     toastViewBtn.onclick = () => window.location.href = data.redirectUrl;
-
-    clearTimeout(toast.dataset.timeoutId);
-    toast.dataset.timeoutId = setTimeout(dismissToast, 5000);
+    setTimeout(() => { toast.style.top = "-120px"; setTimeout(() => { toastShowing = false; processToastQueue(); }, 400); }, 5000);
   }
-});
-</script>
 
-<script>
+  const callToast = document.getElementById('callToast');
   window.callRingtone = new Audio('/assets/ringtone.mp3');
   window.callRingtone.loop = true;
+  let isRinging = false;
 
-  window.showCallNotification = function(callerName, callType, onAccept, onReject) {
-    const callToast = document.getElementById('callToast');
-    document.getElementById('callToastName').innerText = callerName;
-    document.getElementById('callToastAvatar').innerText = callerName.charAt(0).toUpperCase();
-    document.getElementById('callToastType').innerText = `Incoming ${callType.charAt(0).toUpperCase() + callType.slice(1)} Call...`;
-    
-    callToast.style.top = '20px';
-    window.callRingtone.play().catch(()=>{});
+  const myCallRef = ref(db, 'calls/' + myNickname);
+  onValue(myCallRef, (snapshot) => {
+    const callData = snapshot.val();
 
-    document.getElementById('callToastAcceptBtn').onclick = () => {
-      hideCallNotification();
-      if(onAccept) onAccept();
-    };
+    if (callData && callData.status === 'calling') {
+      if (isRinging) return;
+      isRinging = true;
+      document.getElementById('callToastName').innerText = callData.caller;
+      document.getElementById('callToastAvatar').innerText = callData.caller.charAt(0).toUpperCase();
+      document.getElementById('callToastType').innerText = `Incoming ${callData.type.charAt(0).toUpperCase() + callData.type.slice(1)} Call...`;
+      callToast.style.top = '20px';
+      window.callRingtone.play().catch(()=>{});
 
-    document.getElementById('callToastRejectBtn').onclick = () => {
-      hideCallNotification();
-      if(onReject) onReject();
-    };
-  };
+      document.getElementById('callToastAcceptBtn').onclick = () => {
+        isRinging = false;
+        callToast.style.top = '-150px';
+        window.callRingtone.pause(); window.callRingtone.currentTime = 0;
+        set(ref(db, `calls/${myNickname}/status`), 'accepted');
+        if (window.acceptIncomingCall) window.acceptIncomingCall(callData.caller, callData.type);
+      };
 
-  window.hideCallNotification = function() {
-    const callToast = document.getElementById('callToast');
-    callToast.style.top = '-150px';
-    window.callRingtone.pause();
-    window.callRingtone.currentTime = 0;
-  };
+      document.getElementById('callToastRejectBtn').onclick = () => {
+        isRinging = false;
+        callToast.style.top = '-150px';
+        window.callRingtone.pause(); window.callRingtone.currentTime = 0;
+        set(ref(db, `calls/${myNickname}/status`), 'rejected');
+      };
+    } 
+    else if (!callData || callData.status === 'ended' || callData.status === 'rejected') {
+      isRinging = false;
+      callToast.style.top = '-150px';
+      window.callRingtone.pause(); window.callRingtone.currentTime = 0;
+      if (window.forceEndCallUI) window.forceEndCallUI();
+    }
+  });
+});
 </script>
