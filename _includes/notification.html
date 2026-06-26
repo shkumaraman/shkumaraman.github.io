@@ -101,6 +101,7 @@ document.addEventListener("DOMContentLoaded", function () {
   window.callRingtone = new Audio('/assets/ringtone.mp3');
   window.callRingtone.loop = true;
   let isRinging = false;
+  let wasRinging = false;
 
   const myCallRef = ref(db, 'calls/' + myNickname);
   onValue(myCallRef, (snapshot) => {
@@ -108,40 +109,51 @@ document.addEventListener("DOMContentLoaded", function () {
     if (callData && callData.status === 'calling' && callData.receiver === myNickname) {
       if (isRinging) return;
       isRinging = true;
+      wasRinging = true;
+      
       document.getElementById('callToastName').innerText = callData.caller;
       document.getElementById('callToastAvatar').innerText = callData.caller.charAt(0).toUpperCase();
       document.getElementById('callToastType').innerText = `Incoming ${callData.type.charAt(0).toUpperCase() + callData.type.slice(1)} Call...`;
       callToast.style.top = '20px';
       window.callRingtone.play().catch(()=>{});
 
-      document.getElementById('callToastAcceptBtn').onclick = () => {
+      document.getElementById('callToastAcceptBtn').onclick = async () => {
         isRinging = false;
+        wasRinging = false;
         callToast.style.top = '-150px';
         window.callRingtone.pause(); window.callRingtone.currentTime = 0;
         
-        const myPeerId = "user_" + myNickname.replace(/[^a-zA-Z0-9]/g, '_');
-        update(ref(db, `calls/${myNickname}`), {
-          status: 'accepted',
-          receiverPeerId: myPeerId
-        });
-
-        if (window.acceptIncomingCall) window.acceptIncomingCall(callData.caller, callData.type);
+        if (window.acceptIncomingCall) {
+          const isCameraReady = await window.acceptIncomingCall(callData.caller, callData.type);
+          
+          if(isCameraReady) {
+            const myPeerId = "user_" + myNickname.replace(/[^a-zA-Z0-9]/g, '_');
+            update(ref(db, `calls/${myNickname}`), {
+              status: 'accepted',
+              receiverPeerId: myPeerId
+            });
+          }
+        }
       };
 
       document.getElementById('callToastRejectBtn').onclick = () => {
         isRinging = false;
+        wasRinging = false;
         callToast.style.top = '-150px';
         window.callRingtone.pause(); window.callRingtone.currentTime = 0;
         remove(ref(db, `calls/${myNickname}`));
       };
     } 
     else if (!callData || callData.status === 'ended' || callData.status === 'rejected') {
-      isRinging = false;
-      callToast.style.top = '-150px';
-      window.callRingtone.pause(); window.callRingtone.currentTime = 0;
-      if (window.forceEndCallUI) window.forceEndCallUI();
-      if (callData) {
-         remove(ref(db, 'calls/' + myNickname));
+      if (wasRinging) {
+        isRinging = false;
+        wasRinging = false;
+        callToast.style.top = '-150px';
+        window.callRingtone.pause(); window.callRingtone.currentTime = 0;
+        if (window.forceEndCallUI) window.forceEndCallUI();
+        if (callData) {
+           remove(ref(db, 'calls/' + myNickname));
+        }
       }
     }
   });
