@@ -1038,14 +1038,21 @@ conversations anytime, anywhere."
       const code = utils.generateRoomCode();
       el.prRoomCodeDisplay.textContent = code;
       try {
-        const myParticipant = { id: state.myId, nickname: myNickname };
-        await set(ref(db, "rooms/" + code), { participants: [myParticipant], createdAt: serverTimestamp() });
+        const roomData = {
+          participants: [state.myId],
+          nicknames: {
+            [state.myId]: myNickname
+          },
+          createdAt: serverTimestamp()
+        };
+        await set(ref(db, "rooms/" + code), roomData);
         state.currentRoomCode = code;
         storage.saveRoomCode();
         msg.system("Room created! Share this code with someone to chat.");
         utils.hide(el.prRoomModal);
         room.setupListener(code);
-      } catch {
+      } catch (err) {
+        console.error("Error creating room:", err);
         msg.system("Error creating room. Please try again.");
       }
     },
@@ -1072,22 +1079,22 @@ conversations anytime, anywhere."
         state.currentRoomCode = code;
         storage.saveRoomCode();
 
-        const myParticipant = { id: state.myId, nickname: myNickname };
-        const newParticipants = [...(data.participants || []), myParticipant];
+        const newParticipants = [...(data.participants || []), state.myId];
+        const newNicknames = { ...(data.nicknames || {}), [state.myId]: myNickname };
 
-        await set(ref(db, "rooms/" + code), { ...data, participants: newParticipants });
-
-        const partner = (data.participants || []).find(p => {
-          const peerId = typeof p === 'object' ? p.id : p;
-          return peerId !== state.myId;
+        await set(ref(db, "rooms/" + code), { 
+          ...data, 
+          participants: newParticipants,
+          nicknames: newNicknames
         });
-        if (partner && typeof partner === 'object' && partner.nickname) {
-          state.partnerNickname = partner.nickname;
+
+        const partnerId = (data.participants || []).find(id => id !== state.myId);
+        if (partnerId && data.nicknames && data.nicknames[partnerId]) {
+          state.partnerNickname = data.nicknames[partnerId];
         }
 
-        for (const p of (data.participants || [])) {
-          const peerId = typeof p === 'object' ? p.id : p;
-          if (peerId !== state.myId) await conn.connectTo(peerId);
+        for (const id of (data.participants || [])) {
+          if (id !== state.myId) await conn.connectTo(id);
         }
         utils.hide(el.prRoomModal);
       } catch (e) {
@@ -1096,15 +1103,18 @@ conversations anytime, anywhere."
     },
 
     setupListener: (code) => {
-      onValue(ref(db, "rooms/" + code + "/participants"), (snap) => {
-        const participants = snap.val() || [];
-        participants.forEach((p) => {
-          const peerId = typeof p === 'object' ? p.id : p;
-          if (peerId !== state.myId) {
-            if (typeof p === 'object' && p.nickname) {
-              state.partnerNickname = p.nickname;
+      onValue(ref(db, "rooms/" + code), (snap) => {
+        const roomData = snap.val();
+        if (!roomData) return;
+        const participants = roomData.participants || [];
+        const nicknames = roomData.nicknames || {};
+        
+        participants.forEach((id) => {
+          if (id !== state.myId) {
+            if (nicknames[id]) {
+              state.partnerNickname = nicknames[id];
             }
-            if (!state.isConnected) conn.connectTo(peerId);
+            if (!state.isConnected) conn.connectTo(id);
           }
         });
       });
@@ -1124,30 +1134,26 @@ conversations anytime, anywhere."
         const data = snap.val();
         const participants = data.participants || [];
 
-        const hasMyId = participants.some(p => {
-          const peerId = typeof p === 'object' ? p.id : p;
-          return peerId === state.myId;
-        });
-
-        if (!hasMyId) {
-          const myParticipant = { id: state.myId, nickname: myNickname };
-          await set(ref(db, "rooms/" + state.currentRoomCode), { ...data, participants: [...participants, myParticipant] });
+        if (!participants.includes(state.myId)) {
+          const newNicknames = { ...(data.nicknames || {}), [state.myId]: myNickname };
+          await set(ref(db, "rooms/" + state.currentRoomCode), { 
+            ...data, 
+            participants: [...participants, state.myId],
+            nicknames: newNicknames
+          });
         }
 
-        const partner = participants.find(p => {
-          const peerId = typeof p === 'object' ? p.id : p;
-          return peerId !== state.myId;
-        });
-        if (partner && typeof partner === 'object' && partner.nickname) {
-          state.partnerNickname = partner.nickname;
+        const partnerId = participants.find(id => id !== state.myId);
+        if (partnerId && data.nicknames && data.nicknames[partnerId]) {
+          state.partnerNickname = data.nicknames[partnerId];
         }
 
         msg.system("Reconnected to your previous room!");
-        for (const p of participants) {
-          const peerId = typeof p === 'object' ? p.id : p;
-          if (peerId !== state.myId) await conn.connectTo(peerId);
+        for (const id of participants) {
+          if (id !== state.myId) await conn.connectTo(id);
         }
-      } catch {
+      } catch (err) {
+        console.error("Error auto rejoining:", err);
         storage.clearRoomCode();
         msg.system("Please create or join a new room.");
         utils.showBlock(el.prRoomModal);
