@@ -1,0 +1,202 @@
+<style>
+.call-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(18, 18, 18, 0.95);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  z-index: 99999;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: white;
+}
+
+.call-video-container {
+  width: 100%; height: 100%;
+  position: relative;
+  background: #000;
+}
+
+#remoteVideo { width: 100%; height: 100%; object-fit: cover; }
+
+#localVideo {
+  width: 120px; height: 160px;
+  position: absolute;
+  top: 20px; right: 20px;
+  border-radius: 12px;
+  object-fit: cover;
+  border: 2px solid rgba(255,255,255,0.2);
+  background: #222;
+  box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+  z-index: 10;
+}
+
+.active-call-controls {
+  position: absolute;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 20px;
+  background: rgba(0,0,0,0.6);
+  padding: 15px 25px;
+  border-radius: 40px;
+  backdrop-filter: blur(5px);
+  z-index: 10;
+}
+
+.action-btn {
+  width: 60px; height: 60px;
+  border-radius: 50%;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s;
+}
+
+.action-btn:active { transform: scale(0.9); }
+.btn-reject { background: #FF3B30; box-shadow: 0 4px 15px rgba(255, 59, 48, 0.4); }
+</style>
+
+<div id="activeCallScreen" class="call-overlay">
+  <div class="call-video-container">
+    <video id="remoteVideo" autoplay playsinline></video>
+    <video id="localVideo" autoplay playsinline muted></video>
+    
+    <div class="active-call-controls">
+      <button class="action-btn" id="toggleMuteBtn" style="background: rgba(255,255,255,0.2);" onclick="window.toggleAudio()">
+        <i class="fas fa-microphone"></i>
+      </button>
+      <button class="action-btn" id="toggleVideoBtn" style="background: rgba(255,255,255,0.2);" onclick="window.toggleVideo()">
+        <i class="fas fa-video"></i>
+      </button>
+      <button class="action-btn btn-reject" onclick="window.endCall()">
+        <i class="fas fa-phone-slash"></i>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const globalNickname = localStorage.getItem("talkrush_nickname");
+  if (!globalNickname) return;
+
+  const myPeerId = "user_" + globalNickname.replace(/[^a-zA-Z0-9]/g, '_');
+  const peer = new Peer(myPeerId);
+  
+  let localStream = null;
+  let currentActiveCall = null;
+  let isAudioMuted = false;
+  let isVideoPaused = false;
+  
+  const activeScreen = document.getElementById('activeCallScreen');
+  const localVideo = document.getElementById('localVideo');
+  const remoteVideo = document.getElementById('remoteVideo');
+
+  peer.on('call', (call) => {
+    if (currentActiveCall) {
+      call.close();
+      return;
+    }
+
+    const callerName = call.metadata ? call.metadata.caller : 'Someone';
+    const callType = call.metadata ? call.metadata.type : 'video';
+
+    window.showCallNotification(callerName, callType, 
+      async () => {
+        try {
+          localStream = await navigator.mediaDevices.getUserMedia({
+            video: callType === 'video',
+            audio: true
+          });
+          
+          localVideo.srcObject = localStream;
+          localVideo.style.display = callType === 'video' ? 'block' : 'none';
+          
+          call.answer(localStream);
+          setupCallEvents(call);
+          activeScreen.style.display = 'flex';
+        } catch (err) {
+          Swal.fire('Error', 'Could not access Camera/Microphone.', 'error');
+          call.close();
+        }
+      },
+      () => {
+        call.close();
+      }
+    );
+  });
+
+  window.initiateCall = async (friendName, callType) => {
+    const targetPeerId = "user_" + friendName.replace(/[^a-zA-Z0-9]/g, '_');
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia({
+        video: callType === 'video',
+        audio: true
+      });
+      
+      localVideo.srcObject = localStream;
+      localVideo.style.display = callType === 'video' ? 'block' : 'none';
+      activeScreen.style.display = 'flex';
+
+      const call = peer.call(targetPeerId, localStream, {
+        metadata: { caller: globalNickname, type: callType }
+      });
+      
+      setupCallEvents(call);
+    } catch (err) {
+      Swal.fire('Permission Denied', 'Please allow camera and mic permissions.', 'error');
+    }
+  };
+
+  function setupCallEvents(call) {
+    currentActiveCall = call;
+    call.on('stream', (remoteStream) => {
+      remoteVideo.srcObject = remoteStream;
+    });
+    call.on('close', cleanupCall);
+    call.on('error', cleanupCall);
+  }
+
+  window.endCall = () => {
+    if (currentActiveCall) currentActiveCall.close();
+    cleanupCall();
+  };
+
+  window.toggleAudio = () => {
+    if (!localStream) return;
+    isAudioMuted = !isAudioMuted;
+    localStream.getAudioTracks()[0].enabled = !isAudioMuted;
+    const btn = document.getElementById('toggleMuteBtn');
+    btn.innerHTML = isAudioMuted ? '<i class="fas fa-microphone-slash"></i>' : '<i class="fas fa-microphone"></i>';
+    btn.style.color = isAudioMuted ? '#FF3B30' : 'white';
+  };
+
+  window.toggleVideo = () => {
+    if (!localStream || !localStream.getVideoTracks()[0]) return;
+    isVideoPaused = !isVideoPaused;
+    localStream.getVideoTracks()[0].enabled = !isVideoPaused;
+    const btn = document.getElementById('toggleVideoBtn');
+    btn.innerHTML = isVideoPaused ? '<i class="fas fa-video-slash"></i>' : '<i class="fas fa-video"></i>';
+    btn.style.color = isVideoPaused ? '#FF3B30' : 'white';
+  };
+
+  function cleanupCall() {
+    window.hideCallNotification();
+    activeScreen.style.display = 'none';
+    if (localStream) localStream.getTracks().forEach(track => track.stop());
+    localVideo.srcObject = null;
+    remoteVideo.srcObject = null;
+    currentActiveCall = null;
+    isAudioMuted = false;
+    isVideoPaused = false;
+  }
+});
+</script>
