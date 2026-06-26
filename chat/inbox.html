@@ -559,13 +559,11 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
 <div class="container" id="friendsContainer">
   <div id="loading" class="loading">Loading your conversations...</div>
-
   <div id="emptyState" class="empty-state" style="display:none">
     <h3>No conversations yet</h3>
     <p>Start chatting with strangers to see messages here.</p>
     <button class="start-chat-btn" onclick="location.href='index.html'">Start New Chat</button>
   </div>
-
   <div id="friendList" class="friend-list" style="display:none"></div>
 </div>
 
@@ -578,10 +576,8 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       <i class="fas fa-phone-alt"></i>
     </button>
   </div>
-
   <div id="chatLog"></div>
   <div id="typingIndicator">Friend is typing...</div>
-
   <div class="chat-controls">
     <div class="input-area">
       <input type="text" id="msgInput" placeholder="Type your message..." />
@@ -600,7 +596,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
 <input type="file" id="imgInput" accept="image/*">
 <input type="file" id="gifInput" accept="image/gif">
-
 <div class="gif-modal" id="gifModal">
   <input type="text" class="gif-search" id="gifSearch" placeholder="Search GIFs..." />
   <div class="gif-results" id="gifResults"></div>
@@ -628,7 +623,6 @@ const firebaseConfig = {
 };
 
 const MESSAGE_LIMIT = 25;
-
 let IMGBB_API_KEY = '';
 let GIPHY_API_KEY = '';
 
@@ -643,12 +637,10 @@ async function uploadToImgBB(file) {
   const formData = new FormData();
   formData.append('image', file);
   formData.append('expiration', '604800');
-
   const response = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
     method: 'POST',
     body: formData
   });
-
   if (!response.ok) throw new Error('ImgBB upload failed');
   const data = await response.json();
   if (!data.success) throw new Error('ImgBB upload unsuccessful');
@@ -746,7 +738,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 
 function setupEventListeners() {
   const msgInput = document.getElementById('msgInput');
-
   msgInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -775,7 +766,6 @@ function setupEventListeners() {
   });
 
   document.getElementById('imgInput').addEventListener('change', handleImageUpload);
-
   document.getElementById('gifBtn').onclick = (e) => {
     e.preventDefault();
     const gifModal = document.getElementById("gifModal");
@@ -807,9 +797,9 @@ function setupEventListeners() {
       color: document.body.classList.contains('light-mode') ? '#333' : '#fff'
     }).then((result) => {
       if (result.isConfirmed) {
-        if(window.initiateCall) window.initiateCall(currentFriendName, 'video');
+        if(window.startOutgoingCall) window.startOutgoingCall(currentFriendName, 'video');
       } else if (result.isDenied) {
-        if(window.initiateCall) window.initiateCall(currentFriendName, 'audio');
+        if(window.startOutgoingCall) window.startOutgoingCall(currentFriendName, 'audio');
       }
     });
   };
@@ -817,9 +807,7 @@ function setupEventListeners() {
   window.addEventListener("click", (e) => {
     const gifModal = document.getElementById("gifModal");
     const gifBtn = document.getElementById("gifBtn");
-    if (gifModal.style.display === "flex" &&
-        !gifModal.contains(e.target) &&
-        !gifBtn.contains(e.target)) {
+    if (gifModal.style.display === "flex" && !gifModal.contains(e.target) && !gifBtn.contains(e.target)) {
       gifModal.style.display = "none";
     }
   });
@@ -838,7 +826,6 @@ function setupEventListeners() {
 
 function openChat(chatId, friendName) {
   if (currentChatId) remove(ref(db, `friends/${currentChatId}/typing/${currentUserId}`));
-
   if (messagesListener) { messagesListener(); messagesListener = null; }
   if (typingListener) { typingListener(); typingListener = null; }
 
@@ -857,7 +844,6 @@ function openChat(chatId, friendName) {
   document.getElementById('chatContainer').style.display = 'flex';
 
   history.pushState({ chat: chatId }, '', location.href);
-
   loadMessages();
   listenForMessages();
   listenForTyping();
@@ -865,7 +851,6 @@ function openChat(chatId, friendName) {
 
 function loadFriends() {
   const friendsRef = ref(db, "friends");
-
   if (friendListListener) { friendListListener(); friendListListener = null; }
 
   friendListListener = onValue(friendsRef, async (snap) => {
@@ -875,7 +860,6 @@ function loadFriends() {
     const empty = document.getElementById("emptyState");
 
     loading.style.display = "none";
-
     if (!data) {
       empty.style.display = "flex";
       list.style.display = "none";
@@ -902,35 +886,23 @@ function loadFriends() {
           lastTimestamp = latest.timestamp;
           if (latest.type === 'image') lastMessage = '📷 Image';
           else if (latest.type === 'gif') lastMessage = '🎯 GIF';
-          else if (latest.type === 'text') {
-            lastMessage = latest.text.length > 30 ? latest.text.substring(0, 30) + '...' : latest.text;
-          }
+          else if (latest.type === 'text') lastMessage = latest.text.length > 30 ? latest.text.substring(0, 30) + '...' : latest.text;
         }
       }
 
       friendsArray.push({
-        chatId,
-        displayName: friendNickname,
-        avatarLetter: getAvatarLetter(friendNickname),
-        displayMsg: lastMessage,
-        timestamp: lastTimestamp || Date.now(),
-        friendData: friend
+        chatId, displayName: friendNickname, avatarLetter: getAvatarLetter(friendNickname),
+        displayMsg: lastMessage, timestamp: lastTimestamp || Date.now(), friendData: friend
       });
 
       myFriendsData[chatId] = {
-        displayName: friendNickname,
-        isUserNickname1: myNickname === friend.nickname1,
-        isUserNickname2: myNickname === friend.nickname2
+        displayName: friendNickname, isUserNickname1: myNickname === friend.nickname1, isUserNickname2: myNickname === friend.nickname2
       };
     });
 
     friendsArray.sort((a, b) => b.timestamp - a.timestamp);
-
     if (friendsArray.length === 0) {
-      empty.style.display = "flex";
-      list.style.display = "none";
-      myFriendsData = {};
-      return;
+      empty.style.display = "flex"; list.style.display = "none"; myFriendsData = {}; return;
     }
 
     friendsArray.forEach(friend => {
@@ -964,7 +936,6 @@ function loadMessages() {
   const chatDiv = document.getElementById('chatLog');
   chatDiv.innerHTML = '';
   lastMessageTimestamp = 0;
-
   if (!currentChatId) return;
 
   get(ref(db, `friends/${currentChatId}/messages`)).then((snapshot) => {
@@ -985,14 +956,11 @@ function loadMessages() {
 
 function listenForMessages() {
   if (!currentChatId) return;
-
   const messagesRef = ref(db, `friends/${currentChatId}/messages`);
-
   if (messagesListener) { messagesListener(); messagesListener = null; }
 
   messagesListener = onChildAdded(messagesRef, (snapshot) => {
     const msg = snapshot.val();
-
     if (!currentChatId || snapshot.ref.parent.parent.key !== currentChatId) return;
 
     if (msg && msg.timestamp > lastMessageTimestamp) {
@@ -1003,9 +971,7 @@ function listenForMessages() {
       let displayMsg = '';
       if (msg.type === 'image') displayMsg = '📷 Image';
       else if (msg.type === 'gif') displayMsg = '🎯 GIF';
-      else if (msg.type === 'text') {
-        displayMsg = msg.text.length > 30 ? msg.text.substring(0, 30) + '...' : msg.text;
-      }
+      else if (msg.type === 'text') displayMsg = msg.text.length > 30 ? msg.text.substring(0, 30) + '...' : msg.text;
 
       updateFriendListOrder(currentChatId, displayMsg, msg.timestamp);
     }
@@ -1014,10 +980,8 @@ function listenForMessages() {
 
 function listenForTyping() {
   if (!currentChatId) return;
-
   const listenedChatId = currentChatId;
   const typingRef = ref(db, `friends/${listenedChatId}/typing`);
-
   if (typingListener) { typingListener(); typingListener = null; }
 
   typingListener = onValue(typingRef, (snapshot) => {
@@ -1032,13 +996,11 @@ function listenForTyping() {
 
 function maintainMessageLimit() {
   if (!currentChatId) return;
-
   get(ref(db, `friends/${currentChatId}/messages`)).then((snapshot) => {
     const messages = [];
     snapshot.forEach((childSnapshot) => {
       messages.push({ key: childSnapshot.key, timestamp: childSnapshot.val().timestamp });
     });
-
     if (messages.length > MESSAGE_LIMIT) {
       messages.sort((a, b) => a.timestamp - b.timestamp);
       const updates = {};
@@ -1052,7 +1014,6 @@ function sendMessage() {
   const input = document.getElementById('msgInput');
   const content = input.value.trim();
   if (!content || !currentChatId) return;
-
   const message = { nickname: myNickname, text: content, timestamp: Date.now(), type: "text" };
   const newMsgRef = push(ref(db, `friends/${currentChatId}/messages`));
   set(newMsgRef, message).then(() => maintainMessageLimit());
@@ -1063,19 +1024,14 @@ function sendMessage() {
 async function handleImageUpload(e) {
   const file = e.target.files[0];
   if (!file || !currentChatId) return;
-
   if (file.size > 10 * 1024 * 1024) {
     Swal.fire({ icon: 'error', title: 'File Too Large', text: 'Image size should be less than 10MB', timer: 2000, showConfirmButton: true });
-    e.target.value = '';
-    return;
+    e.target.value = ''; return;
   }
-
   const loadingBubble = showUploadingBubble();
-
   try {
     const imageUrl = await uploadToImgBB(file);
     loadingBubble.remove();
-
     const message = { nickname: myNickname, url: imageUrl, timestamp: Date.now(), type: "image" };
     const newMsgRef = push(ref(db, `friends/${currentChatId}/messages`));
     set(newMsgRef, message).then(() => maintainMessageLimit());
@@ -1083,7 +1039,6 @@ async function handleImageUpload(e) {
     loadingBubble.remove();
     Swal.fire({ icon: 'error', title: 'Upload Failed', text: 'Failed to upload image. Please try again.', timer: 2000, showConfirmButton: true });
   }
-
   e.target.value = '';
 }
 
@@ -1100,9 +1055,7 @@ function showUploadingBubble() {
 window.closeChat = function() {
   if (messagesListener) { messagesListener(); messagesListener = null; }
   if (typingListener) { typingListener(); typingListener = null; }
-
   if (currentChatId) remove(ref(db, `friends/${currentChatId}/typing/${currentUserId}`));
-
   hideTypingIndicator();
   document.getElementById('chatLog').innerHTML = '';
   currentChatId = null;
@@ -1117,14 +1070,12 @@ function appendMessageToChat(msg, isMe) {
   const chatDiv = document.getElementById('chatLog');
   const div = document.createElement("div");
   div.className = `msg ${isMe ? 'me' : 'stranger'}`;
-
   if (!isMe) {
     const nicknameDiv = document.createElement("div");
     nicknameDiv.className = "msg-nickname";
     nicknameDiv.textContent = msg.nickname;
     div.appendChild(nicknameDiv);
   }
-
   if (msg.type === 'image' || msg.type === 'gif') {
     const img = document.createElement("img");
     img.src = msg.url;
@@ -1134,12 +1085,10 @@ function appendMessageToChat(msg, isMe) {
     textDiv.innerHTML = linkifyText(msg.text);
     div.appendChild(textDiv);
   }
-
   const timeDiv = document.createElement("div");
   timeDiv.className = "timestamp";
   timeDiv.textContent = formatMessageTime(msg.timestamp);
   div.appendChild(timeDiv);
-
   chatDiv.appendChild(div);
   scrollToBottom();
 }
@@ -1182,7 +1131,6 @@ async function searchGifs(query) {
 function displayGifs(gifs) {
   const gifResults = document.getElementById('gifResults');
   gifResults.innerHTML = "";
-
   gifs.forEach(gif => {
     const gifUrl = gif.images.fixed_height.url;
     const img = document.createElement("img");
