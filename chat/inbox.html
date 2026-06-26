@@ -527,7 +527,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     left: 50%;
     transform: translateX(-50%);
   }
-  .chat-header, .chat-controls {
+  .chat-header {
     max-width: 720px;
     left: 50%;
     transform: translateX(-50%);
@@ -535,8 +535,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   }
   .chat-controls {
     border-radius: 0 0 12px 12px;
-    border-left: 0.5px solid var(--dark-border);
-    border-right: 0.5px solid var(--dark-border);
   }
   .gif-modal { right: calc(50% - 360px + 10px); }
 }
@@ -865,9 +863,25 @@ function setupEventListeners() {
     document.getElementById('callTypeModal').style.display = 'none';
   };
 
+  // PeerJS Caller ID Firebase Storage Logic integration
   window.proceedCall = function(type) {
     closeCallTypeModal();
-    if(window.startOutgoingCall) window.startOutgoingCall(currentFriendName, type);
+    
+    const callerPeerId = "user_" + myNickname.replace(/[^a-zA-Z0-9]/g, '_');
+    const targetCallRef = ref(db, `calls/${currentFriendName}`);
+    
+    set(targetCallRef, {
+      caller: myNickname,
+      callerPeerId: callerPeerId,
+      receiver: currentFriendName,
+      type: type,
+      status: 'calling',
+      timestamp: Date.now()
+    }).then(() => {
+      if(window.startOutgoingCall) {
+        window.startOutgoingCall(currentFriendName, type);
+      }
+    });
   };
 
   window.addEventListener("click", (e) => {
