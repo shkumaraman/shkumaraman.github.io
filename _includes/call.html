@@ -1,11 +1,9 @@
 <style>
-.call-overlay {
+.custom-call-modal {
   position: fixed;
-  inset: 0;
-  background: rgba(18, 18, 18, 0.95);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  z-index: 99999;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(18, 18, 18, 0.98);
+  z-index: 999999;
   display: none;
   flex-direction: column;
   align-items: center;
@@ -13,10 +11,32 @@
   color: white;
 }
 
+.close-call-btn {
+  position: absolute;
+  top: 25px;
+  right: 25px;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: white;
+  font-size: 24px;
+  width: 45px; height: 45px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+  z-index: 100;
+}
+.close-call-btn:hover { background: rgba(255, 59, 48, 0.8); }
+
 .call-video-container {
   width: 100%; height: 100%;
   position: relative;
   background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 #remoteVideo { width: 100%; height: 100%; object-fit: cover; }
@@ -24,7 +44,7 @@
 #localVideo {
   width: 120px; height: 160px;
   position: absolute;
-  top: 20px; right: 20px;
+  top: 20px; left: 20px;
   border-radius: 12px;
   object-fit: cover;
   border: 2px solid rgba(255,255,255,0.2);
@@ -59,13 +79,23 @@
   justify-content: center;
   transition: transform 0.2s;
 }
-
 .action-btn:active { transform: scale(0.9); }
 .btn-reject { background: #FF3B30; box-shadow: 0 4px 15px rgba(255, 59, 48, 0.4); }
+
+.calling-text {
+  position: absolute;
+  font-size: 20px;
+  font-weight: 600;
+  color: #fff;
+  z-index: 5;
+}
 </style>
 
-<div id="activeCallScreen" class="call-overlay">
+<div id="customCallModal" class="custom-call-modal">
+  <button class="close-call-btn" onclick="window.endCall()"><i class="fas fa-times"></i></button>
+
   <div class="call-video-container">
+    <div id="callingStatusText" class="calling-text">Calling...</div>
     <video id="remoteVideo" autoplay playsinline></video>
     <video id="localVideo" autoplay playsinline muted></video>
     
@@ -83,7 +113,9 @@
   </div>
 </div>
 
-<script>
+<script type="module">
+import { ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
+
 document.addEventListener('DOMContentLoaded', () => {
   const globalNickname = localStorage.getItem("talkrush_nickname");
   if (!globalNickname) return;
@@ -95,47 +127,27 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentActiveCall = null;
   let isAudioMuted = false;
   let isVideoPaused = false;
+  let outboundCallListener = null;
+  let activeTarget = null;
   
-  const activeScreen = document.getElementById('activeCallScreen');
+  const callModal = document.getElementById('customCallModal');
   const localVideo = document.getElementById('localVideo');
   const remoteVideo = document.getElementById('remoteVideo');
+  const callingStatusText = document.getElementById('callingStatusText');
 
   peer.on('call', (call) => {
-    if (currentActiveCall) {
-      call.close();
-      return;
-    }
-
-    const callerName = call.metadata ? call.metadata.caller : 'Someone';
-    const callType = call.metadata ? call.metadata.type : 'video';
-
-    window.showCallNotification(callerName, callType, 
-      async () => {
-        try {
-          localStream = await navigator.mediaDevices.getUserMedia({
-            video: callType === 'video',
-            audio: true
-          });
-          
-          localVideo.srcObject = localStream;
-          localVideo.style.display = callType === 'video' ? 'block' : 'none';
-          
-          call.answer(localStream);
-          setupCallEvents(call);
-          activeScreen.style.display = 'flex';
-        } catch (err) {
-          Swal.fire('Error', 'Could not access Camera/Microphone.', 'error');
-          call.close();
-        }
-      },
-      () => {
-        call.close();
-      }
-    );
+    currentActiveCall = call;
+    call.answer(localStream);
+    call.on('stream', (remoteStream) => {
+      callingStatusText.style.display = 'none';
+      remoteVideo.srcObject = remoteStream;
+    });
+    call.on('close', cleanupCallUI);
+    call.on('error', cleanupCallUI);
   });
 
-  window.initiateCall = async (friendName, callType) => {
-    const targetPeerId = "user_" + friendName.replace(/[^a-zA-Z0-9]/g, '_');
+  window.startOutgoingCall = async (targetNickname, callType) => {
+    activeTarget = targetNickname;
     try {
       localStream = await navigator.mediaDevices.getUserMedia({
         video: callType === 'video',
@@ -144,30 +156,86 @@ document.addEventListener('DOMContentLoaded', () => {
       
       localVideo.srcObject = localStream;
       localVideo.style.display = callType === 'video' ? 'block' : 'none';
-      activeScreen.style.display = 'flex';
+      remoteVideo.srcObject = null;
+      callingStatusText.innerText = "Calling " + targetNickname + "...";
+      callingStatusText.style.display = 'block';
+      callModal.style.display = 'flex';
 
-      const call = peer.call(targetPeerId, localStream, {
-        metadata: { caller: globalNickname, type: callType }
+      const targetCallRef = ref(window.firebaseDB, `calls/${targetNickname}`);
+      await set(targetCallRef, {
+        caller: globalNickname,
+        type: callType,
+        status: 'calling',
+        timestamp: Date.now()
       });
-      
-      setupCallEvents(call);
+
+      if (outboundCallListener) outboundCallListener();
+      outboundCallListener = onValue(targetCallRef, (snap) => {
+        const data = snap.val();
+        if (!data) return;
+
+        if (data.status === 'accepted') {
+          callingStatusText.innerText = "Connecting media...";
+          const targetPeerId = "user_" + targetNickname.replace(/[^a-zA-Z0-9]/g, '_');
+          const call = peer.call(targetPeerId, localStream);
+          currentActiveCall = call;
+          
+          call.on('stream', (remoteStream) => {
+            callingStatusText.style.display = 'none';
+            remoteVideo.srcObject = remoteStream;
+          });
+          call.on('close', cleanupCallUI);
+          call.on('error', cleanupCallUI);
+
+          if (outboundCallListener) { outboundCallListener(); outboundCallListener = null; }
+
+        } else if (data.status === 'rejected') {
+          Swal.fire('Call Declined', `${targetNickname} declined the call.`, 'info');
+          cleanupCallUI();
+        }
+      });
+
     } catch (err) {
-      Swal.fire('Permission Denied', 'Please allow camera and mic permissions.', 'error');
+      Swal.fire('Error', 'Please allow camera and mic permissions.', 'error');
     }
   };
 
-  function setupCallEvents(call) {
-    currentActiveCall = call;
-    call.on('stream', (remoteStream) => {
-      remoteVideo.srcObject = remoteStream;
-    });
-    call.on('close', cleanupCall);
-    call.on('error', cleanupCall);
-  }
+  window.acceptIncomingCall = async (callerNickname, callType) => {
+    activeTarget = callerNickname;
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia({
+        video: callType === 'video',
+        audio: true
+      });
+      
+      localVideo.srcObject = localStream;
+      localVideo.style.display = callType === 'video' ? 'block' : 'none';
+      remoteVideo.srcObject = null;
+      callingStatusText.innerText = "Connecting...";
+      callingStatusText.style.display = 'block';
+      callModal.style.display = 'flex';
+    } catch (err) {
+      Swal.fire('Error', 'Could not access Camera/Microphone.', 'error');
+      set(ref(window.firebaseDB, `calls/${globalNickname}/status`), 'rejected');
+    }
+  };
+
+  window.forceEndCallUI = () => {
+     if (callModal.style.display === 'flex') {
+        cleanupCallUI();
+     }
+  };
 
   window.endCall = () => {
-    if (currentActiveCall) currentActiveCall.close();
-    cleanupCall();
+    if (activeTarget && document.getElementById('callingStatusText').style.display !== 'none') {
+       set(ref(window.firebaseDB, `calls/${activeTarget}/status`), 'ended');
+    }
+    set(ref(window.firebaseDB, `calls/${globalNickname}/status`), 'ended');
+    
+    if (currentActiveCall) {
+       currentActiveCall.close();
+    }
+    cleanupCallUI();
   };
 
   window.toggleAudio = () => {
@@ -188,15 +256,21 @@ document.addEventListener('DOMContentLoaded', () => {
     btn.style.color = isVideoPaused ? '#FF3B30' : 'white';
   };
 
-  function cleanupCall() {
-    window.hideCallNotification();
-    activeScreen.style.display = 'none';
+  function cleanupCallUI() {
+    callModal.style.display = 'none';
     if (localStream) localStream.getTracks().forEach(track => track.stop());
     localVideo.srcObject = null;
     remoteVideo.srcObject = null;
     currentActiveCall = null;
+    activeTarget = null;
     isAudioMuted = false;
     isVideoPaused = false;
+    if (outboundCallListener) { outboundCallListener(); outboundCallListener = null; }
+    
+    document.getElementById('toggleMuteBtn').innerHTML = '<i class="fas fa-microphone"></i>';
+    document.getElementById('toggleMuteBtn').style.color = 'white';
+    document.getElementById('toggleVideoBtn').innerHTML = '<i class="fas fa-video"></i>';
+    document.getElementById('toggleVideoBtn').style.color = 'white';
   }
 });
 </script>
