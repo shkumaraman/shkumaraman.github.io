@@ -11,25 +11,6 @@
   color: white;
 }
 
-.close-call-btn {
-  position: absolute;
-  top: 25px;
-  right: 25px;
-  background: rgba(255, 255, 255, 0.1);
-  border: none;
-  color: white;
-  font-size: 24px;
-  width: 45px; height: 45px;
-  border-radius: 50%;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.2s;
-  z-index: 100;
-}
-.close-call-btn:hover { background: rgba(255, 59, 48, 0.8); }
-
 .call-video-container {
   width: 100%; height: 100%;
   position: relative;
@@ -92,8 +73,6 @@
 </style>
 
 <div id="customCallModal" class="custom-call-modal">
-  <button class="close-call-btn" onclick="window.endCall()"><i class="fas fa-times"></i></button>
-
   <div class="call-video-container">
     <div id="callingStatusText" class="calling-text">Calling...</div>
     <video id="remoteVideo" autoplay playsinline></video>
@@ -134,6 +113,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const localVideo = document.getElementById('localVideo');
   const remoteVideo = document.getElementById('remoteVideo');
   const callingStatusText = document.getElementById('callingStatusText');
+  const toggleVideoBtn = document.getElementById('toggleVideoBtn');
 
   peer.on('call', (call) => {
     currentActiveCall = call;
@@ -154,6 +134,12 @@ document.addEventListener('DOMContentLoaded', () => {
         audio: true
       });
       
+      if (callType === 'audio') {
+        toggleVideoBtn.style.display = 'none';
+      } else {
+        toggleVideoBtn.style.display = 'flex';
+      }
+
       localVideo.srcObject = localStream;
       localVideo.style.display = callType === 'video' ? 'block' : 'none';
       remoteVideo.srcObject = null;
@@ -164,6 +150,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const targetCallRef = ref(window.firebaseDB, `calls/${targetNickname}`);
       await set(targetCallRef, {
         caller: globalNickname,
+        callerPeerId: myPeerId,
         receiver: targetNickname,
         type: callType,
         status: 'calling',
@@ -177,7 +164,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (data.status === 'accepted') {
           callingStatusText.innerText = "Connecting media...";
-          const targetPeerId = "user_" + targetNickname.replace(/[^a-zA-Z0-9]/g, '_');
+          const targetPeerId = data.receiverPeerId || ("user_" + targetNickname.replace(/[^a-zA-Z0-9]/g, '_'));
           const call = peer.call(targetPeerId, localStream);
           currentActiveCall = call;
           
@@ -208,6 +195,12 @@ document.addEventListener('DOMContentLoaded', () => {
         audio: true
       });
       
+      if (callType === 'audio') {
+        toggleVideoBtn.style.display = 'none';
+      } else {
+        toggleVideoBtn.style.display = 'flex';
+      }
+
       localVideo.srcObject = localStream;
       localVideo.style.display = callType === 'video' ? 'block' : 'none';
       remoteVideo.srcObject = null;
@@ -270,6 +263,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('toggleMuteBtn').style.color = 'white';
     document.getElementById('toggleVideoBtn').innerHTML = '<i class="fas fa-video"></i>';
     document.getElementById('toggleVideoBtn').style.color = 'white';
+    toggleVideoBtn.style.display = 'flex';
   }
 });
 </script>
