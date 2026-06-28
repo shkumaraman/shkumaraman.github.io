@@ -137,6 +137,7 @@
     let isAudioMuted = false;
     let isVideoPaused = false;
     let outboundCallListener = null;
+    let inboundCallListener = null;
     let activeTarget = null;
 
     const callModal = document.getElementById('customCallModal');
@@ -241,6 +242,7 @@
           }
 
           const targetPeerId = data.receiverPeerId || ("user_" + targetNickname.replace(/[^a-zA-Z0-9]/g, '_'));
+          
           const call = peer.call(targetPeerId, localStream);
           currentActiveCall = call;
 
@@ -259,6 +261,8 @@
 
     window.acceptIncomingCall = async (callerNickname, callType) => {
       activeTarget = callerNickname;
+      const myCallRef = ref(window.firebaseDB, `calls/${globalNickname}`);
+
       try {
         localStream = await navigator.mediaDevices.getUserMedia({
           video: callType === 'video',
@@ -269,13 +273,12 @@
           try {
             localStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
             callType = 'audio';
-            update(ref(window.firebaseDB, `calls/${globalNickname}`), { type: 'audio' });
           } catch (audioErr) {
-            set(ref(window.firebaseDB, `calls/${globalNickname}/status`), 'rejected');
+            update(myCallRef, { status: 'rejected' });
             return false;
           }
         } else {
-          set(ref(window.firebaseDB, `calls/${globalNickname}/status`), 'rejected');
+          update(myCallRef, { status: 'rejected' });
           return false;
         }
       }
@@ -292,6 +295,22 @@
       callingStatusText.innerText = "Connecting...";
       callingStatusText.style.display = 'block';
       callModal.style.display = 'flex';
+
+      const currentPeerId = peer.id || ("user_" + globalNickname.replace(/[^a-zA-Z0-9]/g, '_'));
+      update(myCallRef, {
+        status: 'accepted',
+        receiverPeerId: currentPeerId,
+        type: callType
+      });
+
+      if (inboundCallListener) inboundCallListener();
+      inboundCallListener = onValue(myCallRef, (snap) => {
+        const data = snap.val();
+        if (!data || data.status === 'ended') {
+          cleanupCallUI();
+        }
+      });
+
       return true;
     };
 
@@ -345,12 +364,17 @@
       activeTarget = null;
       isAudioMuted = false;
       isVideoPaused = false;
+      callingStatusText.style.display = 'none';
 
       if (outboundCallListener) { 
         outboundCallListener(); 
         outboundCallListener = null; 
       }
-
+      if (inboundCallListener) {
+        inboundCallListener();
+        inboundCallListener = null;
+      }
+      
       document.getElementById('toggleMuteBtn').innerHTML = '<i class="fas fa-microphone"></i>';
       document.getElementById('toggleMuteBtn').style.color = 'white';
       document.getElementById('toggleVideoBtn').innerHTML = '<i class="fas fa-video"></i>';
