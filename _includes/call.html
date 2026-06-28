@@ -140,12 +140,6 @@
     let inboundCallListener = null;
     let activeTarget = null;
 
-    const callModal = document.getElementById('customCallModal');
-    const localVideo = document.getElementById('localVideo');
-    const remoteVideo = document.getElementById('remoteVideo');
-    const callingStatusText = document.getElementById('callingStatusText');
-    const toggleVideoBtn = document.getElementById('toggleVideoBtn');
-
     peer.on('call', (call) => {
       currentActiveCall = call;
       if (localStream) {
@@ -154,8 +148,10 @@
         call.answer();
       }
       call.on('stream', (remoteStream) => {
-        callingStatusText.style.display = 'none';
-        remoteVideo.srcObject = remoteStream;
+        const text = document.getElementById('callingStatusText');
+        const rVideo = document.getElementById('remoteVideo');
+        if (text) text.style.display = 'none';
+        if (rVideo) rVideo.srcObject = remoteStream;
       });
       call.on('close', cleanupCallUI);
       call.on('error', cleanupCallUI);
@@ -163,10 +159,17 @@
 
     window.startOutgoingCall = async (targetNickname, callType) => {
       activeTarget = targetNickname;
-      callModal.style.display = 'flex';
-      callingStatusText.innerText = "Calling " + targetNickname + "...";
-      callingStatusText.style.display = 'block';
-      remoteVideo.srcObject = null;
+      
+      const modal = document.getElementById('customCallModal');
+      const text = document.getElementById('callingStatusText');
+      const rVideo = document.getElementById('remoteVideo');
+      
+      if (modal) modal.style.display = 'flex';
+      if (text) {
+        text.innerText = "Calling " + targetNickname + "...";
+        text.style.display = 'block';
+      }
+      if (rVideo) rVideo.srcObject = null;
 
       try {
         localStream = await navigator.mediaDevices.getUserMedia({
@@ -188,14 +191,14 @@
         }
       }
 
-      if (callType === 'audio') {
-        toggleVideoBtn.style.display = 'none';
-      } else {
-        toggleVideoBtn.style.display = 'flex';
-      }
+      const vBtn = document.getElementById('toggleVideoBtn');
+      if (vBtn) vBtn.style.display = callType === 'audio' ? 'none' : 'flex';
 
-      localVideo.srcObject = localStream;
-      localVideo.style.display = callType === 'video' ? 'block' : 'none';
+      const lVideo = document.getElementById('localVideo');
+      if (lVideo) {
+        lVideo.srcObject = localStream;
+        lVideo.style.display = callType === 'video' ? 'block' : 'none';
+      }
 
       const getPeerId = () => {
         return new Promise((resolve) => {
@@ -211,9 +214,10 @@
           }
         });
       };
+      
       const currentPeerId = await getPeerId() || ("user_" + globalNickname.replace(/[^a-zA-Z0-9]/g, '_'));
-
       const targetCallRef = ref(window.firebaseDB, `calls/${targetNickname}`);
+      
       await set(targetCallRef, {
         caller: globalNickname,
         callerPeerId: currentPeerId,
@@ -233,23 +237,28 @@
         }
 
         if (data.status === 'accepted') {
-          callingStatusText.innerText = "Connecting media...";
+          const stText = document.getElementById('callingStatusText');
+          if (stText) stText.innerText = "Connecting media...";
 
           if (data.type === 'audio' && callType === 'video') {
             callType = 'audio';
-            toggleVideoBtn.style.display = 'none';
-            localVideo.style.display = 'none';
+            const vButton = document.getElementById('toggleVideoBtn');
+            const localVid = document.getElementById('localVideo');
+            if (vButton) vButton.style.display = 'none';
+            if (localVid) localVid.style.display = 'none';
           }
 
           const targetPeerId = data.receiverPeerId || ("user_" + targetNickname.replace(/[^a-zA-Z0-9]/g, '_'));
-          
           const call = peer.call(targetPeerId, localStream);
           currentActiveCall = call;
 
           call.on('stream', (remoteStream) => {
-            callingStatusText.style.display = 'none';
-            remoteVideo.srcObject = remoteStream;
+            const stxt = document.getElementById('callingStatusText');
+            const rVid = document.getElementById('remoteVideo');
+            if (stxt) stxt.style.display = 'none';
+            if (rVid) rVid.srcObject = remoteStream;
           });
+          
           call.on('close', cleanupCallUI);
           call.on('error', cleanupCallUI);
 
@@ -283,18 +292,26 @@
         }
       }
 
-      if (callType === 'audio') {
-        toggleVideoBtn.style.display = 'none';
-      } else {
-        toggleVideoBtn.style.display = 'flex';
+      const vBtn = document.getElementById('toggleVideoBtn');
+      if (vBtn) vBtn.style.display = callType === 'audio' ? 'none' : 'flex';
+
+      const lVideo = document.getElementById('localVideo');
+      if (lVideo) {
+        lVideo.srcObject = localStream;
+        lVideo.style.display = callType === 'video' ? 'block' : 'none';
       }
 
-      localVideo.srcObject = localStream;
-      localVideo.style.display = callType === 'video' ? 'block' : 'none';
-      remoteVideo.srcObject = null;
-      callingStatusText.innerText = "Connecting...";
-      callingStatusText.style.display = 'block';
-      callModal.style.display = 'flex';
+      const rVideo = document.getElementById('remoteVideo');
+      if (rVideo) rVideo.srcObject = null;
+
+      const text = document.getElementById('callingStatusText');
+      if (text) {
+        text.innerText = "Connecting...";
+        text.style.display = 'block';
+      }
+
+      const modal = document.getElementById('customCallModal');
+      if (modal) modal.style.display = 'flex';
 
       const currentPeerId = peer.id || ("user_" + globalNickname.replace(/[^a-zA-Z0-9]/g, '_'));
       update(myCallRef, {
@@ -315,7 +332,8 @@
     };
 
     window.forceEndCallUI = () => {
-      if (callModal.style.display === 'flex') {
+      const modal = document.getElementById('customCallModal');
+      if (modal && modal.style.display === 'flex') {
         cleanupCallUI();
       }
     };
@@ -329,8 +347,10 @@
       isAudioMuted = !isAudioMuted;
       localStream.getAudioTracks()[0].enabled = !isAudioMuted;
       const btn = document.getElementById('toggleMuteBtn');
-      btn.innerHTML = isAudioMuted ? '<i class="fas fa-microphone-slash"></i>' : '<i class="fas fa-microphone"></i>';
-      btn.style.color = isAudioMuted ? '#FF3B30' : 'white';
+      if (btn) {
+        btn.innerHTML = isAudioMuted ? '<i class="fas fa-microphone-slash"></i>' : '<i class="fas fa-microphone"></i>';
+        btn.style.color = isAudioMuted ? '#FF3B30' : 'white';
+      }
     };
 
     window.toggleVideo = () => {
@@ -338,33 +358,62 @@
       isVideoPaused = !isVideoPaused;
       localStream.getVideoTracks()[0].enabled = !isVideoPaused;
       const btn = document.getElementById('toggleVideoBtn');
-      btn.innerHTML = isVideoPaused ? '<i class="fas fa-video-slash"></i>' : '<i class="fas fa-video"></i>';
-      btn.style.color = isVideoPaused ? '#FF3B30' : 'white';
+      if (btn) {
+        btn.innerHTML = isVideoPaused ? '<i class="fas fa-video-slash"></i>' : '<i class="fas fa-video"></i>';
+        btn.style.color = isVideoPaused ? '#FF3B30' : 'white';
+      }
     };
 
     function cleanupCallUI() {
-      if (activeTarget) {
-        remove(ref(window.firebaseDB, `calls/${activeTarget}`));
-      }
-      remove(ref(window.firebaseDB, `calls/${globalNickname}`));
+      try {
+        if (activeTarget) remove(ref(window.firebaseDB, `calls/${activeTarget}`));
+        if (globalNickname) remove(ref(window.firebaseDB, `calls/${globalNickname}`));
+      } catch (e) { console.warn(e); }
 
-      if (currentActiveCall) {
-        currentActiveCall.close();
-        currentActiveCall = null;
-      }
+      try {
+        if (currentActiveCall) {
+          currentActiveCall.close();
+          currentActiveCall = null;
+        }
+      } catch (e) { console.warn(e); }
 
-      if (localStream) {
-        localStream.getTracks().forEach(track => track.stop());
-        localStream = null;
-      }
+      try {
+        if (localStream) {
+          localStream.getTracks().forEach(track => track.stop());
+          localStream = null;
+        }
+      } catch (e) { console.warn(e); }
 
-      callModal.style.display = 'none';
-      localVideo.srcObject = null;
-      remoteVideo.srcObject = null;
+      try {
+        const modal = document.getElementById('customCallModal');
+        if (modal) modal.style.display = 'none';
+
+        const lVideo = document.getElementById('localVideo');
+        if (lVideo) lVideo.srcObject = null;
+
+        const rVideo = document.getElementById('remoteVideo');
+        if (rVideo) rVideo.srcObject = null;
+
+        const text = document.getElementById('callingStatusText');
+        if (text) text.style.display = 'none';
+
+        const mBtn = document.getElementById('toggleMuteBtn');
+        if (mBtn) {
+          mBtn.innerHTML = '<i class="fas fa-microphone"></i>';
+          mBtn.style.color = 'white';
+        }
+
+        const vBtn = document.getElementById('toggleVideoBtn');
+        if (vBtn) {
+          vBtn.innerHTML = '<i class="fas fa-video"></i>';
+          vBtn.style.color = 'white';
+          vBtn.style.display = 'flex';
+        }
+      } catch (e) { console.warn(e); }
+
       activeTarget = null;
       isAudioMuted = false;
       isVideoPaused = false;
-      callingStatusText.style.display = 'none';
 
       if (outboundCallListener) { 
         outboundCallListener(); 
@@ -374,12 +423,6 @@
         inboundCallListener();
         inboundCallListener = null;
       }
-      
-      document.getElementById('toggleMuteBtn').innerHTML = '<i class="fas fa-microphone"></i>';
-      document.getElementById('toggleMuteBtn').style.color = 'white';
-      document.getElementById('toggleVideoBtn').innerHTML = '<i class="fas fa-video"></i>';
-      document.getElementById('toggleVideoBtn').style.color = 'white';
-      toggleVideoBtn.style.display = 'flex';
     }
   });
 </script>
