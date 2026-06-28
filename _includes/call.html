@@ -113,7 +113,7 @@
 </div>
 
 <script type="module">
-  import { ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
+  import { ref, set, onValue, remove, update } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
 
   document.addEventListener('DOMContentLoaded', () => {
     const globalNickname = localStorage.getItem("talkrush_nickname");
@@ -225,6 +225,7 @@
       if (outboundCallListener) outboundCallListener();
       outboundCallListener = onValue(targetCallRef, (snap) => {
         const data = snap.val();
+        
         if (!data) {
           cleanupCallUI();
           return;
@@ -249,8 +250,6 @@
           });
           call.on('close', cleanupCallUI);
           call.on('error', cleanupCallUI);
-
-          if (outboundCallListener) { outboundCallListener(); outboundCallListener = null; }
 
         } else if (data.status === 'rejected' || data.status === 'ended') {
           cleanupCallUI();
@@ -303,14 +302,6 @@
     };
 
     window.endCall = () => {
-      if (activeTarget) {
-        remove(ref(window.firebaseDB, `calls/${activeTarget}`));
-      }
-      remove(ref(window.firebaseDB, `calls/${globalNickname}`));
-
-      if (currentActiveCall) {
-        currentActiveCall.close();
-      }
       cleanupCallUI();
     };
 
@@ -338,15 +329,27 @@
       }
       remove(ref(window.firebaseDB, `calls/${globalNickname}`));
 
+      if (currentActiveCall) {
+        currentActiveCall.close();
+        currentActiveCall = null;
+      }
+
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+        localStream = null;
+      }
+
       callModal.style.display = 'none';
-      if (localStream) localStream.getTracks().forEach(track => track.stop());
       localVideo.srcObject = null;
       remoteVideo.srcObject = null;
-      currentActiveCall = null;
       activeTarget = null;
       isAudioMuted = false;
       isVideoPaused = false;
-      if (outboundCallListener) { outboundCallListener(); outboundCallListener = null; }
+
+      if (outboundCallListener) { 
+        outboundCallListener(); 
+        outboundCallListener = null; 
+      }
 
       document.getElementById('toggleMuteBtn').innerHTML = '<i class="fas fa-microphone"></i>';
       document.getElementById('toggleMuteBtn').style.color = 'white';
