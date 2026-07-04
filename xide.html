@@ -83,16 +83,12 @@
         .tab-close { margin-left:4px; font-size:11px; color:var(--text-muted); padding:2px 5px; border-radius:3px; }
         .tab-close:hover { background:#e8e8e8; color:#cf222e; }
         #code-area {
-            flex:1; width:100%; border:none; outline:none; padding:16px; font-family:var(--font-code); font-size:14px; overflow-y:auto; box-sizing:border-box; background:var(--bg-main); color:#1e1e1e; white-space:pre; line-height:1.6; tab-size:4; resize:none; min-height:0;
+            flex:1; width:100%; border:none; outline:none; padding:16px; font-family:var(--font-code); font-size:14px; overflow-y:auto; box-sizing:border-box; background:var(--bg-main); color:#1e1e1e; white-space:pre; line-height:1.6; tab-size:4; resize:none; min-height:0; transition: background 0.3s ease;
         }
         .code-line { display:block; min-height:1.2em; }
-        .diff-add { background:var(--diff-add-bg); color:var(--diff-add-txt); display:block; }
-        .diff-rm { background:var(--diff-rm-bg); color:var(--diff-rm-txt); text-decoration:line-through; display:block; }
-        .diff-read { background:var(--diff-read-bg); display:block; }
-        .ai-action-popup { position:absolute; top:50px; right:20px; background:#ffffff; border:1px solid var(--accent-blue); box-shadow:0 4px 16px rgba(0,0,0,0.1); padding:12px 16px; border-radius:8px; display:none; z-index:100; align-items:center; gap:10px; }
-        .ai-action-popup button { padding:6px 16px; border:none; border-radius:4px; cursor:pointer; font-weight:600; font-size:12px; }
-        .btn-accept { background:#238636; color:white; } .btn-accept:hover { background:#2ea043; }
-        .btn-reject { background:#da3633; color:white; } .btn-reject:hover { background:#f85149; }
+        .diff-add { background:var(--diff-add-bg); color:var(--diff-add-txt); display:block; padding:0 4px; }
+        .diff-rm { background:var(--diff-rm-bg); color:var(--diff-rm-txt); text-decoration:line-through; display:block; padding:0 4px; }
+        .diff-read { background:transparent; color:var(--text-muted); display:block; padding:0 4px; opacity:0.8; }
         .bottom-panel { height:260px; background:var(--bg-panel); border-top:1px solid var(--border-color); display:flex; flex-direction:column; flex-shrink:0; }
         .panel-header { display:flex; border-bottom:1px solid var(--border-color); background:var(--panel-header-bg); padding-left:8px; flex-shrink:0; }
         .panel-tab { padding:8px 16px; font-size:11px; cursor:pointer; color:var(--text-muted); border-bottom:1px solid transparent; text-transform:uppercase; letter-spacing:0.5px; font-weight:500; }
@@ -276,7 +272,7 @@
         function openFile(id,prev){const node=findNode(id);if(!node||node.type!=='file')return;let tab=openTabs.find(t=>t.id===id);if(tab){if(!prev)tab.preview=false;}else{if(prev)openTabs=openTabs.filter(t=>!t.preview);openTabs.push({id:id,preview:prev});}activeFileId=id;renderExplorer();renderTabs();renderEditor();}
         function pinFile(id){const tab=openTabs.find(t=>t.id===id);if(tab)tab.preview=false;renderTabs();}
         function closeTab(id,e){if(e)e.stopPropagation();openTabs=openTabs.filter(t=>t.id!==id);if(activeFileId===id)activeFileId=openTabs.length?openTabs[openTabs.length-1].id:null;renderTabs();renderEditor();renderExplorer();}
-        function renderTabs(){const cont=document.getElementById('tabs-container');cont.innerHTML='';openTabs.forEach(t=>{const node=findNode(t.id);if(!node)return;const div=document.createElement('div');div.className='tab '+(t.id===activeFileId?'active':'')+' '+(t.preview?'preview':'');div.innerHTML=getIconHtml(node.name,node.type)+' '+escapeHtml(node.name)+' <i class="fa-solid fa-xmark tab-close" onclick="closeTab('+t.id+', event)"></i>';div.onclick=()=>openFile(t.id,t.preview);div.ondblclick=()=>pinFile(t.id);div.oncontextmenu=e=>{e.preventDefault();rightClickedElement={type:'tab',id:t.id};showMenu('tab-context',e.pageX,e.pageY);};cont.appendChild(div);});}
+        function renderTabs(){const cont=document.getElementById('tabs-container');cont.innerHTML='';openTabs.forEach(t=>{const node=findNode(t.id);if(!node)return;const div=document.createElement('div');div.className='tab '+(t.id===activeFileId?'active':'')+' '+(t.preview?'preview':'');div.innerHTML=getIconHtml(node.name,node.type)+' '+escapeHtml(node.name)+' <i class="fa-solid fa-xmark tab-close" onclick="closeTab(\''+t.id+'\', event)"></i>';div.onclick=()=>openFile(t.id,t.preview);div.ondblclick=()=>pinFile(t.id);div.oncontextmenu=e=>{e.preventDefault();rightClickedElement={type:'tab',id:t.id};showMenu('tab-context',e.pageX,e.pageY);};cont.appendChild(div);});}
         document.getElementById('code-area').addEventListener('input',function(){if(activeFileId){const node=findNode(activeFileId);if(node&&node.type==='file'){node.content=this.innerText;pinFile(activeFileId);}}});
         function renderEditor(){const area=document.getElementById('code-area');if(activeFileId){const node=findNode(activeFileId);if(node&&node.type==='file'){area.style.display='block';area.innerText=node.content;}else{area.style.display='block';area.innerText='';}}else{area.style.display='block';area.innerText='';}}
         function showMenu(id,x,y){hideAllMenus();const m=document.getElementById(id);m.style.display='block';m.style.left=Math.min(x,window.innerWidth-180)+'px';m.style.top=Math.min(y,window.innerHeight-200)+'px';}
@@ -287,8 +283,123 @@
         function handleTabMenu(action){if(!rightClickedElement)return;const id=rightClickedElement.id;if(action==='close')closeTab(id);else if(action==='closeAll'){openTabs=[];activeFileId=null;renderTabs();renderEditor();renderExplorer();}else if(action==='path'){const node=findNode(id);if(node)navigator.clipboard.writeText(getNodePath(node));}}
         function switchPanel(name){document.querySelectorAll('.panel-tab').forEach(t=>t.classList.remove('active'));document.querySelectorAll('.panel-content').forEach(c=>c.classList.remove('active'));if(name==='terminal'){document.querySelectorAll('.panel-tab')[0].classList.add('active');document.getElementById('terminal').classList.add('active');}else{document.querySelectorAll('.panel-tab')[1].classList.add('active');document.getElementById('prompt').classList.add('active');}}
         function toggleSidebar(){const sidebar=document.getElementById('sidebar');if(window.innerWidth<=768){sidebar.classList.toggle('mobile-visible');}else{sidebar.classList.toggle('hidden');}}
-        function runCommandLine(cmdStr,histContainer,scrollContainer,promptUpdate=true){histContainer.innerHTML+='<div><span class="cli-prompt-text" style="color:var(--accent-green);">~'+(termCwd==='/'?'':termCwd)+'&gt;</span> '+escapeHtml(cmdStr)+'</div>';const trimmed=cmdStr.trim();if(!trimmed)return;const parts=parseCommand(trimmed);const cmd=parts[0].toLowerCase();const args=parts.slice(1);let out='';switch(cmd){case'help':out='Available commands:\n  ls, dir        - List directory\n  cd <path>      - Change directory\n  pwd            - Print working directory\n  mkdir <name>   - Create directory\n  touch <file>   - Create empty file\n  cat <file>     - Display file\n  echo <text>    - Print text\n  echo "t" > f   - Write to file\n  rm <name>      - Remove file/folder\n  cp <src> <dst> - Copy\n  mv <src> <dst> - Move\n  find <name>    - Search files\n  clear, cls     - Clear terminal\n  node <file>    - Execute JS\n  npm <args>     - Node package manager\n  python <file>  - Run Python\n  git <args>     - Git operations\n  mkfile <n> <c> - Create/update file with content\n  version        - Show IDE version';break;case'clear':case'cls':histContainer.innerHTML='';return;case'pwd':out='/'+(projectRoot?projectRoot.name:'')+termCwd;break;case'whoami':out='developer';break;case'date':out=new Date().toString();break;case'uname':out='X IDE OS v1.0';break;case'version':out='X IDE v2.0.0';break;case'ls':case'dir':out=listDirectory(args[0]||'.');break;case'cd':out=changeDirectory(args[0]||'~');break;case'mkdir':out=makeDirectory(args);break;case'touch':out=touchFile(args);break;case'cat':out=catFile(args[0]);break;case'echo':out=handleEcho(args,cmdStr);break;case'rm':out=removeItem(args);break;case'cp':out=copyItem(args[0],args[1]);break;case'mv':out=moveItem(args[0],args[1]);break;case'find':out=findFiles(args[0]);break;case'node':out=executeNode(args);break;case'npm':out=handleNpm(args);break;case'python':case'py':out=executePython(args);break;case'git':out=handleGit(args);break;case'mkfile':out=mkfileCommand(args);break;default:out='Command not found: '+cmd;}if(out){histContainer.innerHTML+='<div style="white-space:pre-wrap;">'+escapeHtml(out)+'</div>';}scrollContainer.scrollTop=scrollContainer.scrollHeight;if(promptUpdate)document.getElementById('term-prompt').textContent='~'+(termCwd==='/'?'':termCwd)+'&gt;';}
-        function parseCommand(str){const parts=[];let cur='',inQ=false,qc='';for(const ch of str){if(inQ){if(ch===qc){inQ=false;qc='';}else cur+=ch;}else if(ch==='"'||ch==="'"){inQ=true;qc=ch;}else if(ch===' '||ch==='\t'){if(cur){parts.push(cur);cur='';}}else cur+=ch;}if(cur)parts.push(cur);return parts;}
+        
+        function extractMkfileArgs(str) {
+            let rest = str.substring(6).trim();
+            let filename = '';
+            let content = '';
+            if (rest.startsWith('"') || rest.startsWith("'")) {
+                let quote = rest[0];
+                let endIdx = rest.indexOf(quote, 1);
+                if (endIdx !== -1) {
+                    filename = rest.substring(1, endIdx);
+                    content = rest.substring(endIdx + 1).trim();
+                } else filename = rest;
+            } else {
+                let spaceIdx = rest.indexOf(' ');
+                let nlIdx = rest.indexOf('\n');
+                let endIdx = -1;
+                if (spaceIdx !== -1 && nlIdx !== -1) endIdx = Math.min(spaceIdx, nlIdx);
+                else if (spaceIdx !== -1) endIdx = spaceIdx;
+                else endIdx = nlIdx;
+                if (endIdx !== -1) {
+                    filename = rest.substring(0, endIdx);
+                    content = rest.substring(endIdx + 1).trim();
+                } else filename = rest;
+            }
+            return [filename, content];
+        }
+
+        function computeDiff(oldStr, newStr) {
+            const oldLines = oldStr ? oldStr.split('\n') : [];
+            const newLines = newStr ? newStr.split('\n') : [];
+            let html = '<div style="font-family:var(--font-code); font-size:12px; padding:8px; background:var(--cli-bg); border:1px solid var(--border-color); border-radius:4px; margin-top:4px; max-height:250px; overflow-y:auto; line-height:1.4;">';
+            if(oldLines.length === 0) {
+                newLines.forEach(l => html += `<div class="diff-add">+ ${escapeHtml(l)}</div>`);
+            } else {
+                let max = Math.max(oldLines.length, newLines.length);
+                let diffCount = 0;
+                for(let i=0; i<max; i++) {
+                    if(oldLines[i] === newLines[i]) {
+                        html += `<div class="diff-read">  ${escapeHtml(oldLines[i]||'')}</div>`;
+                    } else {
+                        diffCount++;
+                        if(oldLines[i] !== undefined) html += `<div class="diff-rm">- ${escapeHtml(oldLines[i])}</div>`;
+                        if(newLines[i] !== undefined) html += `<div class="diff-add">+ ${escapeHtml(newLines[i])}</div>`;
+                    }
+                }
+                if(diffCount === 0) html += `<div class="diff-read">  (No changes)</div>`;
+            }
+            html += '</div>';
+            return html;
+        }
+
+        function runCommandLine(cmdStr, histContainer, scrollContainer, promptUpdate=true){
+            let shortCmd = cmdStr.length > 80 ? cmdStr.substring(0,80) + '...' : cmdStr;
+            histContainer.innerHTML += '<div><span class="cli-prompt-text" style="color:var(--accent-green);">~' + (termCwd === '/' ? '' : termCwd) + '&gt;</span> ' + escapeHtml(shortCmd) + '</div>';
+            const trimmed = cmdStr.trim();
+            if(!trimmed) return;
+            
+            let cmd = '', args = [];
+            if (trimmed.toLowerCase().startsWith('mkfile ')) {
+                cmd = 'mkfile';
+                args = extractMkfileArgs(trimmed);
+            } else {
+                const parts = parseCommand(trimmed);
+                if(parts.length > 0) { cmd = parts[0].toLowerCase(); args = parts.slice(1); }
+            }
+            
+            let out='';
+            switch(cmd){
+                case'help':out='Available commands:\n  ls, dir        - List directory\n  cd <path>      - Change directory\n  pwd            - Print working directory\n  mkdir <name>   - Create directory\n  touch <file>   - Create empty file\n  cat <file>     - Display file\n  echo <text>    - Print text\n  rm <name>      - Remove file/folder\n  cp <src> <dst> - Copy\n  mv <src> <dst> - Move\n  find <name>    - Search files\n  clear, cls     - Clear terminal\n  node <file>    - Execute JS\n  npm <args>     - Node package manager\n  python <file>  - Run Python\n  git <args>     - Git operations\n  mkfile <n> <c> - Create/update file with content\n  version        - Show IDE version';break;
+                case'clear':case'cls':histContainer.innerHTML='';return;
+                case'pwd':out='/'+(projectRoot?projectRoot.name:'')+termCwd;break;
+                case'whoami':out='developer';break;
+                case'date':out=new Date().toString();break;
+                case'uname':out='X IDE OS v1.0';break;
+                case'version':out='X IDE v2.0.0';break;
+                case'ls':case'dir':out=listDirectory(args[0]||'.');break;
+                case'cd':out=changeDirectory(args[0]||'~');break;
+                case'mkdir':out=makeDirectory(args);break;
+                case'touch':out=touchFile(args);break;
+                case'cat':out=catFile(args[0]);break;
+                case'echo':out=handleEcho(args,cmdStr);break;
+                case'rm':out=removeItem(args);break;
+                case'cp':out=copyItem(args[0],args[1]);break;
+                case'mv':out=moveItem(args[0],args[1]);break;
+                case'find':out=findFiles(args[0]);break;
+                case'node':out=executeNode(args);break;
+                case'npm':out=handleNpm(args);break;
+                case'python':case'py':out=executePython(args);break;
+                case'git':out=handleGit(args);break;
+                case'mkfile':out=mkfileCommand(args);break;
+                default:out='Command not found: '+cmd;
+            }
+            
+            if(out){
+                if(out.startsWith('__HTML__')) {
+                    histContainer.innerHTML += '<div style="margin:6px 0;">' + out.substring(8) + '</div>';
+                } else {
+                    histContainer.innerHTML += '<div style="white-space:pre-wrap; margin:6px 0;">' + escapeHtml(out) + '</div>';
+                }
+            }
+            scrollContainer.scrollTop=scrollContainer.scrollHeight;
+            if(promptUpdate) document.getElementById('term-prompt').textContent='~'+(termCwd==='/'?'':termCwd)+'&gt;';
+        }
+
+        function parseCommand(str){
+            const parts=[]; let cur='',inQ=false,qc='';
+            for(const ch of str){
+                if(inQ){
+                    if(ch===qc){inQ=false;qc='';}else cur+=ch;
+                }else if(ch==='"'||ch==="'"){inQ=true;qc=ch;}
+                else if(ch===' '||ch==='\t'||ch==='\n'){
+                    if(cur){parts.push(cur);cur='';}
+                }else cur+=ch;
+            }
+            if(cur)parts.push(cur); return parts;
+        }
+
         function listDirectory(arg){if(!projectRoot)return'No project open.';const target=arg==='.'||!arg?resolvePath(termCwd):resolvePath(arg.startsWith('/')?arg:termCwd+'/'+arg);if(!target)return'ls: cannot access '+arg;if(target.type!=='folder')return'ls: not a directory';if(!target.children||!target.children.length)return'(empty)';let s='';target.children.forEach(c=>{s+=c.type==='folder'?c.name+'/  ':c.name+'  ';});return s.trim();}
         function changeDirectory(arg){if(!projectRoot)return'No project open.';if(!arg||arg==='~'){termCwd='/';return'';}if(arg==='..'){if(termCwd==='/')return'';const parts=termCwd.split('/').filter(p=>p);parts.pop();termCwd='/'+parts.join('/');if(termCwd==='')termCwd='/';return'';}if(arg==='/'){termCwd='/';return'';}const np=arg.startsWith('/')?arg:(termCwd==='/'?'/'+arg:termCwd+'/'+arg);const target=resolvePath(np);if(!target)return'cd: no such directory: '+arg;if(target.type!=='folder')return'cd: not a directory: '+arg;termCwd=np.replace(/\/+/g,'/');if(termCwd==='')termCwd='/';return'';}
         function makeDirectory(args){if(!projectRoot)return'No project open.';if(!args.length)return'mkdir: missing operand';const parent=resolvePath(termCwd);if(!parent||parent.type!=='folder')return'mkdir: invalid directory';const name=args[0];if(parent.children.some(c=>c.name===name))return'mkdir: '+name+' exists';const node=createNode(name,'folder',parent.id);addChildToParent(parent.id,node);renderExplorer();return'';}
@@ -304,25 +415,62 @@
         function handleNpm(args){if(!projectRoot)return'No project open.';if(!args.length)return'npm <command>';const sub=args[0].toLowerCase();if(sub==='--version'||sub==='-v')return'10.2.4 (simulated)';if(sub==='init'){if(projectRoot.children.find(c=>c.name==='package.json'))return'package.json already exists.';const pkg=createNode('package.json','file',projectRoot.id,'{\n  "name":"'+projectRoot.name+'",\n  "version":"1.0.0",\n  "main":"index.js",\n  "scripts":{"test":"echo \\"Error: no test specified\\" && exit 1"}\n}');addChildToParent(projectRoot.id,pkg);renderExplorer();return'npm init: package.json created.';}if(sub==='install'||sub==='i'){if(args.length<2)return'npm install: package name required.';const pname=args[1];let nm=projectRoot.children.find(c=>c.name==='node_modules');if(!nm){nm=createNode('node_modules','folder',projectRoot.id);addChildToParent(projectRoot.id,nm);}const pf=createNode(pname,'folder',nm.id);addChildToParent(nm.id,pf);addChildToParent(pf.id,createNode('package.json','file',pf.id,'{"name":"'+pname+'","version":"1.0.0"}'));addChildToParent(pf.id,createNode('index.js','file',pf.id,'module.exports={};'));renderExplorer();return'added 1 package';}if(sub==='uninstall'||sub==='remove'){if(args.length<2)return'npm uninstall: package name required.';const pname=args[1];const nm=projectRoot.children.find(c=>c.name==='node_modules');if(nm){const t=nm.children.find(c=>c.name===pname);if(t){deleteNodeRecursive(t);renderExplorer();return'removed 1 package';}}return'npm: '+pname+' not found';}if(sub==='run'){return'> '+projectRoot.name+'@1.0.0 '+args[1]+'\n(simulated)';}return'npm: unknown command';}
         function executePython(args){if(!projectRoot)return'No project open.';if(!args.length)return'Usage: python <file>';if(args[0]==='--version'||args[0]==='-V')return'Python 3.12.0 (simulated)';const target=resolveToFile(args[0].startsWith('/')?args[0]:termCwd+'/'+args[0]);if(!target)return'python: file not found';const code=target.content||'';const prints=code.match(/print\s*\((.+?)\)/g);if(prints)return prints.map(m=>m.replace(/print\s*\(/,'').replace(/\)$/,'').replace(/['"]/g,'').trim()).join('\n');return'(no print output)';}
         function handleGit(args){if(!projectRoot)return'No project open.';if(!args.length)return'git <command>';const sub=args[0].toLowerCase();if(sub==='init'){if(projectRoot.children.find(c=>c.name==='.git'))return'Reinitialized existing Git repository.';const git=createNode('.git','folder',projectRoot.id);addChildToParent(projectRoot.id,git);addChildToParent(git.id,createNode('HEAD','file',git.id,'ref: refs/heads/main\n'));renderExplorer();return'Initialized empty Git repository';}if(sub==='status')return'On branch main\nnothing to commit';if(sub==='add')return'Changes staged.';if(sub==='commit')return'[main abc1234] '+args.slice(1).join(' ');if(sub==='log')return'commit abc1234\nAuthor: dev\nDate: '+new Date().toDateString();if(sub==='branch')return'* main';return'git: unknown command';}
-        function mkfileCommand(args){if(!projectRoot)return'No project open.';if(args.length<2)return'Usage: mkfile <filename> <content...>';const name=args[0];const content=args.slice(1).join(' ');const parent=resolvePath(termCwd);if(!parent||parent.type!=='folder')return'mkfile: invalid directory';let existing=parent.children.find(c=>c.name===name&&c.type==='file');if(existing){existing.content=content;if(activeFileId===existing.id)renderEditor();}else{existing=createNode(name,'file',parent.id,content);addChildToParent(parent.id,existing);}renderExplorer();return'File "'+name+'" created/updated.';}
+        
+        function mkfileCommand(args) {
+            if(!projectRoot) return 'No project open.';
+            if(args.length < 1 || !args[0]) return 'Usage: mkfile <filename> <content...>';
+            const name = args[0];
+            let content = args[1] || '';
+            
+            if (content.startsWith('```')) {
+                let lines = content.split('\n');
+                if(lines[0].startsWith('```')) lines.shift();
+                if(lines.length > 0 && lines[lines.length-1].startsWith('```')) lines.pop();
+                content = lines.join('\n');
+            }
+            
+            const parent = resolvePath(termCwd);
+            if(!parent || parent.type !== 'folder') return 'mkfile: invalid directory';
+            let existing = parent.children.find(c => c.name === name && c.type === 'file');
+            
+            let diffHtml = '';
+            if(existing) {
+                diffHtml = computeDiff(existing.content, content);
+                existing.content = content;
+                if(activeFileId === existing.id) {
+                    const area = document.getElementById('code-area');
+                    area.innerText = content;
+                    area.style.background = 'var(--diff-add-bg)';
+                    setTimeout(() => { area.style.background = 'var(--bg-main)'; }, 400);
+                }
+            } else {
+                diffHtml = computeDiff('', content);
+                existing = createNode(name, 'file', parent.id, content);
+                addChildToParent(parent.id, existing);
+            }
+            renderExplorer();
+            return '__HTML__<div><strong style="color:var(--accent-blue)">' + escapeHtml(name) + '</strong> successfully updated:</div>' + diffHtml;
+        }
+
         function setupTerminal(){const inp=document.getElementById('term-input'),hist=document.getElementById('term-history'),cont=document.getElementById('term-container');commandHistory=[];historyIndex=-1;inp.addEventListener('keydown',function(e){if(e.key==='Enter'){const v=this.value;if(v.trim()){commandHistory.push(v);historyIndex=commandHistory.length;if(!projectRoot){hist.innerHTML+='<div><span class="cli-prompt-text">~&gt;</span> '+escapeHtml(v)+'</div><div style="color:#cf222e;">No project open.</div>';}else{runCommandLine(v,hist,cont);}}this.value='';cont.scrollTop=cont.scrollHeight;}else if(e.key==='ArrowUp'){e.preventDefault();if(commandHistory.length&&historyIndex>0){historyIndex--;this.value=commandHistory[historyIndex];}}else if(e.key==='ArrowDown'){e.preventDefault();if(historyIndex<commandHistory.length-1){historyIndex++;this.value=commandHistory[historyIndex];}else{historyIndex=commandHistory.length;this.value='';}}});}
         function setupAIPrompt(){const inp=document.getElementById('ai-input'),hist=document.getElementById('ai-history'),cont=document.getElementById('ai-container');inp.addEventListener('keydown',function(e){if(e.key==='Enter'){const v=this.value;if(v.trim()){hist.innerHTML+='<div><span class="cli-prompt-text" style="color:var(--accent-blue);">You&gt;</span> '+escapeHtml(v)+'</div>';if(v==='clear'||v==='cls'){hist.innerHTML='';this.value='';return;}processAIPrompt(v,hist,cont);}this.value='';cont.scrollTop=cont.scrollHeight;}});}
+        
         async function processAIPrompt(prompt,histCont,scrollCont){
             if(!projectRoot){histCont.innerHTML+='<div style="color:#cf222e;">No project open.</div>';return;}
             histCont.innerHTML+='<div style="color:var(--accent-blue);">Agent thinking...</div>';
             scrollCont.scrollTop=scrollCont.scrollHeight;
             
-            const sysPrompt='You are a terminal command generator for a simulated IDE. Respond ONLY with one or more lines, each starting with "CMD:" followed by the exact terminal command. Use "mkfile filename content..." to create/update files. Use "mkdir foldername" for folders. Use "cd", "ls", etc. Do not add explanations.';
+            const sysPrompt = 'You are a terminal command generator for a simulated IDE. Respond ONLY with one or more lines, each starting with "CMD:" followed by the exact terminal command. Use "mkfile filename content" to create/update files. You are ALREADY inside the project folder. Do NOT create a folder with the project name. Create files directly. You CAN write multi-line code directly after the filename. Do not add explanations.';
             
             const payload={
                 messages:[
                     {role:'system',content:sysPrompt},
-                    {role:'user',content:'Current directory: '+termCwd+'\nProject: '+projectRoot.name+'\nTask: '+prompt}
+                    {role:'user',content:'Project Name: '+projectRoot.name+'\nCurrent Path: '+termCwd+'\n\nTask: '+prompt}
                 ]
             };
             
             try{
-                const res=await fetch('https://plygram-xide.hf.space/chat',{
+                const res=await fetch('[https://plygram-xide.hf.space/chat](https://plygram-xide.hf.space/chat)',{
                     method:'POST',
                     headers:{'Content-Type':'application/json'},
                     body:JSON.stringify(payload)
@@ -330,26 +478,33 @@
                 
                 if(!res.ok)throw new Error('HTTP '+res.status);
                 
-                const data=await res.json();
-                const text=data.choices[0].message.content;
-                const lines=text.split('\n').filter(l=>l.trim().startsWith('CMD:'));
+                const data = await res.json();
+                const text = data.choices[0].message.content;
                 
-                if(!lines.length){histCont.innerHTML+='<div style="color:#cf222e;">Agent returned no commands.</div>';return;}
-                
-                for(const line of lines){
-                    const cmd=line.replace(/^CMD:\s*/,'').trim();
-                    if(cmd){
-                        const termHist=document.getElementById('term-history');
-                        const termCont=document.getElementById('term-container');
-                        runCommandLine(cmd,termHist,termCont,true);
+                const lines = text.split('\n');
+                const commands = [];
+                let currentCmd = "";
+                for (let line of lines) {
+                    if (line.trim().startsWith('CMD:')) {
+                        if (currentCmd) commands.push(currentCmd.trim());
+                        currentCmd = line.replace(/^CMD:\s*/, '') + '\n';
+                    } else if (currentCmd) {
+                        currentCmd += line + '\n';
                     }
                 }
-                histCont.innerHTML+='<div style="color:#1a7f37;">Agent completed task.</div>';
+                if (currentCmd) commands.push(currentCmd.trim());
+                
+                if(!commands.length){histCont.innerHTML+='<div style="color:#cf222e;">Agent returned no commands.</div>';return;}
+                
+                for(const cmd of commands){
+                    if(cmd) runCommandLine(cmd, histCont, scrollCont, false);
+                }
             }catch(e){
                 histCont.innerHTML+='<div style="color:#cf222e;">API Error: '+e.message+'</div>';
             }
             scrollCont.scrollTop=scrollCont.scrollHeight;
         }
+        
         document.addEventListener('DOMContentLoaded',()=>{setupTerminal();setupAIPrompt();document.getElementById('editor-container').style.display='none';document.getElementById('bottom-panel').style.display='none';document.getElementById('code-area').style.display='none';document.getElementById('welcome-screen').classList.remove('hidden');document.getElementById('hidden-file-input').addEventListener('change',handleFileImport);});
         window.toggleSidebar=toggleSidebar;window.createNewItem=createNewItem;window.createNewProject=createNewProject;window.confirmNewProject=confirmNewProject;window.importProject=importProject;window.closeProject=closeProject;window.switchPanel=switchPanel;window.handleMenuAction=handleMenuAction;window.handleTabMenu=handleTabMenu;window.showMenu=showMenu;window.openFile=openFile;window.closeTab=closeTab;window.pinFile=pinFile;window.refreshExplorer=refreshExplorer;window.handleFileImport=handleFileImport;window.renderExplorer=renderExplorer;window.renderTabs=renderTabs;window.renderEditor=renderEditor;
     </script>
