@@ -156,13 +156,19 @@ main {
   font-weight: 700;
   margin: 0 0 6px 0;
   color: var(--dark-text);
-  word-break: break-word;
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
   gap: 6px;
+  overflow: hidden;
+  white-space: nowrap;
 }
 .light-mode .room-title { color: var(--light-text); }
+
+.room-title-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .admin-badge {
   display: inline-flex; align-items: center; gap: 4px;
@@ -181,7 +187,13 @@ main {
 .room-description {
   color: var(--dark-text-muted);
   margin: 0 0 20px 0; line-height: 1.5; font-size: 13px;
-  word-break: break-word; flex-grow: 1;
+  flex-grow: 1;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: break-word;
 }
 .light-mode .room-description { color: var(--light-text-muted); }
 
@@ -343,7 +355,7 @@ main {
       
       <div class="form-group">
         <label class="form-label">Room Name</label>
-        <input type="text" id="roomNameInput" class="form-input" placeholder="Enter room name">
+        <input type="text" id="roomNameInput" class="form-input" placeholder="Enter room name" maxlength="20">
         <div id="roomNameError" class="error-message">
           <i class="fas fa-exclamation-circle"></i>
           <span></span>
@@ -352,7 +364,7 @@ main {
       
       <div class="form-group">
         <label class="form-label">Description</label>
-        <textarea id="roomDescriptionInput" class="form-textarea" placeholder="Describe what your chat room is about..."></textarea>
+        <textarea id="roomDescriptionInput" class="form-textarea" placeholder="Describe what your chat room is about..." maxlength="180"></textarea>
         <div id="roomDescriptionError" class="error-message">
           <i class="fas fa-exclamation-circle"></i>
           <span></span>
@@ -623,19 +635,23 @@ document.addEventListener('DOMContentLoaded', async function() {
         </button>
       `;
     }
+
+    const displayRoomName = roomName.length > 20 ? roomName.substring(0, 20) + '...' : roomName;
+    const desc = roomData.description || 'No description provided.';
+    const displayDesc = desc.length > 180 ? desc.substring(0, 180) + '...' : desc;
     
     roomCard.innerHTML = `
       <div class="room-header">
         <img src="/chat/logo.png" alt="Chat Room" class="room-image">
         <div class="room-info">
-          <h2 class="room-title">
-            ${roomName}
+          <h2 class="room-title" title="${roomName}">
+            <span class="room-title-text">${displayRoomName}</span>
             ${adminBadge}
           </h2>
           <div class="room-meta">
             ${roomData.password ? '<span><i class="fas fa-lock"></i> Password protected</span>' : ''}
           </div>
-          <p class="room-description">${roomData.description || 'No description provided.'}</p>
+          <p class="room-description" title="${desc}">${displayDesc}</p>
         </div>
       </div>
       <div class="room-actions">
@@ -751,6 +767,18 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (!roomName) {
       roomNameError.querySelector('span').textContent = 'Please enter a room name';
       roomNameError.classList.add('visible');
+      return;
+    }
+    
+    if (roomName.length > 20) {
+      roomNameError.querySelector('span').textContent = 'Room name cannot exceed 20 characters';
+      roomNameError.classList.add('visible');
+      return;
+    }
+    
+    if (description.length > 180) {
+      roomDescriptionError.querySelector('span').textContent = 'Description cannot exceed 180 characters';
+      roomDescriptionError.classList.add('visible');
       return;
     }
     
