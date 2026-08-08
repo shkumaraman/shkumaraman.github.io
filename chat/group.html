@@ -149,6 +149,13 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 .msg img { max-width: 100%; max-height: 260px; border-radius: 8px; display: block; margin-bottom: 4px; }
 .msg img.verify-badge { display: inline-block !important; width: 14px !important; height: 14px !important; margin: 0 !important; border-radius: 0 !important; }
 
+.blur-media {
+  filter: blur(20px);
+  clip-path: inset(0 round 8px);
+  cursor: pointer;
+  transition: filter 0.3s ease;
+}
+
 .system-msg { align-self: center; background: transparent; color: var(--dark-text-muted); text-align: center; font-size: 12px; padding: 4px 0; max-width: 100%; }
 .light-mode .system-msg { color: var(--light-text-muted); }
 
@@ -379,7 +386,6 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
-// Cached DOM Elements
 const chatLog = document.getElementById("chatLog");
 const msgInput = document.getElementById("msgInput");
 const replyBar = document.getElementById("replyBar");
@@ -424,7 +430,6 @@ let contextTargetMsg = null;
 let bannedRegexes = [];
 let bannedWordsLoaded = false;
 
-// Optimization: Pre-compile Regexes exactly once
 async function loadBannedWords() {
   try {
     const response = await fetch('filter.txt');
@@ -598,7 +603,6 @@ function loadPinnedMessage() {
   });
 }
 
-// Optimized modal hide logic
 const hidePinnedModal = () => document.getElementById('pinnedModalOverlay').classList.remove('active');
 document.getElementById('pinnedModalClose').addEventListener('click', hidePinnedModal);
 document.getElementById('pinnedModalOverlay').addEventListener('click', (e) => {
@@ -647,7 +651,6 @@ async function maintainMessageLimit() {
   } catch (error) {}
 }
 
-// Optimization: Single DB push function
 async function pushMessageToDB(message) {
   isSendingMessage = true;
   try {
@@ -668,7 +671,7 @@ function sendMessageToGroup(text) {
     message.replyTo = {
       nickname: replyingTo.nickname,
       preview: replyingTo.type === "text" ? replyingTo.text : `📷 ${replyingTo.type}`,
-      originalId: replyingTo.timestamp // Added originalId for Jump Feature
+      originalId: replyingTo.timestamp
     };
     clearReply();
   }
@@ -747,7 +750,6 @@ function hideContextMenu() {
   contextTargetMsg = null;
 }
 
-// Optimized Context Menu Events
 ['click', 'touchstart'].forEach(evt => document.addEventListener(evt, (e) => {
   if (!contextMenu.contains(e.target)) hideContextMenu();
 }, { passive: true }));
@@ -838,7 +840,6 @@ function displayMessage(msg) {
   }
   div.appendChild(nicknameEl);
 
-  // Optimized Reply Preview with Click to Jump feature
   if (msg.replyTo) {
     const replyDiv = document.createElement("div");
     replyDiv.className = "reply-preview";
@@ -861,7 +862,19 @@ function displayMessage(msg) {
 
   if (msg.type === "image" || msg.type === "gif") {
     const img = document.createElement("img");
-    img.src = msg.url; img.loading = "lazy";
+    img.src = msg.url;
+    img.loading = "lazy";
+    
+    if (msg.type === "image") {
+      img.classList.add("blur-media");
+      img.title = "Tap to view image";
+      img.addEventListener("click", function(e) {
+        e.stopPropagation();
+        this.classList.remove("blur-media");
+        this.title = "";
+      }, { once: true });
+    }
+    
     div.appendChild(img);
   } else {
     if (containsBannedWords(msg.text)) {
