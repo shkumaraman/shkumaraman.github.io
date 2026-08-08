@@ -212,7 +212,7 @@ main {
 
 .btn-secondary {
   background: rgba(255,255,255,0.05); color: var(--dark-text);
-  border: 0.5px solid var(--dark-border2); width: 40px; padding: 0;
+  border: 0.5px solid var(--dark-border2);
 }
 .btn-secondary:hover { background: rgba(255,255,255,0.1); }
 .light-mode .btn-secondary { background: rgba(0,0,0,0.04); color: var(--light-text); border-color: var(--light-border2); }
@@ -251,8 +251,42 @@ main {
 .light-mode .form-input:focus, .light-mode .form-textarea:focus { border-color: var(--accent); background: rgba(0,0,0,0.06); }
 
 .checkbox-group { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
-.form-checkbox { width: 16px; height: 16px; cursor: pointer; accent-color: var(--accent); }
-.checkbox-label { color: var(--dark-text-muted); font-size: 13px; cursor: pointer; }
+
+.form-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px; height: 18px;
+  border: 1.5px solid var(--dark-border2);
+  border-radius: 4px;
+  background: var(--dark-input-bg);
+  cursor: pointer;
+  position: relative;
+  outline: none;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+.light-mode .form-checkbox { border-color: var(--light-border2); background: var(--light-input-bg); }
+
+.form-checkbox:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.form-checkbox:checked::after {
+  content: '';
+  position: absolute;
+  top: 1px; left: 5px;
+  width: 5px; height: 10px;
+  border: solid var(--dark-bg);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.light-mode .form-checkbox:checked::after {
+  border-color: #ffffff;
+}
+
+.checkbox-label { color: var(--dark-text-muted); font-size: 13px; cursor: pointer; user-select: none; }
 .light-mode .checkbox-label { color: var(--light-text-muted); }
 
 .password-field { margin-top: 15px; display: none; }
@@ -303,10 +337,19 @@ main {
 }
 .light-mode .keyword-bubble { background: rgba(0,0,0,0.04); border-color: var(--light-border2); color: var(--light-text-muted); }
 
+.edit-modal-overlay {
+  display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0,0,0,0.8); z-index: 10001; justify-content: center; align-items: center; padding: 15px;
+}
+.edit-modal-container {
+  width: 100%; max-width: 500px; max-height: 90vh; overflow-y: auto; margin: 0;
+}
+
 @media (max-width: 600px) {
   .header-right { gap: 5px; }
   .tab-bar { margin: 60px auto 15px; }
   .create-container { padding: 20px 15px; border-radius: 12px; border-left: none; border-right: none; }
+  .edit-modal-container { padding: 20px 15px; border-radius: 12px; }
 }
 </style>
 
@@ -454,6 +497,59 @@ main {
     <span class="keyword-bubble">online chatting website</span>
   </div>
 </section>
+
+<div class="edit-modal-overlay" id="editRoomModal">
+  <div class="create-container edit-modal-container">
+    <h2 class="create-title">Edit Chat Room</h2>
+    <input type="hidden" id="editOriginalRoomName">
+    
+    <div class="form-group">
+      <label class="form-label">
+        <span>Room Name</span>
+        <span class="limit-text">(Max 20 characters)</span>
+      </label>
+      <input type="text" id="editRoomNameInput" class="form-input" placeholder="Room name" maxlength="20">
+      <div id="editRoomNameError" class="error-message">
+        <i class="fas fa-exclamation-circle"></i>
+        <span></span>
+      </div>
+    </div>
+    
+    <div class="form-group">
+      <label class="form-label">
+        <span>Description</span>
+        <span class="limit-text">(Max 180 characters)</span>
+      </label>
+      <textarea id="editRoomDescriptionInput" class="form-textarea" placeholder="Room description..." maxlength="180"></textarea>
+      <div id="editRoomDescriptionError" class="error-message">
+        <i class="fas fa-exclamation-circle"></i>
+        <span></span>
+      </div>
+    </div>
+    
+    <div class="form-group">
+      <div class="checkbox-group">
+        <input type="checkbox" id="editPasswordCheckbox" class="form-checkbox">
+        <label for="editPasswordCheckbox" class="checkbox-label">Password protection</label>
+      </div>
+      <div id="editPasswordField" class="password-field">
+        <input type="password" id="editRoomPasswordInput" class="form-input" placeholder="New password (leave blank to keep current)">
+        <div style="font-size: 11px; color: var(--dark-text-dim); margin-top: 6px;">
+          If checked but left blank, the old password remains. Uncheck to remove password.
+        </div>
+      </div>
+    </div>
+    
+    <div style="display: flex; gap: 10px; margin-top: 10px;">
+      <button id="saveEditRoomBtn" class="btn btn-success" style="flex: 2;">
+        <i class="fas fa-save"></i> Save Changes
+      </button>
+      <button id="cancelEditRoomBtn" class="btn btn-secondary" style="flex: 1; border-radius: 10px;">
+        Cancel
+      </button>
+    </div>
+  </div>
+</div>
 
 <ins class="adsbygoogle"
      style="display:block"
@@ -620,6 +716,34 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
   }
   
+  window.openEditModal = async function(roomName) {
+    const snapshot = await get(ref(db, 'groups/' + roomName));
+    if (!snapshot.exists()) return;
+    
+    const roomData = snapshot.val();
+    
+    document.getElementById('editOriginalRoomName').value = roomName;
+    document.getElementById('editRoomNameInput').value = roomName;
+    document.getElementById('editRoomDescriptionInput').value = roomData.description || '';
+    
+    const passCheckbox = document.getElementById('editPasswordCheckbox');
+    const passField = document.getElementById('editPasswordField');
+    
+    if (roomData.password) {
+      passCheckbox.checked = true;
+      passField.classList.add('visible');
+    } else {
+      passCheckbox.checked = false;
+      passField.classList.remove('visible');
+    }
+    
+    document.getElementById('editRoomPasswordInput').value = ''; 
+    document.getElementById('editRoomNameError').classList.remove('visible');
+    document.getElementById('editRoomDescriptionError').classList.remove('visible');
+    
+    document.getElementById('editRoomModal').style.display = 'flex';
+  };
+  
   function createRoomCard(roomName, roomData, showDelete = false) {
     const roomCard = document.createElement('div');
     roomCard.className = 'room-card';
@@ -636,10 +760,13 @@ document.addEventListener('DOMContentLoaded', async function() {
       `;
     }
     
-    let deleteButton = '';
+    let adminControls = '';
     if (showDelete && isAdmin) {
-      deleteButton = `
-        <button class="btn delete-btn" onclick="deleteRoom('${roomName.replace(/'/g, "\\'")}')">
+      adminControls = `
+        <button class="btn btn-secondary" style="width: 40px; padding: 0; flex: none; color: var(--accent);" onclick="openEditModal('${roomName.replace(/'/g, "\\'")}')" title="Edit Room">
+          <i class="fas fa-pencil-alt"></i>
+        </button>
+        <button class="btn delete-btn" style="width: 40px; padding: 0; flex: none;" onclick="deleteRoom('${roomName.replace(/'/g, "\\'")}')" title="Delete Room">
           <i class="fas fa-trash"></i>
         </button>
       `;
@@ -667,10 +794,10 @@ document.addEventListener('DOMContentLoaded', async function() {
         <a href="/chat/group.html?group=${encodeURIComponent(roomName)}" class="btn btn-primary">
           <i class="fas fa-sign-in-alt"></i> Join Room
         </a>
-        <button class="btn btn-secondary" onclick="copyRoomLink('${roomName.replace(/'/g, "\\'")}')" title="Share Room">
+        <button class="btn btn-secondary" style="width: 40px; padding: 0; flex: none;" onclick="copyRoomLink('${roomName.replace(/'/g, "\\'")}')" title="Share Room">
           <i class="fa-solid fa-arrow-up-from-bracket"></i>
         </button>
-        ${deleteButton}
+        ${adminControls}
       </div>
     `;
     
@@ -849,6 +976,94 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
   
   createRoomBtn.addEventListener('click', createRoom);
+  
+  document.getElementById('editPasswordCheckbox').addEventListener('change', function() {
+    if (this.checked) {
+      document.getElementById('editPasswordField').classList.add('visible');
+    } else {
+      document.getElementById('editPasswordField').classList.remove('visible');
+    }
+  });
+
+  document.getElementById('editRoomNameInput').addEventListener('input', function() {
+    const err = document.getElementById('editRoomNameError');
+    if (containsInappropriateContent(this.value)) { 
+      err.querySelector('span').textContent = 'Room name contains inappropriate content'; 
+      err.classList.add('visible'); 
+    } else { err.classList.remove('visible'); }
+  });
+
+  document.getElementById('editRoomDescriptionInput').addEventListener('input', function() {
+    const err = document.getElementById('editRoomDescriptionError');
+    if (containsInappropriateContent(this.value)) { 
+      err.querySelector('span').textContent = 'Description contains inappropriate content'; 
+      err.classList.add('visible'); 
+    } else { err.classList.remove('visible'); }
+  });
+
+  document.getElementById('cancelEditRoomBtn').addEventListener('click', () => {
+    document.getElementById('editRoomModal').style.display = 'none';
+  });
+
+  document.getElementById('saveEditRoomBtn').addEventListener('click', async () => {
+    const oldRoomName = document.getElementById('editOriginalRoomName').value;
+    const newRoomName = document.getElementById('editRoomNameInput').value.trim();
+    const newDesc = document.getElementById('editRoomDescriptionInput').value.trim();
+    const passChecked = document.getElementById('editPasswordCheckbox').checked;
+    const newPass = document.getElementById('editRoomPasswordInput').value.trim();
+    
+    const nameError = document.getElementById('editRoomNameError');
+    const descError = document.getElementById('editRoomDescriptionError');
+    nameError.classList.remove('visible');
+    descError.classList.remove('visible');
+    
+    if (!newRoomName) { nameError.querySelector('span').textContent = 'Please enter a room name'; nameError.classList.add('visible'); return; }
+    if (newRoomName.length > 20) { nameError.querySelector('span').textContent = 'Room name cannot exceed 20 characters'; nameError.classList.add('visible'); return; }
+    if (newDesc.length > 180) { descError.querySelector('span').textContent = 'Description cannot exceed 180 characters'; descError.classList.add('visible'); return; }
+    if (containsInappropriateContent(newRoomName)) { nameError.querySelector('span').textContent = 'Room name contains inappropriate content'; nameError.classList.add('visible'); return; }
+    if (containsInappropriateContent(newDesc)) { descError.querySelector('span').textContent = 'Description contains inappropriate content'; descError.classList.add('visible'); return; }
+    
+    const btn = document.getElementById('saveEditRoomBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+    
+    try {
+      const oldRoomRef = ref(db, 'groups/' + oldRoomName);
+      const oldSnap = await get(oldRoomRef);
+      const roomData = oldSnap.val();
+      
+      roomData.description = newDesc || 'No description provided';
+      
+      if (passChecked) {
+        if (newPass) roomData.password = newPass; 
+      } else {
+        delete roomData.password;
+      }
+      
+      if (oldRoomName !== newRoomName) {
+        const newRoomRef = ref(db, 'groups/' + newRoomName);
+        const newSnap = await get(newRoomRef);
+        if (newSnap.exists()) {
+          nameError.querySelector('span').textContent = 'A room with this name already exists';
+          nameError.classList.add('visible');
+          btn.disabled = false;
+          btn.innerHTML = '<i class="fas fa-save"></i> Save Changes';
+          return;
+        }
+        await set(newRoomRef, roomData);
+        await remove(oldRoomRef);
+      } else {
+        await set(oldRoomRef, roomData);
+      }
+      
+      document.getElementById('editRoomModal').style.display = 'none';
+    } catch (error) {
+      alert('Error saving room: ' + error.message);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-save"></i> Save Changes';
+    }
+  });
   
   loadRooms();
 });
