@@ -114,7 +114,6 @@
     color: #111;
   }
 
-  /* Search Input (Without Icon) */
   .share-search-wrapper {
     padding: 12px 18px 6px;
   }
@@ -148,7 +147,6 @@
     background: #fff;
   }
 
-  /* Friends Grid */
   .share-friends-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
@@ -256,7 +254,6 @@
     color: var(--light-text, #333);
   }
 
-  /* Send Section: Underline Message Input + Send Button Below */
   .share-send-section {
     padding: 12px 18px 16px;
     border-top: 1px solid var(--dark-border, rgba(255, 255, 255, 0.06));
@@ -336,7 +333,6 @@
     background: var(--accent-hover, #ff5535);
   }
 
-  /* Bottom Actions (Copy Link, More Share) */
   .share-bottom-actions {
     padding: 12px 18px 16px;
     border-top: 1px solid var(--dark-border, rgba(255, 255, 255, 0.06));
@@ -406,11 +402,32 @@
     color: var(--dark-text-muted, rgba(255, 255, 255, 0.4));
     font-size: 12px;
   }
+
+  .share-custom-toast {
+    position: fixed;
+    top: 70px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--accent, #ff6b4a);
+    color: #fff;
+    padding: 10px 20px;
+    border-radius: 11px;
+    z-index: 1000000;
+    font-size: 13px;
+    font-weight: 700;
+    text-align: center;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    white-space: nowrap;
+    display: none;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
 </style>
+
+<div id="shareCustomToast" class="share-custom-toast"></div>
 
 <div id="shareModalOverlay" class="share-modal-overlay">
   <div class="share-modal-box">
-    <!-- Header -->
     <div class="share-modal-header">
       <h4 class="share-modal-title">Share</h4>
       <button class="share-close-btn" onclick="closeShareModal()" aria-label="Close">
@@ -418,17 +435,14 @@
       </button>
     </div>
 
-    <!-- Search Input (No Icon) -->
     <div class="share-search-wrapper">
       <input type="text" id="shareSearchInput" class="share-search-input" placeholder="Search friends..." />
     </div>
 
-    <!-- Friends Grid -->
     <div class="share-friends-grid" id="shareFriendsGrid">
       <div class="share-empty-notice">Loading friends...</div>
     </div>
 
-    <!-- Send Section (Underline Input + Button Below) -->
     <div class="share-send-section">
       <input type="text" id="shareCustomMsg" class="share-msg-input" placeholder="Write a message..." />
       <button class="share-send-btn" id="shareSendBtn" onclick="sendSharedContent()" disabled>
@@ -436,7 +450,6 @@
       </button>
     </div>
 
-    <!-- Bottom Actions -->
     <div class="share-bottom-actions">
       <button class="share-action-item" onclick="copyShareContent()">
         <div class="share-action-icon">
@@ -482,6 +495,19 @@
     return div.innerHTML;
   }
 
+  function showShareToast(message) {
+    const toast = document.getElementById("shareCustomToast");
+    if (!toast) return;
+    toast.textContent = message;
+    toast.style.display = "block";
+    setTimeout(() => toast.style.opacity = "1", 10);
+    clearTimeout(window.shareToastTimer);
+    window.shareToastTimer = setTimeout(() => {
+      toast.style.opacity = "0";
+      setTimeout(() => toast.style.display = "none", 300);
+    }, 2500);
+  }
+
   async function fetchFriendsForShare() {
     const myNickname = localStorage.getItem("talkrush_nickname") || "Guest";
     const friendsRef = ref(db, "friends");
@@ -495,10 +521,12 @@
         Object.entries(data).forEach(([chatId, friend]) => {
           const friendNickname = friend.nickname2 === myNickname ? friend.nickname1 :
             friend.nickname1 === myNickname ? friend.nickname2 : null;
+          
           if (friendNickname) {
+            let finalName = friendNickname.startsWith("TR|") ? friendNickname.substring(3) : friendNickname;
             cachedFriends.push({
               chatId,
-              displayName: friendNickname,
+              displayName: finalName,
               avatarLetter: getAvatarLetter(friendNickname)
             });
           }
@@ -595,11 +623,9 @@
   window.copyShareContent = function() {
     const toCopy = currentSharePayload || window.location.href;
     navigator.clipboard.writeText(toCopy).then(() => {
-      if (window.Swal) {
-        Swal.fire({ icon: 'success', title: 'Link Copied!', timer: 1200, showConfirmButton: false });
-      } else {
-        alert("Link copied to clipboard!");
-      }
+      showShareToast("Copied to clipboard!");
+    }).catch(() => {
+      showShareToast("Failed to copy!");
     });
   };
 
@@ -648,13 +674,9 @@
       await Promise.all(promises);
 
       closeShareModal();
-      if (window.Swal) {
-        Swal.fire({ icon: 'success', title: 'Sent successfully!', timer: 1500, showConfirmButton: false });
-      }
+      showShareToast("Sent successfully!");
     } catch (err) {
-      if (window.Swal) {
-        Swal.fire({ icon: 'error', title: 'Error sending message', timer: 2000, showConfirmButton: false });
-      }
+      showShareToast("Error sending message");
     } finally {
       updateSendButton();
     }
