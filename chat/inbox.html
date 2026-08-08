@@ -407,7 +407,7 @@ description: "View your chat history and messages with friends."
     padding: 60px 10px 70px;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 8px;
     background: transparent;
   }
 
@@ -424,6 +424,52 @@ description: "View your chat history and messages with friends."
     background: rgba(0, 0, 0, 0.1);
   }
 
+  .msg-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+  }
+
+  .msg-row.me {
+    justify-content: flex-end;
+  }
+
+  .msg-row.stranger {
+    justify-content: flex-start;
+  }
+
+  .msg-forward-btn {
+    background: none;
+    border: none;
+    color: var(--dark-icon-color);
+    font-size: 13px;
+    cursor: pointer;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    opacity: 0.65;
+    transition: opacity 0.15s, background 0.15s, transform 0.15s;
+    flex-shrink: 0;
+  }
+
+  .msg-forward-btn:hover {
+    opacity: 1;
+    background: rgba(255, 255, 255, 0.08);
+    transform: scale(1.1);
+  }
+
+  .light-mode .msg-forward-btn {
+    color: var(--light-icon-color);
+  }
+
+  .light-mode .msg-forward-btn:hover {
+    background: rgba(0, 0, 0, 0.05);
+  }
+
   .msg {
     padding: 8px 12px;
     border-radius: 14px;
@@ -431,28 +477,27 @@ description: "View your chat history and messages with friends."
     word-wrap: break-word;
     font-size: 14px;
     line-height: 1.45;
+    position: relative;
   }
 
-  .me {
-    align-self: flex-end;
+  .msg-row.me .msg {
     background: var(--dark-msg-me);
     color: var(--dark-msg-me-text);
     border-bottom-right-radius: 4px;
   }
 
-  .light-mode .me {
+  .light-mode .msg-row.me .msg {
     background: var(--light-msg-me);
     color: var(--light-msg-me-text);
   }
 
-  .stranger {
-    align-self: flex-start;
+  .msg-row.stranger .msg {
     background: var(--dark-msg-them);
     color: var(--dark-msg-them-text);
     border-bottom-left-radius: 4px;
   }
 
-  .light-mode .stranger {
+  .light-mode .msg-row.stranger .msg {
     background: var(--light-msg-them);
     color: var(--light-msg-them-text);
   }
@@ -1043,12 +1088,37 @@ description: "View your chat history and messages with friends."
     friendList.insertBefore(friendItem, friendList.firstChild);
   }
 
+  window.forwardMessage = function(content) {
+    if (window.openShareModal) {
+      window.openShareModal(content);
+    }
+  };
+
+  function checkUrlNavigation() {
+    const params = new URLSearchParams(window.location.search);
+    const targetChatId = params.get('chatId');
+    const targetFriend = params.get('friend');
+    const shareText = params.get('shareText');
+    const shareUrl = params.get('shareUrl');
+
+    if (targetChatId && targetFriend) {
+      openChat(targetChatId, targetFriend);
+    }
+
+    if (shareText || shareUrl) {
+      if (window.openShareModal) {
+        window.openShareModal(shareText || shareUrl);
+      }
+    }
+  }
+
   document.addEventListener("DOMContentLoaded", async () => {
     myNickname = localStorage.getItem("talkrush_nickname") || "Guest";
     currentUserId = 'user_' + Math.random().toString(36).substr(2, 9);
     await loadKeys();
     loadFriends();
     setupEventListeners();
+    checkUrlNavigation();
   });
 
   function setupEventListeners() {
@@ -1129,12 +1199,12 @@ description: "View your chat history and messages with friends."
     window.addEventListener('popstate', () => {
       if (currentChatId) {
         closeChat();
-        history.pushState(null, '', location.href);
+        history.pushState(null, '', location.pathname);
       }
     });
   }
 
-  function openChat(chatId, friendName) {
+  window.openChat = function(chatId, friendName) {
     if (currentChatId) remove(ref(db, `friends/${currentChatId}/typing/${currentUserId}`));
 
     if (messagesListener) { messagesListener(); messagesListener = null; }
@@ -1154,12 +1224,13 @@ description: "View your chat history and messages with friends."
     document.getElementById('friendsContainer').style.display = 'none';
     document.getElementById('chatContainer').style.display = 'flex';
 
-    history.pushState({ chat: chatId }, '', location.href);
+    const newUrl = `${location.pathname}?chatId=${encodeURIComponent(chatId)}&friend=${encodeURIComponent(friendName)}`;
+    history.pushState({ chat: chatId }, '', newUrl);
 
     loadMessages();
     listenForMessages();
     listenForTyping();
-  }
+  };
 
   function loadFriends() {
     const friendsRef = ref(db, "friends");
@@ -1387,12 +1458,12 @@ description: "View your chat history and messages with friends."
 
   function showUploadingBubble() {
     const chatDiv = document.getElementById('chatLog');
-    const div = document.createElement("div");
-    div.className = "msg me";
-    div.innerHTML = `<div class="uploading-bubble"><div class="upload-spinner"></div><span>Uploading...</span></div>`;
-    chatDiv.appendChild(div);
+    const row = document.createElement("div");
+    row.className = "msg-row me";
+    row.innerHTML = `<div class="msg"><div class="uploading-bubble"><div class="upload-spinner"></div><span>Uploading...</span></div></div>`;
+    chatDiv.appendChild(row);
     scrollToBottom();
-    return div;
+    return row;
   }
 
   window.closeChat = function () {
@@ -1409,36 +1480,56 @@ description: "View your chat history and messages with friends."
     document.getElementById('friendsContainer').style.display = 'flex';
     document.getElementById('chatContainer').style.display = 'none';
     document.getElementById('pageTitle').textContent = 'Messages';
+    history.pushState(null, '', location.pathname);
   };
 
   function appendMessageToChat(msg, isMe) {
     const chatDiv = document.getElementById('chatLog');
-    const div = document.createElement("div");
-    div.className = `msg ${isMe ? 'me' : 'stranger'}`;
+    const row = document.createElement("div");
+    row.className = `msg-row ${isMe ? 'me' : 'stranger'}`;
+
+    const forwardPayload = msg.type === 'text' ? msg.text : msg.url;
+
+    const forwardBtn = document.createElement("button");
+    forwardBtn.className = "msg-forward-btn";
+    forwardBtn.title = "Forward";
+    forwardBtn.innerHTML = `<i class="fa-solid fa-share"></i>`;
+    forwardBtn.onclick = () => window.forwardMessage(forwardPayload);
+
+    const bubble = document.createElement("div");
+    bubble.className = "msg";
 
     if (!isMe) {
       const nicknameDiv = document.createElement("div");
       nicknameDiv.className = "msg-nickname";
       nicknameDiv.textContent = msg.nickname;
-      div.appendChild(nicknameDiv);
+      bubble.appendChild(nicknameDiv);
     }
 
     if (msg.type === 'image' || msg.type === 'gif') {
       const img = document.createElement("img");
       img.src = msg.url;
-      div.appendChild(img);
+      bubble.appendChild(img);
     } else {
       const textDiv = document.createElement("div");
       textDiv.innerHTML = linkifyText(msg.text);
-      div.appendChild(textDiv);
+      bubble.appendChild(textDiv);
     }
 
     const timeDiv = document.createElement("div");
     timeDiv.className = "timestamp";
     timeDiv.textContent = formatMessageTime(msg.timestamp);
-    div.appendChild(timeDiv);
+    bubble.appendChild(timeDiv);
 
-    chatDiv.appendChild(div);
+    if (isMe) {
+      row.appendChild(forwardBtn);
+      row.appendChild(bubble);
+    } else {
+      row.appendChild(bubble);
+      row.appendChild(forwardBtn);
+    }
+
+    chatDiv.appendChild(row);
     scrollToBottom();
   }
 
