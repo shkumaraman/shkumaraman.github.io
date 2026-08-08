@@ -404,7 +404,7 @@ description: "View your chat history and messages with friends."
   #chatLog {
     flex: 1;
     overflow-y: auto;
-    padding: 60px 10px 70px;
+    padding: 60px 10px 10px;
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -478,7 +478,12 @@ description: "View your chat history and messages with friends."
     font-size: 14px;
     line-height: 1.45;
     position: relative;
+    touch-action: pan-y; 
+    transition: transform 0.2s ease, background-color 0.5s ease; 
+    user-select: none;
   }
+
+  .msg.swiping { transition: none; }
 
   .msg-row.me .msg {
     background: var(--dark-msg-me);
@@ -502,6 +507,37 @@ description: "View your chat history and messages with friends."
     color: var(--light-msg-them-text);
   }
 
+  .reply-preview {
+    background: rgba(255,255,255,0.05); border-left: 3px solid #888; border-radius: 8px 8px 0 0; padding: 5px 10px;
+    font-size: 0.8em; margin-bottom: 4px; color: var(--dark-text-muted); max-width: 100%; overflow: hidden;
+    white-space: nowrap; text-overflow: ellipsis; cursor: pointer; transition: background 0.2s;
+  }
+  .reply-preview:hover { background: rgba(255,255,255,0.1); }
+  .light-mode .reply-preview { background: rgba(0,0,0,0.04); color: var(--light-text-muted); border-left-color: #aaa; }
+  .light-mode .reply-preview:hover { background: rgba(0,0,0,0.08); }
+
+  .reply-bar, .edit-bar { 
+    display: none; align-items: center; gap: 8px; padding: 8px 12px; 
+    background: var(--dark-input-bg); border-bottom: 0.5px solid var(--dark-border2); 
+    font-size: 0.85em; color: var(--dark-text-muted); width: 100%; box-sizing: border-box; 
+  }
+  .reply-bar.active, .edit-bar.active { display: flex; }
+  .light-mode .reply-bar, .light-mode .edit-bar { background: var(--light-input-bg); border-bottom-color: var(--light-border2); color: var(--light-text-muted); }
+  
+  .edit-bar { background: rgba(52, 183, 241, 0.1); }
+  .light-mode .edit-bar { background: rgba(52, 183, 241, 0.05); }
+
+  .reply-bar-text { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .reply-bar-close { background: none; border: none; color: var(--dark-icon-color); cursor: pointer; font-size: 1.1em; padding: 0 4px; }
+
+  .context-menu { display: none; position: fixed; background: var(--dark-surface); border: 0.5px solid var(--dark-border2); border-radius: 10px; padding: 6px 0; z-index: 99999; min-width: 150px; box-shadow: 0 4px 16px rgba(0,0,0,0.5); }
+  .light-mode .context-menu { background: var(--light-surface); border-color: var(--light-border2); box-shadow: 0 4px 16px rgba(0,0,0,0.15); }
+  .context-menu.active { display: block; }
+  .context-menu-item { padding: 10px 18px; font-size: 13px; cursor: pointer; color: var(--dark-text); display: flex; align-items: center; gap: 10px; transition: background 0.15s; }
+  .light-mode .context-menu-item { color: var(--light-text); }
+  .context-menu-item:hover { background: rgba(255,255,255,0.05); }
+  .light-mode .context-menu-item:hover { background: rgba(0,0,0,0.04); }
+
   .msg-nickname {
     font-size: 10px;
     font-weight: 600;
@@ -515,10 +551,10 @@ description: "View your chat history and messages with friends."
     text-align: right;
     margin-top: 3px;
   }
+  .light-mode .timestamp { color: var(--light-text-dim); }
 
-  .light-mode .timestamp {
-    color: var(--light-text-dim);
-  }
+  .edited-label { font-size: 9px; color: var(--dark-text-dim); margin-left: 3px; font-style: italic; }
+  .light-mode .edited-label { color: var(--light-text-dim); }
 
   .msg img {
     max-width: 200px;
@@ -529,36 +565,44 @@ description: "View your chat history and messages with friends."
   }
 
   #typingIndicator {
-    position: fixed;
-    bottom: 62px;
+    position: absolute;
+    bottom: 100%;
     left: 15px;
     font-style: italic;
     font-size: 12px;
     color: var(--dark-text-muted);
     display: none;
     z-index: 100;
+    padding-bottom: 5px;
   }
 
   .light-mode #typingIndicator {
     color: var(--light-text-muted);
   }
 
-  .chat-controls {
+  .chat-controls-wrapper {
+    position: relative;
     display: flex;
-    align-items: center;
-    padding: 7px 10px;
+    flex-direction: column;
     background: var(--dark-surface);
     border-top: 0.5px solid var(--dark-border);
     z-index: 1000;
-    gap: 6px;
     flex-shrink: 0;
     width: 100%;
     box-sizing: border-box;
   }
-
-  .light-mode .chat-controls {
+  .light-mode .chat-controls-wrapper {
     background: var(--light-surface);
     border-top-color: var(--light-border2);
+  }
+
+  .chat-controls {
+    display: flex;
+    align-items: center;
+    padding: 7px 10px;
+    gap: 6px;
+    width: 100%;
+    box-sizing: border-box;
   }
 
   .input-area {
@@ -779,7 +823,7 @@ description: "View your chat history and messages with friends."
       right: auto;
     }
 
-    .chat-controls {
+    .chat-controls-wrapper {
       border-radius: 0 0 12px 12px;
       border-left: 0.5px solid var(--dark-border);
       border-right: 0.5px solid var(--dark-border);
@@ -929,17 +973,32 @@ description: "View your chat history and messages with friends."
   </div>
 
   <div id="chatLog"></div>
-  <div id="typingIndicator">Friend is typing...</div>
 
-  <div class="chat-controls">
-    <div class="input-area">
-      <input type="text" id="msgInput" placeholder="Type your message..." />
-      <div class="input-icons">
-        <label for="imgInput" class="icon-btn" title="Send Image" id="imgBtn"><i class="fas fa-image"></i></label>
-        <label for="gifInput" class="icon-btn" title="Send GIF" id="gifBtn"><i class="fas fa-film"></i></label>
-      </div>
+  <div class="chat-controls-wrapper">
+    <div id="typingIndicator">Friend is typing...</div>
+    
+    <div class="reply-bar" id="replyBar">
+      <span>↩</span>
+      <span class="reply-bar-text" id="replyBarText"></span>
+      <button class="reply-bar-close" id="replyBarClose">✕</button>
     </div>
-    <button id="sendBtn" class="send-btn" title="Send"><i class="fas fa-paper-plane"></i></button>
+
+    <div class="edit-bar" id="editBar">
+      <span>✎</span>
+      <span class="reply-bar-text">Editing message...</span>
+      <button class="reply-bar-close" id="editBarClose">✕</button>
+    </div>
+
+    <div class="chat-controls">
+      <div class="input-area">
+        <input type="text" id="msgInput" placeholder="Type your message..." />
+        <div class="input-icons">
+          <label for="imgInput" class="icon-btn" title="Send Image" id="imgBtn"><i class="fas fa-image"></i></label>
+          <label for="gifInput" class="icon-btn" title="Send GIF" id="gifBtn"><i class="fas fa-film"></i></label>
+        </div>
+      </div>
+      <button id="sendBtn" class="send-btn" title="Send"><i class="fas fa-paper-plane"></i></button>
+    </div>
   </div>
 </div>
 
@@ -949,6 +1008,13 @@ description: "View your chat history and messages with friends."
 <div class="gif-modal" id="gifModal">
   <input type="text" class="gif-search" id="gifSearch" placeholder="Search GIFs..." />
   <div class="gif-results" id="gifResults"></div>
+</div>
+
+<div class="context-menu" id="contextMenu">
+  <div class="context-menu-item" id="contextReplyBtn">↩ Reply</div>
+  <div class="context-menu-item" id="contextEditBtn">✎ Edit</div>
+  <div class="context-menu-item" id="contextForwardBtn"><i class="fa-solid fa-share"></i> Forward</div>
+  <div class="context-menu-item" id="contextDeleteBtn" style="color: #ff4d4d;">🗑 Delete</div>
 </div>
 
 <div id="callTypeModal" class="custom-type-modal">
@@ -973,7 +1039,7 @@ description: "View your chat history and messages with friends."
 
 <script type="module">
   import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
-  import { getDatabase, ref, onValue, get, set, update, remove, push, onChildAdded } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
+  import { getDatabase, ref, onValue, get, set, update, remove, push, onChildAdded, onChildChanged, onChildRemoved } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
 
   const firebaseConfig = {
     databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
@@ -1012,13 +1078,25 @@ description: "View your chat history and messages with friends."
   let currentFriendName = "";
   let friendListListener = null;
   let messagesListener = null;
+  let messageChangedListener = null;
+  let messageRemovedListener = null;
   let typingListener = null;
   let myNickname = null;
   let myFriendsData = {};
   let lastMessageTimestamp = 0;
+  
+  let replyingTo = null;
+  let editingMsgKey = null;
+  let contextTargetMsg = null;
 
   const app = initializeApp(firebaseConfig);
   const db = getDatabase(app);
+
+  const replyBar = document.getElementById("replyBar");
+  const replyBarText = document.getElementById("replyBarText");
+  const editBar = document.getElementById("editBar");
+  const msgInput = document.getElementById('msgInput');
+  const contextMenu = document.getElementById('contextMenu');
 
   function getAvatarLetter(name) {
     if (!name) return "?";
@@ -1112,6 +1190,134 @@ description: "View your chat history and messages with friends."
     }
   }
 
+  function setReply(msg) {
+    if (editingMsgKey) clearEdit();
+    replyingTo = msg;
+    const preview = msg.type === "text" ? msg.text : `📷 ${msg.type}`;
+    replyBarText.textContent = `${msg.nickname || currentFriendName}: ${preview}`;
+    replyBar.classList.add('active');
+    msgInput.focus();
+  }
+
+  function clearReply() {
+    replyingTo = null;
+    replyBar.classList.remove('active');
+    replyBarText.textContent = '';
+  }
+  document.getElementById('replyBarClose').addEventListener('click', clearReply);
+
+  function clearEdit() {
+    editingMsgKey = null;
+    editBar.classList.remove('active');
+    msgInput.value = '';
+  }
+  document.getElementById('editBarClose').addEventListener('click', clearEdit);
+
+  function getReplyPayload() {
+    if (!replyingTo) return null;
+    return {
+      nickname: replyingTo.nickname || currentFriendName,
+      preview: replyingTo.type === "text" ? replyingTo.text : `📷 ${replyingTo.type}`,
+      originalId: replyingTo.timestamp
+    };
+  }
+
+  function showContextMenu(x, y, msg, isMe) {
+    contextTargetMsg = msg;
+    
+    document.getElementById('contextEditBtn').style.display = (isMe && msg.type === 'text') ? 'flex' : 'none';
+    document.getElementById('contextDeleteBtn').style.display = isMe ? 'flex' : 'none';
+    
+    contextMenu.style.left = Math.min(x, window.innerWidth - 170) + 'px';
+    contextMenu.style.top = Math.min(y, window.innerHeight - 180) + 'px';
+    contextMenu.classList.add('active');
+  }
+
+  function hideContextMenu() {
+    contextMenu.classList.remove('active');
+    contextTargetMsg = null;
+  }
+
+  ['click', 'touchstart'].forEach(evt => document.addEventListener(evt, (e) => {
+    if (!contextMenu.contains(e.target)) hideContextMenu();
+  }, { passive: true }));
+
+  document.getElementById('contextReplyBtn').addEventListener('click', () => {
+    if (contextTargetMsg) setReply(contextTargetMsg);
+    hideContextMenu();
+  });
+
+  document.getElementById('contextEditBtn').addEventListener('click', () => {
+    if (contextTargetMsg && contextTargetMsg.type === 'text') {
+      clearReply();
+      editingMsgKey = contextTargetMsg.key;
+      msgInput.value = contextTargetMsg.text;
+      editBar.classList.add('active');
+      msgInput.focus();
+    }
+    hideContextMenu();
+  });
+
+  document.getElementById('contextDeleteBtn').addEventListener('click', () => {
+    if (contextTargetMsg && currentChatId) {
+      Swal.fire({
+        title: 'Delete Message?',
+        text: "This message will be deleted for everyone.",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#3085d6',
+        confirmButtonText: 'Delete'
+      }).then((result) => {
+        if (result.isConfirmed) {
+          remove(ref(db, `friends/${currentChatId}/messages/${contextTargetMsg.key}`));
+        }
+      });
+    }
+    hideContextMenu();
+  });
+
+  document.getElementById('contextForwardBtn').addEventListener('click', () => {
+    if (contextTargetMsg) {
+      const forwardPayload = contextTargetMsg.type === 'text' ? contextTargetMsg.text : contextTargetMsg.url;
+      window.forwardMessage(forwardPayload);
+    }
+    hideContextMenu();
+  });
+
+  function addMessageInteractions(div, msg, isMe) {
+    let holdTimer, holdTriggered = false, startX, startY, dragging = false;
+
+    div.addEventListener('contextmenu', e => { e.preventDefault(); showContextMenu(e.clientX, e.clientY, msg, isMe); });
+
+    div.addEventListener('touchstart', e => {
+      holdTriggered = false; dragging = true;
+      startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+      holdTimer = setTimeout(() => {
+        holdTriggered = true; dragging = false; div.style.transform = ''; div.classList.remove('swiping');
+        showContextMenu(e.touches[0].clientX, e.touches[0].clientY, msg, isMe);
+      }, 500);
+    }, { passive: true });
+
+    div.addEventListener('touchmove', e => {
+      if (holdTriggered || !dragging) return;
+      const dx = e.touches[0].clientX - startX;
+      if (Math.abs(e.touches[0].clientY - startY) > Math.abs(dx) || Math.abs(dx) > 10) clearTimeout(holdTimer);
+      
+      if ((isMe ? dx < 0 : dx > 0)) {
+        div.style.transform = `translateX(${Math.min(Math.abs(dx), 60) * (isMe ? -1 : 1)}px)`;
+        div.classList.add('swiping');
+      }
+    }, { passive: true });
+
+    div.addEventListener('touchend', e => {
+      clearTimeout(holdTimer);
+      if (holdTriggered) return;
+      dragging = false; div.style.transform = ''; div.classList.remove('swiping');
+      if ((isMe ? e.changedTouches[0].clientX - startX < -60 : e.changedTouches[0].clientX - startX > 60)) setReply(msg);
+    });
+  }
+
   document.addEventListener("DOMContentLoaded", async () => {
     myNickname = localStorage.getItem("talkrush_nickname") || "Guest";
     currentUserId = 'user_' + Math.random().toString(36).substr(2, 9);
@@ -1122,8 +1328,6 @@ description: "View your chat history and messages with friends."
   });
 
   function setupEventListeners() {
-    const msgInput = document.getElementById('msgInput');
-
     msgInput.addEventListener('keypress', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
@@ -1208,10 +1412,14 @@ description: "View your chat history and messages with friends."
     if (currentChatId) remove(ref(db, `friends/${currentChatId}/typing/${currentUserId}`));
 
     if (messagesListener) { messagesListener(); messagesListener = null; }
+    if (messageChangedListener) { messageChangedListener(); messageChangedListener = null; }
+    if (messageRemovedListener) { messageRemovedListener(); messageRemovedListener = null; }
     if (typingListener) { typingListener(); typingListener = null; }
 
     document.getElementById('chatLog').innerHTML = '';
     hideTypingIndicator();
+    clearReply(); 
+    clearEdit();
 
     currentChatId = chatId;
     currentFriendName = friendName;
@@ -1339,7 +1547,7 @@ description: "View your chat history and messages with friends."
     get(ref(db, `friends/${currentChatId}/messages`)).then((snapshot) => {
       const messages = snapshot.val();
       if (messages) {
-        const messageArray = Object.values(messages);
+        const messageArray = Object.entries(messages).map(([key, val]) => ({ ...val, key }));
         messageArray.sort((a, b) => a.timestamp - b.timestamp);
         messageArray.forEach(msg => {
           if (msg.timestamp > lastMessageTimestamp) {
@@ -1357,10 +1565,9 @@ description: "View your chat history and messages with friends."
 
     const messagesRef = ref(db, `friends/${currentChatId}/messages`);
 
-    if (messagesListener) { messagesListener(); messagesListener = null; }
-
     messagesListener = onChildAdded(messagesRef, (snapshot) => {
       const msg = snapshot.val();
+      msg.key = snapshot.key;
 
       if (!currentChatId || snapshot.ref.parent.parent.key !== currentChatId) return;
 
@@ -1379,6 +1586,42 @@ description: "View your chat history and messages with friends."
         updateFriendListOrder(currentChatId, displayMsg, msg.timestamp);
       }
     });
+
+    messageChangedListener = onChildChanged(messagesRef, (snapshot) => {
+      const msg = snapshot.val();
+      msg.key = snapshot.key;
+      updateMessageInDOM(msg);
+    });
+
+    messageRemovedListener = onChildRemoved(messagesRef, (snapshot) => {
+      removeMessageFromDOM(snapshot.key);
+    });
+  }
+
+  function updateMessageInDOM(msg) {
+    const row = document.querySelector(`.msg-row[data-key="${msg.key}"]`);
+    if (!row) return;
+    const bubble = row.querySelector('.msg');
+    if (!bubble) return;
+    
+    const textDiv = bubble.querySelector('.text-content');
+    if (textDiv && msg.type === 'text') {
+        textDiv.innerHTML = linkifyText(msg.text);
+        if (msg.edited && !bubble.querySelector('.edited-label')) {
+            const editedSpan = document.createElement('span');
+            editedSpan.className = 'edited-label';
+            editedSpan.textContent = '(edited)';
+            const timeDiv = bubble.querySelector('.timestamp');
+            if (timeDiv) {
+                timeDiv.appendChild(editedSpan);
+            }
+        }
+    }
+  }
+
+  function removeMessageFromDOM(key) {
+    const row = document.querySelector(`.msg-row[data-key="${key}"]`);
+    if (row) row.remove();
   }
 
   function listenForTyping() {
@@ -1422,9 +1665,21 @@ description: "View your chat history and messages with friends."
     const content = input.value.trim();
     if (!content || !currentChatId) return;
 
-    const message = { nickname: myNickname, text: content, timestamp: Date.now(), type: "text" };
-    const newMsgRef = push(ref(db, `friends/${currentChatId}/messages`));
-    set(newMsgRef, message).then(() => maintainMessageLimit());
+    if (editingMsgKey) {
+      update(ref(db, `friends/${currentChatId}/messages/${editingMsgKey}`), { text: content, edited: true });
+      clearEdit();
+    } else {
+      const message = { nickname: myNickname, text: content, timestamp: Date.now(), type: "text" };
+      
+      if (replyingTo) {
+        message.replyTo = getReplyPayload();
+        clearReply();
+      }
+
+      const newMsgRef = push(ref(db, `friends/${currentChatId}/messages`));
+      set(newMsgRef, message).then(() => maintainMessageLimit());
+    }
+
     remove(ref(db, `friends/${currentChatId}/typing/${currentUserId}`));
     input.value = '';
   }
@@ -1446,6 +1701,12 @@ description: "View your chat history and messages with friends."
       loadingBubble.remove();
 
       const message = { nickname: myNickname, url: imageUrl, timestamp: Date.now(), type: "image" };
+      
+      if (replyingTo) {
+        message.replyTo = getReplyPayload();
+        clearReply();
+      }
+
       const newMsgRef = push(ref(db, `friends/${currentChatId}/messages`));
       set(newMsgRef, message).then(() => maintainMessageLimit());
     } catch (err) {
@@ -1468,11 +1729,15 @@ description: "View your chat history and messages with friends."
 
   window.closeChat = function () {
     if (messagesListener) { messagesListener(); messagesListener = null; }
+    if (messageChangedListener) { messageChangedListener(); messageChangedListener = null; }
+    if (messageRemovedListener) { messageRemovedListener(); messageRemovedListener = null; }
     if (typingListener) { typingListener(); typingListener = null; }
 
     if (currentChatId) remove(ref(db, `friends/${currentChatId}/typing/${currentUserId}`));
 
     hideTypingIndicator();
+    clearReply();
+    clearEdit();
     document.getElementById('chatLog').innerHTML = '';
     currentChatId = null;
     currentFriendName = "";
@@ -1487,6 +1752,7 @@ description: "View your chat history and messages with friends."
     const chatDiv = document.getElementById('chatLog');
     const row = document.createElement("div");
     row.className = `msg-row ${isMe ? 'me' : 'stranger'}`;
+    row.setAttribute('data-key', msg.key);
 
     const forwardPayload = msg.type === 'text' ? msg.text : msg.url;
 
@@ -1498,12 +1764,26 @@ description: "View your chat history and messages with friends."
 
     const bubble = document.createElement("div");
     bubble.className = "msg";
+    bubble.setAttribute('data-id', msg.timestamp);
 
-    if (!isMe) {
-      const nicknameDiv = document.createElement("div");
-      nicknameDiv.className = "msg-nickname";
-      nicknameDiv.textContent = msg.nickname;
-      bubble.appendChild(nicknameDiv);
+    if (msg.replyTo) {
+      const replyDiv = document.createElement("div");
+      replyDiv.className = "reply-preview";
+      replyDiv.textContent = `${msg.replyTo.nickname}: ${msg.replyTo.preview}`;
+      
+      if (msg.replyTo.originalId) {
+        replyDiv.title = "Click to jump to original message";
+        replyDiv.addEventListener("click", () => {
+          const target = document.querySelector(`[data-id="${msg.replyTo.originalId}"]`);
+          if (target) {
+            target.scrollIntoView({ behavior: "smooth", block: "center" });
+            const oldBg = target.style.backgroundColor;
+            target.style.backgroundColor = "rgba(91, 155, 213, 0.4)";
+            setTimeout(() => target.style.backgroundColor = oldBg, 1500);
+          }
+        });
+      }
+      bubble.appendChild(replyDiv);
     }
 
     if (msg.type === 'image' || msg.type === 'gif') {
@@ -1512,6 +1792,7 @@ description: "View your chat history and messages with friends."
       bubble.appendChild(img);
     } else {
       const textDiv = document.createElement("div");
+      textDiv.className = "text-content";
       textDiv.innerHTML = linkifyText(msg.text);
       bubble.appendChild(textDiv);
     }
@@ -1519,7 +1800,15 @@ description: "View your chat history and messages with friends."
     const timeDiv = document.createElement("div");
     timeDiv.className = "timestamp";
     timeDiv.textContent = formatMessageTime(msg.timestamp);
+    if (msg.edited) {
+      const editedSpan = document.createElement('span');
+      editedSpan.className = 'edited-label';
+      editedSpan.textContent = '(edited)';
+      timeDiv.appendChild(editedSpan);
+    }
     bubble.appendChild(timeDiv);
+
+    addMessageInteractions(bubble, msg, isMe);
 
     if (isMe) {
       row.appendChild(forwardBtn);
@@ -1580,6 +1869,12 @@ description: "View your chat history and messages with friends."
       img.onclick = () => {
         if (!currentChatId) return;
         const message = { nickname: myNickname, url: gifUrl, timestamp: Date.now(), type: "gif" };
+        
+        if (replyingTo) {
+          message.replyTo = getReplyPayload();
+          clearReply();
+        }
+
         const newMsgRef = push(ref(db, `friends/${currentChatId}/messages`));
         set(newMsgRef, message).then(() => maintainMessageLimit());
         document.getElementById('gifModal').style.display = 'none';
