@@ -1,5 +1,5 @@
 <div id="messageToast"
-  style="position: fixed; top: -120px; left: 50%; transform: translateX(-50%); background: #121212; color: #fff; padding: 14px 20px; border-radius: 12px; display: flex; align-items: center; justify-content: space-between; z-index: 10000; transition: top 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55), transform 0.3s ease; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5); width: 90%; max-width: 500px; border: 1px solid rgba(255, 255, 255, 0.1); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);">
+  style="position: fixed; top: -120px; left: 50%; transform: translateX(-50%); background: #121212; color: #fff; padding: 14px 20px; border-radius: 12px; display: flex; align-items: center; justify-content: space-between; z-index: 10000; transition: top 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55), transform 0.3s ease; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5); width: 90%; max-width: 500px; border: 1px solid rgba(255, 255, 255, 0.1); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); cursor: pointer;">
   <div style="display: flex; align-items: center; gap: 14px; flex: 1;">
     <div id="toastIconWrapper"
       style="width: 40px; height: 40px; border-radius: 50%; background: #25D366; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
@@ -88,7 +88,10 @@
         if (!lastMsg) return;
         const key = chatId + "_" + lastMsg.timestamp;
         if (lastNotifiedMessages[chatId] === key) return;
-        toastQueue.push({ senderName: friendNick, message: lastMsg.text, redirectUrl: "/chat/inbox.html", type: "dm", timestamp: lastMsg.timestamp });
+        
+        const redirectUrl = `/messages.html?chatId=${encodeURIComponent(chatId)}&friend=${encodeURIComponent(friendNick)}`;
+        toastQueue.push({ chatId: chatId, senderName: friendNick, message: lastMsg.text, redirectUrl: redirectUrl, type: "dm", timestamp: lastMsg.timestamp });
+        
         lastNotifiedMessages[chatId] = key;
         localStorage.setItem("lastNotifiedMessages", JSON.stringify(lastNotifiedMessages));
         processToastQueue();
@@ -99,13 +102,41 @@
       if (toastShowing || toastQueue.length === 0) return;
       toastShowing = true;
       const data = toastQueue.shift();
-      if (data.type === "reply") { toastIconWrapper.style.background = "#5b9bd5"; toastIcon.querySelector("path").setAttribute("d", REPLY_ICON_PATH); toastName.textContent = data.senderName + " replied to you"; }
-      else { toastIconWrapper.style.background = "#25D366"; toastIcon.querySelector("path").setAttribute("d", DM_ICON_PATH); toastName.textContent = data.senderName; }
+      if (data.type === "reply") { 
+        toastIconWrapper.style.background = "#5b9bd5"; 
+        toastIcon.querySelector("path").setAttribute("d", REPLY_ICON_PATH); 
+        toastName.textContent = data.senderName + " replied to you"; 
+      } else { 
+        toastIconWrapper.style.background = "#25D366"; 
+        toastIcon.querySelector("path").setAttribute("d", DM_ICON_PATH); 
+        toastName.textContent = data.senderName; 
+      }
       toastMessage.textContent = data.message.length > 40 ? data.message.substring(0, 40) + "..." : data.message;
       if (!soundMuted) { notifySound.currentTime = 0; notifySound.play().catch(() => { }); }
       toast.style.top = "20px";
-      toastViewBtn.onclick = () => window.location.href = data.redirectUrl;
-      setTimeout(() => { toast.style.top = "-120px"; setTimeout(() => { toastShowing = false; processToastQueue(); }, 400); }, 5000);
+
+      const handleToastNavigation = () => {
+        toast.style.top = "-120px";
+        if (typeof window.openChat === 'function' && data.chatId && data.senderName) {
+          window.openChat(data.chatId, data.senderName);
+        } else {
+          window.location.href = data.redirectUrl;
+        }
+      };
+
+      toast.onclick = handleToastNavigation;
+      toastViewBtn.onclick = (e) => {
+        e.stopPropagation();
+        handleToastNavigation();
+      };
+
+      setTimeout(() => { 
+        toast.style.top = "-120px"; 
+        setTimeout(() => { 
+          toastShowing = false; 
+          processToastQueue(); 
+        }, 400); 
+      }, 5000);
     }
 
     const callToast = document.getElementById('callToast');
