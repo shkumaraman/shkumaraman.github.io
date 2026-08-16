@@ -645,26 +645,23 @@ function compressImageFile(file, maxWidth = 480, quality = 0.35) {
     reader.readAsDataURL(file);
     reader.onload = (e) => {
       const img = new Image();
-      img.src = e.target.result;
       img.onload = () => {
         const canvas = document.createElement('canvas');
         let width = img.width;
         let height = img.height;
-
         if (width > maxWidth) {
           height = Math.round((maxWidth / width) * height);
           width = maxWidth;
         }
-
         canvas.width = width;
         canvas.height = height;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
-
         const dataUrl = canvas.toDataURL('image/jpeg', quality);
         resolve(dataUrl);
       };
       img.onerror = () => resolve(null);
+      img.src = e.target.result;
     };
     reader.onerror = () => resolve(null);
   });
@@ -1004,55 +1001,57 @@ document.addEventListener('DOMContentLoaded', async function() {
       roomDescriptionError.classList.add('visible');
       return;
     }
-    
-    const roomRef = ref(db, 'groups/' + roomName);
-    const snapshot = await get(roomRef);
-    
-    if (snapshot.exists()) {
-      alert('A room with this name already exists. Please choose a different name.');
-      return;
-    }
-    
+
     createRoomBtn.disabled = true;
     createRoomBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Compressing & Creating...';
 
-    let compressedBase64 = null;
-    if (imageFile) {
-      compressedBase64 = await compressImageFile(imageFile, 480, 0.35);
-    }
-    
-    const roomData = {
-      description: description || 'No description provided',
-      admin: myNickname,
-      createdAt: Date.now()
-    };
-
-    if (compressedBase64) {
-      roomData.bgImage = compressedBase64;
-    }
-    
-    if (passwordCheckbox.checked && password) {
-      roomData.password = password;
-    }
-    
-    set(roomRef, roomData)
-      .then(() => {
-        roomNameInput.value = '';
-        roomDescriptionInput.value = '';
-        roomImageInput.value = '';
-        passwordCheckbox.checked = false;
-        document.getElementById('roomPasswordInput').value = '';
-        passwordField.classList.remove('visible');
-        
-        tabRooms.click();
-      })
-      .catch((error) => {
-        alert('Error creating room: ' + error.message);
-      })
-      .finally(() => {
+    try {
+      const roomRef = ref(db, 'groups/' + roomName);
+      const snapshot = await get(roomRef);
+      
+      if (snapshot.exists()) {
+        alert('A room with this name already exists. Please choose a different name.');
         createRoomBtn.disabled = false;
         createRoomBtn.innerHTML = '<i class="fas fa-plus-circle"></i> Create Room';
-      });
+        return;
+      }
+
+      let compressedBase64 = null;
+      if (imageFile) {
+        compressedBase64 = await compressImageFile(imageFile, 480, 0.35);
+      }
+      
+      const roomData = {
+        description: description || 'No description provided',
+        admin: myNickname,
+        createdAt: Date.now()
+      };
+
+      if (compressedBase64) {
+        roomData.bgImage = compressedBase64;
+      }
+      
+      if (passwordCheckbox.checked && password) {
+        roomData.password = password;
+      }
+      
+      await set(roomRef, roomData);
+      
+      roomNameInput.value = '';
+      roomDescriptionInput.value = '';
+      roomImageInput.value = '';
+      passwordCheckbox.checked = false;
+      document.getElementById('roomPasswordInput').value = '';
+      passwordField.classList.remove('visible');
+      
+      tabRooms.click();
+
+    } catch (error) {
+      alert('Error creating room: ' + error.message);
+    } finally {
+      createRoomBtn.disabled = false;
+      createRoomBtn.innerHTML = '<i class="fas fa-plus-circle"></i> Create Room';
+    }
   }
   
   createRoomBtn.addEventListener('click', createRoom);
