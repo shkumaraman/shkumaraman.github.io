@@ -131,10 +131,27 @@ main {
   display: flex;
   flex-direction: column;
   position: relative;
+  overflow: hidden;
 }
 .light-mode .room-card { background: var(--light-card); border-color: var(--light-border2); }
 .room-card:hover { transform: translateY(-4px); box-shadow: 0 8px 20px rgba(0,0,0,0.2); }
 .light-mode .room-card:hover { box-shadow: 0 8px 20px rgba(0,0,0,0.06); }
+
+.room-card-bg {
+  position: absolute;
+  top: 0; left: 0; width: 100%; height: 100%;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: 0.5;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.room-header, .room-actions {
+  position: relative;
+  z-index: 1;
+}
 
 .room-header { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 12px; }
 
@@ -422,6 +439,14 @@ main {
           <span></span>
         </div>
       </div>
+
+      <div class="form-group">
+        <label class="form-label">
+          <span>Cover Image</span>
+          <span class="limit-text">(Optional)</span>
+        </label>
+        <input type="file" id="roomImageInput" class="form-input" accept="image/*">
+      </div>
       
       <div class="form-group">
         <div class="checkbox-group">
@@ -502,6 +527,7 @@ main {
   <div class="create-container edit-modal-container">
     <h2 class="create-title">Edit Chat Room</h2>
     <input type="hidden" id="editOriginalRoomName">
+    <input type="hidden" id="editExistingImage">
     
     <div class="form-group">
       <label class="form-label">
@@ -525,6 +551,14 @@ main {
         <i class="fas fa-exclamation-circle"></i>
         <span></span>
       </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">
+        <span>Cover Image</span>
+        <span class="limit-text">(Leave blank to keep existing)</span>
+      </label>
+      <input type="file" id="editRoomImageInput" class="form-input" accept="image/*">
     </div>
     
     <div class="form-group">
@@ -604,6 +638,38 @@ function containsInappropriateContent(text) {
   });
 }
 
+function compressImageFile(file, maxWidth = 480, quality = 0.35) {
+  return new Promise((resolve) => {
+    if (!file) return resolve(null);
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (e) => {
+      const img = new Image();
+      img.src = e.target.result;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth) {
+          height = Math.round((maxWidth / width) * height);
+          width = maxWidth;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+
+        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        resolve(dataUrl);
+      };
+      img.onerror = () => resolve(null);
+    };
+    reader.onerror = () => resolve(null);
+  });
+}
+
 document.addEventListener('DOMContentLoaded', async function() {
   await loadBannedWords();
   
@@ -626,6 +692,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   
   const roomNameInput = document.getElementById('roomNameInput');
   const roomDescriptionInput = document.getElementById('roomDescriptionInput');
+  const roomImageInput = document.getElementById('roomImageInput');
   const roomNameError = document.getElementById('roomNameError');
   const roomDescriptionError = document.getElementById('roomDescriptionError');
   
@@ -719,6 +786,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     document.getElementById('editOriginalRoomName').value = roomName;
     document.getElementById('editRoomNameInput').value = roomName;
     document.getElementById('editRoomDescriptionInput').value = roomData.description || '';
+    document.getElementById('editExistingImage').value = roomData.bgImage || '';
+    document.getElementById('editRoomImageInput').value = '';
     
     const passCheckbox = document.getElementById('editPasswordCheckbox');
     const passField = document.getElementById('editPasswordField');
@@ -770,7 +839,13 @@ document.addEventListener('DOMContentLoaded', async function() {
     const desc = roomData.description || 'No description provided.';
     const displayDesc = desc.length > 180 ? desc.substring(0, 180) + '...' : desc;
     
+    let bgLayerHtml = '';
+    if (roomData.bgImage) {
+      bgLayerHtml = `<div class="room-card-bg" style="background-image: url('${roomData.bgImage}');"></div>`;
+    }
+
     roomCard.innerHTML = `
+      ${bgLayerHtml}
       <div class="room-header">
         <img src="/chat/logo.png" alt="Chat Room" class="room-image">
         <div class="room-info">
@@ -890,6 +965,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     const roomName = roomNameInput.value.trim();
     const description = roomDescriptionInput.value.trim();
     const password = document.getElementById('roomPasswordInput').value.trim();
+    const imageFile = roomImageInput.files[0];
     
     roomNameError.classList.remove('visible');
     roomDescriptionError.classList.remove('visible');
@@ -937,23 +1013,33 @@ document.addEventListener('DOMContentLoaded', async function() {
       return;
     }
     
+    createRoomBtn.disabled = true;
+    createRoomBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Compressing & Creating...';
+
+    let compressedBase64 = null;
+    if (imageFile) {
+      compressedBase64 = await compressImageFile(imageFile, 480, 0.35);
+    }
+    
     const roomData = {
       description: description || 'No description provided',
       admin: myNickname,
       createdAt: Date.now()
     };
+
+    if (compressedBase64) {
+      roomData.bgImage = compressedBase64;
+    }
     
     if (passwordCheckbox.checked && password) {
       roomData.password = password;
     }
     
-    createRoomBtn.disabled = true;
-    createRoomBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating...';
-    
     set(roomRef, roomData)
       .then(() => {
         roomNameInput.value = '';
         roomDescriptionInput.value = '';
+        roomImageInput.value = '';
         passwordCheckbox.checked = false;
         document.getElementById('roomPasswordInput').value = '';
         passwordField.classList.remove('visible');
@@ -1005,6 +1091,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     const newDesc = document.getElementById('editRoomDescriptionInput').value.trim();
     const passChecked = document.getElementById('editPasswordCheckbox').checked;
     const newPass = document.getElementById('editRoomPasswordInput').value.trim();
+    const newImageFile = document.getElementById('editRoomImageInput').files[0];
+    const existingImage = document.getElementById('editExistingImage').value;
     
     const nameError = document.getElementById('editRoomNameError');
     const descError = document.getElementById('editRoomDescriptionError');
@@ -1027,6 +1115,12 @@ document.addEventListener('DOMContentLoaded', async function() {
       const roomData = oldSnap.val();
       
       roomData.description = newDesc || 'No description provided';
+
+      if (newImageFile) {
+        roomData.bgImage = await compressImageFile(newImageFile, 480, 0.35);
+      } else if (existingImage) {
+        roomData.bgImage = existingImage;
+      }
       
       if (passChecked) {
         if (newPass) roomData.password = newPass; 
