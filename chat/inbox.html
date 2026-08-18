@@ -1465,7 +1465,6 @@ description: "View your chat history and messages with friends."
     history.pushState({ chat: chatId }, '', newUrl);
 
     loadMessages();
-    listenForMessages();
     listenForTyping();
   };
 
@@ -1573,7 +1572,11 @@ description: "View your chat history and messages with friends."
 
     if (!currentChatId) return;
 
-    get(ref(db, `friends/${currentChatId}/messages`)).then((snapshot) => {
+    const loadingChatId = currentChatId;
+
+    get(ref(db, `friends/${loadingChatId}/messages`)).then((snapshot) => {
+      if (currentChatId !== loadingChatId) return;
+
       const messages = snapshot.val();
       if (messages) {
         const messageArray = Object.entries(messages).map(([key, val]) => ({ ...val, key }));
@@ -1586,7 +1589,11 @@ description: "View your chat history and messages with friends."
         });
       }
       scrollToBottom();
-    }).catch(() => { });
+
+      listenForMessages();
+    }).catch(() => {
+      if (currentChatId === loadingChatId) listenForMessages();
+    });
   }
 
   function listenForMessages() {
