@@ -7,6 +7,7 @@
     <a href="/chat/rooms.html" onclick="toggleMenu()">
       <i class="fas fa-comments"></i>
       <span>Chat Rooms</span>
+      <span id="menuBadge" class="menu-unread-badge" style="display: none;"></span>
     </a>
     <a href="/chat/inbox.html" onclick="toggleMenu()">
       <i class="fas fa-inbox"></i>
@@ -161,6 +162,19 @@
   border-color: rgba(255,107,74,0.18);
 }
 
+.menu-unread-badge {
+  margin-left: auto;
+  background: #ff4757;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 10px;
+  min-width: 18px;
+  text-align: center;
+  line-height: 1.2;
+}
+
 .menu-footer {
   padding: 10px 10px 14px;
   flex-shrink: 0;
@@ -223,6 +237,23 @@
   border-radius: 50%;
   transition: all 0.2s;
   outline: none;
+  position: relative;
+}
+
+.menu-btn-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 8px;
+  height: 8px;
+  background: #ff4757;
+  border-radius: 50%;
+  display: none;
+  pointer-events: none;
+}
+
+.menu-btn-dot.active {
+  display: block;
 }
 
 .menu-btn:hover { 
@@ -247,7 +278,15 @@ function toggleMenu() {
 
   menu.style.left = isOpen ? "-270px" : "0px";
   if (overlay) overlay.style.display = isOpen ? "none" : "block";
-  menuBtns.forEach(btn => btn.innerHTML = isOpen ? "&#9776;" : "&#10006;");
+  menuBtns.forEach(btn => {
+    const dot = btn.querySelector('.menu-btn-dot');
+    const hasDotActive = dot && dot.classList.contains('active');
+    btn.innerHTML = isOpen ? "&#9776;" : "&#10006;";
+    if (dot) {
+      btn.appendChild(dot);
+      if (hasDotActive) dot.classList.add('active');
+    }
+  });
 }
 
 document.addEventListener('DOMContentLoaded', function () {
@@ -262,6 +301,14 @@ document.addEventListener('DOMContentLoaded', function () {
   document.querySelectorAll('.menu-items a').forEach(link => {
     if (link.getAttribute('href') === currentPath) {
       link.classList.add('active');
+    }
+  });
+
+  document.querySelectorAll('.menu-btn').forEach(btn => {
+    if (!btn.querySelector('.menu-btn-dot')) {
+      const dot = document.createElement('span');
+      dot.className = 'menu-btn-dot';
+      btn.appendChild(dot);
     }
   });
 
@@ -286,6 +333,24 @@ document.addEventListener('DOMContentLoaded', function () {
       }
       toggleMenu();
     }
+  });
+
+  window.addEventListener('unreadRepliesUpdated', (e) => {
+    const count = e.detail?.count || 0;
+    
+    const badge = document.getElementById('menuBadge');
+    if (badge) {
+      if (count > 0) {
+        badge.textContent = count > 99 ? '99+' : count;
+        badge.style.display = 'inline-block';
+      } else {
+        badge.style.display = 'none';
+      }
+    }
+
+    document.querySelectorAll('.menu-btn-dot').forEach(dot => {
+      dot.classList.toggle('active', count > 0);
+    });
   });
 });
 </script>
