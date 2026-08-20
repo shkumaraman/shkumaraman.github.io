@@ -2,6 +2,7 @@
   <a href="/chat/inbox.html" class="bn-item">
     <div class="bn-icon-wrap">
       <i class="fas fa-inbox"></i>
+      <span id="bottomNavInboxBadge" class="bn-badge" style="display: none;"></span>
     </div>
     <span>Inbox</span>
   </a>
@@ -134,66 +135,4 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   });
 });
-</script>
-
-<script type="module">
-import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
-import { getDatabase, ref, onValue } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
-
-const firebaseConfig = {
-  databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
-};
-
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-const db = getDatabase(app);
-
-function updateBottomNavBadge(count) {
-  const badge = document.getElementById('bottomNavBadge');
-  if (badge) {
-    if (count > 0) {
-      badge.textContent = count > 99 ? '99+' : count;
-      badge.style.display = 'flex';
-    } else {
-      badge.style.display = 'none';
-    }
-  }
-}
-
-function listenToUnreadRepliesForNav() {
-  const myNickname = localStorage.getItem('talkrush_nickname') || 'Guest';
-  const currentGroup = new URLSearchParams(window.location.search).get('group');
-
-  onValue(ref(db, 'groups'), (snapshot) => {
-    if (!snapshot.exists()) {
-      updateBottomNavBadge(0);
-      return;
-    }
-
-    const data = snapshot.val();
-    let lastSeenMap = JSON.parse(localStorage.getItem('groups_last_seen') || '{}');
-    if (currentGroup) lastSeenMap[currentGroup] = Date.now();
-    let totalUnreadReplies = 0;
-
-    Object.entries(data).forEach(([groupName, groupData]) => {
-      let groupUnreadCount = 0;
-      let groupLastSeen = lastSeenMap[groupName] || 0;
-
-      if (groupData.messages) {
-        Object.values(groupData.messages).forEach(m => {
-          if (m.replyTo?.nickname === myNickname && m.timestamp > groupLastSeen) {
-            groupUnreadCount++;
-          }
-        });
-      }
-
-      if (groupName !== currentGroup) {
-        totalUnreadReplies += groupUnreadCount;
-      }
-    });
-
-    updateBottomNavBadge(totalUnreadReplies);
-  });
-}
-
-listenToUnreadRepliesForNav();
 </script>
