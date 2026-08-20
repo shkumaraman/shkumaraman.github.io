@@ -225,15 +225,34 @@ description: "View your chat history and messages with friends."
     color: var(--light-text-muted);
   }
 
+  .message-meta {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 5px;
+    flex-shrink: 0;
+  }
+
   .message-time {
     font-size: 10px;
     color: var(--dark-text-muted);
     white-space: nowrap;
-    flex-shrink: 0;
   }
 
   .light-mode .message-time {
     color: var(--light-text-muted);
+  }
+
+  .unread-badge {
+    background: #ff4757;
+    color: #ffffff;
+    font-size: 10px;
+    font-weight: bold;
+    padding: 2px 7px;
+    border-radius: 10px;
+    min-width: 18px;
+    text-align: center;
+    line-height: 1.2;
   }
 
   .unfriend-btn {
@@ -1101,6 +1120,14 @@ description: "View your chat history and messages with friends."
   const msgInput = document.getElementById('msgInput');
   const contextMenu = document.getElementById('contextMenu');
 
+  setInterval(() => {
+    if (currentChatId) {
+      let lastSeenMap = JSON.parse(localStorage.getItem('inbox_last_seen') || '{}');
+      lastSeenMap[currentChatId] = Date.now();
+      localStorage.setItem('inbox_last_seen', JSON.stringify(lastSeenMap));
+    }
+  }, 3000);
+
   function getAvatarLetter(name) {
     if (!name) return "?";
     if (name.startsWith("TR|")) return name.charAt(3) || "?";
@@ -1438,6 +1465,10 @@ description: "View your chat history and messages with friends."
   }
 
   window.openChat = function(chatId, friendName) {
+    let lastSeenMap = JSON.parse(localStorage.getItem('inbox_last_seen') || '{}');
+    lastSeenMap[chatId] = Date.now();
+    localStorage.setItem('inbox_last_seen', JSON.stringify(lastSeenMap));
+
     if (currentChatId) remove(ref(db, `friends/${currentChatId}/typing/${currentUserId}`));
 
     if (messagesListener) { messagesListener(); messagesListener = null; }
@@ -1485,11 +1516,20 @@ description: "View your chat history and messages with friends."
         empty.style.display = "flex";
         list.style.display = "none";
         myFriendsData = {};
+        window.dispatchEvent(new CustomEvent('inboxUnreadUpdated', { detail: { count: 0 } }));
         return;
       }
 
       list.innerHTML = "";
       const friendsArray = [];
+      
+      let totalInboxUnread = 0;
+      let lastSeenMap = JSON.parse(localStorage.getItem('inbox_last_seen') || '{}');
+
+      if (currentChatId) {
+        lastSeenMap[currentChatId] = Date.now();
+        localStorage.setItem('inbox_last_seen', JSON.stringify(lastSeenMap));
+      }
 
       Object.entries(data).forEach(([chatId, friend]) => {
         const friendNickname = friend.nickname2 === myNickname ? friend.nickname1 :
@@ -1498,6 +1538,8 @@ description: "View your chat history and messages with friends."
 
         let lastMessage = "Say Hi!";
         let lastTimestamp = 0;
+        let unreadCount = 0;
+        let chatLastSeen = lastSeenMap[chatId] || 0;
 
         if (friend.messages) {
           const messages = Object.values(friend.messages);
@@ -1510,7 +1552,19 @@ description: "View your chat history and messages with friends."
             else if (latest.type === 'text') {
               lastMessage = latest.text.length > 30 ? latest.text.substring(0, 30) + '...' : latest.text;
             }
+
+            messages.forEach(m => {
+              if (m.nickname !== myNickname && m.timestamp > chatLastSeen) {
+                unreadCount++;
+              }
+            });
           }
+        }
+
+        if (chatId !== currentChatId) {
+          totalInboxUnread += unreadCount;
+        } else {
+          unreadCount = 0;
         }
 
         friendsArray.push({
@@ -1519,6 +1573,7 @@ description: "View your chat history and messages with friends."
           avatarLetter: getAvatarLetter(friendNickname),
           displayMsg: lastMessage,
           timestamp: lastTimestamp || Date.now(),
+          unreadCount: unreadCount,
           friendData: friend
         });
 
@@ -1528,6 +1583,8 @@ description: "View your chat history and messages with friends."
           isUserNickname2: myNickname === friend.nickname2
         };
       });
+
+      window.dispatchEvent(new CustomEvent('inboxUnreadUpdated', { detail: { count: totalInboxUnread } }));
 
       friendsArray.sort((a, b) => b.timestamp - a.timestamp);
 
@@ -1541,13 +1598,21 @@ description: "View your chat history and messages with friends."
       friendsArray.forEach(friend => {
         const div = document.createElement("div");
         div.className = "friend-item";
+        
+        const badgeHtml = friend.unreadCount > 0 
+          ? `<span class="unread-badge">${friend.unreadCount > 99 ? '99+' : friend.unreadCount}</span>` 
+          : '';
+
         div.innerHTML = `
         <div class="friend-avatar">${friend.avatarLetter}</div>
         <div class="friend-info">
           <p class="friend-name">${escapeHtml(friend.displayName)}</p>
           <p class="last-message">${escapeHtml(friend.displayMsg)}</p>
         </div>
-        <span class="message-time">${formatTime(friend.timestamp)}</span>
+        <div class="message-meta">
+          <span class="message-time">${formatTime(friend.timestamp)}</span>
+          ${badgeHtml}
+        </div>
         <button class="unfriend-btn" onclick="event.stopPropagation(); unfriend('${friend.chatId}')" title="Remove friend">
           <i class="fas fa-times"></i>
         </button>
