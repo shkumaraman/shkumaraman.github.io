@@ -313,44 +313,106 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 
   const shareButton = document.getElementById("shareButton");
-  shareButton.addEventListener("click", () => {
-    const shareUrl = "https://shkumaraman.github.io";
-    
-    if (typeof window.openShareModal === 'function') {
-      window.openShareModal(shareUrl);
-      toggleMenu();
-    } else {
-      const fullText = "Connect with strangers, chat and talk freely, and explore fun conversations. Try TalkRush now: " + shareUrl;
-      if (navigator.clipboard) {
-        navigator.clipboard.writeText(fullText);
+  if (shareButton) {
+    shareButton.addEventListener("click", () => {
+      const shareUrl = "https://shkumaraman.github.io";
+      
+      if (typeof window.openShareModal === 'function') {
+        window.openShareModal(shareUrl);
+        toggleMenu();
       } else {
-        const tmp = document.createElement("input");
-        tmp.value = fullText;
-        document.body.appendChild(tmp);
-        tmp.select();
-        document.execCommand("copy");
-        document.body.removeChild(tmp);
+        const fullText = "Connect with strangers, chat and talk freely, and explore fun conversations. Try TalkRush now: " + shareUrl;
+        if (navigator.clipboard) {
+          navigator.clipboard.writeText(fullText);
+        } else {
+          const tmp = document.createElement("input");
+          tmp.value = fullText;
+          document.body.appendChild(tmp);
+          tmp.select();
+          document.execCommand("copy");
+          document.body.removeChild(tmp);
+        }
+        toggleMenu();
       }
-      toggleMenu();
-    }
-  });
-
-  window.addEventListener('unreadRepliesUpdated', (e) => {
-    const count = e.detail?.count || 0;
-    
-    const badge = document.getElementById('menuBadge');
-    if (badge) {
-      if (count > 0) {
-        badge.textContent = count > 99 ? '99+' : count;
-        badge.style.display = 'inline-block';
-      } else {
-        badge.style.display = 'none';
-      }
-    }
-
-    document.querySelectorAll('.menu-btn-dot').forEach(dot => {
-      dot.classList.toggle('active', count > 0);
     });
-  });
+  }
 });
+</script>
+
+<script type="module">
+import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
+import { getDatabase, ref, onValue } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
+
+const firebaseConfig = {
+  databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
+};
+
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+const db = getDatabase(app);
+
+function updateGlobalBadges(count) {
+  const menuBadge = document.getElementById('menuBadge');
+  if (menuBadge) {
+    if (count > 0) {
+      menuBadge.textContent = count > 99 ? '99+' : count;
+      menuBadge.style.display = 'inline-block';
+    } else {
+      menuBadge.style.display = 'none';
+    }
+  }
+
+  const navBadge = document.getElementById('bottomNavBadge');
+  if (navBadge) {
+    if (count > 0) {
+      navBadge.textContent = count > 99 ? '99+' : count;
+      navBadge.style.display = 'flex';
+    } else {
+      navBadge.style.display = 'none';
+    }
+  }
+
+  document.querySelectorAll('.menu-btn-dot').forEach(dot => {
+    dot.classList.toggle('active', count > 0);
+  });
+
+  window.dispatchEvent(new CustomEvent('unreadRepliesUpdated', { detail: { count } }));
+}
+
+function listenToUnreadReplies() {
+  const myNickname = localStorage.getItem('talkrush_nickname') || 'Guest';
+  const currentGroup = new URLSearchParams(window.location.search).get('group');
+
+  onValue(ref(db, 'groups'), (snapshot) => {
+    if (!snapshot.exists()) {
+      updateGlobalBadges(0);
+      return;
+    }
+
+    const data = snapshot.val();
+    let lastSeenMap = JSON.parse(localStorage.getItem('groups_last_seen') || '{}');
+    if (currentGroup) lastSeenMap[currentGroup] = Date.now();
+    let totalUnreadReplies = 0;
+
+    Object.entries(data).forEach(([groupName, groupData]) => {
+      let groupUnreadCount = 0;
+      let groupLastSeen = lastSeenMap[groupName] || 0;
+
+      if (groupData.messages) {
+        Object.values(groupData.messages).forEach(m => {
+          if (m.replyTo?.nickname === myNickname && m.timestamp > groupLastSeen) {
+            groupUnreadCount++;
+          }
+        });
+      }
+
+      if (groupName !== currentGroup) {
+        totalUnreadReplies += groupUnreadCount;
+      }
+    });
+
+    updateGlobalBadges(totalUnreadReplies);
+  });
+}
+
+listenToUnreadReplies();
 </script>
