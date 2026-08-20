@@ -302,6 +302,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 .drawer-group-item.active { background: rgba(91, 155, 213, 0.1); border-left: 4px solid #5b9bd5; }
 .drawer-group-name { display: flex; align-items: center; gap: 8px; }
 .item-red-dot { width: 8px; height: 8px; background: #ff4757; border-radius: 50%; }
+.unread-badge { background: #ff4757; color: #ffffff; font-size: 11px; padding: 2px 7px; border-radius: 10px; font-weight: bold; min-width: 18px; text-align: center; }
 
 .uploading-bubble { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--dark-text-muted); font-style: italic; }
 .upload-spinner { width: 14px; height: 14px; border: 2px solid var(--dark-text-muted); border-top-color: var(--dark-text); border-radius: 50%; animation: spin 0.7s linear infinite; flex-shrink: 0; }
@@ -1221,30 +1222,63 @@ if(drawerToggleSub) drawerToggleSub.onclick = toggleDrawer;
 if(document.getElementById('drawerCloseBtn')) document.getElementById('drawerCloseBtn').onclick = closeDrawer;
 if(drawerOverlay) drawerOverlay.onclick = closeDrawer;
 
+function updateNavBadge(count) {
+  const navBadge = document.getElementById('bottomNavBadge') || document.getElementById('menuBadge');
+  if (navBadge) {
+    if (count > 0) {
+      navBadge.textContent = count > 99 ? '99+' : count;
+      navBadge.style.display = 'inline-block';
+    } else {
+      navBadge.style.display = 'none';
+    }
+  }
+  window.dispatchEvent(new CustomEvent('unreadRepliesUpdated', { detail: { count } }));
+}
+
 function initDrawerListener() {
-  get(ref(db, 'groups')).then(snapshot => {
+  onValue(ref(db, 'groups'), (snapshot) => {
     if (!snapshot.exists()) return;
     const data = snapshot.val(), drawerList = document.getElementById('drawerGroupsList');
     drawerList.innerHTML = '';
     
     let lastSeenMap = JSON.parse(localStorage.getItem('groups_last_seen') || '{}');
     if (currentGroup) lastSeenMap[currentGroup] = Date.now();
-    let anyUnreadGlobal = false;
+    let totalUnreadReplies = 0;
 
     Object.entries(data).sort((a, b) => (a[1].createdAt || 0) - (b[1].createdAt || 0)).forEach(([groupName, groupData]) => {
-      let hasUnread = false, groupLastSeen = lastSeenMap[groupName] || 0;
-      if (groupData.messages) Object.values(groupData.messages).forEach(m => { if (m.replyTo?.nickname === myNickname && m.timestamp > groupLastSeen) hasUnread = true; });
-      
-      if (hasUnread && groupName !== currentGroup) anyUnreadGlobal = true;
-      else if (groupName === currentGroup) hasUnread = false;
-      
+      let groupUnreadCount = 0;
+      let groupLastSeen = lastSeenMap[groupName] || 0;
+
+      if (groupData.messages) {
+        Object.values(groupData.messages).forEach(m => {
+          if (m.replyTo?.nickname === myNickname && m.timestamp > groupLastSeen) {
+            groupUnreadCount++;
+          }
+        });
+      }
+
+      if (groupName !== currentGroup) {
+        totalUnreadReplies += groupUnreadCount;
+      }
+
       const item = document.createElement('a');
       item.href = `/chat/group.html?group=${encodeURIComponent(groupName)}`;
       item.className = `drawer-group-item ${groupName === currentGroup ? 'active' : ''}`;
-      item.innerHTML = `<div class="drawer-group-name"><span>${groupName}</span>${groupData.password ? '<i class="fas fa-lock" style="color:#E8873A; font-size: 0.8em; margin-left:5px;"></i>' : ''}</div>${hasUnread ? '<div class="item-red-dot" title="New Reply"></div>' : ''}`;
+      
+      const badgeHtml = (groupUnreadCount > 0 && groupName !== currentGroup) 
+        ? `<span class="unread-badge">${groupUnreadCount > 99 ? '99+' : groupUnreadCount}</span>` 
+        : '';
+
+      item.innerHTML = `<div class="drawer-group-name"><span>${groupName}</span>${groupData.password ? '<i class="fas fa-lock" style="color:#E8873A; font-size: 0.8em; margin-left:5px;"></i>' : ''}</div>${badgeHtml}`;
       drawerList.appendChild(item);
     });
-    document.getElementById('hamburgerDot').classList.toggle('active', anyUnreadGlobal);
+
+    const hamburgerDot = document.getElementById('hamburgerDot');
+    if (hamburgerDot) {
+      hamburgerDot.classList.toggle('active', totalUnreadReplies > 0);
+    }
+
+    updateNavBadge(totalUnreadReplies);
   });
 }
 
