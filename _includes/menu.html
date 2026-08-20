@@ -12,6 +12,7 @@
     <a href="/chat/inbox.html" onclick="toggleMenu()">
       <i class="fas fa-inbox"></i>
       <span>Inbox</span>
+      <span id="menuInboxBadge" class="menu-unread-badge" style="display: none;"></span>
     </a>
     <a href="/chat/index.html" onclick="toggleMenu()">
       <i class="fas fa-user-secret"></i>
@@ -343,76 +344,123 @@ document.addEventListener('DOMContentLoaded', function () {
 import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
 import { getDatabase, ref, onValue } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
 
-const firebaseConfig = {
-  databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
-};
+// Avoid multiple listener attachments if included multiple times
+if (!window.talkrushUnifiedListenerAdded) {
+  window.talkrushUnifiedListenerAdded = true;
 
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-const db = getDatabase(app);
+  const firebaseConfig = {
+    databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
+  };
 
-function updateGlobalBadges(count) {
-  const menuBadge = document.getElementById('menuBadge');
-  if (menuBadge) {
-    if (count > 0) {
-      menuBadge.textContent = count > 99 ? '99+' : count;
-      menuBadge.style.display = 'inline-block';
-    } else {
-      menuBadge.style.display = 'none';
+  const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+  const db = getDatabase(app);
+
+  let totalRoomsUnread = 0;
+  let totalInboxUnread = 0;
+
+  function updateAllGlobalBadges() {
+    const formatBadge = (count) => count > 9 ? '9+' : count;
+
+    // Menu Badges
+    const menuRoomsBadge = document.getElementById('menuBadge');
+    if (menuRoomsBadge) {
+      menuRoomsBadge.textContent = formatBadge(totalRoomsUnread);
+      menuRoomsBadge.style.display = totalRoomsUnread > 0 ? 'inline-block' : 'none';
     }
+
+    const menuInboxBadge = document.getElementById('menuInboxBadge');
+    if (menuInboxBadge) {
+      menuInboxBadge.textContent = formatBadge(totalInboxUnread);
+      menuInboxBadge.style.display = totalInboxUnread > 0 ? 'inline-block' : 'none';
+    }
+
+    // Bottom Nav Badges
+    const navRoomsBadge = document.getElementById('bottomNavBadge');
+    if (navRoomsBadge) {
+      navRoomsBadge.textContent = formatBadge(totalRoomsUnread);
+      navRoomsBadge.style.display = totalRoomsUnread > 0 ? 'flex' : 'none';
+    }
+
+    const navInboxBadge = document.getElementById('bottomNavInboxBadge');
+    if (navInboxBadge) {
+      navInboxBadge.textContent = formatBadge(totalInboxUnread);
+      navInboxBadge.style.display = totalInboxUnread > 0 ? 'flex' : 'none';
+    }
+
+    // Hamburger Menu Dot (Show if either Rooms OR Inbox has unread messages)
+    const combinedTotal = totalRoomsUnread + totalInboxUnread;
+    document.querySelectorAll('.menu-btn-dot').forEach(dot => {
+      dot.classList.toggle('active', combinedTotal > 0);
+    });
   }
 
-  const navBadge = document.getElementById('bottomNavBadge');
-  if (navBadge) {
-    if (count > 0) {
-      navBadge.textContent = count > 99 ? '99+' : count;
-      navBadge.style.display = 'flex';
-    } else {
-      navBadge.style.display = 'none';
-    }
-  }
+  function listenToAllUnreadData() {
+    const myNickname = localStorage.getItem('talkrush_nickname') || 'Guest';
+    const params = new URLSearchParams(window.location.search);
+    const currentGroup = params.get('group');
+    const currentChatId = params.get('chatId');
 
-  document.querySelectorAll('.menu-btn-dot').forEach(dot => {
-    dot.classList.toggle('active', count > 0);
-  });
+    // Listener 1: Chat Rooms
+    onValue(ref(db, 'groups'), (snapshot) => {
+      let count = 0;
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        let lastSeenMap = JSON.parse(localStorage.getItem('groups_last_seen') || '{}');
+        if (currentGroup) lastSeenMap[currentGroup] = Date.now();
 
-  window.dispatchEvent(new CustomEvent('unreadRepliesUpdated', { detail: { count } }));
-}
+        Object.entries(data).forEach(([groupName, groupData]) => {
+          let groupUnreadCount = 0;
+          let groupLastSeen = lastSeenMap[groupName] || 0;
 
-function listenToUnreadReplies() {
-  const myNickname = localStorage.getItem('talkrush_nickname') || 'Guest';
-  const currentGroup = new URLSearchParams(window.location.search).get('group');
-
-  onValue(ref(db, 'groups'), (snapshot) => {
-    if (!snapshot.exists()) {
-      updateGlobalBadges(0);
-      return;
-    }
-
-    const data = snapshot.val();
-    let lastSeenMap = JSON.parse(localStorage.getItem('groups_last_seen') || '{}');
-    if (currentGroup) lastSeenMap[currentGroup] = Date.now();
-    let totalUnreadReplies = 0;
-
-    Object.entries(data).forEach(([groupName, groupData]) => {
-      let groupUnreadCount = 0;
-      let groupLastSeen = lastSeenMap[groupName] || 0;
-
-      if (groupData.messages) {
-        Object.values(groupData.messages).forEach(m => {
-          if (m.replyTo?.nickname === myNickname && m.timestamp > groupLastSeen) {
-            groupUnreadCount++;
+          if (groupData.messages) {
+            Object.values(groupData.messages).forEach(m => {
+              if (m.replyTo?.nickname === myNickname && m.timestamp > groupLastSeen) {
+                groupUnreadCount++;
+              }
+            });
+          }
+          if (groupName !== currentGroup) {
+            count += groupUnreadCount;
           }
         });
       }
-
-      if (groupName !== currentGroup) {
-        totalUnreadReplies += groupUnreadCount;
-      }
+      totalRoomsUnread = count;
+      updateAllGlobalBadges();
     });
 
-    updateGlobalBadges(totalUnreadReplies);
-  });
-}
+    // Listener 2: Inbox (Private Friends)
+    onValue(ref(db, 'friends'), (snapshot) => {
+      let count = 0;
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        let lastSeenMap = JSON.parse(localStorage.getItem('inbox_last_seen') || '{}');
+        if (currentChatId) lastSeenMap[currentChatId] = Date.now();
 
-listenToUnreadReplies();
+        Object.entries(data).forEach(([chatId, friend]) => {
+          // Check if this chat belongs to the current user
+          if (friend.nickname1 !== myNickname && friend.nickname2 !== myNickname) return;
+
+          let chatUnreadCount = 0;
+          let chatLastSeen = lastSeenMap[chatId] || 0;
+
+          if (friend.messages) {
+            Object.values(friend.messages).forEach(m => {
+              // Count messages not sent by me and after my last seen time
+              if (m.nickname !== myNickname && m.timestamp > chatLastSeen) {
+                chatUnreadCount++;
+              }
+            });
+          }
+          if (chatId !== currentChatId) {
+            count += chatUnreadCount;
+          }
+        });
+      }
+      totalInboxUnread = count;
+      updateAllGlobalBadges();
+    });
+  }
+
+  listenToAllUnreadData();
+}
 </script>
