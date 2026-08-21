@@ -1,0 +1,882 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Air Gesture OS</title>
+<style>
+  :root{
+    --bg-void:#04040a;
+    --bg-deep:#0a0b16;
+    --glass:rgba(20,22,38,0.55);
+    --glass-light:rgba(255,255,255,0.06);
+    --border-glow:rgba(140,180,255,0.35);
+    --cyan:#5ee7ff;
+    --violet:#a78bfa;
+    --pink:#ff7ad9;
+    --gold:#ffd166;
+    --text:#eef1ff;
+    --text-dim:#9aa3c7;
+    --danger:#ff5f7e;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;height:100%;overflow:hidden;background:var(--bg-void);font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display',Inter,sans-serif;}
+
+  #bg-glow{position:fixed;inset:0;z-index:0;background:
+    radial-gradient(circle at 15% 20%, rgba(94,231,255,0.16), transparent 40%),
+    radial-gradient(circle at 85% 15%, rgba(167,139,250,0.18), transparent 45%),
+    radial-gradient(circle at 50% 90%, rgba(255,122,217,0.10), transparent 50%),
+    linear-gradient(180deg, var(--bg-void), var(--bg-deep));
+    animation:drift 18s ease-in-out infinite alternate;
+  }
+  @keyframes drift{
+    0%{filter:hue-rotate(0deg) brightness(1);}
+    100%{filter:hue-rotate(20deg) brightness(1.08);}
+  }
+
+  #video{position:fixed;top:0;left:0;width:100vw;height:100vh;object-fit:cover;transform:scaleX(-1);z-index:1;opacity:0.92;}
+  #handCanvas{position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:3;transform:scaleX(-1);pointer-events:none;}
+  #drawCanvas{position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:2;transform:scaleX(-1);pointer-events:none;}
+  #magicCanvas{position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:4;transform:scaleX(-1);pointer-events:none;}
+
+  #status{
+    position:fixed;top:14px;left:50%;transform:translateX(-50%);
+    color:var(--text);z-index:50;background:var(--glass);backdrop-filter:blur(18px) saturate(160%);
+    -webkit-backdrop-filter:blur(18px) saturate(160%);
+    padding:8px 18px;border-radius:999px;font-size:12.5px;letter-spacing:0.02em;
+    border:1px solid var(--border-glow);box-shadow:0 4px 24px rgba(0,0,0,0.35);
+    display:flex;align-items:center;gap:8px;font-weight:500;
+  }
+  #status .dot{width:7px;height:7px;border-radius:50%;background:var(--cyan);box-shadow:0 0 8px var(--cyan);animation:pulse 1.6s ease-in-out infinite;}
+  #fpsTag{color:var(--text-dim);font-size:11px;border-left:1px solid rgba(255,255,255,0.15);padding-left:8px;}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:0.4;transform:scale(0.7);}}
+
+  #dock{
+    position:fixed;left:18px;top:50%;transform:translateY(-50%);z-index:40;
+    display:flex;flex-direction:column;gap:12px;padding:14px 10px;
+    background:var(--glass);backdrop-filter:blur(24px) saturate(180%);-webkit-backdrop-filter:blur(24px) saturate(180%);
+    border-radius:28px;border:1px solid rgba(255,255,255,0.12);
+    box-shadow:0 8px 32px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.08);
+    max-height:88vh;overflow-y:auto;scrollbar-width:none;
+  }
+  #dock::-webkit-scrollbar{display:none;}
+  .app-btn{
+    width:56px;height:56px;border-radius:18px;background:var(--glass-light);
+    border:1.5px solid rgba(255,255,255,0.14);color:var(--text);
+    display:flex;align-items:center;justify-content:center;cursor:pointer;flex:0 0 auto;
+    transition:transform 0.18s ease, border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+    position:relative;
+  }
+  .app-btn svg{width:25px;height:25px;stroke:var(--text);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
+  .app-btn:hover{transform:translateX(3px);}
+  .app-btn.hover-target{border-color:var(--pink);box-shadow:0 0 18px rgba(255,122,217,0.5);transform:scale(1.08);}
+  .app-btn.active-btn{background:linear-gradient(135deg,var(--cyan),var(--violet));border-color:transparent;box-shadow:0 0 22px rgba(94,231,255,0.55);}
+  .app-btn.active-btn svg{stroke:#04040a;}
+  .app-btn .swatch{position:absolute;bottom:5px;right:5px;width:11px;height:11px;border-radius:50%;border:1.5px solid rgba(255,255,255,0.7);}
+
+  #palette{
+    position:fixed;left:94px;top:50%;transform:translateY(-50%) scale(0.9);z-index:41;
+    display:flex;flex-direction:column;gap:10px;padding:10px;
+    background:var(--glass);backdrop-filter:blur(20px);border-radius:20px;border:1px solid rgba(255,255,255,0.12);
+    box-shadow:0 8px 28px rgba(0,0,0,0.4);opacity:0;pointer-events:none;transition:opacity 0.25s ease, transform 0.25s ease;
+  }
+  #palette.open{opacity:1;transform:translateY(-50%) scale(1);}
+  .swatch-btn{width:32px;height:32px;border-radius:50%;border:2px solid rgba(255,255,255,0.5);cursor:pointer;transition:transform 0.15s ease;}
+  .swatch-btn:hover, .swatch-btn.hover-target{transform:scale(1.3);border-color:#fff;}
+
+  .glass-win{
+    position:fixed;min-width:220px;min-height:160px;z-index:30;
+    background:var(--glass);backdrop-filter:blur(26px) saturate(180%);-webkit-backdrop-filter:blur(26px) saturate(180%);
+    border-radius:18px;border:1px solid rgba(255,255,255,0.14);
+    box-shadow:0 20px 60px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.1);
+    display:flex;flex-direction:column;overflow:hidden;transition:box-shadow 0.15s ease;
+  }
+  .glass-win.zoom-target, .glass-win.palm-target{box-shadow:0 0 0 2px var(--pink), 0 20px 60px rgba(0,0,0,0.55);}
+  .win-bar{
+    height:38px;flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:0 12px;
+    background:rgba(255,255,255,0.05);cursor:grab;border-bottom:1px solid rgba(255,255,255,0.08);
+    -webkit-user-select:none;user-select:none;
+  }
+  .win-bar.grabbed{cursor:grabbing;background:rgba(94,231,255,0.12);}
+  .win-dot{width:11px;height:11px;border-radius:50%;cursor:pointer;}
+  .dot-close{background:var(--danger);}
+  .dot-min{background:var(--gold);}
+  .dot-full{background:#5be37b;}
+  .win-title{color:var(--text-dim);font-size:12px;margin-left:4px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .win-body{flex:1;position:relative;overflow:hidden;background:rgba(0,0,0,0.25);}
+  .win-body img, .win-body video{width:100%;height:100%;object-fit:contain;}
+  .win-resize{position:absolute;right:0;bottom:0;width:26px;height:26px;cursor:nwse-resize;z-index:5;}
+  .win-resize::after{content:'';position:absolute;right:6px;bottom:6px;width:10px;height:10px;border-right:2px solid rgba(255,255,255,0.4);border-bottom:2px solid rgba(255,255,255,0.4);border-radius:2px;}
+  .win-resize.hover-target::after{border-color:var(--pink);}
+  .win-bar.hover-target{background:rgba(255,122,217,0.18);}
+  .win-dot.hover-target{transform:scale(1.35);box-shadow:0 0 10px currentColor;}
+
+  #urlbar{display:flex;gap:6px;padding:8px;border-bottom:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.03);}
+  #urlbar input{flex:1;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.14);border-radius:10px;color:var(--text);padding:7px 10px;font-size:13px;outline:none;}
+  #urlbar button{background:linear-gradient(135deg,var(--cyan),var(--violet));border:none;border-radius:10px;color:#04040a;padding:0 12px;font-weight:700;font-size:12px;cursor:pointer;}
+  #frameNote{position:absolute;bottom:6px;left:10px;right:10px;color:var(--text-dim);font-size:10.5px;text-align:center;pointer-events:none;opacity:0.8;}
+
+  #fileInput{display:none;}
+
+  #hint{
+    position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:50;color:var(--text-dim);
+    font-size:11px;background:var(--glass);backdrop-filter:blur(16px);padding:7px 16px;border-radius:999px;
+    border:1px solid rgba(255,255,255,0.1);text-align:center;max-width:92vw;
+  }
+
+  #gestureBadge{
+    position:fixed;z-index:45;pointer-events:none;transform:translate(-50%,-140%);
+    background:rgba(10,11,22,0.75);backdrop-filter:blur(10px);color:var(--text);
+    padding:4px 11px;border-radius:999px;font-size:11px;font-weight:600;letter-spacing:0.02em;
+    border:1px solid rgba(255,255,255,0.18);opacity:0;transition:opacity 0.15s ease;white-space:nowrap;
+  }
+  #gestureBadge.show{opacity:1;}
+  #gestureBadge.mode-pinch{color:var(--pink);}
+  #gestureBadge.mode-zoom{color:var(--gold);}
+  #gestureBadge.mode-palm{color:#5be37b;}
+  #gestureBadge.mode-point{color:var(--cyan);}
+
+  ::selection{background:rgba(94,231,255,0.35);}
+</style>
+</head>
+<body>
+
+  <div id="bg-glow"></div>
+  <div id="status"><span class="dot"></span><span id="statusText">Starting camera & AI...</span><span id="fpsTag">-- fps</span></div>
+  <div id="gestureBadge"></div>
+
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="drawCanvas"></canvas>
+  <canvas id="magicCanvas"></canvas>
+  <canvas id="handCanvas"></canvas>
+
+  <div id="dock">
+    <div class="app-btn active-btn" data-action="draw" id="btn-draw" title="Draw">
+      <svg viewBox="0 0 24 24"><path d="M3 21l4-1 11-11-3-3L4 17l-1 4z"/><path d="M14 6l3 3"/></svg>
+    </div>
+    <div class="app-btn" data-action="palette" id="btn-palette" title="Colors">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="9" cy="10" r="1"/><circle cx="15" cy="10" r="1"/><circle cx="9" cy="14" r="1"/><path d="M12 21c-1 0-1.5-1-1-2s1.5-1.2 1-2"/></svg>
+      <span class="swatch" id="colorSwatch" style="background:#5ee7ff"></span>
+    </div>
+    <div class="app-btn" data-action="magic" id="btn-magic" title="Magic Trail">
+      <svg viewBox="0 0 24 24"><path d="M5 3v4M3 5h4M19 13v4M17 15h4"/><path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2 2-5z"/></svg>
+    </div>
+    <div class="app-btn" data-action="clear" id="btn-clear" title="Clear">
+      <svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/></svg>
+    </div>
+    <div class="app-btn" data-action="gallery" id="btn-gallery" title="Add Photo / Video">
+      <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="2"/><path d="M21 17l-6-5-4 3-3-2-5 4"/></svg>
+    </div>
+    <div class="app-btn" data-action="browser" id="btn-browser" title="Browser">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 010 18M12 3a15 15 0 000 18"/></svg>
+    </div>
+    <div class="app-btn" data-action="camera" id="btn-camera" title="Flip Camera" style="display:none;">
+      <svg viewBox="0 0 24 24"><path d="M4 8a2 2 0 012-2h2l1.5-2h5L16 6h2a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2z"/><circle cx="12" cy="13" r="3.5"/><path d="M6 4l-2 2M18 4l2 2"/></svg>
+    </div>
+    <div class="app-btn" data-action="lite" id="btn-lite" title="Lite Mode (for slower phones)">
+      <svg viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/></svg>
+    </div>
+  </div>
+
+  <div id="palette">
+    <div class="swatch-btn" data-color="#5ee7ff" style="background:#5ee7ff"></div>
+    <div class="swatch-btn" data-color="#a78bfa" style="background:#a78bfa"></div>
+    <div class="swatch-btn" data-color="#ff7ad9" style="background:#ff7ad9"></div>
+    <div class="swatch-btn" data-color="#ffd166" style="background:#ffd166"></div>
+    <div class="swatch-btn" data-color="#5be37b" style="background:#5be37b"></div>
+    <div class="swatch-btn" data-color="#ff5f7e" style="background:#ff5f7e"></div>
+    <div class="swatch-btn" data-color="#ffffff" style="background:#ffffff"></div>
+  </div>
+
+  <input type="file" id="fileInput" accept="image/*,video/*" multiple>
+
+  <div id="hint">☝ point &amp; flick to click &middot; 🤏 pinch to draw / drag &middot; ✌ two fingers to zoom media &middot; 🖐 open palm to shove a window &middot; buttons also work by touch</div>
+
+<script type="module">
+import { HandLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0";
+
+const video = document.getElementById("video");
+const drawCanvas = document.getElementById("drawCanvas");
+const magicCanvas = document.getElementById("magicCanvas");
+const handCanvas = document.getElementById("handCanvas");
+const drawCtx = drawCanvas.getContext("2d");
+const magicCtx = magicCanvas.getContext("2d");
+const handCtx = handCanvas.getContext("2d");
+const statusText = document.getElementById("statusText");
+const fpsTag = document.getElementById("fpsTag");
+const dock = document.getElementById("dock");
+const palette = document.getElementById("palette");
+const fileInput = document.getElementById("fileInput");
+const cameraBtn = document.getElementById("btn-camera");
+const liteBtn = document.getElementById("btn-lite");
+const gestureBadge = document.getElementById("gestureBadge");
+
+let handLandmarker = null;
+let currentStream = null;
+let facingMode = "user";
+let mode = "draw";
+let magicOn = false;
+let liteMode = false;
+let paletteOpen = false;
+let currentColor = "#5ee7ff";
+let lastX = 0, lastY = 0, haveLast = false;
+let wasPinching = false;
+let grabbed = null;
+let particles = [];
+let windows = [];
+let winZ = 30;
+let frameTick = 0;
+let fpsHistory = [];
+let lastFpsSample = performance.now();
+let indexRatioPrev = 1;
+let lastTapTime = 0;
+
+const COLORS = ["#5ee7ff","#a78bfa","#ff7ad9","#ffd166","#5be37b","#ff5f7e","#ffffff"];
+
+const HAND_CONNECTIONS = [
+  [0,1],[1,2],[2,3],[3,4],
+  [0,5],[5,6],[6,7],[7,8],
+  [5,9],[9,10],[10,11],[11,12],
+  [9,13],[13,14],[14,15],[15,16],
+  [13,17],[17,18],[18,19],[19,20],
+  [0,17]
+];
+
+const FINGER_DEFS = [
+  { tip:4, ref:2 },
+  { tip:8, ref:6 },
+  { tip:12, ref:10 },
+  { tip:16, ref:14 },
+  { tip:20, ref:18 }
+];
+
+function dist(a, b){
+  return Math.hypot(a.x - b.x, a.y - b.y, (a.z || 0) - (b.z || 0));
+}
+
+function getFingerStates(lm){
+  const wrist = lm[0];
+  return FINGER_DEFS.map(f => dist(lm[f.tip], wrist) > dist(lm[f.ref], wrist) * 1.05);
+}
+
+function resizeCanvases(){
+  [drawCanvas, magicCanvas, handCanvas].forEach(c=>{
+    c.width = window.innerWidth;
+    c.height = window.innerHeight;
+  });
+}
+window.addEventListener("resize", resizeCanvases);
+
+async function startApp(){
+  await enumerateCameraSupport();
+  await openCamera(facingMode);
+}
+
+async function enumerateCameraSupport(){
+  try{
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const cams = devices.filter(d=>d.kind === "videoinput");
+    if(cams.length > 1){
+      cameraBtn.style.display = "flex";
+    }
+  }catch(e){}
+}
+
+async function openCamera(mode){
+  try{
+    if(currentStream){
+      currentStream.getTracks().forEach(t=>t.stop());
+    }
+    const w = liteMode ? 640 : 1280;
+    const h = liteMode ? 480 : 720;
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: mode, width:{ideal:w}, height:{ideal:h} }
+    });
+    currentStream = stream;
+    video.srcObject = stream;
+    video.onloadeddata = async ()=>{
+      resizeCanvases();
+      if(!handLandmarker){
+        statusText.textContent = "Loading AI model...";
+        await loadAI();
+      }
+    };
+  }catch(err){
+    statusText.textContent = "Camera error: " + err.message;
+  }
+}
+
+async function loadAI(){
+  try{
+    const vision = await FilesetResolver.forVisionTasks(
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
+    );
+    handLandmarker = await HandLandmarker.createFromOptions(vision, {
+      baseOptions:{
+        modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+        delegate: "GPU"
+      },
+      runningMode: "VIDEO",
+      numHands: 1
+    });
+    statusText.textContent = "Ready. Point, pinch, zoom, shove.";
+    predict();
+  }catch(err){
+    statusText.textContent = "AI load failed: " + err.message;
+  }
+}
+
+function setMode(m){
+  mode = m;
+  document.getElementById("btn-draw").classList.toggle("active-btn", m === "draw");
+}
+
+function setColor(c){
+  currentColor = c;
+  document.getElementById("colorSwatch").style.background = c;
+}
+
+function togglePalette(force){
+  paletteOpen = force !== undefined ? force : !paletteOpen;
+  palette.classList.toggle("open", paletteOpen);
+}
+
+function toggleMagic(){
+  magicOn = !magicOn;
+  document.getElementById("btn-magic").classList.toggle("active-btn", magicOn);
+}
+
+function clearDrawing(){
+  drawCtx.clearRect(0,0,drawCanvas.width,drawCanvas.height);
+  statusText.textContent = "Canvas cleared";
+}
+
+function flipCamera(){
+  facingMode = facingMode === "user" ? "environment" : "user";
+  openCamera(facingMode);
+}
+
+function toggleLite(){
+  liteMode = !liteMode;
+  liteBtn.classList.toggle("active-btn", liteMode);
+  statusText.textContent = liteMode ? "Lite mode on: lower res, lighter effects" : "Lite mode off";
+  openCamera(facingMode);
+}
+
+document.getElementById("btn-draw").addEventListener("click", ()=>setMode("draw"));
+document.getElementById("btn-palette").addEventListener("click", ()=>togglePalette());
+document.getElementById("btn-magic").addEventListener("click", toggleMagic);
+document.getElementById("btn-clear").addEventListener("click", clearDrawing);
+document.getElementById("btn-gallery").addEventListener("click", ()=>fileInput.click());
+document.getElementById("btn-browser").addEventListener("click", ()=>createBrowserWindow());
+cameraBtn.addEventListener("click", flipCamera);
+liteBtn.addEventListener("click", toggleLite);
+
+document.querySelectorAll(".swatch-btn").forEach(sw=>{
+  sw.addEventListener("click", ()=>setColor(sw.dataset.color));
+});
+
+fileInput.addEventListener("change", (e)=>{
+  const files = Array.from(e.target.files || []);
+  files.forEach((file, i)=>{
+    const url = URL.createObjectURL(file);
+    const isVideo = file.type.startsWith("video");
+    createMediaWindow(url, isVideo, 120 + i*30, 120 + i*30);
+  });
+  fileInput.value = "";
+});
+
+function createWindowShell(x, y, w, h, title){
+  const el = document.createElement("div");
+  el.className = "glass-win";
+  el.style.left = x + "px";
+  el.style.top = y + "px";
+  el.style.width = w + "px";
+  el.style.height = h + "px";
+  el.style.zIndex = ++winZ;
+
+  const bar = document.createElement("div");
+  bar.className = "win-bar";
+  bar.innerHTML =
+    '<span class="win-dot dot-close" data-role="close"></span>' +
+    '<span class="win-dot dot-min" data-role="min"></span>' +
+    '<span class="win-dot dot-full" data-role="full"></span>' +
+    '<span class="win-title">' + title + '</span>';
+  el.appendChild(bar);
+
+  const body = document.createElement("div");
+  body.className = "win-body";
+  el.appendChild(body);
+
+  const resizer = document.createElement("div");
+  resizer.className = "win-resize";
+  el.appendChild(resizer);
+
+  document.body.appendChild(el);
+
+  bar.querySelector('[data-role="close"]').addEventListener("click", ()=>closeWindow(el));
+  bar.querySelector('[data-role="min"]').addEventListener("click", ()=>{
+    el.style.height = el.dataset.minimized ? el.dataset.prevH : "38px";
+    el.dataset.minimized = el.dataset.minimized ? "" : "1";
+    if(!el.dataset.minimized) el.dataset.prevH = el.style.height;
+  });
+  bar.querySelector('[data-role="full"]').addEventListener("click", ()=>{
+    el.style.left = "6vw"; el.style.top = "6vh"; el.style.width = "88vw"; el.style.height = "82vh";
+  });
+
+  enableNativeDrag(el, bar);
+  enableNativeResize(el, resizer);
+
+  const rec = { el, bar, body, resizer, isMedia:false };
+  windows.push(rec);
+  el.addEventListener("pointerdown", ()=>{ el.style.zIndex = ++winZ; });
+  return rec;
+}
+
+function closeWindow(el){
+  windows = windows.filter(w => w.el !== el);
+  el.remove();
+}
+
+function enableNativeDrag(el, bar){
+  let dragging = false, ox=0, oy=0;
+  bar.addEventListener("pointerdown", (e)=>{
+    if(e.target.classList.contains("win-dot")) return;
+    dragging = true;
+    ox = e.clientX - el.offsetLeft;
+    oy = e.clientY - el.offsetTop;
+    bar.setPointerCapture(e.pointerId);
+  });
+  bar.addEventListener("pointermove", (e)=>{
+    if(!dragging) return;
+    el.style.left = (e.clientX - ox) + "px";
+    el.style.top = (e.clientY - oy) + "px";
+  });
+  bar.addEventListener("pointerup", ()=>dragging=false);
+}
+
+function enableNativeResize(el, handle){
+  let resizing = false, ox=0, oy=0, sw=0, sh=0;
+  handle.addEventListener("pointerdown", (e)=>{
+    resizing = true;
+    ox = e.clientX; oy = e.clientY;
+    sw = el.offsetWidth; sh = el.offsetHeight;
+    handle.setPointerCapture(e.pointerId);
+    e.stopPropagation();
+  });
+  handle.addEventListener("pointermove", (e)=>{
+    if(!resizing) return;
+    el.style.width = Math.max(220, sw + (e.clientX - ox)) + "px";
+    el.style.height = Math.max(160, sh + (e.clientY - oy)) + "px";
+  });
+  handle.addEventListener("pointerup", ()=>resizing=false);
+}
+
+function createMediaWindow(url, isVideo, x, y){
+  const rec = createWindowShell(x, y, 320, 260, isVideo ? "Video" : "Photo");
+  rec.isMedia = true;
+  if(isVideo){
+    const v = document.createElement("video");
+    v.src = url; v.controls = true; v.loop = true; v.muted = true; v.autoplay = true;
+    rec.body.appendChild(v);
+  }else{
+    const img = document.createElement("img");
+    img.src = url;
+    rec.body.appendChild(img);
+  }
+}
+
+function createBrowserWindow(){
+  const rec = createWindowShell(140, 90, 420, 380, "Browser");
+  const barWrap = document.createElement("div");
+  barWrap.id = "urlbar";
+  barWrap.innerHTML = '<input type="text" value="https://en.wikipedia.org" placeholder="Enter a URL"><button>Go</button>';
+  rec.body.parentElement.insertBefore(barWrap, rec.body);
+
+  const iframe = document.createElement("iframe");
+  iframe.style.cssText = "width:100%;height:100%;border:0;background:#0a0b16;";
+  rec.body.appendChild(iframe);
+
+  const note = document.createElement("div");
+  note.id = "frameNote";
+  note.textContent = "Some sites block embedding for security — use the open icon if a page stays blank.";
+  rec.body.appendChild(note);
+
+  const input = barWrap.querySelector("input");
+  const goBtn = barWrap.querySelector("button");
+  function navigate(){
+    let val = input.value.trim();
+    if(!/^https?:\/\//i.test(val)) val = "https://" + val;
+    iframe.src = val;
+  }
+  goBtn.addEventListener("click", navigate);
+  input.addEventListener("keydown", (e)=>{ if(e.key === "Enter") navigate(); });
+  navigate();
+}
+
+function findPinchTarget(sx, sy){
+  for(let i = windows.length - 1; i >= 0; i--){
+    const w = windows[i];
+    const rr = w.resizer.getBoundingClientRect();
+    if(sx>=rr.left && sx<=rr.right && sy>=rr.top && sy<=rr.bottom){
+      return { type:"resize", win:w };
+    }
+    const br = w.bar.getBoundingClientRect();
+    if(sx>=br.left && sx<=br.right && sy>=br.top && sy<=br.bottom){
+      const closeR = w.bar.querySelector('[data-role="close"]').getBoundingClientRect();
+      if(sx>=closeR.left && sx<=closeR.right && sy>=closeR.top && sy<=closeR.bottom){
+        return { type:"close", win:w };
+      }
+      return { type:"drag", win:w };
+    }
+  }
+  return null;
+}
+
+function findWindowAt(sx, sy, mediaOnly){
+  for(let i = windows.length - 1; i >= 0; i--){
+    const w = windows[i];
+    if(mediaOnly && !w.isMedia) continue;
+    const r = w.el.getBoundingClientRect();
+    if(sx>=r.left && sx<=r.right && sy>=r.top && sy<=r.bottom){
+      return w;
+    }
+  }
+  return null;
+}
+
+function clearWindowHighlights(){
+  windows.forEach(w=>{
+    w.bar.classList.remove("hover-target");
+    w.resizer.classList.remove("hover-target");
+    w.el.classList.remove("zoom-target","palm-target");
+    w.bar.querySelectorAll(".win-dot").forEach(d=>d.classList.remove("hover-target"));
+  });
+}
+
+function highlightPinchTarget(sx, sy){
+  clearWindowHighlights();
+  const target = findPinchTarget(sx, sy);
+  if(target){
+    if(target.type === "resize") target.win.resizer.classList.add("hover-target");
+    else if(target.type === "close") target.win.bar.querySelector('[data-role="close"]').classList.add("hover-target");
+    else target.win.bar.classList.add("hover-target");
+  }
+  return target;
+}
+
+function checkDockAndPalette(sx, sy, trigger){
+  let hit = null;
+  document.querySelectorAll(".app-btn").forEach(btn=>{
+    const r = btn.getBoundingClientRect();
+    const inside = sx>=r.left && sx<=r.right && sy>=r.top && sy<=r.bottom;
+    btn.classList.toggle("hover-target", inside);
+    if(inside) hit = { kind:"dock", el:btn };
+  });
+  if(paletteOpen){
+    document.querySelectorAll(".swatch-btn").forEach(sw=>{
+      const r = sw.getBoundingClientRect();
+      const inside = sx>=r.left && sx<=r.right && sy>=r.top && sy<=r.bottom;
+      sw.classList.toggle("hover-target", inside);
+      if(inside) hit = { kind:"swatch", el:sw };
+    });
+  }
+  if(hit && trigger){
+    hit.el.click();
+  }
+  return hit;
+}
+
+function spawnParticle(x, y){
+  const hue = COLORS[Math.floor(Math.random()*COLORS.length)];
+  particles.push({
+    x, y,
+    vx: (Math.random()-0.5)*1.4,
+    vy: (Math.random()-0.5)*1.4 - 0.6,
+    life: 1,
+    size: 3 + Math.random()*4,
+    color: hue
+  });
+  const cap = liteMode ? 90 : 220;
+  if(particles.length > cap) particles.splice(0, particles.length - cap);
+}
+
+function renderMagic(){
+  magicCtx.clearRect(0,0,magicCanvas.width, magicCanvas.height);
+  magicCtx.globalCompositeOperation = "lighter";
+  particles.forEach(p=>{
+    p.x += p.vx; p.y += p.vy; p.life -= 0.02;
+    magicCtx.globalAlpha = Math.max(p.life, 0);
+    magicCtx.fillStyle = p.color;
+    if(!liteMode){ magicCtx.shadowColor = p.color; magicCtx.shadowBlur = 14; }
+    magicCtx.beginPath();
+    magicCtx.arc(p.x, p.y, p.size * Math.max(p.life,0), 0, Math.PI*2);
+    magicCtx.fill();
+  });
+  magicCtx.globalAlpha = 1;
+  magicCtx.globalCompositeOperation = "source-over";
+  particles = particles.filter(p=>p.life > 0);
+}
+
+function drawHandSkeleton(landmarks, cursorColor, ringScale){
+  handCtx.clearRect(0,0,handCanvas.width, handCanvas.height);
+  if(!landmarks) return;
+  const pts = landmarks.map(l => ({ x: l.x * handCanvas.width, y: l.y * handCanvas.height }));
+
+  handCtx.lineWidth = 2.2;
+  handCtx.lineCap = "round";
+  const grad = handCtx.createLinearGradient(0,0,handCanvas.width,handCanvas.height);
+  grad.addColorStop(0, "#5ee7ff");
+  grad.addColorStop(1, "#a78bfa");
+  handCtx.strokeStyle = grad;
+  if(!liteMode){ handCtx.shadowColor = "#5ee7ff"; handCtx.shadowBlur = 10; }
+
+  HAND_CONNECTIONS.forEach(([a,b])=>{
+    handCtx.beginPath();
+    handCtx.moveTo(pts[a].x, pts[a].y);
+    handCtx.lineTo(pts[b].x, pts[b].y);
+    handCtx.stroke();
+  });
+
+  pts.forEach((p, idx)=>{
+    handCtx.beginPath();
+    handCtx.fillStyle = idx === 8 ? cursorColor : "rgba(238,241,255,0.85)";
+    handCtx.shadowBlur = liteMode ? 0 : (idx === 8 ? 16 : 4);
+    handCtx.arc(p.x, p.y, idx === 8 ? 6 : 3, 0, Math.PI*2);
+    handCtx.fill();
+  });
+
+  const tip = pts[8];
+  handCtx.beginPath();
+  handCtx.strokeStyle = cursorColor;
+  handCtx.lineWidth = 2;
+  handCtx.shadowBlur = 0;
+  handCtx.arc(tip.x, tip.y, ringScale, 0, Math.PI*2);
+  handCtx.stroke();
+}
+
+function setGestureBadge(text, sx, sy, cls){
+  gestureBadge.textContent = text;
+  gestureBadge.className = cls ? ("show mode-" + cls) : "show";
+  gestureBadge.style.left = sx + "px";
+  gestureBadge.style.top = sy + "px";
+}
+
+function hideGestureBadge(){
+  gestureBadge.classList.remove("show");
+}
+
+function updateFPS(now){
+  fpsHistory.push(now);
+  while(fpsHistory.length && fpsHistory[0] < now - 1000) fpsHistory.shift();
+  if(now - lastFpsSample > 400){
+    lastFpsSample = now;
+    fpsTag.textContent = fpsHistory.length + " fps";
+  }
+}
+
+function releaseGrab(){
+  if(grabbed){
+    if(grabbed.win){
+      grabbed.win.bar.classList.remove("grabbed");
+      grabbed.win.el.classList.remove("zoom-target","palm-target");
+    }
+    grabbed = null;
+  }
+}
+
+function resetHandState(){
+  handCtx.clearRect(0,0,handCanvas.width, handCanvas.height);
+  haveLast = false;
+  wasPinching = false;
+  releaseGrab();
+  hideGestureBadge();
+  document.querySelectorAll(".app-btn, .swatch-btn").forEach(el=>el.classList.remove("hover-target"));
+  clearWindowHighlights();
+}
+
+function predict(){
+  let lastVideoTime = -1;
+
+  function loop(){
+    frameTick++;
+    const skip = liteMode && (frameTick % 2 === 0);
+
+    if(!skip && video.currentTime !== lastVideoTime && handLandmarker){
+      lastVideoTime = video.currentTime;
+      const now = performance.now();
+      const results = handLandmarker.detectForVideo(video, now);
+      updateFPS(now);
+
+      if(results.landmarks && results.landmarks[0]){
+        const lm = results.landmarks[0];
+        const indexTip = lm[8];
+        const middleTip = lm[12];
+        const thumbTip = lm[4];
+
+        const screenX = (1 - indexTip.x) * window.innerWidth;
+        const screenY = indexTip.y * window.innerHeight;
+
+        const pinchDist = dist(indexTip, thumbTip);
+        const isPinching = pinchDist < 0.06;
+        const pinchStart = isPinching && !wasPinching;
+        const pinchEnd = !isPinching && wasPinching;
+
+        const ext = getFingerStates(lm);
+        const fingerCount = ext.filter(Boolean).length;
+        const isOneFinger = !isPinching && ext[1] && !ext[2] && !ext[3] && !ext[4];
+        const isTwoFinger = !isPinching && ext[1] && ext[2] && !ext[3] && !ext[4];
+        const isFiveFinger = !isPinching && fingerCount >= 5;
+
+        const indexRatio = dist(indexTip, lm[0]) / dist(lm[6], lm[0]);
+        const curled = (indexRatioPrev - indexRatio) > 0.55 && indexRatioPrev > 1.2;
+        const tapTrigger = isOneFinger && curled && (performance.now() - lastTapTime > 300);
+        if(tapTrigger) lastTapTime = performance.now();
+        indexRatioPrev = indexRatio;
+
+        let cursorColor = "#5ee7ff";
+        let ringScale = 20;
+
+        if(isPinching){
+          cursorColor = "#ff7ad9"; ringScale = 12;
+          setGestureBadge("Pinch · draw / drag", screenX, screenY, "pinch");
+        }else if(isTwoFinger){
+          cursorColor = "#ffd166"; ringScale = 16;
+          setGestureBadge("Two fingers · zoom", screenX, screenY, "zoom");
+        }else if(isFiveFinger){
+          cursorColor = "#5be37b"; ringScale = 26;
+          setGestureBadge("Open palm · shove", screenX, screenY, "palm");
+        }else if(isOneFinger){
+          setGestureBadge("Point · flick to tap", screenX, screenY, "point");
+        }else{
+          hideGestureBadge();
+        }
+
+        drawHandSkeleton(lm, cursorColor, ringScale);
+
+        if(magicOn){
+          spawnParticle(screenX, screenY);
+        }
+
+        const clickTrigger = pinchStart || tapTrigger;
+        const dockHit = checkDockAndPalette(screenX, screenY, clickTrigger);
+
+        if(isPinching){
+          const pinchTarget = grabbed ? null : highlightPinchTarget(screenX, screenY);
+
+          if(pinchStart && !dockHit && pinchTarget){
+            if(pinchTarget.type === "close"){
+              closeWindow(pinchTarget.win.el);
+            }else{
+              grabbed = { kind:"pinch", type: pinchTarget.type, win: pinchTarget.win,
+                startSX: screenX, startSY: screenY,
+                startLeft: pinchTarget.win.el.offsetLeft, startTop: pinchTarget.win.el.offsetTop,
+                startW: pinchTarget.win.el.offsetWidth, startH: pinchTarget.win.el.offsetHeight };
+              pinchTarget.win.el.style.zIndex = ++winZ;
+              pinchTarget.win.bar.classList.add("grabbed");
+            }
+          }
+
+          if(grabbed && grabbed.kind === "pinch"){
+            const dx = screenX - grabbed.startSX;
+            const dy = screenY - grabbed.startSY;
+            if(grabbed.type === "drag"){
+              grabbed.win.el.style.left = (grabbed.startLeft + dx) + "px";
+              grabbed.win.el.style.top = (grabbed.startTop + dy) + "px";
+            }else if(grabbed.type === "resize"){
+              grabbed.win.el.style.width = Math.max(220, grabbed.startW + dx) + "px";
+              grabbed.win.el.style.height = Math.max(160, grabbed.startH + dy) + "px";
+            }
+          }
+
+          if(mode === "draw" && !grabbed && !dockHit){
+            const brush = 3 + (0.06 - Math.min(pinchDist, 0.06)) * 160;
+            drawCtx.strokeStyle = currentColor;
+            drawCtx.lineWidth = brush;
+            drawCtx.lineCap = "round";
+            drawCtx.lineJoin = "round";
+            if(!liteMode){ drawCtx.shadowColor = currentColor; drawCtx.shadowBlur = 12; } else { drawCtx.shadowBlur = 0; }
+            drawCtx.beginPath();
+            drawCtx.moveTo(haveLast ? lastX : screenX, haveLast ? lastY : screenY);
+            drawCtx.lineTo(screenX, screenY);
+            drawCtx.stroke();
+            haveLast = true;
+          }else{
+            haveLast = false;
+          }
+        }
+
+        else if(isTwoFinger){
+          haveLast = false;
+          const midX = (screenX + ((1 - middleTip.x) * window.innerWidth)) / 2;
+          const midY = (screenY + (middleTip.y * window.innerHeight)) / 2;
+          const spread = dist(indexTip, middleTip);
+
+          if(!grabbed){
+            const target = findWindowAt(midX, midY, true);
+            clearWindowHighlights();
+            if(target){
+              target.el.classList.add("zoom-target");
+              grabbed = { kind:"zoom", win: target, startSpread: spread,
+                startW: target.el.offsetWidth, startH: target.el.offsetHeight };
+              target.el.style.zIndex = ++winZ;
+            }
+          }else if(grabbed.kind === "zoom"){
+            const scale = Math.max(0.3, Math.min(3.5, spread / grabbed.startSpread));
+            grabbed.win.el.style.width = Math.max(140, grabbed.startW * scale) + "px";
+            grabbed.win.el.style.height = Math.max(100, grabbed.startH * scale) + "px";
+          }
+        }
+
+        else if(isFiveFinger){
+          haveLast = false;
+          const palmPts = [0,5,9,13,17].map(i => lm[i]);
+          const palmX = (1 - (palmPts.reduce((s,p)=>s+p.x,0)/5)) * window.innerWidth;
+          const palmY = (palmPts.reduce((s,p)=>s+p.y,0)/5) * window.innerHeight;
+
+          if(!grabbed){
+            const target = findWindowAt(palmX, palmY, false);
+            clearWindowHighlights();
+            if(target){
+              target.el.classList.add("palm-target");
+              grabbed = { kind:"palm", win: target, startPX: palmX, startPY: palmY,
+                startLeft: target.el.offsetLeft, startTop: target.el.offsetTop };
+              target.el.style.zIndex = ++winZ;
+            }
+          }else if(grabbed.kind === "palm"){
+            const dx = palmX - grabbed.startPX;
+            const dy = palmY - grabbed.startPY;
+            grabbed.win.el.style.left = (grabbed.startLeft + dx) + "px";
+            grabbed.win.el.style.top = (grabbed.startTop + dy) + "px";
+          }
+        }
+
+        else{
+          haveLast = false;
+          if(!isPinching) releaseGrab();
+        }
+
+        if(pinchEnd) releaseGrab();
+        if(!isTwoFinger && grabbed && grabbed.kind === "zoom") releaseGrab();
+        if(!isFiveFinger && grabbed && grabbed.kind === "palm") releaseGrab();
+
+        lastX = screenX; lastY = screenY;
+        wasPinching = isPinching;
+      }else{
+        resetHandState();
+      }
+    }
+
+    if(magicOn || particles.length){
+      renderMagic();
+    }
+    requestAnimationFrame(loop);
+  }
+  loop();
+}
+
+resizeCanvases();
+startApp();
+</script>
+</body>
+</html>
