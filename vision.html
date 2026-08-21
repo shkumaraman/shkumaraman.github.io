@@ -37,10 +37,9 @@
     100%{filter:hue-rotate(25deg) brightness(1.1);}
   }
 
-  #video{position:fixed;top:0;left:0;width:100vw;height:100vh;object-fit:cover;transform:scaleX(-1);z-index:1;opacity:0.9;}
+  #video{position:fixed;top:0;left:0;width:100vw;height:100vh;object-fit:cover;z-index:1;opacity:0.9;transform:scaleX(-1);}
   #drawCanvas{position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:2;pointer-events:none;}
-  #magicCanvas{position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:3;pointer-events:none;}
-  #handCanvas{position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:4;pointer-events:none;}
+  #handCanvas{position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:3;pointer-events:none;}
 
   #status{
     position:fixed;top:14px;left:50%;transform:translateX(-50%);
@@ -162,7 +161,6 @@
 
   <video id="video" autoplay playsinline muted></video>
   <canvas id="drawCanvas"></canvas>
-  <canvas id="magicCanvas"></canvas>
   <canvas id="handCanvas"></canvas>
 
   <div id="dock">
@@ -175,9 +173,6 @@
     <div class="app-btn" data-action="palette" id="btn-palette" title="Colors">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="9" cy="10" r="1"/><circle cx="15" cy="10" r="1"/><circle cx="9" cy="14" r="1"/><path d="M12 21c-1 0-1.5-1-1-2s1.5-1.2 1-2"/></svg>
       <span class="swatch" id="colorSwatch" style="background:#5ee7ff"></span>
-    </div>
-    <div class="app-btn" data-action="magic" id="btn-magic" title="Magic Trail">
-      <svg viewBox="0 0 24 24"><path d="M5 3v4M3 5h4M19 13v4M17 15h4"/><path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2 2-5z"/></svg>
     </div>
     <div class="app-btn" data-action="clear" id="btn-clear" title="Clear Canvas">
       <svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/></svg>
@@ -215,10 +210,8 @@ import { HandLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@m
 
 const video = document.getElementById("video");
 const drawCanvas = document.getElementById("drawCanvas");
-const magicCanvas = document.getElementById("magicCanvas");
 const handCanvas = document.getElementById("handCanvas");
 const drawCtx = drawCanvas.getContext("2d");
-const magicCtx = magicCanvas.getContext("2d");
 const handCtx = handCanvas.getContext("2d");
 const statusText = document.getElementById("statusText");
 const fpsTag = document.getElementById("fpsTag");
@@ -232,13 +225,11 @@ let handLandmarker = null;
 let currentStream = null;
 let facingMode = "user";
 let mode = "draw";
-let magicOn = false;
 let paletteOpen = false;
 let currentColor = "#5ee7ff";
 let lastX = 0, lastY = 0, haveLast = false;
 let wasPinching = false;
 let grabbed = null;
-let particles = [];
 let windows = [];
 let winZ = 30;
 let fpsHistory = [];
@@ -272,8 +263,6 @@ function playFeedbackSound(type){
     }
   }catch(e){}
 }
-
-const COLORS = ["#5ee7ff","#a78bfa","#ff7ad9","#ffd166","#5be37b","#ff5f7e","#ffffff"];
 
 const HAND_CONNECTIONS = [
   [0,1],[1,2],[2,3],[3,4],
@@ -321,8 +310,11 @@ function getScreenCoords(normX, normY){
     ox = (sw - rw) / 2;
     oy = 0;
   }
+
+  const mappedX = (facingMode === "user") ? (1 - normX) : normX;
+
   return {
-    x: ox + (1 - normX) * rw,
+    x: ox + mappedX * rw,
     y: oy + normY * rh
   };
 }
@@ -339,7 +331,7 @@ function resizeCanvases(){
     tempCtx.drawImage(drawCanvas, 0, 0);
   }
 
-  [drawCanvas, magicCanvas, handCanvas].forEach(c=>{
+  [drawCanvas, handCanvas].forEach(c=>{
     c.width = w;
     c.height = h;
   });
@@ -375,6 +367,7 @@ async function openCamera(mode){
     });
     currentStream = stream;
     video.srcObject = stream;
+    video.style.transform = (mode === "user") ? "scaleX(-1)" : "scaleX(1)";
     video.onloadeddata = async ()=>{
       resizeCanvases();
       if(!handLandmarker){
@@ -425,11 +418,6 @@ function togglePalette(force){
   palette.classList.toggle("open", paletteOpen);
 }
 
-function toggleMagic(){
-  magicOn = !magicOn;
-  document.getElementById("btn-magic").classList.toggle("active-btn", magicOn);
-}
-
 function clearDrawing(){
   drawCtx.clearRect(0,0,drawCanvas.width,drawCanvas.height);
   statusText.textContent = "Canvas Cleared";
@@ -469,7 +457,6 @@ function createRipple(x, y){
 document.getElementById("btn-draw").addEventListener("click", ()=>setMode("draw"));
 document.getElementById("btn-erase").addEventListener("click", ()=>setMode("erase"));
 document.getElementById("btn-palette").addEventListener("click", ()=>togglePalette());
-document.getElementById("btn-magic").addEventListener("click", toggleMagic);
 document.getElementById("btn-clear").addEventListener("click", clearDrawing);
 document.getElementById("btn-snapshot").addEventListener("click", saveCanvasSnapshot);
 document.getElementById("btn-gallery").addEventListener("click", ()=>fileInput.click());
@@ -695,37 +682,6 @@ function checkDockAndPalette(sx, sy, trigger){
   return hit;
 }
 
-function spawnParticle(x, y){
-  const hue = COLORS[Math.floor(Math.random()*COLORS.length)];
-  particles.push({
-    x, y,
-    vx: (Math.random()-0.5)*1.8,
-    vy: (Math.random()-0.5)*1.8 - 0.7,
-    life: 1,
-    size: 3 + Math.random()*5,
-    color: hue
-  });
-  if(particles.length > 240) particles.splice(0, particles.length - 240);
-}
-
-function renderMagic(){
-  magicCtx.clearRect(0,0,magicCanvas.width, magicCanvas.height);
-  magicCtx.globalCompositeOperation = "lighter";
-  particles.forEach(p=>{
-    p.x += p.vx; p.y += p.vy; p.life -= 0.02;
-    magicCtx.globalAlpha = Math.max(p.life, 0);
-    magicCtx.fillStyle = p.color;
-    magicCtx.shadowColor = p.color;
-    magicCtx.shadowBlur = 14;
-    magicCtx.beginPath();
-    magicCtx.arc(p.x, p.y, p.size * Math.max(p.life,0), 0, Math.PI*2);
-    magicCtx.fill();
-  });
-  magicCtx.globalAlpha = 1;
-  magicCtx.globalCompositeOperation = "source-over";
-  particles = particles.filter(p=>p.life > 0);
-}
-
 function drawHandSkeleton(landmarks, cursorColor, ringScale){
   handCtx.clearRect(0,0,handCanvas.width, handCanvas.height);
   if(!landmarks) return;
@@ -860,10 +816,6 @@ function predict(){
 
         drawHandSkeleton(lm, cursorColor, ringScale);
 
-        if(magicOn){
-          spawnParticle(screenX, screenY);
-        }
-
         const clickTrigger = pinchStart || tapTrigger;
         const dockHit = checkDockAndPalette(screenX, screenY, clickTrigger);
 
@@ -989,9 +941,6 @@ function predict(){
       }
     }
 
-    if(magicOn || particles.length){
-      renderMagic();
-    }
     requestAnimationFrame(loop);
   }
   loop();
