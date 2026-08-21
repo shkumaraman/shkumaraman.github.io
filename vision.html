@@ -41,18 +41,6 @@
   #drawCanvas{position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:2;pointer-events:none;}
   #handCanvas{position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:3;pointer-events:none;}
 
-  #status{
-    position:fixed;top:14px;left:50%;transform:translateX(-50%);
-    color:var(--text);z-index:50;background:var(--glass);backdrop-filter:blur(20px) saturate(180%);
-    -webkit-backdrop-filter:blur(20px) saturate(180%);
-    padding:8px 18px;border-radius:999px;font-size:12.5px;letter-spacing:0.02em;
-    border:1px solid var(--border-glow);box-shadow:0 6px 28px rgba(0,0,0,0.45);
-    display:flex;align-items:center;gap:10px;font-weight:500;
-  }
-  #status .dot{width:8px;height:8px;border-radius:50%;background:var(--cyan);box-shadow:0 0 10px var(--cyan);animation:pulse 1.5s ease-in-out infinite;}
-  #fpsTag{color:var(--text-dim);font-size:11px;border-left:1px solid rgba(255,255,255,0.15);padding-left:8px;}
-  @keyframes pulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:0.35;transform:scale(0.7);}}
-
   #dock{
     position:fixed;left:18px;top:50%;transform:translateY(-50%);z-index:40;
     display:flex;flex-direction:column;gap:10px;padding:12px 9px;
@@ -120,15 +108,8 @@
   #urlbar{display:flex;gap:8px;padding:8px;border-bottom:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);}
   #urlbar input{flex:1;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.14);border-radius:10px;color:var(--text);padding:7px 12px;font-size:13px;outline:none;}
   #urlbar button{background:linear-gradient(135deg,var(--cyan),var(--violet));border:none;border-radius:10px;color:#04040a;padding:0 14px;font-weight:700;font-size:12px;cursor:pointer;}
-  #frameNote{position:absolute;bottom:8px;left:10px;right:10px;color:var(--text-dim);font-size:11px;text-align:center;pointer-events:none;}
 
   #fileInput{display:none;}
-
-  #hint{
-    position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:50;color:var(--text-dim);
-    font-size:11.5px;background:var(--glass);backdrop-filter:blur(18px);padding:8px 18px;border-radius:999px;
-    border:1px solid rgba(255,255,255,0.12);text-align:center;max-width:92vw;box-shadow:0 4px 20px rgba(0,0,0,0.4);
-  }
 
   #gestureBadge{
     position:fixed;z-index:45;pointer-events:none;transform:translate(-50%,-150%);
@@ -139,7 +120,6 @@
   #gestureBadge.show{opacity:1;}
   #gestureBadge.mode-pinch{color:var(--pink);border-color:var(--pink);}
   #gestureBadge.mode-zoom{color:var(--gold);border-color:var(--gold);}
-  #gestureBadge.mode-palm{color:var(--green);border-color:var(--green);}
   #gestureBadge.mode-point{color:var(--cyan);border-color:var(--cyan);}
   #gestureBadge.mode-erase{color:var(--danger);border-color:var(--danger);}
 
@@ -156,7 +136,6 @@
 <body>
 
   <div id="bg-glow"></div>
-  <div id="status"><span class="dot"></span><span id="statusText">Starting Camera & AI...</span><span id="fpsTag">-- fps</span></div>
   <div id="gestureBadge"></div>
 
   <video id="video" autoplay playsinline muted></video>
@@ -203,8 +182,6 @@
 
   <input type="file" id="fileInput" accept="image/*,video/*" multiple>
 
-  <div id="hint">🖐 5 Ungli failao: kisi bhi window/media ko bada-chhota &amp; move karo &middot; 🤏 Pinch: Draw/Drag &middot; ☝ Point &amp; Flick: Tap</div>
-
 <script type="module">
 import { HandLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0";
 
@@ -213,8 +190,6 @@ const drawCanvas = document.getElementById("drawCanvas");
 const handCanvas = document.getElementById("handCanvas");
 const drawCtx = drawCanvas.getContext("2d");
 const handCtx = handCanvas.getContext("2d");
-const statusText = document.getElementById("statusText");
-const fpsTag = document.getElementById("fpsTag");
 const dock = document.getElementById("dock");
 const palette = document.getElementById("palette");
 const fileInput = document.getElementById("fileInput");
@@ -232,8 +207,6 @@ let wasPinching = false;
 let grabbed = null;
 let windows = [];
 let winZ = 30;
-let fpsHistory = [];
-let lastFpsSample = performance.now();
 let indexRatioPrev = 1;
 let lastTapTime = 0;
 let smoothCursor = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
@@ -371,13 +344,10 @@ async function openCamera(mode){
     video.onloadeddata = async ()=>{
       resizeCanvases();
       if(!handLandmarker){
-        statusText.textContent = "Loading AI Core...";
         await loadAI();
       }
     };
-  }catch(err){
-    statusText.textContent = "Camera Error: " + err.message;
-  }
+  }catch(err){}
 }
 
 async function loadAI(){
@@ -393,18 +363,14 @@ async function loadAI(){
       runningMode: "VIDEO",
       numHands: 1
     });
-    statusText.textContent = "Air Gesture OS Ready";
     predict();
-  }catch(err){
-    statusText.textContent = "AI Load Failed: " + err.message;
-  }
+  }catch(err){}
 }
 
 function setMode(m){
   mode = m;
   document.getElementById("btn-draw").classList.toggle("active-btn", m === "draw");
   document.getElementById("btn-erase").classList.toggle("active-btn", m === "erase");
-  statusText.textContent = m === "draw" ? "Drawing Mode" : "Eraser Mode";
 }
 
 function setColor(c){
@@ -420,7 +386,6 @@ function togglePalette(force){
 
 function clearDrawing(){
   drawCtx.clearRect(0,0,drawCanvas.width,drawCanvas.height);
-  statusText.textContent = "Canvas Cleared";
   playFeedbackSound("tap");
 }
 
@@ -436,7 +401,6 @@ function saveCanvasSnapshot(){
   a.download = "air-gesture-drawing-" + Date.now() + ".png";
   a.href = outCanvas.toDataURL("image/png");
   a.click();
-  statusText.textContent = "Screenshot Saved!";
   playFeedbackSound("tap");
 }
 
@@ -581,31 +545,49 @@ function createMediaWindow(url, isVideo, x, y){
 }
 
 function createBrowserWindow(){
-  const rec = createWindowShell(160, 100, 460, 400, "Web Browser");
+  const rec = createWindowShell(160, 90, 480, 420, "Web Browser");
   const barWrap = document.createElement("div");
   barWrap.id = "urlbar";
-  barWrap.innerHTML = '<input type="text" value="https://en.wikipedia.org" placeholder="Enter URL"><button>Open</button>';
+  barWrap.innerHTML = '<input type="text" value="https://www.google.com/webhp?igu=1" placeholder="Search or URL"><button>Open</button>';
   rec.body.parentElement.insertBefore(barWrap, rec.body);
 
   const iframe = document.createElement("iframe");
   iframe.style.cssText = "width:100%;height:100%;border:0;background:#0a0b16;";
+  iframe.setAttribute("allow", "fullscreen; accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture");
+  iframe.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-popups allow-presentation");
   rec.body.appendChild(iframe);
-
-  const note = document.createElement("div");
-  note.id = "frameNote";
-  note.textContent = "Enter any direct embeddable URL or web application.";
-  rec.body.appendChild(note);
 
   const input = barWrap.querySelector("input");
   const goBtn = barWrap.querySelector("button");
+
   function navigate(){
     let val = input.value.trim();
-    if(!/^https?:\/\//i.test(val)) val = "https://" + val;
-    iframe.src = val;
+    if(!val) return;
+
+    if(!/^https?:\/\//i.test(val) && !val.includes(".")){
+      iframe.src = "https://www.google.com/search?igu=1&q=" + encodeURIComponent(val);
+      return;
+    }
+
+    if(!/^https?:\/\//i.test(val)){
+      val = "https://" + val;
+    }
+
+    if(val.includes("google.com")){
+      if(!val.includes("igu=1")){
+        val += (val.includes("?") ? "&" : "?") + "igu=1";
+      }
+      iframe.src = val;
+    } else if(val.includes("wikipedia.org")) {
+      iframe.src = val;
+    } else {
+      iframe.src = "https://api.allorigins.win/raw?url=" + encodeURIComponent(val);
+    }
   }
+
   goBtn.addEventListener("click", navigate);
   input.addEventListener("keydown", (e)=>{ if(e.key === "Enter") navigate(); });
-  navigate();
+  iframe.src = "https://www.google.com/webhp?igu=1";
 }
 
 function findPinchTarget(sx, sy){
@@ -731,15 +713,6 @@ function hideGestureBadge(){
   gestureBadge.classList.remove("show");
 }
 
-function updateFPS(now){
-  fpsHistory.push(now);
-  while(fpsHistory.length && fpsHistory[0] < now - 1000) fpsHistory.shift();
-  if(now - lastFpsSample > 350){
-    lastFpsSample = now;
-    fpsTag.textContent = fpsHistory.length + " fps";
-  }
-}
-
 function releaseGrab(){
   if(grabbed){
     if(grabbed.win){
@@ -768,7 +741,6 @@ function predict(){
       lastVideoTime = video.currentTime;
       const now = performance.now();
       const results = handLandmarker.detectForVideo(video, now);
-      updateFPS(now);
 
       if(results.landmarks && results.landmarks[0]){
         const lm = results.landmarks[0];
