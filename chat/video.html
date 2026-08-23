@@ -284,20 +284,6 @@ video { width: 100%; height: 100%; object-fit: cover; }
 .light-mode .vd-mic-btn { background: var(--light-input-bg); border-color: var(--light-border2); color: var(--light-icon-color); }
 .vd-mic-btn.muted { background: rgba(255,77,77,0.1); border-color: var(--skip-red-border); color: var(--skip-red-text); }
 
-.vd-friend-modal {
-    display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-    background: var(--dark-surface); padding: 20px; border-radius: 14px;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.6); border: 0.5px solid var(--dark-border2);
-    min-width: 280px; z-index: 10010;
-}
-.light-mode .vd-friend-modal { background: var(--light-surface); border-color: var(--light-border2); color: var(--light-text); }
-.vd-friend-modal h3 { margin-top: 0; margin-bottom: 8px; }
-.vd-friend-modal-buttons { display: flex; gap: 10px; margin-top: 15px; }
-.vd-friend-modal-btn { flex: 1; padding: 10px; border: none; border-radius: 8px; cursor: pointer; font-weight: 700; }
-#vd-acceptFriendBtn { background: #22c55e; color: white; }
-#vd-rejectFriendBtn { background: #f44336; color: white; }
-.vd-modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 10009; }
-
 .keyword-bubble {
     background-color: rgba(255,255,255,0.05); border-radius: 20px; padding: 8px 16px;
     font-size: 14px; color: var(--dark-text-muted); border: 1px solid var(--dark-border2); transition: all 0.3s;
@@ -368,15 +354,6 @@ video { width: 100%; height: 100%; object-fit: cover; }
     <button class="vd-mic-btn" id="vd-micBtn" title="Mute/Unmute" onclick="toggleMic()">
       <i class="fas fa-microphone"></i>
     </button>
-  </div>
-</div>
-
-<div class="vd-friend-modal" id="vd-friendModal">
-  <h3>Friend Request</h3>
-  <p id="vd-friendRequestText">Stranger wants to add you as a friend!</p>
-  <div class="vd-friend-modal-buttons">
-    <button id="vd-acceptFriendBtn" class="vd-friend-modal-btn">Accept</button>
-    <button id="vd-rejectFriendBtn" class="vd-friend-modal-btn">Reject</button>
   </div>
 </div>
 
@@ -482,9 +459,10 @@ let escTimer = null;
 let dataChannel;
 let heartbeatInterval;
 let cameraAvailable = true;
-let friendRequestPending = false;
-let friendRequestFrom = null;
 let micMuted = false;
+
+const getFallbackName = () => "Guest" + Math.floor(1000 + Math.random() * 9000);
+let currentStrangerNickname = getFallbackName();
 
 let myNickname = localStorage.getItem("talkrush_nickname") || "Guest";
 let myGenderInterest = localStorage.getItem("talkrush_gender_interest") || "everyone";
@@ -496,10 +474,6 @@ const localPlaceholder = document.getElementById('vd-localPlaceholder');
 const systemMsg = document.getElementById('vd-systemMsg');
 const newChatBtn = document.getElementById('vd-newChatBtn');
 const friendBtn = document.getElementById('vd-friendBtn');
-const friendModal = document.getElementById('vd-friendModal');
-const acceptFriendBtn = document.getElementById('vd-acceptFriendBtn');
-const rejectFriendBtn = document.getElementById('vd-rejectFriendBtn');
-const friendRequestText = document.getElementById('vd-friendRequestText');
 
 const chatMessages = document.getElementById('vd-chatMessages');
 const chatInput = document.getElementById('vd-chatInput');
@@ -594,8 +568,6 @@ document.addEventListener('keydown', (e) => {
       if (myConn) myConn.close();
       cleanUpWaitingList();
       isConnected = false;
-      friendRequestPending = false;
-      friendRequestFrom = null;
       hideNewChatButton();
       clearChat();
       hideSearchingAnimation();
@@ -609,50 +581,36 @@ function setupChatEvents() {
   chatInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMessage(); });
 }
 
-friendBtn.onclick = () => {
+// New Add Friend Logic
+friendBtn.onclick = async () => {
   if (!myConn || !isConnected || !checkDataChannel()) {
     addMessage("Chat not ready for friend request", 'system'); return;
   }
-  if (!myId) {
-    addMessage("Cannot send request: No ID found", 'system'); return;
-  }
-  friendRequestPending = true;
-  dataChannel.send(JSON.stringify({
-    type: 'friend_request',
-    fromPeer: myId,
-    fromNickname: myNickname,
-    toPeer: myConn.peer,
-    timestamp: Date.now()
-  }));
-  addMessage("Friend request sent! Waiting...", 'system');
+  
   friendBtn.disabled = true;
-};
-
-acceptFriendBtn.onclick = async () => {
-  if (!friendRequestFrom || !dataChannel) return;
   try {
     const newChatRef = push(ref(db, 'friends'));
-    await set(newChatRef, { nickname1: myNickname, nickname2: friendRequestFrom.fromNickname, messages: {} });
-    dataChannel.send(JSON.stringify({ type: 'friend_accepted', friendId: newChatRef.key, nickname: myNickname }));
+    await set(newChatRef, {
+      nickname1: myNickname,
+      nickname2: currentStrangerNickname,
+      lastMessageText: "Say Hi!",
+      lastTimestamp: Date.now(),
+      lastSender: myNickname
+    });
+    
+    dataChannel.send(JSON.stringify({ type: 'friend_added', nickname: myNickname }));
+    addMessage("You added " + currentStrangerNickname + " as a friend.", 'system');
     hideFriendButton();
-    addMessage(`🎉 You are now friends with ${friendRequestFrom.fromNickname || 'Stranger'}!`, 'system');
-    closeFriendModal();
   } catch (error) {
-    addMessage('Failed to save friend. Please try again.', 'system');
+    console.error(error);
+    addMessage("Failed to add friend. Please try again.", 'system');
+    friendBtn.disabled = false;
   }
 };
 
-rejectFriendBtn.onclick = () => {
-  if (dataChannel) { dataChannel.send(JSON.stringify({ type: 'friend_rejected' })); }
-  addMessage('Friend request rejected.', 'system');
-  closeFriendModal();
-};
-
-function closeFriendModal() {
-  friendModal.style.display = 'none';
-  const overlay = document.getElementById('vd-friendModalOverlay');
-  if (overlay) overlay.remove();
-  friendRequestFrom = null;
+function handleFriendAdded(data) {
+  hideFriendButton();
+  addMessage(data.nickname + " added you as friend.", 'system');
 }
 
 function showFriendButton() { if (friendBtn) { friendBtn.style.display = 'flex'; friendBtn.disabled = false; } }
@@ -719,8 +677,7 @@ async function initVideoChat() {
 function startPeer(isNewSession = false) {
   hideSystemMessage();
   isConnected = false;
-  friendRequestPending = false;
-  friendRequestFrom = null;
+  currentStrangerNickname = getFallbackName();
   remoteVideo.srcObject = null;
   remotePlaceholder.style.display = 'flex';
   hideSearchingAnimation();
@@ -772,14 +729,18 @@ function hideSearchingAnimation() { remotePlaceholder.innerHTML = ''; }
 
 function setupDataConnection(conn) {
   dataChannel = conn;
-  conn.on("open", () => { addMessage("Chat connected", 'system'); });
+  conn.on("open", () => { 
+    addMessage("Chat connected", 'system'); 
+    try {
+      dataChannel.send(JSON.stringify({ type: 'info', nickname: myNickname }));
+    } catch (e) {}
+  });
   conn.on("data", (data) => {
     try {
       const parsed = JSON.parse(data);
       if (parsed.type === "message") { addMessage(parsed.text, "them"); }
-      else if (parsed.type === 'friend_request') { handleFriendRequest(parsed); }
-      else if (parsed.type === 'friend_accepted') { handleFriendAccepted(parsed); }
-      else if (parsed.type === 'friend_rejected') { handleFriendRejected(); }
+      else if (parsed.type === "info") { currentStrangerNickname = parsed.nickname || getFallbackName(); }
+      else if (parsed.type === 'friend_added') { handleFriendAdded(parsed); }
     } catch (e) {}
   });
   conn.on("close", () => { dataChannel = null; addMessage("Chat disconnected", 'system'); });
@@ -800,24 +761,6 @@ function cleanUpStaleConnections() {
     });
   }
 }
-
-function handleFriendRequest(data) {
-  friendRequestFrom = data;
-  friendRequestText.textContent = `Stranger wants to add you as a friend!`;
-  const overlay = document.createElement('div');
-  overlay.className = 'vd-modal-overlay'; overlay.id = 'vd-friendModalOverlay';
-  document.body.appendChild(overlay);
-  friendModal.style.display = 'block';
-  setTimeout(() => {
-    if (friendModal.style.display === 'block') {
-      closeFriendModal();
-      if (dataChannel && checkDataChannel()) { dataChannel.send(JSON.stringify({ type: 'friend_rejected' })); }
-      addMessage('Friend request expired.', 'system');
-    }
-  }, 30000);
-}
-function handleFriendAccepted(data) { hideFriendButton(); addMessage(`🎉 Stranger accepted your friend request!`, 'system'); friendBtn.disabled = false; friendRequestPending = false; }
-function handleFriendRejected() { addMessage('Friend request was rejected.', 'system'); friendBtn.disabled = false; friendRequestPending = false; }
 
 function isGenderCompatible(myGender, otherGender) {
   if (myGender === 'everyone' && otherGender === 'everyone') return true;
@@ -894,7 +837,7 @@ function endConnection() {
   remotePlaceholder.textContent = "Stranger disconnected 💔";
   if (myConn) { myConn.close(); myConn = null; }
   if (dataChannel) { dataChannel.close(); dataChannel = null; }
-  isConnected = false; friendRequestPending = false; friendRequestFrom = null;
+  isConnected = false; currentStrangerNickname = getFallbackName();
   showNewChatButton(); hideFriendButton(); addMessage("Connection ended", 'system');
 }
 
@@ -911,12 +854,11 @@ function hideNewChatButton() { newChatBtn.style.display = 'none'; }
 document.getElementById("vd-skipBtn").onclick = () => {
   hideSearchingAnimation();
   if (myConn) myConn.close();
-  cleanUpWaitingList(); isConnected = false; friendRequestPending = false; friendRequestFrom = null;
+  cleanUpWaitingList(); isConnected = false; currentStrangerNickname = getFallbackName();
   showSystemMessage("Talk ended. Click 'Start New Talk'.");
   showNewChatButton(); hideFriendButton();
 };
 
 document.getElementById("vd-newChatBtn").onclick = () => { clearChat(); hideNewChatButton(); initVideoChat(); };
-window.addEventListener("click", (e) => { if (e.target.id === 'vd-friendModalOverlay') closeFriendModal(); });
 window.addEventListener('nicknameUpdated', function(e) { myNickname = e.detail.nickname; myGenderInterest = localStorage.getItem("talkrush_gender_interest") || "everyone"; });
 </script>
