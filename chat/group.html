@@ -433,7 +433,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
-import { getDatabase, ref, push, set, onChildAdded, onValue, query, orderByChild, limitToLast, get, update, remove, onChildChanged, onChildRemoved } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
+import { getDatabase, ref, push, set, onChildAdded, onValue, query, orderByChild, limitToLast, get, update, remove, onChildChanged, onChildRemoved, increment } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
 
 const firebaseConfig = {
   databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
@@ -537,6 +537,13 @@ function getGroupFromURL() {
   return new URLSearchParams(window.location.search).get('group');
 }
 
+function clearMyRepliesForCurrentGroup() {
+  if (myNickname !== 'Guest' && currentGroup) {
+    const safeKey = myNickname.replace(/[.#$\[\]]/g, '_');
+    remove(ref(db, `group_reply/${safeKey}/${currentGroup}`));
+  }
+}
+
 async function initializeChat() {
   currentGroup = getGroupFromURL();
   if (!currentGroup) {
@@ -621,8 +628,10 @@ document.getElementById('cancelPassword').addEventListener('click', () => window
 function joinGroupChat() {
   if (!passwordVerified && groupPasswordRequired) return;
 
-  const messagesRefQuery = query(ref(db, `groups/${currentGroup}/messages`), orderByChild("timestamp"), limitToLast(MESSAGE_LIMIT));
-  const messagesRef = ref(db, `groups/${currentGroup}/messages`);
+  clearMyRepliesForCurrentGroup();
+
+  const messagesRefQuery = query(ref(db, `group_messages/${currentGroup}`), orderByChild("timestamp"), limitToLast(MESSAGE_LIMIT));
+  const messagesRef = ref(db, `group_messages/${currentGroup}`);
 
   if (!initialMessagesLoaded) {
     get(messagesRefQuery).then((snapshot) => {
@@ -648,6 +657,10 @@ function joinGroupChat() {
       displayMessage(msg);
       lastMessageTimestamp = msg.timestamp;
       scrollToBottom();
+      
+      if (msg.replyTo && msg.replyTo.nickname === myNickname) {
+         clearMyRepliesForCurrentGroup();
+      }
     }
   });
 
@@ -757,7 +770,7 @@ document.getElementById('unpinBtn').addEventListener('click', async (e) => {
 async function maintainMessageLimit() {
   if (!currentGroup) return;
   try {
-    const snapshot = await get(ref(db, `groups/${currentGroup}/messages`));
+    const snapshot = await get(ref(db, `group_messages/${currentGroup}`));
     if (!snapshot.exists()) return;
     
     const messages = [];
@@ -767,7 +780,7 @@ async function maintainMessageLimit() {
       messages.sort((a, b) => a.timestamp - b.timestamp);
       const updates = {};
       messages.slice(0, messages.length - MESSAGE_LIMIT).forEach(msg => updates[msg.key] = null);
-      await update(ref(db, `groups/${currentGroup}/messages`), updates);
+      await update(ref(db, `group_messages/${currentGroup}`), updates);
     }
   } catch (error) {}
 }
@@ -775,7 +788,17 @@ async function maintainMessageLimit() {
 async function pushMessageToDB(message) {
   isSendingMessage = true;
   try {
-    await set(push(ref(db, `groups/${currentGroup}/messages`)), message);
+    const newMessageKey = push(ref(db, `group_messages/${currentGroup}`)).key;
+    const updates = {};
+    updates[`/group_messages/${currentGroup}/${newMessageKey}`] = message;
+    updates[`/groups/${currentGroup}/lastActivity`] = message.timestamp;
+    
+    if (message.replyTo && message.replyTo.nickname !== myNickname) {
+      const targetSafeKey = message.replyTo.nickname.replace(/[.#$\[\]]/g, '_');
+      updates[`/group_reply/${targetSafeKey}/${currentGroup}/unreadCount`] = increment(1);
+    }
+    
+    await update(ref(db), updates);
     maintainMessageLimit();
   } finally {
     isSendingMessage = false;
@@ -787,7 +810,7 @@ function sendMessageToGroup(text) {
   if (containsBannedWords(text)) return logSystem("Your message contains inappropriate content.");
 
   if (editingMsgKey) {
-    update(ref(db, `groups/${currentGroup}/messages/${editingMsgKey}`), { text: text, edited: true });
+    update(ref(db, `group_messages/${currentGroup}/${editingMsgKey}`), { text: text, edited: true });
     clearEdit();
   } else {
     const message = { text, timestamp: Date.now(), nickname: myNickname, type: "text" };
@@ -947,7 +970,7 @@ document.getElementById('contextDeleteBtn').addEventListener('click', () => {
       confirmButtonText: 'Delete'
     }).then((result) => {
       if (result.isConfirmed) {
-        remove(ref(db, `groups/${groupName}/messages/${msgKey}`));
+        remove(ref(db, `group_messages/${groupName}/${msgKey}`));
       }
     });
   } else {
@@ -1212,49 +1235,53 @@ if(drawerToggleSub) drawerToggleSub.onclick = toggleDrawer;
 if(document.getElementById('drawerCloseBtn')) document.getElementById('drawerCloseBtn').onclick = closeDrawer;
 if(drawerOverlay) drawerOverlay.onclick = closeDrawer;
 
+let currentGroupsData = null;
+let currentRepliesData = null;
+
+function renderDrawer() {
+  if (!currentGroupsData) return;
+  const drawerList = document.getElementById('drawerGroupsList');
+  drawerList.innerHTML = '';
+  let totalUnread = 0;
+
+  Object.entries(currentGroupsData).sort((a, b) => (b[1].lastActivity || 0) - (a[1].lastActivity || 0)).forEach(([groupName, groupData]) => {
+    const item = document.createElement('a');
+    item.href = `/chat/group.html?group=${encodeURIComponent(groupName)}`;
+    item.className = `drawer-group-item ${groupName === currentGroup ? 'active' : ''}`;
+
+    let unreadCount = 0;
+    if (currentRepliesData && currentRepliesData[groupName] && groupName !== currentGroup) {
+      unreadCount = currentRepliesData[groupName].unreadCount || 0;
+      totalUnread += unreadCount;
+    }
+
+    const badgeHtml = unreadCount > 0 
+      ? `<span class="unread-badge">${unreadCount > 9 ? '9+' : unreadCount}</span>` 
+      : '';
+
+    item.innerHTML = `<div class="drawer-group-name"><span>${groupName}</span>${groupData.password ? '<i class="fas fa-lock" style="color:#E8873A; font-size: 0.8em; margin-left:5px;"></i>' : ''}</div>${badgeHtml}`;
+    drawerList.appendChild(item);
+  });
+
+  const hamburgerDot = document.getElementById('hamburgerDot');
+  if (hamburgerDot) {
+    hamburgerDot.classList.toggle('active', totalUnread > 0);
+  }
+}
+
 function initDrawerListener() {
   onValue(ref(db, 'groups'), (snapshot) => {
-    if (!snapshot.exists()) return;
-    const data = snapshot.val(), drawerList = document.getElementById('drawerGroupsList');
-    drawerList.innerHTML = '';
-    
-    let lastSeenMap = JSON.parse(localStorage.getItem('groups_last_seen') || '{}');
-    if (currentGroup) lastSeenMap[currentGroup] = Date.now();
-    let totalUnreadReplies = 0;
-
-    Object.entries(data).sort((a, b) => (a[1].createdAt || 0) - (b[1].createdAt || 0)).forEach(([groupName, groupData]) => {
-      let groupUnreadCount = 0;
-      let groupLastSeen = lastSeenMap[groupName] || 0;
-
-      if (groupData.messages) {
-        Object.values(groupData.messages).forEach(m => {
-          if (m.replyTo?.nickname === myNickname && m.timestamp > groupLastSeen) {
-            groupUnreadCount++;
-          }
-        });
-      }
-
-      if (groupName !== currentGroup) {
-        totalUnreadReplies += groupUnreadCount;
-      }
-
-      const item = document.createElement('a');
-      item.href = `/chat/group.html?group=${encodeURIComponent(groupName)}`;
-      item.className = `drawer-group-item ${groupName === currentGroup ? 'active' : ''}`;
-      
-      const badgeHtml = (groupUnreadCount > 0 && groupName !== currentGroup) 
-        ? `<span class="unread-badge">${groupUnreadCount > 9 ? '9+' : groupUnreadCount}</span>` 
-        : '';
-
-      item.innerHTML = `<div class="drawer-group-name"><span>${groupName}</span>${groupData.password ? '<i class="fas fa-lock" style="color:#E8873A; font-size: 0.8em; margin-left:5px;"></i>' : ''}</div>${badgeHtml}`;
-      drawerList.appendChild(item);
-    });
-
-    const hamburgerDot = document.getElementById('hamburgerDot');
-    if (hamburgerDot) {
-      hamburgerDot.classList.toggle('active', totalUnreadReplies > 0);
-    }
+    currentGroupsData = snapshot.val();
+    renderDrawer();
   });
+
+  if (myNickname && myNickname !== 'Guest') {
+    const safeKey = myNickname.replace(/[.#$\[\]]/g, '_');
+    onValue(ref(db, `group_reply/${safeKey}`), (snapshot) => {
+      currentRepliesData = snapshot.val();
+      renderDrawer();
+    });
+  }
 }
 
 document.getElementById('shareRoomHeaderBtn').addEventListener('click', () => {
