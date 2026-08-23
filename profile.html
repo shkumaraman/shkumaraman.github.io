@@ -289,11 +289,12 @@ body.light-mode {
   display: flex;
   gap: 10px;
   justify-content: center;
-  flex-wrap: wrap;
+  align-items: center;
+  width: 100%;
 }
 
-.add-friend-btn, .chat-btn, .call-btn {
-  padding: 11px 18px;
+.add-friend-btn, .chat-btn, .remove-btn {
+  padding: 12px 18px;
   border-radius: 10px;
   font-size: 14px;
   font-weight: 700;
@@ -305,10 +306,10 @@ body.light-mode {
   border: none;
   transition: transform 0.1s, background 0.15s;
   flex: 1;
-  min-width: 120px;
+  min-width: 0;
 }
 
-.add-friend-btn:active, .chat-btn:active, .call-btn:active { 
+.add-friend-btn:active, .chat-btn:active, .remove-btn:active { 
   transform: scale(0.98); 
 }
 
@@ -326,15 +327,15 @@ body.light-mode {
   cursor: not-allowed; 
 }
 
-.call-btn {
-  background: rgba(52, 183, 241, 0.15);
-  color: #34B7F1;
-  border: 1px solid rgba(52, 183, 241, 0.3);
+.remove-btn {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
 }
 
-.call-btn:hover {
-  background: #34B7F1;
-  color: #fff;
+.remove-btn:hover {
+  background: #ef4444;
+  color: #ffffff;
 }
 
 .empty-state {
@@ -404,7 +405,8 @@ import {
   ref, 
   set, 
   get, 
-  push 
+  push,
+  remove
 } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
 
 const firebaseConfig = {
@@ -508,8 +510,8 @@ async function renderProfile(userObj) {
   } else if (isFriend) {
     statusHtml = '<div class="friend-status"><i class="fas fa-check-circle"></i> You are friends</div>';
     buttonHtml = `
-      <button class="call-btn" onclick="callTargetUser('${userObj.fullId}')">
-        <i class="fas fa-phone"></i> Call
+      <button class="remove-btn" onclick="removeFriendConfirmation()">
+        <i class="fas fa-user-minus"></i> Remove Friend
       </button>
       <button class="chat-btn" onclick="openTargetChat('${userObj.fullId}')">
         <i class="fas fa-comment-dots"></i> Message
@@ -517,9 +519,6 @@ async function renderProfile(userObj) {
     `;
   } else {
     buttonHtml = `
-      <button class="call-btn" onclick="callTargetUser('${userObj.fullId}')">
-        <i class="fas fa-phone"></i> Call
-      </button>
       <button class="add-friend-btn" onclick="sendFriendRequest('${userObj.fullId}')">
         <i class="fas fa-user-plus"></i> Add Friend
       </button>
@@ -567,17 +566,41 @@ window.sendFriendRequest = async (targetId) => {
   }
 };
 
+window.removeFriendConfirmation = () => {
+  Swal.fire({
+    title: 'Remove Friend?',
+    text: 'Are you sure you want to remove this friend?',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#ef4444',
+    cancelButtonColor: '#6c757d',
+    confirmButtonText: 'Yes, Remove',
+    cancelButtonText: 'Cancel',
+    background: '#ffffff',
+    color: '#111114'
+  }).then(async (result) => {
+    if (result.isConfirmed) {
+      if (existingChatId) {
+        try {
+          await remove(ref(db, `friends/${existingChatId}`));
+          isFriend = false;
+          existingChatId = null;
+          if (currentActiveUser) {
+            renderProfile(currentActiveUser);
+          }
+        } catch (error) {
+          console.error(error);
+        }
+      }
+    }
+  });
+};
+
 window.openTargetChat = (targetId) => {
   if (existingChatId) {
     window.location.href = `/chat/inbox.html?chatId=${encodeURIComponent(existingChatId)}&friend=${encodeURIComponent(targetId)}`;
   } else {
     window.location.href = '/chat/inbox.html';
-  }
-};
-
-window.callTargetUser = (targetId) => {
-  if (typeof window.startOutgoingCall === 'function') {
-    window.startOutgoingCall(targetId, 'video');
   }
 };
 
