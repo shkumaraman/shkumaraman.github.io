@@ -1,0 +1,79 @@
+<script type="module">
+  import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
+  import { getDatabase, ref, set, onDisconnect, get } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
+
+  const firebaseConfig = {
+    databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
+  };
+
+  const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+  const db = getDatabase(app);
+  window.firebaseDB = db;
+
+  document.addEventListener("DOMContentLoaded", function () {
+    const globalNickname = localStorage.getItem("talkrush_nickname");
+    if (!globalNickname) return;
+
+    const registerPresence = () => {
+      const getPeerId = () => {
+        return new Promise((resolve) => {
+          if (window.myCallPeer && window.myCallPeer.id) {
+            resolve(window.myCallPeer.id);
+          } else if (window.myCallPeer) {
+            window.myCallPeer.on('open', (id) => resolve(id));
+            setTimeout(() => resolve(null), 3000);
+          } else {
+            resolve(null);
+          }
+        });
+      };
+
+      getPeerId().then(peerId => {
+        const myPeerId = peerId || ("user_" + globalNickname.replace(/[^a-zA-Z0-9]/g, '_'));
+        const myOnlineRef = ref(db, `online_users/${globalNickname}`);
+
+        set(myOnlineRef, {
+          nickname: globalNickname,
+          peerId: myPeerId,
+          timestamp: Date.now()
+        });
+
+        onDisconnect(myOnlineRef).remove();
+      });
+    };
+
+    registerPresence();
+
+    window.spinDiceAndConnect = async (callType = 'video') => {
+      const onlineUsersRef = ref(db, 'online_users');
+      
+      try {
+        const snapshot = await get(onlineUsersRef);
+        if (!snapshot.exists()) {
+           alert("Currently, no one is online!");
+           return;
+        }
+
+        const usersData = snapshot.val();
+        const availableUsers = Object.values(usersData).filter(user => user.nickname !== globalNickname);
+
+        if (availableUsers.length === 0) {
+           alert("No one else is online at the moment!");
+           return;
+        }
+
+        const randomIndex = Math.floor(Math.random() * availableUsers.length);
+        const randomTarget = availableUsers[randomIndex];
+
+        if (typeof window.startOutgoingCall === 'function') {
+           window.startOutgoingCall(randomTarget.nickname, callType);
+        } else {
+           alert("Calling system is not loaded!");
+        }
+
+      } catch (error) {
+        alert("An error occurred, please try again!");
+      }
+    };
+  });
+</script>
