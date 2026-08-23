@@ -127,3 +127,100 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 });
 </script>
+
+<script type="module">
+  import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
+  import { getDatabase, ref, onValue } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
+
+  if (!window.talkrushBottomNavListenerAdded) {
+    window.talkrushBottomNavListenerAdded = true;
+
+    const firebaseConfig = {
+      databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
+    };
+
+    const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+    const db = getDatabase(app);
+
+    const myNickname = localStorage.getItem("talkrush_nickname");
+
+    if (myNickname) {
+      const params = new URLSearchParams(window.location.search);
+      const currentGroup = params.get('group');
+      const currentChatId = window.location.pathname.includes('inbox.html') ? params.get('chatId') : null;
+
+      onValue(ref(db, "friends"), (snap) => {
+        const data = snap.val();
+        const badge = document.getElementById("bottomNavInboxBadge");
+        
+        if (!badge) return;
+
+        if (!data) {
+          badge.style.display = "none";
+          return;
+        }
+
+        let unreadCount = 0;
+        let lastSeenMap = JSON.parse(localStorage.getItem('inbox_last_seen') || '{}');
+        if (currentChatId) lastSeenMap[currentChatId] = Date.now();
+
+        Object.entries(data).forEach(([chatId, friend]) => {
+          if (friend.nickname1 === myNickname || friend.nickname2 === myNickname) {
+            let chatLastSeen = lastSeenMap[chatId] || 0;
+            let lastTimestamp = friend.lastTimestamp || 0;
+
+            if (friend.lastSender && friend.lastSender !== myNickname && lastTimestamp > chatLastSeen && chatId !== currentChatId) {
+              unreadCount++;
+            }
+          }
+        });
+
+        if (unreadCount > 0) {
+          badge.textContent = unreadCount > 99 ? '99+' : unreadCount;
+          badge.style.display = "flex";
+        } else {
+          badge.style.display = "none";
+        }
+      });
+
+      onValue(ref(db, "groups"), (snap) => {
+        const data = snap.val();
+        const badge = document.getElementById("bottomNavBadge");
+        
+        if (!badge) return;
+
+        if (!data) {
+          badge.style.display = "none";
+          return;
+        }
+
+        let count = 0;
+        let lastSeenMap = JSON.parse(localStorage.getItem('groups_last_seen') || '{}');
+        if (currentGroup) lastSeenMap[currentGroup] = Date.now();
+
+        Object.entries(data).forEach(([groupName, groupData]) => {
+          let groupUnreadCount = 0;
+          let groupLastSeen = lastSeenMap[groupName] || 0;
+
+          if (groupData.messages) {
+            Object.values(groupData.messages).forEach(m => {
+              if (m.replyTo?.nickname === myNickname && m.timestamp > groupLastSeen) {
+                groupUnreadCount++;
+              }
+            });
+          }
+          if (groupName !== currentGroup) {
+            count += groupUnreadCount;
+          }
+        });
+
+        if (count > 0) {
+          badge.textContent = count > 99 ? '99+' : count;
+          badge.style.display = "flex";
+        } else {
+          badge.style.display = "none";
+        }
+      });
+    }
+  }
+</script>
