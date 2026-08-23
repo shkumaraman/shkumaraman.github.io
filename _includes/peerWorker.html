@@ -1,6 +1,6 @@
 <script type="module">
   import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
-  import { getDatabase, ref, set, onDisconnect, get } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
+  import { getDatabase, ref, set, onDisconnect, get, remove } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
 
   const firebaseConfig = {
     databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
@@ -11,10 +11,10 @@
   window.firebaseDB = db;
 
   document.addEventListener("DOMContentLoaded", function () {
-    const globalNickname = localStorage.getItem("talkrush_nickname");
-    if (!globalNickname) return;
+    let currentNickname = localStorage.getItem("talkrush_nickname");
+    if (!currentNickname) return;
 
-    const registerPresence = () => {
+    const registerPresence = (nickname) => {
       const getPeerId = () => {
         return new Promise((resolve) => {
           if (window.myCallPeer && window.myCallPeer.id) {
@@ -29,11 +29,11 @@
       };
 
       getPeerId().then(peerId => {
-        const myPeerId = peerId || ("user_" + globalNickname.replace(/[^a-zA-Z0-9]/g, '_'));
-        const myOnlineRef = ref(db, `online_users/${globalNickname}`);
+        const myPeerId = peerId || ("user_" + nickname.replace(/[^a-zA-Z0-9]/g, '_'));
+        const myOnlineRef = ref(db, `users/${nickname}`);
 
         set(myOnlineRef, {
-          nickname: globalNickname,
+          nickname: nickname,
           peerId: myPeerId,
           timestamp: Date.now()
         });
@@ -42,20 +42,34 @@
       });
     };
 
-    registerPresence();
+    registerPresence(currentNickname);
+
+    window.addEventListener('nicknameUpdated', async (e) => {
+      const newNickname = e.detail.nickname;
+      if (!newNickname || newNickname === currentNickname) return;
+
+      if (currentNickname) {
+        try {
+          await remove(ref(db, `users/${currentNickname}`));
+        } catch (err) {}
+      }
+
+      currentNickname = newNickname;
+      registerPresence(currentNickname);
+    });
 
     window.spinDiceAndConnect = async (callType = 'video') => {
-      const onlineUsersRef = ref(db, 'online_users');
+      const usersRef = ref(db, 'users');
       
       try {
-        const snapshot = await get(onlineUsersRef);
+        const snapshot = await get(usersRef);
         if (!snapshot.exists()) {
            alert("Currently, no one is online!");
            return;
         }
 
         const usersData = snapshot.val();
-        const availableUsers = Object.values(usersData).filter(user => user.nickname !== globalNickname);
+        const availableUsers = Object.values(usersData).filter(user => user.nickname !== currentNickname);
 
         if (availableUsers.length === 0) {
            alert("No one else is online at the moment!");
