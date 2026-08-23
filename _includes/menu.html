@@ -353,8 +353,8 @@ document.addEventListener('DOMContentLoaded', function () {
 import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
 import { getDatabase, ref, onValue } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
 
-if (!window.talkrushUnifiedListenerAdded) {
-  window.talkrushUnifiedListenerAdded = true;
+if (!window.talkrushMenuListenerAdded) {
+  window.talkrushMenuListenerAdded = true;
 
   const firebaseConfig = {
     databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
@@ -366,7 +366,7 @@ if (!window.talkrushUnifiedListenerAdded) {
   let totalRoomsUnread = 0;
   let totalInboxUnread = 0;
 
-  function updateAllGlobalBadges() {
+  function updateMenuBadges() {
     const formatBadge = (count) => count > 9 ? '9+' : count;
 
     const menuRoomsBadge = document.getElementById('menuBadge');
@@ -381,29 +381,17 @@ if (!window.talkrushUnifiedListenerAdded) {
       menuInboxBadge.style.display = totalInboxUnread > 0 ? 'inline-block' : 'none';
     }
 
-    const navRoomsBadge = document.getElementById('bottomNavBadge');
-    if (navRoomsBadge) {
-      navRoomsBadge.textContent = formatBadge(totalRoomsUnread);
-      navRoomsBadge.style.display = totalRoomsUnread > 0 ? 'flex' : 'none';
-    }
-
-    const navInboxBadge = document.getElementById('bottomNavInboxBadge');
-    if (navInboxBadge) {
-      navInboxBadge.textContent = formatBadge(totalInboxUnread);
-      navInboxBadge.style.display = totalInboxUnread > 0 ? 'flex' : 'none';
-    }
-
     const combinedTotal = totalRoomsUnread + totalInboxUnread;
     document.querySelectorAll('.menu-btn-dot').forEach(dot => {
       dot.classList.toggle('active', combinedTotal > 0);
     });
   }
 
-  function listenToAllUnreadData() {
+  function listenToMenuUnreadData() {
     const myNickname = localStorage.getItem('talkrush_nickname') || 'Guest';
     const params = new URLSearchParams(window.location.search);
     const currentGroup = params.get('group');
-    const currentChatId = params.get('chatId');
+    const currentChatId = window.location.pathname.includes('inbox.html') ? params.get('chatId') : null;
 
     onValue(ref(db, 'groups'), (snapshot) => {
       let count = 0;
@@ -429,7 +417,7 @@ if (!window.talkrushUnifiedListenerAdded) {
         });
       }
       totalRoomsUnread = count;
-      updateAllGlobalBadges();
+      updateMenuBadges();
     });
 
     onValue(ref(db, 'friends'), (snapshot) => {
@@ -442,26 +430,19 @@ if (!window.talkrushUnifiedListenerAdded) {
         Object.entries(data).forEach(([chatId, friend]) => {
           if (friend.nickname1 !== myNickname && friend.nickname2 !== myNickname) return;
 
-          let chatUnreadCount = 0;
           let chatLastSeen = lastSeenMap[chatId] || 0;
+          let lastTimestamp = friend.lastTimestamp || 0;
 
-          if (friend.messages) {
-            Object.values(friend.messages).forEach(m => {
-              if (m.nickname !== myNickname && m.timestamp > chatLastSeen) {
-                chatUnreadCount++;
-              }
-            });
-          }
-          if (chatId !== currentChatId) {
-            count += chatUnreadCount;
+          if (friend.lastSender && friend.lastSender !== myNickname && lastTimestamp > chatLastSeen && chatId !== currentChatId) {
+            count++;
           }
         });
       }
       totalInboxUnread = count;
-      updateAllGlobalBadges();
+      updateMenuBadges();
     });
   }
 
-  listenToAllUnreadData();
+  listenToMenuUnreadData();
 }
 </script>
