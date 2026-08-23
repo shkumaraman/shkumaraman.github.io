@@ -613,10 +613,9 @@ main {
 
 {% include menu.html %}
 
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
-import { getDatabase, ref, onValue, get, set, remove } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
+import { getDatabase, ref, onValue, get, set, remove, update } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
 
 const firebaseConfig = {
   databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
@@ -769,7 +768,10 @@ document.addEventListener('DOMContentLoaded', async function() {
       color: document.body.classList.contains('light-mode') ? '#111' : '#fff'
     }).then((result) => {
       if (result.isConfirmed) {
-        remove(ref(db, 'groups/' + roomName));
+        const updates = {};
+        updates['groups/' + roomName] = null;
+        updates['group_messages/' + roomName] = null;
+        update(ref(db), updates);
       }
     });
   };
@@ -903,15 +905,8 @@ document.addEventListener('DOMContentLoaded', async function() {
         Object.keys(rooms).forEach((roomName) => {
           const room = rooms[roomName];
           if (room && typeof room === 'object') {
-            let lastActivity = room.createdAt || 0;
             
-            if (room.messages) {
-              Object.values(room.messages).forEach(msg => {
-                if (msg.timestamp > lastActivity) {
-                  lastActivity = msg.timestamp;
-                }
-              });
-            }
+            let lastActivity = room.lastActivity || room.createdAt || 0;
 
             allRooms.push({
               name: roomName,
@@ -1028,7 +1023,8 @@ document.addEventListener('DOMContentLoaded', async function() {
       const roomData = {
         description: description || 'No description provided',
         admin: myNickname,
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        lastActivity: Date.now()
       };
 
       if (imageUrl) {
@@ -1141,8 +1137,20 @@ document.addEventListener('DOMContentLoaded', async function() {
           btn.innerHTML = '<i class="fas fa-save"></i> Save Changes';
           return;
         }
-        await set(newRoomRef, roomData);
-        await remove(oldRoomRef);
+
+        const oldMessagesSnap = await get(ref(db, 'group_messages/' + oldRoomName));
+        const updates = {};
+        
+        updates['groups/' + newRoomName] = roomData;
+        updates['groups/' + oldRoomName] = null;
+        
+        if (oldMessagesSnap.exists()) {
+          updates['group_messages/' + newRoomName] = oldMessagesSnap.val();
+          updates['group_messages/' + oldRoomName] = null;
+        }
+
+        await update(ref(db), updates);
+
       } else {
         await set(oldRoomRef, roomData);
       }
