@@ -71,30 +71,34 @@
     function getFriendNickname(friend) {
       return friend.nickname1 === myNickname ? friend.nickname2 : friend.nickname2 === myNickname ? friend.nickname1 : null;
     }
-    
-    function getLastMessageFromFriend(friend) {
-      if (!friend.messages) return null;
-      const msgs = Object.values(friend.messages).sort((a, b) => b.timestamp - a.timestamp);
-      if (msgs.length === 0 || msgs[0].nickname === myNickname) return null;
-      let text = msgs[0].type === "image" ? "📷 Photo" : msgs[0].type === "gif" ? "🎯 GIF" : msgs[0].text;
-      return { text, timestamp: msgs[0].timestamp };
-    }
 
+    // NEW LOGIC: Flattened friends node read
     onValue(ref(db, "friends"), (snap) => {
       const data = snap.val();
       if (!data) return;
+      
       Object.entries(data).forEach(([chatId, friend]) => {
         const friendNick = getFriendNickname(friend);
         if (!friendNick) return;
-        const lastMsg = getLastMessageFromFriend(friend);
-        if (!lastMsg) return;
-        const key = chatId + "_" + lastMsg.timestamp;
+        
+        // Agar last message kisi aur ne bheja hai aur wo text hai
+        if (!friend.lastMessageText || friend.lastSender === myNickname) return;
+        
+        const key = chatId + "_" + friend.lastTimestamp;
         
         if (lastNotifiedMessages[chatId] === key) return;
         if (notificationOff) return;
 
         const redirectUrl = `/chat/inbox.html?chatId=${encodeURIComponent(chatId)}&friend=${encodeURIComponent(friendNick)}`;
-        toastQueue.push({ chatId: chatId, senderName: friendNick, message: lastMsg.text, redirectUrl: redirectUrl, type: "dm", timestamp: lastMsg.timestamp });
+        
+        toastQueue.push({ 
+          chatId: chatId, 
+          senderName: friendNick, 
+          message: friend.lastMessageText, 
+          redirectUrl: redirectUrl, 
+          type: "dm", 
+          timestamp: friend.lastTimestamp 
+        });
         
         lastNotifiedMessages[chatId] = key;
         localStorage.setItem("lastNotifiedMessages", JSON.stringify(lastNotifiedMessages));
