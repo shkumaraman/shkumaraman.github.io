@@ -1,6 +1,6 @@
 <script type="module">
   import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
-  import { getDatabase, ref, set, onDisconnect, get, remove } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
+  import { getDatabase, ref, set, onDisconnect, get, remove, onValue } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
 
   const firebaseConfig = {
     databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
@@ -12,45 +12,43 @@
 
   document.addEventListener("DOMContentLoaded", function () {
     let currentNickname = localStorage.getItem("talkrush_nickname");
-    if (!currentNickname) return;
+    let myOnlineRef = null;
+
+    const sanitizeKey = (name) => name ? name.replace(/[.#$\[\]]/g, '_') : 'Guest';
 
     const registerPresence = (nickname) => {
-      const getPeerId = () => {
-        return new Promise((resolve) => {
-          if (window.myCallPeer && window.myCallPeer.id) {
-            resolve(window.myCallPeer.id);
-          } else if (window.myCallPeer) {
-            window.myCallPeer.on('open', (id) => resolve(id));
-            setTimeout(() => resolve(null), 3000);
-          } else {
-            resolve(null);
-          }
-        });
-      };
+      if (!nickname) return;
+      
+      const safeKey = sanitizeKey(nickname);
+      myOnlineRef = ref(db, `users/${safeKey}`);
 
-      getPeerId().then(peerId => {
-        const myPeerId = peerId || ("user_" + nickname.replace(/[^a-zA-Z0-9]/g, '_'));
-        const myOnlineRef = ref(db, `users/${nickname}`);
-
+      onDisconnect(myOnlineRef).remove().then(() => {
         set(myOnlineRef, {
           nickname: nickname,
-          peerId: myPeerId,
           timestamp: Date.now()
         });
-
-        onDisconnect(myOnlineRef).remove();
       });
     };
 
-    registerPresence(currentNickname);
+    const connectedRef = ref(db, ".info/connected");
+    onValue(connectedRef, (snap) => {
+      if (snap.val() === true) {
+        currentNickname = localStorage.getItem("talkrush_nickname");
+        if (currentNickname) {
+          registerPresence(currentNickname);
+        }
+      }
+    });
 
     window.addEventListener('nicknameUpdated', async (e) => {
       const newNickname = e.detail.nickname;
       if (!newNickname || newNickname === currentNickname) return;
 
       if (currentNickname) {
+        const oldSafeKey = sanitizeKey(currentNickname);
         try {
-          await remove(ref(db, `users/${currentNickname}`));
+          if (myOnlineRef) onDisconnect(myOnlineRef).cancel();
+          await remove(ref(db, `users/${oldSafeKey}`));
         } catch (err) {}
       }
 
