@@ -72,7 +72,6 @@
       return friend.nickname1 === myNickname ? friend.nickname2 : friend.nickname2 === myNickname ? friend.nickname1 : null;
     }
 
-    // NEW LOGIC: Flattened friends node read
     onValue(ref(db, "friends"), (snap) => {
       const data = snap.val();
       if (!data) return;
@@ -81,7 +80,6 @@
         const friendNick = getFriendNickname(friend);
         if (!friendNick) return;
         
-        // Agar last message kisi aur ne bheja hai aur wo text hai
         if (!friend.lastMessageText || friend.lastSender === myNickname) return;
         
         const key = chatId + "_" + friend.lastTimestamp;
@@ -106,55 +104,40 @@
       });
     });
 
-    onValue(ref(db, "groups"), (snap) => {
+    const safeKey = myNickname.replace(/[.#$\[\]]/g, '_');
+    onValue(ref(db, `group_reply/${safeKey}`), (snap) => {
       const data = snap.val();
       if (!data) return;
 
       const currentPath = window.location.pathname;
       const currentGroupParams = new URLSearchParams(window.location.search).get('group');
-      let lastSeenMap = JSON.parse(localStorage.getItem('groups_last_seen') || '{}');
 
-      Object.entries(data).forEach(([groupName, groupData]) => {
+      Object.entries(data).forEach(([groupName, replyData]) => {
         if (currentPath.includes('/chat/group.html') && currentGroupParams === groupName) {
-           lastSeenMap[groupName] = Date.now();
-           localStorage.setItem('groups_last_seen', JSON.stringify(lastSeenMap));
            return; 
         }
 
-        const groupLastSeen = lastSeenMap[groupName] || 0;
+        const unreadCount = replyData.unreadCount || 0;
+        if (unreadCount === 0) return;
 
-        if (groupData.messages) {
-          const msgs = Object.values(groupData.messages).sort((a, b) => b.timestamp - a.timestamp);
-          
-          for (let msg of msgs) {
-            if (msg.timestamp <= groupLastSeen) break; 
-            
-            if (msg.replyTo?.nickname === myNickname && msg.nickname !== myNickname) {
-              const key = "group_" + groupName + "_" + msg.timestamp;
-              
-              if (!lastNotifiedMessages[key]) {
-                if (notificationOff) return;
+        const key = "group_reply_" + groupName + "_" + unreadCount;
+        
+        if (lastNotifiedMessages[groupName] === key) return;
+        if (notificationOff) return;
 
-                const redirectUrl = `/chat/group.html?group=${encodeURIComponent(groupName)}`;
-                let text = msg.type === "image" ? "📷 Photo" : msg.type === "gif" ? "🎯 GIF" : msg.text;
-
-                toastQueue.push({ 
-                  chatId: groupName, 
-                  senderName: msg.nickname, 
-                  groupName: groupName,
-                  message: text, 
-                  redirectUrl: redirectUrl, 
-                  type: "group_mention", 
-                  timestamp: msg.timestamp 
-                });
-                
-                lastNotifiedMessages[key] = key;
-                localStorage.setItem("lastNotifiedMessages", JSON.stringify(lastNotifiedMessages));
-                processToastQueue();
-              }
-            }
-          }
-        }
+        const redirectUrl = `/chat/group.html?group=${encodeURIComponent(groupName)}`;
+        
+        toastQueue.push({ 
+          chatId: groupName, 
+          groupName: groupName,
+          message: `You have ${unreadCount} new reply(ies) waiting for you.`, 
+          redirectUrl: redirectUrl, 
+          type: "group_mention"
+        });
+        
+        lastNotifiedMessages[groupName] = key;
+        localStorage.setItem("lastNotifiedMessages", JSON.stringify(lastNotifiedMessages));
+        processToastQueue();
       });
     });
 
@@ -166,7 +149,7 @@
       if (data.type === "group_mention") {
         toastIconWrapper.style.background = "#5b9bd5"; 
         toastIcon.querySelector("path").setAttribute("d", REPLY_ICON_PATH); 
-        toastName.textContent = `${data.senderName} replied in ${data.groupName}`;
+        toastName.textContent = `New Reply in ${data.groupName}`;
       } else if (data.type === "reply") { 
         toastIconWrapper.style.background = "#5b9bd5"; 
         toastIcon.querySelector("path").setAttribute("d", REPLY_ICON_PATH); 
