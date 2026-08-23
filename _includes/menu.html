@@ -393,26 +393,15 @@ if (!window.talkrushMenuListenerAdded) {
     const currentGroup = params.get('group');
     const currentChatId = window.location.pathname.includes('inbox.html') ? params.get('chatId') : null;
 
-    onValue(ref(db, 'groups'), (snapshot) => {
+    const safeKey = myNickname.replace(/[.#$\[\]]/g, '_');
+    onValue(ref(db, `group_reply/${safeKey}`), (snapshot) => {
       let count = 0;
       if (snapshot.exists()) {
         const data = snapshot.val();
-        let lastSeenMap = JSON.parse(localStorage.getItem('groups_last_seen') || '{}');
-        if (currentGroup) lastSeenMap[currentGroup] = Date.now();
-
         Object.entries(data).forEach(([groupName, groupData]) => {
-          let groupUnreadCount = 0;
-          let groupLastSeen = lastSeenMap[groupName] || 0;
-
-          if (groupData.messages) {
-            Object.values(groupData.messages).forEach(m => {
-              if (m.replyTo?.nickname === myNickname && m.timestamp > groupLastSeen) {
-                groupUnreadCount++;
-              }
-            });
-          }
+          let unreadCount = groupData.unreadCount || 0;
           if (groupName !== currentGroup) {
-            count += groupUnreadCount;
+            count += unreadCount;
           }
         });
       }
