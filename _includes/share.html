@@ -470,7 +470,7 @@
 
 <script type="module">
   import { initializeApp, getApps } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
-  import { getDatabase, ref, get, push, set } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
+  import { getDatabase, ref, get, push, set, update } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
 
   const firebaseConfig = {
     databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
@@ -666,41 +666,62 @@
 
       Array.from(selectedChatIds).forEach(chatId => {
         const baseTime = Date.now();
+        const messagesRef = ref(db, `messages/${chatId}`);
+        const friendRef = ref(db, `friends/${chatId}`);
 
         if (isMediaUrl(currentSharePayload)) {
           const msgType = currentSharePayload.includes("giphy.com") ? "gif" : "image";
           
-          promises.push(set(push(ref(db, `friends/${chatId}/messages`)), {
+          promises.push(set(push(messagesRef), {
             nickname: myNickname,
             url: currentSharePayload,
             timestamp: baseTime,
             type: msgType
           }));
 
+          let lastText = msgType === "gif" ? "🎯 GIF" : "📷 Photo";
+
           if (customText) {
-            promises.push(set(push(ref(db, `friends/${chatId}/messages`)), {
+            promises.push(set(push(messagesRef), {
               nickname: myNickname,
               text: customText,
               timestamp: baseTime + 1,
               type: "text"
             }));
+            lastText = customText.substring(0, 30) + (customText.length > 30 ? '...' : '');
           }
+
+          promises.push(update(friendRef, {
+             lastMessageText: lastText,
+             lastTimestamp: customText ? baseTime + 1 : baseTime,
+             lastSender: myNickname
+          }));
+
         } else {
-          promises.push(set(push(ref(db, `friends/${chatId}/messages`)), {
+          promises.push(set(push(messagesRef), {
             nickname: myNickname,
             text: currentSharePayload,
             timestamp: baseTime,
             type: "text"
           }));
 
+          let lastText = currentSharePayload.substring(0, 30) + (currentSharePayload.length > 30 ? '...' : '');
+
           if (customText) {
-            promises.push(set(push(ref(db, `friends/${chatId}/messages`)), {
+            promises.push(set(push(messagesRef), {
               nickname: myNickname,
               text: customText,
               timestamp: baseTime + 1,
               type: "text"
             }));
+            lastText = customText.substring(0, 30) + (customText.length > 30 ? '...' : '');
           }
+          
+          promises.push(update(friendRef, {
+             lastMessageText: lastText,
+             lastTimestamp: customText ? baseTime + 1 : baseTime,
+             lastSender: myNickname
+          }));
         }
       });
 
