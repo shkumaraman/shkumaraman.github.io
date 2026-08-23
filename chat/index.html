@@ -439,50 +439,8 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   color: var(--light-text-muted);
 }
 
-.friend-modal {
-  display: none;
-  position: fixed;
-  top: 50%; left: 50%;
-  transform: translate(-50%, -50%);
-  background: var(--dark-surface);
-  padding: 22px;
-  border-radius: 14px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.6);
-  border: 0.5px solid var(--dark-border2);
-  min-width: 270px;
-  z-index: 10010;
-}
-.light-mode .friend-modal {
-  background: var(--light-surface);
-  border-color: var(--light-border2);
-  color: var(--light-text);
-}
-.friend-modal h3 {
-  margin-top: 0; margin-bottom: 8px;
-  font-size: 16px;
-}
-.friend-modal p { font-size: 13px; color: var(--dark-text-muted); margin: 0; }
-.light-mode .friend-modal p { color: var(--light-text-muted); }
-.friend-modal-buttons { display: flex; gap: 10px; margin-top: 16px; }
-.friend-modal-btn {
-  flex: 1; padding: 10px;
-  border: none; border-radius: 9px;
-  cursor: pointer; font-weight: 700;
-  font-size: 13px;
-}
-#acceptFriendBtn { background: #22c55e; color: white; }
-#rejectFriendBtn { background: #f44336; color: white; }
-
-.modal-overlay {
-  position: fixed; top: 0; left: 0;
-  width: 100%; height: 100%;
-  background: rgba(0,0,0,0.6);
-  z-index: 10009;
-}
-
 @media (max-width: 600px) {
   .msg { max-width: 85%; }
-  .friend-modal { width: 90%; max-width: 300px; }
 }
 
 @media (min-width: 769px) {
@@ -555,18 +513,8 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     <input type="text" class="gif-search" id="gifSearch" placeholder="Search GIFs..." />
     <div class="gif-results" id="gifResults"></div>
   </div>
-  
-  <div class="friend-modal" id="friendModal">
-    <h3>Friend Request</h3>
-    <p id="friendRequestText">Stranger wants to add you as a friend!</p>
-    <div class="friend-modal-buttons">
-      <button id="acceptFriendBtn" class="friend-modal-btn">Accept</button>
-      <button id="rejectFriendBtn" class="friend-modal-btn">Reject</button>
-    </div>
-  </div>
 </div>
 
-<!-- Display Ads -->
 <ins class="adsbygoogle"
      style="display:block"
      data-ad-client="ca-pub-7059052735946479"
@@ -609,7 +557,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   <p>While enjoying <strong>1v1 chat</strong>, remember to protect your privacy. Never share personal information like your address, phone number, or financial details. Our platform provides reporting tools and moderation to maintain a respectful environment.</p>
   <p>You are in control—you can end any conversation that makes you uncomfortable and block users instantly.</p>
 
-  <!-- Display Ads -->
 <ins class="adsbygoogle"
      style="display:block"
      data-ad-client="ca-pub-7059052735946479"
@@ -679,6 +626,9 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   let botFallbackTimer = null;
   let currentBotData = null;
 
+  const getFallbackName = () => "Guest" + Math.floor(1000 + Math.random() * 9000);
+  let currentStrangerNickname = getFallbackName();
+
   const typingIndicator = document.getElementById("typingIndicator");
   let typingTimeout;
 
@@ -686,14 +636,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   let myGenderInterest = localStorage.getItem("talkrush_gender_interest") || "everyone";
   let myTags = JSON.parse(localStorage.getItem("talkrush_tags") || "[]");
 
-  let friendRequestPending = false;
-  let friendRequestFrom = null;
-
   const friendBtn = document.getElementById('friendBtn');
-  const friendModal = document.getElementById('friendModal');
-  const acceptFriendBtn = document.getElementById('acceptFriendBtn');
-  const rejectFriendBtn = document.getElementById('rejectFriendBtn');
-  const friendRequestText = document.getElementById('friendRequestText');
 
   function showStrangerCard(tags) {
     const card = document.getElementById("strangerCard");
@@ -768,8 +711,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       if (myConn) { myConn.close(); myConn = null; }
       cleanUpWaitingList();
       isConnected = false;
-      friendRequestPending = false;
-      friendRequestFrom = null;
+      currentStrangerNickname = getFallbackName();
       hideFriendButton();
       hideStrangerCard();
       document.getElementById("chatLog").innerHTML = "";
@@ -788,7 +730,8 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   function startPeer() {
     clearSystemMessage();
     isConnected = false;
-    logSystem("🔍 Looking for a stranger...");
+    currentStrangerNickname = getFallbackName();
+    logSystem("Looking for a stranger...");
 
     if (peer && peer.id && !peer.destroyed && !peer.disconnected) {
       cleanUpStaleConnections();
@@ -957,6 +900,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     botActive = true;
     isConnected = true;
     currentBotData = { messages: [...botMessages], index: 0 };
+    currentStrangerNickname = getFallbackName(); 
 
     clearSystemMessage();
     hideNewChatButton();
@@ -978,8 +922,9 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     botActive = false;
     isConnected = false;
     currentBotData = null;
+    currentStrangerNickname = getFallbackName();
     appendSystemImage(CHAT_END_IMAGE, CHAT_END_LINK);
-    logSystem("Stranger disconnected! 💔");
+    logSystem("Stranger disconnected!");
     showNewChatButton();
     hideFriendButton();
     hideStrangerCard();
@@ -988,7 +933,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   function connectToPeer(otherId) {
     if (isConnected) return;
     clearSystemMessage();
-    logSystem("😍 Connecting to stranger...");
+    logSystem("Connecting to stranger...");
     const conn = peer.connect(otherId);
     conn.on('open', () => {
       handleNewConnection(conn, []);
@@ -1025,10 +970,11 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       else if (data.type === "image") appendImage("stranger", data.blob);
       else if (data.type === "gif") appendGif("stranger", data.url);
       else if (data.type === "typing") showTypingIndicator();
-      else if (data.type === "tags") showStrangerCard(data.tags || []);
-      else if (data.type === "friend_request") handleFriendRequest(data);
-      else if (data.type === "friend_accepted") handleFriendAccepted(data);
-      else if (data.type === "friend_rejected") handleFriendRejected();
+      else if (data.type === "tags") {
+        currentStrangerNickname = data.nickname || getFallbackName();
+        showStrangerCard(data.tags || []);
+      }
+      else if (data.type === "friend_added") handleFriendAdded(data);
     });
 
     conn.on("close", endConnection);
@@ -1036,16 +982,17 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
     setTimeout(() => {
       if (myConn && isConnected) {
-        myConn.send({ type: "tags", tags: myTags });
+        myConn.send({ type: "tags", tags: myTags, nickname: myNickname });
       }
     }, 500);
   }
 
   function endConnection() {
     appendSystemImage(CHAT_END_IMAGE, CHAT_END_LINK);
-    logSystem("Stranger disconnected! 💔");
+    logSystem("Stranger disconnected!");
     if (myConn) { myConn.close(); myConn = null; }
     isConnected = false;
+    currentStrangerNickname = getFallbackName();
     showNewChatButton();
     hideFriendButton();
     hideStrangerCard();
@@ -1060,70 +1007,33 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   function showFriendButton() { friendBtn.style.display = 'flex'; friendBtn.disabled = false; }
   function hideFriendButton() { friendBtn.style.display = 'none'; friendBtn.disabled = false; }
 
-  friendBtn.onclick = () => {
+  friendBtn.onclick = async () => {
     if (!myConn || !isConnected || !peer?.id) return;
-    friendRequestPending = true;
-    myConn.send({ type: 'friend_request', fromPeer: peer.id, fromNickname: myNickname, toPeer: myConn.peer, timestamp: Date.now() });
-    logSystem("Friend request sent! Waiting for response...");
+    
     friendBtn.disabled = true;
-  };
-
-  function handleFriendRequest(data) {
-    friendRequestFrom = data;
-    friendRequestText.textContent = "Stranger wants to add you as a friend!";
-
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
-    overlay.id = 'friendModalOverlay';
-    document.body.appendChild(overlay);
-    friendModal.style.display = 'block';
-
-    setTimeout(() => {
-      if (friendModal.style.display === 'block') {
-        closeFriendModal();
-        if (myConn) myConn.send({ type: 'friend_rejected' });
-        logSystem('Friend request expired.');
-      }
-    }, 30000);
-  }
-
-  acceptFriendBtn.onclick = async () => {
-    if (!friendRequestFrom || !myConn) return;
     try {
       const newChatRef = push(ref(db, 'friends'));
-      await set(newChatRef, { nickname1: myNickname, nickname2: friendRequestFrom.fromNickname, messages: {} });
-      myConn.send({ type: 'friend_accepted', friendId: newChatRef.key, nickname: myNickname });
+      await set(newChatRef, {
+        nickname1: myNickname,
+        nickname2: currentStrangerNickname,
+        lastMessageText: "Say Hi!",
+        lastTimestamp: Date.now(),
+        lastSender: myNickname
+      });
+      
+      myConn.send({ type: 'friend_added', nickname: myNickname });
+      logSystem("You added " + currentStrangerNickname + " as a friend.");
       hideFriendButton();
-      logSystem(`🎉 You are now friends with ${friendRequestFrom.fromNickname}!`);
-      closeFriendModal();
-    } catch {
-      logSystem('Failed to save friend. Please try again.');
+    } catch (error) {
+      console.error(error);
+      logSystem("Failed to add friend. Please try again.");
+      friendBtn.disabled = false;
     }
   };
 
-  rejectFriendBtn.onclick = () => {
-    if (myConn) myConn.send({ type: 'friend_rejected' });
-    logSystem('Friend request rejected.');
-    closeFriendModal();
-  };
-
-  function handleFriendAccepted(data) {
+  function handleFriendAdded(data) {
     hideFriendButton();
-    logSystem("🎉 Stranger accepted your friend request!");
-    friendBtn.disabled = false;
-    friendRequestPending = false;
-  }
-
-  function handleFriendRejected() {
-    logSystem('Friend request was rejected.');
-    friendBtn.disabled = false;
-    friendRequestPending = false;
-  }
-
-  function closeFriendModal() {
-    friendModal.style.display = 'none';
-    document.getElementById('friendModalOverlay')?.remove();
-    friendRequestFrom = null;
+    logSystem(data.nickname + " added you as friend.");
   }
 
   function appendMessage(sender, content, type = "text") {
@@ -1262,8 +1172,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     if (myConn) { myConn.close(); myConn = null; }
     cleanUpWaitingList();
     isConnected = false;
-    friendRequestPending = false;
-    friendRequestFrom = null;
+    currentStrangerNickname = getFallbackName();
     hideFriendButton();
     hideStrangerCard();
     logSystem("Chat ended. Click 'Start New Chat' to find someone new.");
@@ -1280,6 +1189,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     if (myConn) { myConn.close(); myConn = null; }
     cleanUpWaitingList();
     isConnected = false;
+    currentStrangerNickname = getFallbackName();
     startPeer();
   };
 
@@ -1335,8 +1245,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
         !gifBtn.contains(e.target)) {
       gifModal.style.display = "none";
     }
-    
-    if (e.target.id === 'friendModalOverlay') closeFriendModal();
   });
 
   window.addEventListener('nicknameUpdated', function(e) {
