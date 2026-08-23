@@ -1,7 +1,7 @@
 ---
 layout: default
-title: "Online Users"
-description: "See who is online right now and connect instantly."
+title: "Active Users - TalkRush | Chat with Strangers Online"
+description: "Discover who is online on TalkRush right now. Find active strangers, add them as friends, and start text or video chatting instantly in real-time."
 ---
 
 <style>
@@ -62,7 +62,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 .light-mode .app-header { background: var(--light-header-bg); border-bottom: 1px solid var(--light-header-border); }
 
 .header-left, .header-right { display: flex; align-items: center; gap: 10px; }
-.logo { height: 35px; width: 35px; border-radius: 8px; }
+.logo { height: 40px; width: 40px; border-radius: 10px; }
 .app-title { font-size: 1em; color: var(--dark-text); margin: 0; font-weight: 600; }
 .light-mode .app-title { color: var(--light-text); }
 
@@ -138,7 +138,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   gap: 12px;
   transition: transform 0.2s;
 }
-
 .user-card:hover {
   transform: translateY(-2px);
   background: linear-gradient(135deg, rgba(255,107,74,0.12), rgba(255,77,77,0.06));
@@ -151,15 +150,14 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 }
 
 .user-avatar {
-  width: 45px; height: 45px;
+  width: 42px; height: 42px;
   border-radius: 50%;
   background: var(--accent-dim);
   border: 1.5px solid var(--accent-border);
   display: flex; align-items: center; justify-content: center;
-  font-size: 18px; color: var(--accent);
+  font-size: 1.1em; font-weight: 700; color: var(--accent);
   flex-shrink: 0;
 }
-.user-avatar img { width: 100%; height: 100%; object-fit: contain; border-radius: 50%; }
 
 .user-info { flex: 1; min-width: 0; }
 
@@ -189,6 +187,11 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 }
 .light-mode .user-status { color: var(--light-text-muted); }
 
+.action-group {
+  display: flex;
+  gap: 6px;
+}
+
 .action-btn {
   background: var(--accent);
   color: white;
@@ -200,10 +203,32 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.15s, transform 0.1s;
   flex-shrink: 0;
+  font-size: 15px;
 }
-.action-btn:hover { background: var(--accent-hover); }
+.action-btn:active { transform: scale(0.95); }
+
+.btn-call {
+  background: rgba(52, 183, 241, 0.15);
+  color: #34B7F1;
+  border: 1px solid rgba(52, 183, 241, 0.3);
+}
+.btn-call:hover { background: #34B7F1; color: #fff; }
+
+.btn-add {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+.btn-add:hover { background: #22c55e; color: #fff; }
+
+.btn-msg {
+  background: var(--accent-dim);
+  color: var(--accent);
+  border: 1px solid var(--accent-border);
+}
+.btn-msg:hover { background: var(--accent); color: #fff; }
 
 .empty-state {
   text-align: center;
@@ -216,11 +241,14 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
 <header class="app-header">
   <div class="header-left">
-    <button class="menu-btn header-toggle" onclick="toggleMenu()" style="border:none;"><i class="fas fa-bars"></i></button>
-    <img src="/logo.png" alt="TalkRush Logo" class="logo">
+    <button class="menu-btn header-toggle" onclick="toggleMenu()">&#9776;</button>
+    <img src="logo.png" alt="TalkRush Logo" class="logo">
     <h1 class="app-title">Online Users</h1>
   </div>
   <div class="header-right">
+    <button class="header-toggle" onclick="openPreferencesModal()" title="Edit Interest">
+      <i class="fas fa-pencil-alt"></i>
+    </button>
     <button class="header-toggle" id="themeToggle" title="Toggle Dark/Light Mode">
       <i class="fas fa-moon"></i>
     </button>
@@ -245,7 +273,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
 <script type="module">
   import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
-  import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
+  import { getDatabase, ref, onValue, set, push } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
 
   const firebaseConfig = {
     databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
@@ -272,33 +300,56 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     return `${hours}h ago`;
   };
 
+  let onlineUsersArray = [];
+  let myFriendsMap = {}; 
+
   const usersRef = ref(db, 'users');
+  const friendsRef = ref(db, 'friends');
+
+  onValue(friendsRef, (snapshot) => {
+    myFriendsMap = {};
+    if (snapshot.exists()) {
+      snapshot.forEach(child => {
+        const friendData = child.val();
+        if (friendData.nickname1 === currentNickname) {
+          myFriendsMap[friendData.nickname2] = child.key;
+        } else if (friendData.nickname2 === currentNickname) {
+          myFriendsMap[friendData.nickname1] = child.key;
+        }
+      });
+    }
+    renderUsers();
+  });
 
   onValue(usersRef, (snapshot) => {
+    onlineUsersArray = [];
+    if (snapshot.exists()) {
+      onlineUsersArray = Object.values(snapshot.val()).sort((a, b) => b.timestamp - a.timestamp);
+    }
+    renderUsers();
+  });
+
+  function renderUsers() {
     usersGrid.innerHTML = '';
-    
-    if (!snapshot.exists()) {
+
+    if (onlineUsersArray.length === 0) {
       onlineCount.innerText = '0';
       usersGrid.innerHTML = '<div class="empty-state"><i class="fas fa-ghost" style="font-size:30px; margin-bottom:10px;"></i><br>No one is online right now.</div>';
       return;
     }
 
-    const usersData = snapshot.val();
-    const usersArray = Object.values(usersData).sort((a, b) => b.timestamp - a.timestamp);
-    
-    onlineCount.innerText = usersArray.length;
+    onlineCount.innerText = onlineUsersArray.length;
 
-    usersArray.forEach(user => {
+    onlineUsersArray.forEach(user => {
       const isMe = user.nickname === currentNickname;
+      const isFriend = !!myFriendsMap[user.nickname];
       const initial = user.nickname ? user.nickname.charAt(0).toUpperCase() : '?';
       
       const card = document.createElement('div');
       card.className = 'user-card';
 
       card.innerHTML = `
-        <div class="user-avatar">
-          <img src="/assets/user.png" onerror="this.style.display='none'; this.parentNode.innerText='${initial}';" />
-        </div>
+        <div class="user-avatar">${initial}</div>
         <div class="user-info">
           <div class="user-name">
             ${user.nickname}
@@ -307,42 +358,51 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
           <p class="user-status">Joined ${timeAgo(user.timestamp)}</p>
         </div>
         ${!isMe ? `
-        <button class="action-btn" onclick="initiateCall('${user.nickname}')" title="Call ${user.nickname}">
-          <i class="fas fa-phone"></i>
-        </button>
+        <div class="action-group">
+          <button class="action-btn btn-call" onclick="initiateCall('${user.nickname}')" title="Call ${user.nickname}">
+            <i class="fas fa-phone"></i>
+          </button>
+          ${isFriend ? `
+            <button class="action-btn btn-msg" onclick="messageUser('${user.nickname}')" title="Message ${user.nickname}">
+              <i class="fas fa-comment-dots"></i>
+            </button>
+          ` : `
+            <button class="action-btn btn-add" onclick="addFriend('${user.nickname}')" title="Add ${user.nickname}">
+              <i class="fas fa-user-plus"></i>
+            </button>
+          `}
+        </div>
         ` : ''}
       `;
       usersGrid.appendChild(card);
     });
-  });
+  }
 
   window.initiateCall = (targetNickname) => {
     if (typeof window.startOutgoingCall === 'function') {
       window.startOutgoingCall(targetNickname, 'video');
-    } else {
-      alert(`Connect with ${targetNickname}! (Ensure your calling system is loaded)`);
     }
   };
 
-  const themeToggleBtn = document.getElementById('themeToggle');
-  const icon = themeToggleBtn.querySelector('i');
-  
-  if(localStorage.getItem('theme') === 'light') {
-    document.body.classList.add('light-mode');
-    icon.classList.remove('fa-moon');
-    icon.classList.add('fa-sun');
-  }
-
-  themeToggleBtn.addEventListener('click', () => {
-    document.body.classList.toggle('light-mode');
-    if(document.body.classList.contains('light-mode')) {
-      localStorage.setItem('theme', 'light');
-      icon.classList.remove('fa-moon');
-      icon.classList.add('fa-sun');
-    } else {
-      localStorage.setItem('theme', 'dark');
-      icon.classList.remove('fa-sun');
-      icon.classList.add('fa-moon');
+  window.addFriend = async (targetNickname) => {
+    if (!currentNickname) return;
+    try {
+      const newChatRef = push(ref(db, 'friends'));
+      await set(newChatRef, {
+        nickname1: currentNickname,
+        nickname2: targetNickname,
+        messages: {}
+      });
+    } catch (error) {
+      console.error('Error adding friend:', error);
     }
-  });
+  };
+
+  window.messageUser = (targetNickname) => {
+    const chatId = myFriendsMap[targetNickname];
+    if (chatId) {
+      window.location.href = `inbox.html?chatId=${encodeURIComponent(chatId)}&friend=${encodeURIComponent(targetNickname)}`;
+    }
+  };
+
 </script>
