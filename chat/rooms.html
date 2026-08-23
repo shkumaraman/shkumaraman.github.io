@@ -1167,3 +1167,87 @@ document.addEventListener('DOMContentLoaded', async function() {
   loadRooms();
 });
 </script>
+
+
+<!-- TEMPORARY MIGRATION BUTTON (Run Karne Ke Baad Hata Dena) -->
+<button id="runMigrationBtn" style="position: fixed; bottom: 20px; left: 20px; background: #ff4757; color: white; padding: 15px 20px; border: none; border-radius: 10px; font-weight: bold; z-index: 999999; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.5);">
+  <i class="fas fa-database"></i> Migrate Database
+</button>
+
+<script type="module">
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
+  import { getDatabase, ref, get, update } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
+
+  const firebaseConfig = {
+    databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app/"
+  };
+  
+  const app = initializeApp(firebaseConfig);
+  const db = getDatabase(app);
+
+  document.getElementById('runMigrationBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('runMigrationBtn');
+    
+    if(!confirm("Are you sure you want to migrate the database? This will move messages from 'groups' to 'group_messages'.")) return;
+    
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Migrating...';
+    btn.disabled = true;
+
+    try {
+      const snapshot = await get(ref(db, 'groups'));
+      
+      if (!snapshot.exists()) {
+        alert("No groups found.");
+        btn.innerHTML = "Migrate Database";
+        btn.disabled = false;
+        return;
+      }
+
+      const groups = snapshot.val();
+      const updates = {};
+      let migratedRoomsCount = 0;
+
+      Object.keys(groups).forEach(roomName => {
+        const roomData = groups[roomName];
+
+        // Agar is room ke andar 'messages' exist karte hain
+        if (roomData.messages) {
+          
+          // 1. Messages ko naye node me copy karo
+          updates[`group_messages/${roomName}`] = roomData.messages;
+
+          // 2. Room ka aakhri activity time nikalo
+          let lastActivityTime = roomData.createdAt || 0;
+          Object.values(roomData.messages).forEach(msg => {
+             if (msg.timestamp > lastActivityTime) {
+                 lastActivityTime = msg.timestamp;
+             }
+          });
+          
+          // 3. groups node me lastActivity update karo
+          updates[`groups/${roomName}/lastActivity`] = lastActivityTime;
+
+          // 4. Purane wale messages ko groups me se delete (null) kar do
+          updates[`groups/${roomName}/messages`] = null;
+
+          migratedRoomsCount++;
+        }
+      });
+
+      // Ek sath pura database update karo
+      if (Object.keys(updates).length > 0) {
+        await update(ref(db), updates);
+        alert(`Migration Successful! Successfully moved messages for ${migratedRoomsCount} rooms.`);
+      } else {
+        alert("Database is already migrated! No old messages found in groups.");
+      }
+
+    } catch(error) {
+      console.error(error);
+      alert("Error during migration: " + error.message);
+    } finally {
+      btn.innerHTML = '<i class="fas fa-check"></i> Migration Done';
+      btn.style.background = "#2ed573";
+    }
+  });
+</script>
