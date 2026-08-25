@@ -502,10 +502,6 @@ description: "View your chat history and messages with friends."
     user-select: none;
   }
 
-  .swal2-container {
-    z-index: 1000000 !important;
-  }
-
   .msg.swiping { transition: none; }
 
   .msg-row.me .msg {
@@ -1267,6 +1263,10 @@ description: "View your chat history and messages with friends."
   window.forwardMessage = function(content) {
     if (window.openShareModal) {
       window.openShareModal(content);
+    } else if (navigator.clipboard) {
+      navigator.clipboard.writeText(content).then(() => {
+        AlertKit.toast("Message link copied to clipboard!", "success");
+      });
     }
   };
 
@@ -1356,26 +1356,23 @@ description: "View your chat history and messages with friends."
     hideContextMenu();
   });
 
-  document.getElementById('contextDeleteBtn').addEventListener('click', () => {
+  document.getElementById('contextDeleteBtn').addEventListener('click', async () => {
     if (contextTargetMsg && currentChatId) {
       const msgKey = contextTargetMsg.key;
       const chatId = currentChatId;
 
       hideContextMenu();
 
-      Swal.fire({
-        title: 'Delete Message?',
-        text: "This message will be deleted for everyone.",
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#d33',
-        cancelButtonColor: '#3085d6',
-        confirmButtonText: 'Delete'
-      }).then((result) => {
-        if (result.isConfirmed) {
-          remove(ref(db, `messages/${chatId}/${msgKey}`));
-        }
-      });
+      const isConfirmed = await AlertKit.confirm(
+        'Delete Message?',
+        'This message will be deleted for everyone.',
+        'Delete',
+        'Cancel'
+      );
+      
+      if (isConfirmed) {
+        remove(ref(db, `messages/${chatId}/${msgKey}`));
+      }
     } else {
       hideContextMenu();
     }
@@ -1860,7 +1857,7 @@ description: "View your chat history and messages with friends."
     if (!file || !currentChatId) return;
 
     if (file.size > 10 * 1024 * 1024) {
-      Swal.fire({ icon: 'error', title: 'File Too Large', text: 'Image size should be less than 10MB', timer: 2000, showConfirmButton: true });
+      AlertKit.error('File Too Large', 'Image size should be less than 10MB');
       e.target.value = '';
       return;
     }
@@ -1889,7 +1886,7 @@ description: "View your chat history and messages with friends."
       });
     } catch (err) {
       loadingBubble.remove();
-      Swal.fire({ icon: 'error', title: 'Upload Failed', text: 'Failed to upload image. Please try again.', timer: 2000, showConfirmButton: true });
+      AlertKit.error('Upload Failed', 'Failed to upload image. Please try again.');
     }
 
     e.target.value = '';
@@ -2017,24 +2014,20 @@ description: "View your chat history and messages with friends."
     scrollToBottom();
   }
 
-  window.unfriend = function (chatId) {
-    Swal.fire({
-      title: 'Remove Friend?',
-      text: 'All chat history will be permanently deleted.',
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonColor: '#d33',
-      cancelButtonColor: '#3085d6',
-      confirmButtonText: 'Yes, remove',
-      cancelButtonText: 'Cancel'
-    }).then((result) => {
-      if (result.isConfirmed) {
-        if (currentChatId === chatId) window.closeChat();
-        remove(ref(db, "friends/" + chatId));
-        remove(ref(db, "messages/" + chatId));
-        remove(ref(db, "typing/" + chatId));
-      }
-    });
+  window.unfriend = async function (chatId) {
+    const isConfirmed = await AlertKit.confirm(
+      'Remove Friend?',
+      'All chat history will be permanently deleted.',
+      'Yes, remove',
+      'Cancel'
+    );
+    
+    if (isConfirmed) {
+      if (currentChatId === chatId) window.closeChat();
+      remove(ref(db, "friends/" + chatId));
+      remove(ref(db, "messages/" + chatId));
+      remove(ref(db, "typing/" + chatId));
+    }
   };
 
   async function fetchTrendingGifs() {
