@@ -634,14 +634,6 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
     flex-shrink: 0;
   }
 
-  .pr-error-message {
-    color: var(--error);
-    text-align: center;
-    margin-top: 10px;
-    font-size: 12px;
-    display: none;
-  }
-
   .pr-copy-btn {
     background: none;
     border: none;
@@ -797,7 +789,6 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
         <input type="text" id="prRoomCodeInput" maxlength="5" placeholder="12345">
         <button class="pr-btn pr-btn-primary" id="prJoinRoomBtn">Join</button>
       </div>
-      <div id="prJoinError" class="pr-error-message">Invalid room code</div>
     </div>
   </div>
 </div>
@@ -963,7 +954,6 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
     prRoomCodeInput: document.getElementById("prRoomCodeInput"),
     prCreateRoomBtn: document.getElementById("prCreateRoomBtn"),
     prJoinRoomBtn: document.getElementById("prJoinRoomBtn"),
-    prJoinError: document.getElementById("prJoinError"),
     roomBtn: document.getElementById("roomBtn"),
     prShareRoom: document.getElementById("prShareRoom"),
     videoCallBtn: document.getElementById("videoCallBtn"),
@@ -1103,7 +1093,7 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
           if (state.myId) break;
         }
         if (!state.myId) {
-          msg.system("Error: Could not connect to matchmaking server. Please check your internet or refresh the page.");
+          AlertKit.error("Connection Failed", "Could not connect to server. Please check your internet or refresh.");
           return;
         }
       }
@@ -1120,18 +1110,21 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
         await set(ref(db, "rooms/" + code), roomData);
         state.currentRoomCode = code;
         storage.saveRoomCode();
-        msg.system("Room created! Share this code with someone to chat.");
+        AlertKit.success("Room Created!", "Share this code with someone to chat.");
+        msg.system("Room created! Room code: " + code);
         utils.hide(el.prRoomModal);
         room.setupListener(code);
       } catch (err) {
-        console.error("Error creating room:", err);
-        msg.system("Error creating room. Please try again.");
+        AlertKit.error("Failed", "Error creating room. Please try again.");
       }
     },
 
     join: async () => {
       const code = el.prRoomCodeInput.value.trim();
-      if (code.length !== 5) { room.showError("Room code must be 5 digits"); return; }
+      if (code.length !== 5) {
+        AlertKit.warning("Invalid Code", "Room code must be exactly 5 digits");
+        return;
+      }
       if (!state.myId) {
         msg.system("Connecting to server, please wait a moment...");
         for (let i = 0; i < 10; i++) {
@@ -1139,7 +1132,7 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
           if (state.myId) break;
         }
         if (!state.myId) {
-          msg.system("Error: Could not connect to matchmaking server. Please check your internet or refresh the page.");
+          AlertKit.error("Connection Failed", "Could not connect to server. Please check your internet or refresh.");
           return;
         }
       }
@@ -1172,7 +1165,7 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
         }
         utils.hide(el.prRoomModal);
       } catch (e) {
-        room.showError(e.message === "Room is full" ? "Room is full. Only 2 participants allowed." : "Room not found. Please check the code.");
+        AlertKit.error("Join Failed", e.message === "Room is full" ? "Room is full. Only 2 participants allowed." : "Room not found. Please check the code.");
       }
     },
 
@@ -1193,12 +1186,6 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
           }
         });
       });
-    },
-
-    showError: (message) => {
-      el.prJoinError.textContent = message;
-      utils.showBlock(el.prJoinError);
-      setTimeout(() => utils.hide(el.prJoinError), 3000);
     },
 
     autoRejoin: async () => {
@@ -1224,14 +1211,14 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
           state.partnerNickname = data.nicknames[partnerId];
         }
 
+        AlertKit.toast("Reconnected to previous room", "success");
         msg.system("Reconnected to your previous room!");
         for (const id of participants) {
           if (id !== state.myId) await conn.connectTo(id);
         }
       } catch (err) {
-        console.error("Error auto rejoining:", err);
         storage.clearRoomCode();
-        msg.system("Please create or join a new room.");
+        AlertKit.info("Room Closed", "Please create or join a new room.");
         utils.showBlock(el.prRoomModal);
       }
     },
@@ -1265,7 +1252,7 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
       state.peer.on('connection', conn.handleNew);
       state.peer.on('error', (err) => {
         if (err.type === 'unavailable-id') { storage.clearPeerId(); conn.start(); }
-        else msg.system("Connection error. Please refresh the page to try again.");
+        else AlertKit.error("Connection Error", "Please refresh the page to try again.");
       });
     },
 
@@ -1280,7 +1267,7 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
       if (state.isConnected || !state.peer) return;
       const c = state.peer.connect(peerId, { reliable: true });
       c.on('open', () => { conn.setup(c); msg.system("Connected to room participant!"); });
-      c.on('error', () => msg.system("Failed to connect to participant"));
+      c.on('error', () => AlertKit.error("Connection Failed", "Failed to connect to participant."));
     },
 
     setup: (c) => {
@@ -1288,7 +1275,7 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
       state.myConn = c;
       state.isConnected = true;
       c.on("data", conn.handleData);
-      c.on("close", () => conn.end("Participant disconnected! 💔"));
+      c.on("close", () => conn.end("Participant disconnected!"));
       c.on("error", () => conn.end("Connection error"));
 
       setTimeout(() => {
@@ -1338,7 +1325,7 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
       try {
         const res = await fetch(`https://api.giphy.com/v1/gifs/trending?api_key=${GIPHY_API_KEY}&limit=20`);
         gifs.display((await res.json()).data);
-      } catch { msg.system("Failed to load GIFs"); }
+      } catch { AlertKit.error("Oops", "Failed to load GIFs"); }
     },
 
     search: async (query) => {
@@ -1346,7 +1333,7 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
       try {
         const res = await fetch(`https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_API_KEY}&q=${encodeURIComponent(query)}&limit=20`);
         gifs.display((await res.json()).data);
-      } catch { msg.system("Failed to search GIFs"); }
+      } catch { AlertKit.error("Oops", "Failed to search GIFs"); }
     },
 
     display: (data) => {
@@ -1391,7 +1378,7 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
 
     el.prShareRoom.onclick = () => {
       if (!state.currentRoomCode) { 
-        msg.system("Create or join a room first to share"); 
+        AlertKit.warning("Wait", "Create or join a room first to share."); 
         return; 
       }
       
@@ -1401,7 +1388,7 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
         window.openShareModal(roomUrl);
       } else {
         utils.copyToClipboard(roomUrl).then(copied => {
-          if (copied) msg.system("Room link copied to clipboard!");
+          if (copied) AlertKit.toast("Room link copied to clipboard!", "success");
         });
       }
     };
@@ -1410,7 +1397,17 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
     el.msgInput.addEventListener("input", () => { if (state.myConn && state.isConnected) state.myConn.send({ type: "typing" }); });
     el.sendBtn.onclick = conn.send;
 
-    el.imgInput.addEventListener("change", (e) => { const f = e.target.files[0]; if (f) conn.sendFile(f, "image"); e.target.value = ""; });
+    el.imgInput.addEventListener("change", (e) => { 
+      const f = e.target.files[0]; 
+      if (f) {
+        if (f.size > 10 * 1024 * 1024) {
+          AlertKit.warning("Too Large", "Image size limit is 10MB.");
+        } else {
+          conn.sendFile(f, "image"); 
+        }
+      }
+      e.target.value = ""; 
+    });
 
     el.skipBtn.onclick = async () => {
       if (state.myConn) state.myConn.close();
