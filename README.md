@@ -8,15 +8,17 @@
 **No login. No registration.** Just instant, anonymous chats!  
 
 **Text & Media Sharing** – Exchange messages, images, and more.  
-**Personal Audio & Video Calls** – Connect instantly with private voice and face-to-face calling.  
-**Private Room & Chat Rooms** – Create a Personal Private Room or Join rooms based on interests.  
+**Make Friends & Stay Connected** – Make new friends on the platform and easily connect with them later via private audio and video calls.  
+**Personal Audio & Video Calls** – Connect instantly with strangers using voice and face-to-face calling.  
+**Personal Private Rooms** – Create a dedicated, private room for exclusive one-on-one conversations.  
+**Group Chat Rooms & Moderation** – Join or create rooms based on interests. Enjoy full admin controls to manage users (ban/unban) and built-in protection against bad words.  
 **Gender & Tags Matching** – Find people who match your preferences.  
 **100% Anonymous** – No personal data required.  
 **Simple & Fast** – Start chatting in one click.  
 
 🔗 **Try Now:**  
 - 💬 [Chat Now](https://shkumaraman.github.io)  
-- 🌐 [Learn More](https://shkumaraman.github.io/page/stranger-chat-app.html)  
+- 🌐 [Learn More](https://shkumaraman.github.io/blog.html)  
 
 ---
 
