@@ -127,6 +127,8 @@
     const globalNickname = localStorage.getItem("talkrush_nickname");
     if (!globalNickname) return;
 
+    const safeGlobalNickname = globalNickname.replace(/[.#$\[\]]/g, '_');
+
     const peer = new Peer(undefined, {
       config: {
         iceServers: [
@@ -147,6 +149,7 @@
     let outboundCallListener = null;
     let inboundCallListener = null;
     let activeTarget = null;
+    let safeActiveTarget = null;
 
     peer.on('call', (call) => {
       currentActiveCall = call;
@@ -167,6 +170,7 @@
 
     window.startOutgoingCall = async (targetNickname, callType) => {
       activeTarget = targetNickname;
+      safeActiveTarget = targetNickname.replace(/[.#$\[\]]/g, '_');
       
       const modal = document.getElementById('customCallModal');
       const text = document.getElementById('callingStatusText');
@@ -224,7 +228,8 @@
       };
       
       const currentPeerId = await getPeerId() || ("user_" + globalNickname.replace(/[^a-zA-Z0-9]/g, '_'));
-      const targetCallRef = ref(db, `calls/${targetNickname}`);
+      
+      const targetCallRef = ref(db, `calls/${safeActiveTarget}`);
       
       await set(targetCallRef, {
         caller: globalNickname,
@@ -278,7 +283,9 @@
 
     window.acceptIncomingCall = async (callerNickname, callType) => {
       activeTarget = callerNickname;
-      const myCallRef = ref(db, `calls/${globalNickname}`);
+      safeActiveTarget = callerNickname.replace(/[.#$\[\]]/g, '_');
+      
+      const myCallRef = ref(db, `calls/${safeGlobalNickname}`);
 
       try {
         localStream = await navigator.mediaDevices.getUserMedia({
@@ -374,8 +381,8 @@
 
     function cleanupCallUI() {
       try {
-        if (activeTarget) remove(ref(db, `calls/${activeTarget}`));
-        if (globalNickname) remove(ref(db, `calls/${globalNickname}`));
+        if (safeActiveTarget) remove(ref(db, `calls/${safeActiveTarget}`));
+        if (safeGlobalNickname) remove(ref(db, `calls/${safeGlobalNickname}`));
       } catch (e) { console.warn(e); }
 
       try {
@@ -420,6 +427,7 @@
       } catch (e) { console.warn(e); }
 
       activeTarget = null;
+      safeActiveTarget = null;
       isAudioMuted = false;
       isVideoPaused = false;
 
