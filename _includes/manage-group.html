@@ -11,11 +11,11 @@
   border-radius: 14px 0 0 14px;
   color: var(--dark-icon-color, #ccc);
   cursor: pointer;
-  z-index: 9999;
-  display: none;
+  z-index: 999999; /* Z-index badha diya gaya hai */
+  display: none; /* Default hidden */
   align-items: center;
   justify-content: center;
-  box-shadow: -4px 0 15px rgba(0,0,0,0.4);
+  box-shadow: -4px 0 15px rgba(0,0,0,0.6);
   transition: all 0.2s ease-in-out;
 }
 .manage-float-btn:hover {
@@ -27,7 +27,7 @@ body.light-mode .manage-float-btn {
   background: var(--light-header-bg, #ffffff);
   border-color: var(--light-header-border, #e0e0e0);
   color: var(--light-icon-color, #666);
-  box-shadow: -4px 0 15px rgba(0,0,0,0.1);
+  box-shadow: -4px 0 15px rgba(0,0,0,0.15);
 }
 body.light-mode .manage-float-btn:hover {
   background: var(--light-icon-hover-bg, rgba(0,0,0,0.05));
@@ -54,7 +54,7 @@ body.light-mode .manage-float-btn:hover {
   width: 100%; height: 100%;
   background: rgba(0,0,0,0.75);
   backdrop-filter: blur(2px);
-  z-index: 100005;
+  z-index: 1000000;
   justify-content: center;
   align-items: center;
   padding: 15px;
@@ -208,7 +208,7 @@ body.light-mode .transfer-input {
         <div class="manage-section-title">Transfer Ownership</div>
         <p class="transfer-desc">Enter the exact nickname of the user you want to make the new Admin. <strong>Warning:</strong> You will lose your admin privileges.</p>
         <div class="transfer-input-group">
-          <input type="text" id="newAdminNickname" class="transfer-input" placeholder="New Admin Nickname">
+          <input type="text" id="newAdminNickname" class="transfer-input" placeholder="New Admin Nickname" autocomplete="off">
           <button id="transferAdminBtn" class="transfer-btn">Transfer</button>
         </div>
       </div>
@@ -217,15 +217,14 @@ body.light-mode .transfer-input {
 </div>
 
 <script type="module">
-import { getApps, getApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
+import { getApps } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
 import { getDatabase, ref, onValue, get, set, remove } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
 
-const app = getApp();
-const db = getDatabase(app);
-const currentGroup = new URLSearchParams(window.location.search).get('group');
-const myNickname = localStorage.getItem('talkrush_nickname') || 'Guest';
-
+let db;
 let isCurrentUserAdmin = false;
+let currentGroup = new URLSearchParams(window.location.search).get('group');
+let myNickname = localStorage.getItem('talkrush_nickname') || 'Guest';
+
 const manageBtn = document.getElementById('manageGroupBtn');
 const modalOverlay = document.getElementById('manageModalOverlay');
 const closeBtn = document.getElementById('closeManageModal');
@@ -233,20 +232,37 @@ const bannedListContainer = document.getElementById('bannedListContainer');
 const newAdminInput = document.getElementById('newAdminNickname');
 const transferBtn = document.getElementById('transferAdminBtn');
 
-if (currentGroup && myNickname !== 'Guest') {
-  const adminRef = ref(db, `groups/${currentGroup}/admin`);
-  onValue(adminRef, (snapshot) => {
-    const adminNickname = snapshot.val();
-    if (adminNickname === myNickname) {
-      isCurrentUserAdmin = true;
-      manageBtn.style.display = 'flex';
-    } else {
-      isCurrentUserAdmin = false;
-      manageBtn.style.display = 'none';
-      closeManageModal();
-    }
-  });
+function initManageTool() {
+  const allApps = getApps();
+  // TalkRushApp check karna, ye wohi naam hai jo group.html mein initialize hua tha
+  const app = allApps.find(a => a.name === "TalkRushApp");
+  
+  if (!app) {
+    // Agar Firebase properly ready nahi hua, to 100ms ke baad phir check karo
+    setTimeout(initManageTool, 100);
+    return;
+  }
+
+  db = getDatabase(app);
+  
+  if (currentGroup && myNickname !== 'Guest') {
+    const adminRef = ref(db, `groups/${currentGroup}/admin`);
+    onValue(adminRef, (snapshot) => {
+      const adminNickname = snapshot.val();
+      if (adminNickname === myNickname) {
+        isCurrentUserAdmin = true;
+        manageBtn.style.display = 'flex'; // Show button when user is admin
+      } else {
+        isCurrentUserAdmin = false;
+        manageBtn.style.display = 'none'; // Hide button for non-admins
+        closeManageModal();
+      }
+    });
+  }
 }
+
+// Function call karo script start hote hi
+initManageTool();
 
 function openManageModal() {
   if (!isCurrentUserAdmin) return;
@@ -265,6 +281,7 @@ modalOverlay.addEventListener('click', (e) => {
 });
 
 function loadBannedUsers() {
+  if (!db) return;
   const bannedRef = ref(db, `groups/${currentGroup}/banned`);
   onValue(bannedRef, (snapshot) => {
     if (!modalOverlay.classList.contains('active')) return;
@@ -295,6 +312,7 @@ function loadBannedUsers() {
 }
 
 async function unbanUser(safeKey, displayName) {
+  if (!db) return;
   const confirm = await AlertKit.confirm(
     'Unban User', 
     `Are you sure you want to unban ${displayName}? They will be able to join the room again.`, 
@@ -313,6 +331,7 @@ async function unbanUser(safeKey, displayName) {
 }
 
 transferBtn.addEventListener('click', async () => {
+  if (!db) return;
   const newAdmin = newAdminInput.value.trim();
   
   if (!newAdmin) {
