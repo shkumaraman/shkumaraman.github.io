@@ -548,6 +548,16 @@ async function renderProfile(userObj) {
 
 window.sendFriendRequest = async (targetId) => {
   if (!myNickname || !targetId) return;
+  
+  const isConfirmed = await AlertKit.confirm(
+    'Add Friend',
+    `Do you want to add ${targetId} to your friends list?`,
+    'Yes, Add',
+    'Cancel'
+  );
+
+  if (!isConfirmed) return;
+
   try {
     const newChatRef = push(ref(db, 'friends'));
     await set(newChatRef, {
@@ -567,37 +577,29 @@ window.sendFriendRequest = async (targetId) => {
   }
 };
 
-window.removeFriendConfirmation = () => {
-  Swal.fire({
-    title: 'Unfriend?',
-    text: 'Are you sure you want to unfriend this user?',
-    icon: 'warning',
-    showCancelButton: true,
-    confirmButtonColor: '#ef4444',
-    cancelButtonColor: '#6c757d',
-    confirmButtonText: 'Yes, Unfriend',
-    cancelButtonText: 'Cancel',
-    background: '#ffffff',
-    color: '#111114'
-  }).then(async (result) => {
-    if (result.isConfirmed) {
-      if (existingChatId) {
-        try {
-          await remove(ref(db, `friends/${existingChatId}`));
-          await remove(ref(db, `messages/${existingChatId}`));
-          await remove(ref(db, `typing/${existingChatId}`));
-          
-          isFriend = false;
-          existingChatId = null;
-          if (currentActiveUser) {
-            renderProfile(currentActiveUser);
-          }
-        } catch (error) {
-          console.error(error);
-        }
+window.removeFriendConfirmation = async () => {
+  const isConfirmed = await AlertKit.confirm(
+    'Unfriend?', 
+    'Are you sure you want to unfriend this user?', 
+    'Yes, Unfriend', 
+    'Cancel'
+  );
+
+  if (isConfirmed && existingChatId) {
+    try {
+      await remove(ref(db, `friends/${existingChatId}`));
+      await remove(ref(db, `messages/${existingChatId}`));
+      await remove(ref(db, `typing/${existingChatId}`));
+      
+      isFriend = false;
+      existingChatId = null;
+      if (currentActiveUser) {
+        renderProfile(currentActiveUser);
       }
+    } catch (error) {
+      console.error(error);
     }
-  });
+  }
 };
 
 window.openTargetChat = (targetId) => {
