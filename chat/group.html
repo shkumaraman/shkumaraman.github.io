@@ -308,6 +308,47 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 .upload-spinner { width: 14px; height: 14px; border: 2px solid var(--dark-text-muted); border-top-color: var(--dark-text); border-radius: 50%; animation: spin 0.7s linear infinite; flex-shrink: 0; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+.msg.msg-single-emoji {
+  background: transparent !important;
+  padding: 0 !important;
+  border-radius: 0;
+  box-shadow: none;
+  position: relative;
+}
+
+.light-mode .msg-row.me .msg.msg-single-emoji,
+.light-mode .msg-row.stranger .msg.msg-single-emoji,
+.msg-row.me .msg.msg-single-emoji,
+.msg-row.stranger .msg.msg-single-emoji {
+  background: transparent !important;
+}
+
+.animated-emoji-img {
+  width: 90px;
+  height: 90px;
+  object-fit: contain;
+  display: block;
+  filter: drop-shadow(0px 4px 6px rgba(0,0,0,0.15));
+}
+
+.msg.msg-single-emoji .timestamp {
+  background: rgba(0, 0, 0, 0.35);
+  padding: 2px 6px;
+  border-radius: 12px;
+  color: #fff !important;
+  font-size: 10px;
+  position: absolute;
+  bottom: 0px;
+  right: -5px;
+  backdrop-filter: blur(4px);
+  white-space: nowrap;
+  z-index: 2;
+}
+
+.light-mode .msg.msg-single-emoji .timestamp {
+  background: rgba(0, 0, 0, 0.2);
+}
+
 @media (min-width: 769px) {
   .chat-container { max-width: 720px; margin: 0 auto; width: 100%; }
   .chat-controls { border-radius: 0 0 12px 12px; border-left: 0.5px solid var(--dark-border); border-right: 0.5px solid var(--dark-border); }
@@ -484,6 +525,29 @@ function linkifyText(text) {
   return escaped.replace(urlRegex, (url) => {
     return `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline; word-break: break-all;">${url}</a>`;
   });
+}
+
+function isSingleEmoji(text) {
+  if (!text) return false;
+  const t = text.trim();
+  try {
+    const segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' });
+    const segments = Array.from(segmenter.segment(t));
+    if (segments.length === 1) {
+      return /^[\p{Emoji_Presentation}\p{Extended_Pictographic}]/u.test(t);
+    }
+    return false;
+  } catch (e) {
+    return /^(\p{Emoji_Presentation}|\p{Extended_Pictographic})[\uFE0F\u200D\p{Emoji_Presentation}\p{Extended_Pictographic}]*$/u.test(t);
+  }
+}
+
+function getEmojiCodePoint(emoji) {
+  let codePoints = [];
+  for (let char of emoji) {
+    codePoints.push(char.codePointAt(0).toString(16));
+  }
+  return codePoints.filter(c => c !== 'fe0f').join('_');
 }
 
 window.forwardMessage = function(content) {
@@ -701,7 +765,24 @@ function updateMessageInDOM(msg) {
   
   const textDiv = bubble.querySelector('.text-content');
   if (textDiv && msg.type === 'text') {
-      textDiv.innerHTML = linkifyText(msg.text);
+      textDiv.innerHTML = '';
+      if (isSingleEmoji(msg.text)) {
+          bubble.classList.add('msg-single-emoji');
+          const emojiText = msg.text.trim();
+          const codePointStr = getEmojiCodePoint(emojiText);
+          
+          const img = document.createElement('img');
+          img.src = `https://fonts.gstatic.com/s/e/notoemoji/latest/${codePointStr}/512.webp`;
+          img.className = 'animated-emoji-img';
+          img.alt = emojiText;
+          img.onerror = () => {
+              textDiv.textContent = emojiText;
+          };
+          textDiv.appendChild(img);
+      } else {
+          bubble.classList.remove('msg-single-emoji');
+          textDiv.innerHTML = linkifyText(msg.text);
+      }
       if (msg.edited && !bubble.querySelector('.edited-label')) {
           const editedSpan = document.createElement('span');
           editedSpan.className = 'edited-label';
@@ -1140,7 +1221,24 @@ function displayMessage(msg) {
     } else {
       const textDiv = document.createElement("div");
       textDiv.className = "text-content";
-      textDiv.innerHTML = linkifyText(msg.text);
+      
+      if (isSingleEmoji(msg.text)) {
+        bubble.classList.add("msg-single-emoji");
+        const emojiText = msg.text.trim();
+        const codePointStr = getEmojiCodePoint(emojiText);
+        
+        const img = document.createElement('img');
+        img.src = `https://fonts.gstatic.com/s/e/notoemoji/latest/${codePointStr}/512.webp`;
+        img.className = 'animated-emoji-img';
+        img.alt = emojiText;
+        img.onerror = () => {
+            textDiv.textContent = emojiText;
+        };
+        textDiv.appendChild(img);
+      } else {
+        textDiv.innerHTML = linkifyText(msg.text);
+      }
+      
       bubble.appendChild(textDiv);
     }
   }
