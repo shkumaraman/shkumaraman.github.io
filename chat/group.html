@@ -555,7 +555,7 @@ window.forwardMessage = function(content) {
     window.openShareModal(content);
   } else if (navigator.clipboard) {
     navigator.clipboard.writeText(content).then(() => {
-       logSystem("Message link copied to clipboard!");
+       AlertKit.toast("Message link copied to clipboard!", "success");
     });
   }
 };
@@ -644,7 +644,7 @@ async function checkGroupPassword() {
     const banSnapshot = await get(ref(db, `groups/${currentGroup}/banned/${safeKey}`));
     
     if (banSnapshot.exists() && banSnapshot.val() === true) {
-      Swal.fire({ title: 'Banned!', text: 'You have been banned from this room by the admin.', icon: 'error' })
+      AlertKit.error('Banned!', 'You have been banned from this room by the admin.')
         .then(() => window.location.href = '/chat/rooms.html');
       return;
     }
@@ -743,7 +743,7 @@ function joinGroupChat() {
   const safeKey = myNickname.replace(/[.#$\[\]]/g, '_');
   onValue(ref(db, `groups/${currentGroup}/banned/${safeKey}`), (snapshot) => {
     if (snapshot.exists() && snapshot.val() === true) {
-      Swal.fire({ title: 'Banned!', text: 'The admin permanently banned you.', icon: 'error' })
+      AlertKit.error('Banned!', 'The admin permanently banned you.')
         .then(() => window.location.href = '/chat/rooms.html');
     }
   });
@@ -751,7 +751,7 @@ function joinGroupChat() {
   onChildAdded(query(ref(db, `groups/${currentGroup}/commands`), limitToLast(1)), (snapshot) => {
     const cmd = snapshot.val();
     if (Date.now() - cmd.timestamp < 10000 && cmd.target === myNickname && cmd.type === 'kick') {
-      Swal.fire({ title: 'Kicked!', text: 'The admin kicked you from the room.', icon: 'warning' })
+      AlertKit.warning('Kicked!', 'The admin kicked you from the room.')
         .then(() => window.location.href = '/chat/rooms.html');
     }
   });
@@ -924,7 +924,7 @@ async function sendImageToGroup(file) {
     }
     await pushMessageToDB(message);
   } catch (err) {
-    logSystem("Failed to upload image. Please try again.");
+    AlertKit.error("Failed", "Failed to upload image. Please try again.");
   } finally {
     loadingBubble.remove();
   }
@@ -1034,26 +1034,22 @@ document.getElementById('contextEditBtn').addEventListener('click', () => {
   hideContextMenu();
 });
 
-document.getElementById('contextDeleteBtn').addEventListener('click', () => {
+document.getElementById('contextDeleteBtn').addEventListener('click', async () => {
   if (contextTargetMsg && currentGroup) {
     const msgKey = contextTargetMsg.key;
     const groupName = currentGroup;
-
     hideContextMenu();
 
-    Swal.fire({
-      title: 'Delete Message?',
-      text: "This message will be deleted for everyone.",
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonColor: '#d33',
-      cancelButtonColor: '#3085d6',
-      confirmButtonText: 'Delete'
-    }).then((result) => {
-      if (result.isConfirmed) {
-        remove(ref(db, `group_messages/${groupName}/${msgKey}`));
-      }
-    });
+    const isConfirmed = await AlertKit.confirm(
+      'Delete Message?',
+      'This message will be deleted for everyone.',
+      'Delete',
+      'Cancel'
+    );
+    
+    if (isConfirmed) {
+      remove(ref(db, `group_messages/${groupName}/${msgKey}`));
+    }
   } else {
     hideContextMenu();
   }
@@ -1291,8 +1287,11 @@ function sendMessage() {
 document.getElementById("imgBtn").onclick = () => { if(passwordVerified) document.getElementById("imgInput").click(); };
 document.getElementById("imgInput").onchange = async e => {
   if (!passwordVerified || !e.target.files[0]) return;
-  if (e.target.files[0].size > 10 * 1024 * 1024) logSystem("Image too large! Limit is 10MB.");
-  else await sendImageToGroup(e.target.files[0]);
+  if (e.target.files[0].size > 10 * 1024 * 1024) {
+    AlertKit.warning("Too Large", "Image size limit is 10MB.");
+  } else {
+    await sendImageToGroup(e.target.files[0]);
+  }
   e.target.value = "";
 };
 
@@ -1388,7 +1387,7 @@ document.getElementById('shareRoomHeaderBtn').addEventListener('click', () => {
     window.openShareModal(shareUrl);
   } else if (navigator.clipboard) {
     navigator.clipboard.writeText(shareUrl).then(() => {
-      logSystem("Room link copied to clipboard!");
+      AlertKit.toast("Room link copied to clipboard!", "success");
     });
   }
 });
