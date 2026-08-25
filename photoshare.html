@@ -197,14 +197,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 .share-buttons { display: flex; gap: 12px; justify-content: center; margin: 20px 0; }
 .share-buttons .btn-secondary { flex: 1; max-width: 200px; }
 
-.system-msg {
-  position: fixed; top: 70px; left: 50%; transform: translateX(-50%);
-  background: var(--accent); color: white; padding: 10px 20px;
-  border-radius: 11px; text-align: center; z-index: 9999; display: none;
-  font-weight: 700; font-size: 13px;
-  box-shadow: 0 4px 15px rgba(0,0,0,0.3); white-space: nowrap; animation: fadeIn 0.3s ease;
-}
-
 @media (max-width: 600px) {
   .photo-grid { grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); }
   .code-display { font-size: 26px; padding: 15px; }
@@ -278,8 +270,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     </div>
   </div>
 </div>
-
-<div class="system-msg" id="systemMsg"></div>
 
 <ins class="adsbygoogle"
      style="display:block; margin-top: 20px;"
@@ -371,7 +361,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   const codeInput = document.getElementById('codeInput');
   const viewBtn = document.getElementById('viewBtn');
   const viewerGallery = document.getElementById('viewerGallery');
-  const systemMsg = document.getElementById('systemMsg');
   const tabUpload = document.getElementById('tabUpload');
   const tabView = document.getElementById('tabView');
   const uploadTab = document.getElementById('upload-tab');
@@ -383,7 +372,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   const MAX_IMAGES = 10;
   let uploadedFiles = [];
   let shareCode = '';
-  let msgTimer = null;
 
   uploadArea.addEventListener('click', () => fileInput.click());
   fileInput.addEventListener('change', handleFileSelect);
@@ -451,13 +439,13 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
   function processFiles(files) {
     const remaining = MAX_IMAGES - uploadedFiles.length;
-    if (remaining <= 0) { showMsg(`Maximum ${MAX_IMAGES} photos allowed`); return; }
+    if (remaining <= 0) { AlertKit.toast(`Maximum ${MAX_IMAGES} photos allowed`, 'warning'); return; }
     const toAdd = files.slice(0, remaining);
-    if (files.length > remaining) showMsg(`Only ${remaining} more photo(s) can be added`);
+    if (files.length > remaining) AlertKit.toast(`Only ${remaining} more photo(s) can be added`, 'info');
 
     toAdd.forEach(file => {
-      if (!file.type.startsWith('image/')) { showMsg(`${file.name} is not an image`); return; }
-      if (file.size > 10 * 1024 * 1024) { showMsg(`${file.name} is too large (max 10MB)`); return; }
+      if (!file.type.startsWith('image/')) { AlertKit.toast(`${file.name} is not an image`, 'error'); return; }
+      if (file.size > 10 * 1024 * 1024) { AlertKit.toast(`${file.name} is too large (max 10MB)`, 'warning'); return; }
 
       const idx = uploadedFiles.length;
       uploadedFiles.push(file);
@@ -491,7 +479,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   }
 
   async function generateShareCode() {
-    if (uploadedFiles.length === 0) { showMsg('Please upload at least one photo'); return; }
+    if (uploadedFiles.length === 0) { AlertKit.toast('Please upload at least one photo', 'warning'); return; }
 
     await loadKeys();
 
@@ -524,19 +512,19 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       codeDisplay.style.display = 'block';
       shareButtons.style.display = 'flex';
 
-      showMsg('Photos uploaded! Share the code below.');
+      AlertKit.success('Success', 'Photos uploaded! Share the code below.');
     } catch (error) {
       progressWrap.classList.remove('active');
       generateBtn.disabled = false;
       generateBtn.innerHTML = '<i class="fas fa-magic"></i> Generate Share Code';
-      showMsg('Error uploading. Please try again.');
+      AlertKit.error('Upload Failed', 'Error uploading. Please try again.');
     }
   }
 
   function copyCode() {
     navigator.clipboard.writeText(shareCode)
-      .then(() => showMsg('Code copied!'))
-      .catch(() => showMsg('Failed to copy'));
+      .then(() => AlertKit.toast('Code copied!', 'success'))
+      .catch(() => AlertKit.toast('Failed to copy', 'error'));
   }
 
   function shareCodeViaAPI() {
@@ -551,7 +539,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
   async function viewPhotos() {
     const code = codeInput.value.trim();
-    if (code.length !== 5 || !/^\d+$/.test(code)) { showMsg('Please enter a valid 5-digit code'); return; }
+    if (code.length !== 5 || !/^\d+$/.test(code)) { AlertKit.toast('Please enter a valid 5-digit code', 'warning'); return; }
 
     viewerGallery.innerHTML = '';
     viewBtn.disabled = true;
@@ -564,16 +552,16 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       viewBtn.disabled = false;
       viewBtn.innerHTML = '<i class="fas fa-eye"></i> View';
 
-      if (!data) { showMsg('No photos found for this code'); return; }
+      if (!data) { AlertKit.toast('No photos found for this code', 'error'); return; }
 
       if (data.expires && data.expires < Date.now()) {
-        showMsg('This code has expired!');
+        AlertKit.error('Expired', 'This code has expired!');
         remove(ref(db, `photos/${code}`));
         return;
       }
 
       const images = data.images || (data.image ? [data.image] : null);
-      if (!images || images.length === 0) { showMsg('No photos found for this code'); return; }
+      if (!images || images.length === 0) { AlertKit.toast('No photos found for this code', 'error'); return; }
 
       images.forEach((src, idx) => {
         const item = document.createElement('div');
@@ -588,15 +576,8 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     } catch (error) {
       viewBtn.disabled = false;
       viewBtn.innerHTML = '<i class="fas fa-eye"></i> View';
-      showMsg('No photos found for this code');
+      AlertKit.toast('No photos found for this code', 'error');
     }
-  }
-
-  function showMsg(msg) {
-    clearTimeout(msgTimer);
-    systemMsg.textContent = msg;
-    systemMsg.style.display = 'block';
-    msgTimer = setTimeout(() => { systemMsg.style.display = 'none'; }, 3000);
   }
 
   function checkUrlForCode() {
