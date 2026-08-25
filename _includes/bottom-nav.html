@@ -9,6 +9,7 @@
   <a href="/chat/users.html" class="bn-item">
     <div class="bn-icon-wrap">
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><polyline points="17 11 19 13 23 9"/></svg>
+      <span class="bn-dot"></span>
     </div>
     <span>Users</span>
   </a>
@@ -25,7 +26,6 @@
     </div>
     <span>Stranger</span>
   </a>
-  
   <a href="/post.html" class="bn-item">
     <div class="bn-icon-wrap">
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -52,7 +52,7 @@
     height: 60px;
     background: #111114;
     border-top: 0.5px solid rgba(255,255,255,0.08);
-    z-index: 999;
+    z-index: 9999;
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
   .light-mode #bottomNav {
@@ -104,6 +104,16 @@
   line-height: 1;
   pointer-events: none;
 }
+.bn-dot {
+  position: absolute;
+  top: -1px;
+  right: -3px;
+  width: 7px;
+  height: 7px;
+  background: #ff4757;
+  border-radius: 50%;
+  pointer-events: none;
+}
 .light-mode .bn-item {
   color: rgba(0,0,0,0.45);
 }
@@ -122,13 +132,75 @@
 </style>
 
 <script>
-document.addEventListener('DOMContentLoaded', function () {
+function initSpaContainer() {
+  if (!document.getElementById('spa-content')) {
+    const wrapper = document.createElement('div');
+    wrapper.id = 'spa-content';
+    Array.from(document.body.children).forEach(child => {
+      if (child.id !== 'bottomNav' && child.tagName !== 'SCRIPT') {
+        wrapper.appendChild(child);
+      }
+    });
+    document.body.insertBefore(wrapper, document.getElementById('bottomNav'));
+  }
+}
+
+function updateActiveTab() {
   var currentPath = window.location.pathname;
   document.querySelectorAll('#bottomNav .bn-item').forEach(function (link) {
     if (link.getAttribute('href') === currentPath) {
       link.classList.add('active');
+    } else {
+      link.classList.remove('active');
     }
   });
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+  initSpaContainer();
+  updateActiveTab();
+});
+
+async function loadPage(targetUrl, push = true) {
+  try {
+    const response = await fetch(targetUrl);
+    const htmlText = await response.text();
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(htmlText, 'text/html');
+
+    const fetchedBottomNav = doc.getElementById('bottomNav');
+    if (fetchedBottomNav) fetchedBottomNav.remove();
+
+    const contentContainer = document.getElementById('spa-content');
+    if (contentContainer) {
+      contentContainer.innerHTML = doc.body.innerHTML;
+
+      contentContainer.querySelectorAll('script').forEach(oldScript => {
+        const newScript = document.createElement('script');
+        Array.from(oldScript.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value));
+        newScript.appendChild(document.createTextNode(oldScript.innerHTML));
+        oldScript.parentNode.replaceChild(newScript, oldScript);
+      });
+    }
+
+    if (push) window.history.pushState({}, '', targetUrl);
+    updateActiveTab();
+    window.scrollTo(0, 0);
+  } catch (err) {
+    window.location.href = targetUrl;
+  }
+}
+
+document.addEventListener('click', function (e) {
+  const link = e.target.closest('#bottomNav .bn-item');
+  if (!link) return;
+  e.preventDefault();
+  const targetUrl = link.getAttribute('href');
+  if (targetUrl) loadPage(targetUrl, true);
+});
+
+window.addEventListener('popstate', function () {
+  loadPage(window.location.pathname, false);
 });
 </script>
 
@@ -156,7 +228,6 @@ document.addEventListener('DOMContentLoaded', function () {
       onValue(ref(db, "friends"), (snap) => {
         const data = snap.val();
         const badge = document.getElementById("bottomNavInboxBadge");
-        
         if (!badge) return;
 
         if (!data) {
@@ -191,7 +262,6 @@ document.addEventListener('DOMContentLoaded', function () {
       onValue(ref(db, `group_reply/${safeKey}`), (snap) => {
         const data = snap.val();
         const badge = document.getElementById("bottomNavBadge");
-        
         if (!badge) return;
 
         if (!data) {
