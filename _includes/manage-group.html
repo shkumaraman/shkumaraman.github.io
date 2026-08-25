@@ -11,8 +11,8 @@
   border-radius: 14px 0 0 14px;
   color: var(--dark-icon-color, #ccc);
   cursor: pointer;
-  z-index: 999999; /* Z-index badha diya gaya hai */
-  display: none; /* Default hidden */
+  z-index: 999999;
+  display: none;
   align-items: center;
   justify-content: center;
   box-shadow: -4px 0 15px rgba(0,0,0,0.6);
@@ -217,13 +217,28 @@ body.light-mode .transfer-input {
 </div>
 
 <script type="module">
-import { getApps } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
-import { getDatabase, ref, onValue, get, set, remove } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
+import { initializeApp, getApps } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
+import { getDatabase, ref, onValue, set, remove } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
 
-let db;
-let isCurrentUserAdmin = false;
-let currentGroup = new URLSearchParams(window.location.search).get('group');
+const firebaseConfig = {
+  databaseURL: "https://talkrush2-default-rtdb.asia-southeast1.firebasedatabase.app"
+};
+
+let app;
+const apps = getApps();
+const targetAppName = "TalkRushApp";
+const existingApp = apps.find(a => a.name === targetAppName);
+
+if (existingApp) {
+  app = existingApp;
+} else {
+  app = initializeApp(firebaseConfig, targetAppName);
+}
+
+const db = getDatabase(app);
+const currentGroup = new URLSearchParams(window.location.search).get('group');
 let myNickname = localStorage.getItem('talkrush_nickname') || 'Guest';
+let isCurrentUserAdmin = false;
 
 const manageBtn = document.getElementById('manageGroupBtn');
 const modalOverlay = document.getElementById('manageModalOverlay');
@@ -232,37 +247,32 @@ const bannedListContainer = document.getElementById('bannedListContainer');
 const newAdminInput = document.getElementById('newAdminNickname');
 const transferBtn = document.getElementById('transferAdminBtn');
 
-function initManageTool() {
-  const allApps = getApps();
-  // TalkRushApp check karna, ye wohi naam hai jo group.html mein initialize hua tha
-  const app = allApps.find(a => a.name === "TalkRushApp");
-  
-  if (!app) {
-    // Agar Firebase properly ready nahi hua, to 100ms ke baad phir check karo
-    setTimeout(initManageTool, 100);
+window.addEventListener('nicknameUpdated', (e) => {
+  myNickname = e.detail.nickname;
+  checkAdminStatus();
+});
+
+function checkAdminStatus() {
+  if (!currentGroup || myNickname === 'Guest') {
+    manageBtn.style.display = 'none';
     return;
   }
-
-  db = getDatabase(app);
   
-  if (currentGroup && myNickname !== 'Guest') {
-    const adminRef = ref(db, `groups/${currentGroup}/admin`);
-    onValue(adminRef, (snapshot) => {
-      const adminNickname = snapshot.val();
-      if (adminNickname === myNickname) {
-        isCurrentUserAdmin = true;
-        manageBtn.style.display = 'flex'; // Show button when user is admin
-      } else {
-        isCurrentUserAdmin = false;
-        manageBtn.style.display = 'none'; // Hide button for non-admins
-        closeManageModal();
-      }
-    });
-  }
+  const adminRef = ref(db, `groups/${currentGroup}/admin`);
+  onValue(adminRef, (snapshot) => {
+    const adminNickname = snapshot.val();
+    if (adminNickname && adminNickname === myNickname) {
+      isCurrentUserAdmin = true;
+      manageBtn.style.display = 'flex';
+    } else {
+      isCurrentUserAdmin = false;
+      manageBtn.style.display = 'none';
+      closeManageModal();
+    }
+  });
 }
 
-// Function call karo script start hote hi
-initManageTool();
+checkAdminStatus();
 
 function openManageModal() {
   if (!isCurrentUserAdmin) return;
@@ -281,7 +291,6 @@ modalOverlay.addEventListener('click', (e) => {
 });
 
 function loadBannedUsers() {
-  if (!db) return;
   const bannedRef = ref(db, `groups/${currentGroup}/banned`);
   onValue(bannedRef, (snapshot) => {
     if (!modalOverlay.classList.contains('active')) return;
@@ -312,10 +321,9 @@ function loadBannedUsers() {
 }
 
 async function unbanUser(safeKey, displayName) {
-  if (!db) return;
   const confirm = await AlertKit.confirm(
     'Unban User', 
-    `Are you sure you want to unban ${displayName}? They will be able to join the room again.`, 
+    `Are you sure you want to unban ${displayName}?`, 
     'Yes, Unban', 
     'Cancel'
   );
@@ -331,7 +339,6 @@ async function unbanUser(safeKey, displayName) {
 }
 
 transferBtn.addEventListener('click', async () => {
-  if (!db) return;
   const newAdmin = newAdminInput.value.trim();
   
   if (!newAdmin) {
