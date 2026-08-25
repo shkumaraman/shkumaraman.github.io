@@ -466,6 +466,47 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
     transform: scale(1.03);
   }
 
+  .msg.msg-single-emoji {
+    background: transparent !important;
+    padding: 0 !important;
+    border-radius: 0;
+    box-shadow: none;
+    position: relative;
+  }
+
+  .light-mode .me.msg-single-emoji,
+  .light-mode .stranger.msg-single-emoji,
+  .me.msg-single-emoji,
+  .stranger.msg-single-emoji {
+    background: transparent !important;
+  }
+
+  .animated-emoji-img {
+    width: 90px;
+    height: 90px;
+    object-fit: contain;
+    display: block;
+    filter: drop-shadow(0px 4px 6px rgba(0, 0, 0, 0.15));
+  }
+
+  .msg.msg-single-emoji .timestamp {
+    background: rgba(0, 0, 0, 0.35);
+    padding: 2px 6px;
+    border-radius: 12px;
+    color: #fff !important;
+    font-size: 10px;
+    position: absolute;
+    bottom: 0px;
+    right: -5px;
+    backdrop-filter: blur(4px);
+    white-space: nowrap;
+    z-index: 2;
+  }
+
+  .light-mode .msg.msg-single-emoji .timestamp {
+    background: rgba(0, 0, 0, 0.2);
+  }
+
   .pr-modal {
     display: none;
     position: fixed;
@@ -965,6 +1006,29 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
     });
   }
 
+  function isSingleEmoji(text) {
+    if (!text) return false;
+    const t = text.trim();
+    try {
+      const segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' });
+      const segments = Array.from(segmenter.segment(t));
+      if (segments.length === 1) {
+        return /^[\p{Emoji_Presentation}\p{Extended_Pictographic}]/u.test(t);
+      }
+      return false;
+    } catch (e) {
+      return /^(\p{Emoji_Presentation}|\p{Extended_Pictographic})[\uFE0F\u200D\p{Emoji_Presentation}\p{Extended_Pictographic}]*$/u.test(t);
+    }
+  }
+
+  function getEmojiCodePoint(emoji) {
+    let codePoints = [];
+    for (let char of emoji) {
+      codePoints.push(char.codePointAt(0).toString(16));
+    }
+    return codePoints.filter(c => c !== 'fe0f').join('_');
+  }
+
   const storage = {
     saveRoomCode: () => localStorage.setItem('chatRoomData', JSON.stringify({ roomCode: state.currentRoomCode })),
     loadRoomCode: () => { try { const d = localStorage.getItem('chatRoomData'); return d ? JSON.parse(d) : null; } catch { return null; } },
@@ -979,7 +1043,24 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
       const div = document.createElement("div");
       div.className = `msg ${sender}`;
       if (type === 'text') {
-        div.innerHTML = linkifyText(content);
+        if (isSingleEmoji(content)) {
+          div.classList.add("msg-single-emoji");
+          const emojiText = content.trim();
+          const codePointStr = getEmojiCodePoint(emojiText);
+
+          const img = document.createElement('img');
+          img.src = `https://fonts.gstatic.com/s/e/notoemoji/latest/${codePointStr}/512.webp`;
+          img.className = 'animated-emoji-img';
+          img.alt = emojiText;
+          img.onerror = () => {
+            img.replaceWith(document.createTextNode(emojiText));
+          };
+          div.appendChild(img);
+        } else {
+          const span = document.createElement('span');
+          span.innerHTML = linkifyText(content);
+          div.appendChild(span);
+        }
       } else {
         const img = document.createElement("img");
         img.src = content;
