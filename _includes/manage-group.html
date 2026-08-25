@@ -11,7 +11,7 @@
   border-radius: 14px 0 0 14px;
   color: var(--dark-icon-color, #ccc);
   cursor: pointer;
-  z-index: 999999;
+  z-index: 9990;
   display: none;
   align-items: center;
   justify-content: center;
@@ -54,7 +54,7 @@ body.light-mode .manage-float-btn:hover {
   width: 100%; height: 100%;
   background: rgba(0,0,0,0.75);
   backdrop-filter: blur(2px);
-  z-index: 1000000;
+  z-index: 99990;
   justify-content: center;
   align-items: center;
   padding: 15px;
@@ -110,11 +110,28 @@ body.light-mode .close-manage-btn { color: var(--light-icon-color, #666); }
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
+.banned-search {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--dark-input-bg, rgba(255,255,255,0.05));
+  border: 0.5px solid var(--dark-border2, rgba(255,255,255,0.08));
+  border-radius: 8px;
+  color: var(--dark-text);
+  font-size: 13px;
+  outline: none;
+  margin-bottom: 10px;
+  box-sizing: border-box;
+}
+body.light-mode .banned-search {
+  background: var(--light-input-bg, rgba(0,0,0,0.05));
+  border-color: var(--light-border2, rgba(0,0,0,0.1));
+  color: var(--light-text);
+}
 .banned-list {
   background: var(--dark-input-bg, rgba(255,255,255,0.05));
   border: 0.5px solid var(--dark-border2, rgba(255,255,255,0.08));
   border-radius: 10px;
-  max-height: 200px;
+  max-height: 250px;
   overflow-y: auto;
 }
 body.light-mode .banned-list {
@@ -200,15 +217,16 @@ body.light-mode .transfer-input {
     <div class="manage-body">
       <div class="manage-section">
         <div class="manage-section-title">Banned Users</div>
+        <input type="text" id="bannedSearchInput" class="banned-search" placeholder="Search banned users..." autocomplete="off">
         <div class="banned-list" id="bannedListContainer">
           <div class="empty-banned">Loading...</div>
         </div>
       </div>
       <div class="manage-section" style="margin-bottom: 0;">
         <div class="manage-section-title">Transfer Ownership</div>
-        <p class="transfer-desc">Enter the exact nickname of the user you want to make the new Admin. <strong>Warning:</strong> You will lose your admin privileges.</p>
+        <p class="transfer-desc">Enter the exact nickname of the user you want to make the new Admin (e.g., TR|abc). If you don't add "TR|", it will be added automatically. <strong>Warning:</strong> You will lose your admin privileges.</p>
         <div class="transfer-input-group">
-          <input type="text" id="newAdminNickname" class="transfer-input" placeholder="New Admin Nickname" autocomplete="off">
+          <input type="text" id="newAdminNickname" class="transfer-input" placeholder="New Admin Nickname (e.g., TR|abc)" autocomplete="off">
           <button id="transferAdminBtn" class="transfer-btn">Transfer</button>
         </div>
       </div>
@@ -244,6 +262,7 @@ const manageBtn = document.getElementById('manageGroupBtn');
 const modalOverlay = document.getElementById('manageModalOverlay');
 const closeBtn = document.getElementById('closeManageModal');
 const bannedListContainer = document.getElementById('bannedListContainer');
+const bannedSearchInput = document.getElementById('bannedSearchInput');
 const newAdminInput = document.getElementById('newAdminNickname');
 const transferBtn = document.getElementById('transferAdminBtn');
 
@@ -276,6 +295,7 @@ checkAdminStatus();
 
 function openManageModal() {
   if (!isCurrentUserAdmin) return;
+  bannedSearchInput.value = '';
   modalOverlay.classList.add('active');
   loadBannedUsers();
 }
@@ -288,6 +308,36 @@ manageBtn.addEventListener('click', openManageModal);
 closeBtn.addEventListener('click', closeManageModal);
 modalOverlay.addEventListener('click', (e) => {
   if (e.target === modalOverlay) closeManageModal();
+});
+
+bannedSearchInput.addEventListener('input', (e) => {
+  const query = e.target.value.toLowerCase();
+  const items = bannedListContainer.querySelectorAll('.banned-item');
+  let visibleCount = 0;
+  
+  items.forEach(item => {
+    const name = item.querySelector('span').textContent.toLowerCase();
+    if (name.includes(query)) {
+      item.style.display = 'flex';
+      visibleCount++;
+    } else {
+      item.style.display = 'none';
+    }
+  });
+  
+  let emptyMsg = bannedListContainer.querySelector('.empty-search-msg');
+  if (visibleCount === 0 && items.length > 0) {
+    if (!emptyMsg) {
+      emptyMsg = document.createElement('div');
+      emptyMsg.className = 'empty-banned empty-search-msg';
+      emptyMsg.textContent = 'No matching users found.';
+      bannedListContainer.appendChild(emptyMsg);
+    } else {
+      emptyMsg.style.display = 'block';
+    }
+  } else if (emptyMsg) {
+    emptyMsg.style.display = 'none';
+  }
 });
 
 function loadBannedUsers() {
@@ -317,6 +367,8 @@ function loadBannedUsers() {
       item.appendChild(unbanBtn);
       bannedListContainer.appendChild(item);
     });
+    
+    bannedSearchInput.dispatchEvent(new Event('input'));
   });
 }
 
@@ -339,11 +391,15 @@ async function unbanUser(safeKey, displayName) {
 }
 
 transferBtn.addEventListener('click', async () => {
-  const newAdmin = newAdminInput.value.trim();
+  let newAdmin = newAdminInput.value.trim();
   
   if (!newAdmin) {
     AlertKit.warning('Missing Input', 'Please enter the nickname of the new admin.');
     return;
+  }
+  
+  if (!newAdmin.startsWith('TR|')) {
+    newAdmin = 'TR|' + newAdmin;
   }
   
   if (newAdmin === myNickname) {
