@@ -95,9 +95,27 @@
 
     onValue(ref(dbFriends, "friends"), (snap) => {
       const data = snap.val();
-      if (!data) return;
+      
+      let unreadCount = 0;
+      let lastSeenMap = JSON.parse(localStorage.getItem('inbox_last_seen') || '{}');
+      const params = new URLSearchParams(window.location.search);
+      const currentChatId = window.location.pathname.includes('inbox.html') ? params.get('chatId') : null;
+      if (currentChatId) lastSeenMap[currentChatId] = Date.now();
+
+      if (!data) {
+        window.dispatchEvent(new CustomEvent('updateInboxBadge', { detail: 0 }));
+        return;
+      }
       
       Object.entries(data).forEach(([chatId, friend]) => {
+        if (friend.nickname1 === myNickname || friend.nickname2 === myNickname) {
+          let chatLastSeen = lastSeenMap[chatId] || 0;
+          let lastTimestamp = friend.lastTimestamp || 0;
+          if (friend.lastSender && friend.lastSender !== myNickname && lastTimestamp > chatLastSeen && chatId !== currentChatId) {
+            unreadCount++;
+          }
+        }
+        
         const friendNick = getFriendNickname(friend);
         if (!friendNick) return;
         
@@ -123,22 +141,34 @@
         localStorage.setItem("lastNotifiedMessages", JSON.stringify(lastNotifiedMessages));
         processToastQueue();
       });
+
+      window.dispatchEvent(new CustomEvent('updateInboxBadge', { detail: unreadCount }));
     });
 
     const safeKey = myNickname.replace(/[.#$\[\]]/g, '_');
     onValue(ref(dbGroups, `group_reply/${safeKey}`), (snap) => {
       const data = snap.val();
-      if (!data) return;
-
+      
+      let count = 0;
       const currentPath = window.location.pathname;
       const currentGroupParams = new URLSearchParams(window.location.search).get('group');
 
+      if (!data) {
+        window.dispatchEvent(new CustomEvent('updateRoomBadge', { detail: 0 }));
+        return;
+      }
+
       Object.entries(data).forEach(([groupName, replyData]) => {
+        const unreadCount = replyData.unreadCount || 0;
+        
+        if (groupName !== currentGroupParams) {
+          count += unreadCount;
+        }
+
         if (currentPath.includes('/chat/group.html') && currentGroupParams === groupName) {
            return; 
         }
 
-        const unreadCount = replyData.unreadCount || 0;
         if (unreadCount === 0) return;
 
         const key = "group_reply_" + groupName + "_" + unreadCount;
@@ -161,6 +191,8 @@
         localStorage.setItem("lastNotifiedMessages", JSON.stringify(lastNotifiedMessages));
         processToastQueue();
       });
+
+      window.dispatchEvent(new CustomEvent('updateRoomBadge', { detail: count }));
     });
 
     function processToastQueue() {
