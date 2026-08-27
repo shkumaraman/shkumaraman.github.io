@@ -346,7 +346,7 @@ body.light-mode {
   </div>
 
   <div class="users-grid" id="usersGrid">
-    <div class="empty-state">Loading users...</div>
+    <div class="empty-state" id="emptyStateMsg"><i class="fas fa-ghost" style="font-size:30px; margin-bottom:10px;"></i><br>Loading users...</div>
   </div>
 </main>
 
@@ -354,23 +354,17 @@ body.light-mode {
 
 <script type="module">
   import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
-  import { getDatabase, ref, onValue, set, push } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
+  import { getDatabase, ref, onValue, set, push, onChildAdded, onChildRemoved } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
 
   const firebaseConfig = {
     databaseURL: "https://talkrush3-default-rtdb.asia-southeast1.firebasedatabase.app"
   };
 
-  let app;
+  const targetAppName = "TalkRushFriendApp";
   const apps = getApps();
-  const targetAppName = "TalkRushApp";
   const existingApp = apps.find(a => a.name === targetAppName);
-
-  if (existingApp) {
-    app = existingApp;
-  } else {
-    app = initializeApp(firebaseConfig, targetAppName);
-  }
-
+  const app = existingApp ? existingApp : initializeApp(firebaseConfig, targetAppName);
+  
   const db = getDatabase(app);
 
   const usersGrid = document.getElementById('usersGrid');
@@ -391,11 +385,24 @@ body.light-mode {
     return `${hours}h ago`;
   };
 
-  let onlineUsersArray = [];
+  let onlineUsersCount = 0;
   let myFriendsMap = {}; 
 
   const usersRef = ref(db, 'users');
   const friendsRef = ref(db, 'friends');
+
+  function checkEmptyState() {
+    if (onlineUsersCount === 0) {
+      usersGrid.innerHTML = '<div class="empty-state" id="emptyStateMsg"><i class="fas fa-ghost" style="font-size:30px; margin-bottom:10px;"></i><br>No one is online right now.</div>';
+    } else {
+      const emptyMsg = document.getElementById('emptyStateMsg');
+      if (emptyMsg) emptyMsg.remove();
+    }
+    onlineCount.innerText = onlineUsersCount;
+  }
+
+  usersGrid.innerHTML = '';
+  checkEmptyState();
 
   onValue(friendsRef, (snapshot) => {
     myFriendsMap = {};
@@ -409,68 +416,95 @@ body.light-mode {
         }
       });
     }
-    renderUsers();
+    updateAllFriendButtons();
   });
 
-  onValue(usersRef, (snapshot) => {
-    onlineUsersArray = [];
-    if (snapshot.exists()) {
-      onlineUsersArray = Object.values(snapshot.val()).sort((a, b) => b.timestamp - a.timestamp);
-    }
-    renderUsers();
-  });
-
-  function renderUsers() {
-    usersGrid.innerHTML = '';
-
-    if (onlineUsersArray.length === 0) {
-      onlineCount.innerText = '0';
-      usersGrid.innerHTML = '<div class="empty-state"><i class="fas fa-ghost" style="font-size:30px; margin-bottom:10px;"></i><br>No one is online right now.</div>';
-      return;
-    }
-
-    onlineCount.innerText = onlineUsersArray.length;
-
-    onlineUsersArray.forEach(user => {
-      const isMe = user.nickname === currentNickname;
-      const isFriend = !!myFriendsMap[user.nickname];
+  function updateAllFriendButtons() {
+    const allCards = document.querySelectorAll('.user-card');
+    allCards.forEach(card => {
+      const nickname = card.dataset.nickname;
+      if (!nickname || nickname === currentNickname) return;
       
-      let displayName = user.nickname || "Unknown";
-      if (displayName.startsWith("TR|")) {
-        displayName = displayName.substring(3);
+      const isFriend = !!myFriendsMap[nickname];
+      const actionGroup = card.querySelector('.action-group');
+      if (actionGroup) {
+        let displayName = nickname;
+        if (displayName.startsWith("TR|")) {
+          displayName = displayName.substring(3);
+        }
+        
+        actionGroup.innerHTML = isFriend ? `
+          <button class="action-btn" onclick="messageUser('${nickname}')" title="Message ${displayName}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          </button>
+        ` : `
+          <button class="action-btn" onclick="addFriend('${nickname}')" title="Add ${displayName}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+          </button>
+        `;
       }
-      
-      const initial = displayName ? displayName.charAt(0).toUpperCase() : '?';
-      
-      const card = document.createElement('div');
-      card.className = 'user-card';
-
-      card.innerHTML = `
-        <div class="user-avatar">${initial}</div>
-        <div class="user-info">
-          <div class="user-name">
-            ${displayName}
-            ${isMe ? '<span class="you-badge">You</span>' : ''}
-          </div>
-          <p class="user-status">Joined ${timeAgo(user.timestamp)}</p>
-        </div>
-        ${!isMe ? `
-        <div class="action-group">
-          ${isFriend ? `
-            <button class="action-btn" onclick="messageUser('${user.nickname}')" title="Message ${displayName}">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-            </button>
-          ` : `
-            <button class="action-btn" onclick="addFriend('${user.nickname}')" title="Add ${displayName}">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
-            </button>
-          `}
-        </div>
-        ` : ''}
-      `;
-      usersGrid.appendChild(card);
     });
   }
+
+  onChildAdded(usersRef, (snapshot) => {
+    const user = snapshot.val();
+    const safeKey = snapshot.key;
+    
+    onlineUsersCount++;
+    checkEmptyState();
+
+    const isMe = user.nickname === currentNickname;
+    const isFriend = !!myFriendsMap[user.nickname];
+    
+    let displayName = user.nickname || "Unknown";
+    if (displayName.startsWith("TR|")) {
+      displayName = displayName.substring(3);
+    }
+    
+    const initial = displayName ? displayName.charAt(0).toUpperCase() : '?';
+    
+    const card = document.createElement('div');
+    card.className = 'user-card';
+    card.id = `user-card-${safeKey}`;
+    card.dataset.nickname = user.nickname;
+
+    card.innerHTML = `
+      <div class="user-avatar">${initial}</div>
+      <div class="user-info">
+        <div class="user-name">
+          ${displayName}
+          ${isMe ? '<span class="you-badge">You</span>' : ''}
+        </div>
+        <p class="user-status">Joined ${timeAgo(user.timestamp)}</p>
+      </div>
+      ${!isMe ? `
+      <div class="action-group">
+        ${isFriend ? `
+          <button class="action-btn" onclick="messageUser('${user.nickname}')" title="Message ${displayName}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          </button>
+        ` : `
+          <button class="action-btn" onclick="addFriend('${user.nickname}')" title="Add ${displayName}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+          </button>
+        `}
+      </div>
+      ` : ''}
+    `;
+    
+    usersGrid.prepend(card);
+  });
+
+  onChildRemoved(usersRef, (snapshot) => {
+    const safeKey = snapshot.key;
+    const cardToRemove = document.getElementById(`user-card-${safeKey}`);
+    
+    if (cardToRemove) {
+      cardToRemove.remove();
+      onlineUsersCount--;
+      checkEmptyState();
+    }
+  });
 
   window.addFriend = async (targetNickname) => {
     if (!currentNickname || currentNickname === 'Guest') {
