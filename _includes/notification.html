@@ -42,13 +42,34 @@
   import { getDatabase, ref, onValue, set, remove, update } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
 
   document.addEventListener("DOMContentLoaded", function () {
-    const firebaseConfig = { databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app" };
-    const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-    const db = getDatabase(app);
+    const configDefault = { databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app" };
+    const configGroups = { databaseURL: "https://talkrush2-default-rtdb.asia-southeast1.firebasedatabase.app" };
+    const configFriends = { databaseURL: "https://talkrush3-default-rtdb.asia-southeast1.firebasedatabase.app" };
+
+    const apps = getApps();
+
+    let appDefault = apps.find(a => a.name === "[DEFAULT]");
+    if (!appDefault) {
+      appDefault = initializeApp(configDefault);
+    }
+    const dbDefault = getDatabase(appDefault);
+
+    let appGroups = apps.find(a => a.name === "TalkRushGroupApp");
+    if (!appGroups) {
+      appGroups = initializeApp(configGroups, "TalkRushGroupApp");
+    }
+    const dbGroups = getDatabase(appGroups);
+
+    let appFriends = apps.find(a => a.name === "TalkRushFriendApp");
+    if (!appFriends) {
+      appFriends = initializeApp(configFriends, "TalkRushFriendApp");
+    }
+    const dbFriends = getDatabase(appFriends);
+
     const myNickname = localStorage.getItem("talkrush_nickname");
     if (!myNickname) return;
 
-    window.firebaseDB = db;
+    window.firebaseDB = dbDefault;
 
     const toast = document.getElementById("messageToast");
     const toastName = document.getElementById("toastName");
@@ -72,7 +93,7 @@
       return friend.nickname1 === myNickname ? friend.nickname2 : friend.nickname2 === myNickname ? friend.nickname1 : null;
     }
 
-    onValue(ref(db, "friends"), (snap) => {
+    onValue(ref(dbFriends, "friends"), (snap) => {
       const data = snap.val();
       if (!data) return;
       
@@ -105,7 +126,7 @@
     });
 
     const safeKey = myNickname.replace(/[.#$\[\]]/g, '_');
-    onValue(ref(db, `group_reply/${safeKey}`), (snap) => {
+    onValue(ref(dbGroups, `group_reply/${safeKey}`), (snap) => {
       const data = snap.val();
       if (!data) return;
 
@@ -198,7 +219,7 @@
     let wasRinging = false;
 
     const safeCallName = myNickname.replace(/[.#$\[\]]/g, '_');
-    const myCallRef = ref(db, 'calls/' + safeCallName);
+    const myCallRef = ref(dbDefault, 'calls/' + safeCallName);
 
     onValue(myCallRef, (snapshot) => {
       const callData = snapshot.val();
@@ -251,7 +272,7 @@
               };
               const myPeerId = await getPeerId() || ("user_" + myNickname.replace(/[^a-zA-Z0-9]/g, '_'));
 
-              update(ref(db, `calls/${safeCallName}`), {
+              update(ref(dbDefault, `calls/${safeCallName}`), {
                 status: 'accepted',
                 receiverPeerId: myPeerId
               });
@@ -264,7 +285,7 @@
           wasRinging = false;
           callToast.style.top = '-150px';
           window.callRingtone.pause(); window.callRingtone.currentTime = 0;
-          remove(ref(db, `calls/${safeCallName}`));
+          remove(ref(dbDefault, `calls/${safeCallName}`));
         };
       }
       else if (!callData || callData.status === 'ended' || callData.status === 'rejected') {
@@ -278,7 +299,7 @@
           window.forceEndCallUI();
         }
         if (callData && (callData.status === 'ended' || callData.status === 'rejected')) {
-          remove(ref(db, 'calls/' + safeCallName));
+          remove(ref(dbDefault, 'calls/' + safeCallName));
         }
       }
     });
@@ -310,7 +331,7 @@
         wasRinging = false;
         window.callRingtone.pause(); 
         window.callRingtone.currentTime = 0;
-        remove(ref(db, `calls/${safeCallName}`));
+        remove(ref(dbDefault, `calls/${safeCallName}`));
       }
     }, { passive: true });
   });
