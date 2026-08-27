@@ -17,6 +17,7 @@
     <a href="/chat/users.html" onclick="toggleMenu()">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><polyline points="17 11 19 13 23 9"/></svg>
       <span>Active Users</span>
+      <span class="menu-users-dot"></span>
     </a>
     <a href="/chat/index.html" onclick="toggleMenu()">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
@@ -177,6 +178,14 @@
   min-width: 18px;
   text-align: center;
   line-height: 1.2;
+}
+
+.menu-users-dot {
+  margin-left: auto;
+  width: 7px;
+  height: 7px;
+  background: #ff4757;
+  border-radius: 50%;
 }
 
 .menu-footer {
@@ -346,42 +355,11 @@ document.addEventListener('DOMContentLoaded', function () {
       }
     });
   }
-});
-</script>
 
-<script type="module">
-import { initializeApp, getApps } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
-import { getDatabase, ref, onValue } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
+  let totalRoomsUnread = window._lastRoomBadgeCount || 0;
+  let totalInboxUnread = window._lastInboxBadgeCount || 0;
 
-if (!window.talkrushMenuListenerAdded) {
-  window.talkrushMenuListenerAdded = true;
-
-  const firebaseConfigGroups = {
-    databaseURL: "https://talkrush2-default-rtdb.asia-southeast1.firebasedatabase.app"
-  };
-
-  const firebaseConfigFriends = {
-    databaseURL: "https://talkrush3-default-rtdb.asia-southeast1.firebasedatabase.app"
-  };
-
-  const apps = getApps();
-
-  let appGroups = apps.find(a => a.name === "TalkRushGroupApp");
-  if (!appGroups) {
-    appGroups = initializeApp(firebaseConfigGroups, "TalkRushGroupApp");
-  }
-  const dbGroups = getDatabase(appGroups);
-
-  let appFriends = apps.find(a => a.name === "TalkRushFriendApp");
-  if (!appFriends) {
-    appFriends = initializeApp(firebaseConfigFriends, "TalkRushFriendApp");
-  }
-  const dbFriends = getDatabase(appFriends);
-
-  let totalRoomsUnread = 0;
-  let totalInboxUnread = 0;
-
-  function updateMenuBadges() {
+  function updateMenuBadgesAndDot() {
     const formatBadge = (count) => count > 9 ? '9+' : count;
 
     const menuRoomsBadge = document.getElementById('menuBadge');
@@ -402,52 +380,16 @@ if (!window.talkrushMenuListenerAdded) {
     });
   }
 
-  function listenToMenuUnreadData() {
-    const myNickname = localStorage.getItem('talkrush_nickname') || 'Guest';
-    const params = new URLSearchParams(window.location.search);
-    const currentGroup = params.get('group');
-    const currentChatId = window.location.pathname.includes('inbox.html') ? params.get('chatId') : null;
+  updateMenuBadgesAndDot();
 
-    const safeKey = myNickname.replace(/[.#$\[\]]/g, '_');
-    
-    onValue(ref(dbGroups, `group_reply/${safeKey}`), (snapshot) => {
-      let count = 0;
-      if (snapshot.exists()) {
-        const data = snapshot.val();
-        Object.entries(data).forEach(([groupName, groupData]) => {
-          let unreadCount = groupData.unreadCount || 0;
-          if (groupName !== currentGroup) {
-            count += unreadCount;
-          }
-        });
-      }
-      totalRoomsUnread = count;
-      updateMenuBadges();
-    });
+  window.addEventListener('updateInboxBadge', function(e) {
+    totalInboxUnread = e.detail;
+    updateMenuBadgesAndDot();
+  });
 
-    onValue(ref(dbFriends, 'friends'), (snapshot) => {
-      let count = 0;
-      if (snapshot.exists()) {
-        const data = snapshot.val();
-        let lastSeenMap = JSON.parse(localStorage.getItem('inbox_last_seen') || '{}');
-        if (currentChatId) lastSeenMap[currentChatId] = Date.now();
-
-        Object.entries(data).forEach(([chatId, friend]) => {
-          if (friend.nickname1 !== myNickname && friend.nickname2 !== myNickname) return;
-
-          let chatLastSeen = lastSeenMap[chatId] || 0;
-          let lastTimestamp = friend.lastTimestamp || 0;
-
-          if (friend.lastSender && friend.lastSender !== myNickname && lastTimestamp > chatLastSeen && chatId !== currentChatId) {
-            count++;
-          }
-        });
-      }
-      totalInboxUnread = count;
-      updateMenuBadges();
-    });
-  }
-
-  listenToMenuUnreadData();
-}
+  window.addEventListener('updateRoomBadge', function(e) {
+    totalRoomsUnread = e.detail;
+    updateMenuBadgesAndDot();
+  });
+});
 </script>
