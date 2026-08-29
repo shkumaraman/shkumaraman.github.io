@@ -87,6 +87,8 @@
     font-weight: 600;
     color: #fff;
     z-index: 5;
+    text-align: center;
+    padding: 0 20px;
   }
 </style>
 
@@ -144,6 +146,7 @@
 
     let localStream = null;
     let currentActiveCall = null;
+    let activeCallType = 'audio';
     let isAudioMuted = false;
     let isVideoPaused = false;
     let outboundCallListener = null;
@@ -161,8 +164,15 @@
       call.on('stream', (remoteStream) => {
         const text = document.getElementById('callingStatusText');
         const rVideo = document.getElementById('remoteVideo');
-        if (text) text.style.display = 'none';
         if (rVideo) rVideo.srcObject = remoteStream;
+        if (text) {
+          if (activeCallType === 'audio') {
+            text.innerText = "In Call with " + (activeTarget || "Friend");
+            text.style.display = 'block';
+          } else {
+            text.style.display = 'none';
+          }
+        }
       });
       call.on('close', cleanupCallUI);
       call.on('error', cleanupCallUI);
@@ -171,6 +181,7 @@
     window.startOutgoingCall = async (targetNickname, callType) => {
       activeTarget = targetNickname;
       safeActiveTarget = targetNickname.replace(/[.#$\[\]]/g, '_');
+      activeCallType = callType;
       
       const modal = document.getElementById('customCallModal');
       const text = document.getElementById('callingStatusText');
@@ -192,7 +203,7 @@
         if (callType === 'video') {
           try {
             localStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
-            callType = 'audio';
+            activeCallType = 'audio';
           } catch (audioErr) {
             cleanupCallUI();
             return;
@@ -204,12 +215,12 @@
       }
 
       const vBtn = document.getElementById('toggleVideoBtn');
-      if (vBtn) vBtn.style.display = callType === 'audio' ? 'none' : 'flex';
+      if (vBtn) vBtn.style.display = activeCallType === 'audio' ? 'none' : 'flex';
 
       const lVideo = document.getElementById('localVideo');
       if (lVideo) {
         lVideo.srcObject = localStream;
-        lVideo.style.display = callType === 'video' ? 'block' : 'none';
+        lVideo.style.display = activeCallType === 'video' ? 'block' : 'none';
       }
 
       const getPeerId = () => {
@@ -235,7 +246,7 @@
         caller: globalNickname,
         callerPeerId: currentPeerId,
         receiver: targetNickname,
-        type: callType,
+        type: activeCallType,
         status: 'calling',
         timestamp: Date.now()
       });
@@ -253,8 +264,8 @@
           const stText = document.getElementById('callingStatusText');
           if (stText) stText.innerText = "Connecting media...";
 
-          if (data.type === 'audio' && callType === 'video') {
-            callType = 'audio';
+          if (data.type === 'audio' && activeCallType === 'video') {
+            activeCallType = 'audio';
             const vButton = document.getElementById('toggleVideoBtn');
             const localVid = document.getElementById('localVideo');
             if (vButton) vButton.style.display = 'none';
@@ -268,8 +279,15 @@
           call.on('stream', (remoteStream) => {
             const stxt = document.getElementById('callingStatusText');
             const rVid = document.getElementById('remoteVideo');
-            if (stxt) stxt.style.display = 'none';
             if (rVid) rVid.srcObject = remoteStream;
+            if (stxt) {
+              if (activeCallType === 'audio') {
+                stxt.innerText = "In Call with " + targetNickname;
+                stxt.style.display = 'block';
+              } else {
+                stxt.style.display = 'none';
+              }
+            }
           });
           
           call.on('close', cleanupCallUI);
@@ -284,6 +302,7 @@
     window.acceptIncomingCall = async (callerNickname, callType) => {
       activeTarget = callerNickname;
       safeActiveTarget = callerNickname.replace(/[.#$\[\]]/g, '_');
+      activeCallType = callType;
       
       const myCallRef = ref(db, `calls/${safeGlobalNickname}`);
 
@@ -296,7 +315,7 @@
         if (callType === 'video') {
           try {
             localStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
-            callType = 'audio';
+            activeCallType = 'audio';
           } catch (audioErr) {
             update(myCallRef, { status: 'rejected' });
             return false;
@@ -308,12 +327,12 @@
       }
 
       const vBtn = document.getElementById('toggleVideoBtn');
-      if (vBtn) vBtn.style.display = callType === 'audio' ? 'none' : 'flex';
+      if (vBtn) vBtn.style.display = activeCallType === 'audio' ? 'none' : 'flex';
 
       const lVideo = document.getElementById('localVideo');
       if (lVideo) {
         lVideo.srcObject = localStream;
-        lVideo.style.display = callType === 'video' ? 'block' : 'none';
+        lVideo.style.display = activeCallType === 'video' ? 'block' : 'none';
       }
 
       const rVideo = document.getElementById('remoteVideo');
@@ -332,7 +351,7 @@
       update(myCallRef, {
         status: 'accepted',
         receiverPeerId: currentPeerId,
-        type: callType
+        type: activeCallType
       });
 
       if (inboundCallListener) inboundCallListener();
@@ -383,21 +402,21 @@
       try {
         if (safeActiveTarget) remove(ref(db, `calls/${safeActiveTarget}`));
         if (safeGlobalNickname) remove(ref(db, `calls/${safeGlobalNickname}`));
-      } catch (e) { console.warn(e); }
+      } catch (e) {}
 
       try {
         if (currentActiveCall) {
           currentActiveCall.close();
           currentActiveCall = null;
         }
-      } catch (e) { console.warn(e); }
+      } catch (e) {}
 
       try {
         if (localStream) {
           localStream.getTracks().forEach(track => track.stop());
           localStream = null;
         }
-      } catch (e) { console.warn(e); }
+      } catch (e) {}
 
       try {
         const modal = document.getElementById('customCallModal');
@@ -424,7 +443,7 @@
           vBtn.style.color = 'white';
           vBtn.style.display = 'flex';
         }
-      } catch (e) { console.warn(e); }
+      } catch (e) {}
 
       activeTarget = null;
       safeActiveTarget = null;
