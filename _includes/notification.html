@@ -241,68 +241,59 @@
 </div>
 
 <script type="module">
-  import { initializeApp, getApp, getApps } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
+  import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
   import { getDatabase, ref, onValue, remove, update } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
 
-  document.addEventListener("DOMContentLoaded", function () {
-    const configDefault = { databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app" };
-    const configGroups = { databaseURL: "https://talkrush2-default-rtdb.asia-southeast1.firebasedatabase.app" };
-    const configFriends = { databaseURL: "https://talkrush3-default-rtdb.asia-southeast1.firebasedatabase.app" };
+  const configDefault = { databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app" };
+  const configGroups = { databaseURL: "https://talkrush2-default-rtdb.asia-southeast1.firebasedatabase.app" };
+  const configFriends = { databaseURL: "https://talkrush3-default-rtdb.asia-southeast1.firebasedatabase.app" };
 
-    const apps = getApps();
+  const apps = getApps();
 
-    let appDefault = apps.find(a => a.name === "[DEFAULT]");
-    if (!appDefault) {
-      appDefault = initializeApp(configDefault);
-    }
-    const dbDefault = getDatabase(appDefault);
+  const appDefault = apps.find(a => a.name === "[DEFAULT]") || initializeApp(configDefault);
+  const dbDefault = getDatabase(appDefault);
 
-    let appGroups = apps.find(a => a.name === "TalkRushGroupApp");
-    if (!appGroups) {
-      appGroups = initializeApp(configGroups, "TalkRushGroupApp");
-    }
-    const dbGroups = getDatabase(appGroups);
+  const appGroups = apps.find(a => a.name === "TalkRushGroupApp") || initializeApp(configGroups, "TalkRushGroupApp");
+  const dbGroups = getDatabase(appGroups);
 
-    let appFriends = apps.find(a => a.name === "TalkRushFriendApp");
-    if (!appFriends) {
-      appFriends = initializeApp(configFriends, "TalkRushFriendApp");
-    }
-    const dbFriends = getDatabase(appFriends);
+  const appFriends = apps.find(a => a.name === "TalkRushFriendApp") || initializeApp(configFriends, "TalkRushFriendApp");
+  const dbFriends = getDatabase(appFriends);
 
-    const myNickname = localStorage.getItem("talkrush_nickname");
+  let myNickname = localStorage.getItem("talkrush_nickname");
+
+  window.firebaseDB = dbDefault;
+
+  const toast = document.getElementById("messageToast");
+  const toastName = document.getElementById("toastName");
+  const toastMessage = document.getElementById("toastMessage");
+  const toastViewBtn = document.getElementById("toastViewBtn");
+  const toastIcon = document.getElementById("toastIcon");
+  const toastIconWrapper = document.getElementById("toastIconWrapper");
+
+  const notifySound = new Audio("/assets/notify.mp3");
+  let soundMuted = localStorage.getItem("soundMuted") === "true";
+  let notificationOff = localStorage.getItem("notificationOff") === "true";
+  notifySound.muted = soundMuted;
+
+  let lastNotifiedMessages = JSON.parse(localStorage.getItem("lastNotifiedMessages") || "{}");
+  let toastQueue = [];
+  let toastShowing = false;
+  const DM_ICON_PATH = "M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z";
+  const REPLY_ICON_PATH = "M10 9V5l-7 7 7 7v-4.1c5 0 8.5 1.6 11 5.1-1-5-4-10-11-11z";
+
+  function getFriendNickname(friend) {
+    return friend.nickname1 === myNickname ? friend.nickname2 : friend.nickname2 === myNickname ? friend.nickname1 : null;
+  }
+
+  function startListeners() {
     if (!myNickname) return;
-
-    window.firebaseDB = dbDefault;
-
-    const toast = document.getElementById("messageToast");
-    const toastName = document.getElementById("toastName");
-    const toastMessage = document.getElementById("toastMessage");
-    const toastViewBtn = document.getElementById("toastViewBtn");
-    const toastIcon = document.getElementById("toastIcon");
-    const toastIconWrapper = document.getElementById("toastIconWrapper");
-
-    const notifySound = new Audio("/assets/notify.mp3");
-    let soundMuted = localStorage.getItem("soundMuted") === "true";
-    let notificationOff = localStorage.getItem("notificationOff") === "true";
-    notifySound.muted = soundMuted;
-
-    let lastNotifiedMessages = JSON.parse(localStorage.getItem("lastNotifiedMessages") || "{}");
-    let toastQueue = [];
-    let toastShowing = false;
-    const DM_ICON_PATH = "M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z";
-    const REPLY_ICON_PATH = "M10 9V5l-7 7 7 7v-4.1c5 0 8.5 1.6 11 5.1-1-5-4-10-11-11z";
-
-    function getFriendNickname(friend) {
-      return friend.nickname1 === myNickname ? friend.nickname2 : friend.nickname2 === myNickname ? friend.nickname1 : null;
-    }
 
     onValue(ref(dbFriends, "friends"), (snap) => {
       const data = snap.val();
-      
       let unreadCount = 0;
       let lastSeenMap = JSON.parse(localStorage.getItem('inbox_last_seen') || '{}');
       const params = new URLSearchParams(window.location.search);
-      const currentChatId = window.location.pathname.includes('inbox.html') ? params.get('chatId') : null;
+      const currentChatId = window.location.pathname.includes('/chat/inbox') ? params.get('chatId') : null;
       if (currentChatId) lastSeenMap[currentChatId] = Date.now();
 
       if (!data) {
@@ -322,15 +313,13 @@
         
         const friendNick = getFriendNickname(friend);
         if (!friendNick) return;
-        
         if (!friend.lastMessageText || friend.lastSender === myNickname) return;
         
         const key = chatId + "_" + friend.lastTimestamp;
-        
         if (lastNotifiedMessages[chatId] === key) return;
         if (notificationOff) return;
 
-        const redirectUrl = `/chat/inbox.html?chatId=${encodeURIComponent(chatId)}&friend=${encodeURIComponent(friendNick)}`;
+        const redirectUrl = `/chat/inbox?chatId=${encodeURIComponent(chatId)}&friend=${encodeURIComponent(friendNick)}`;
         
         toastQueue.push({ 
           chatId: chatId, 
@@ -353,7 +342,6 @@
     const safeKey = myNickname.replace(/[.#$\[\]]/g, '_');
     onValue(ref(dbGroups, `group_reply/${safeKey}`), (snap) => {
       const data = snap.val();
-      
       let count = 0;
       const currentPath = window.location.pathname;
       const currentGroupParams = new URLSearchParams(window.location.search).get('group');
@@ -366,19 +354,11 @@
 
       Object.entries(data).forEach(([groupName, replyData]) => {
         const unreadCount = replyData.unreadCount || 0;
-        
-        if (groupName !== currentGroupParams) {
-          count += unreadCount;
-        }
-
-        if (currentPath.includes('/chat/group.html') && currentGroupParams === groupName) {
-           return; 
-        }
-
+        if (groupName !== currentGroupParams) count += unreadCount;
+        if (currentPath.includes('/chat/group.html') && currentGroupParams === groupName) return;
         if (unreadCount === 0) return;
 
         const key = "group_reply_" + groupName + "_" + unreadCount;
-        
         if (lastNotifiedMessages[groupName] === key) return;
         if (notificationOff) return;
 
@@ -402,61 +382,6 @@
       window.dispatchEvent(new CustomEvent('updateRoomBadge', { detail: count }));
     });
 
-    function processToastQueue() {
-      if (toastShowing || toastQueue.length === 0) return;
-      toastShowing = true;
-      const data = toastQueue.shift();
-      
-      if (data.type === "group_mention") {
-        toastIconWrapper.style.background = "#5b9bd5"; 
-        toastIcon.querySelector("path").setAttribute("d", REPLY_ICON_PATH); 
-        toastName.textContent = `New Reply in ${data.groupName}`;
-      } else if (data.type === "reply") { 
-        toastIconWrapper.style.background = "#5b9bd5"; 
-        toastIcon.querySelector("path").setAttribute("d", REPLY_ICON_PATH); 
-        toastName.textContent = data.senderName + " replied to you"; 
-      } else { 
-        toastIconWrapper.style.background = "#25D366"; 
-        toastIcon.querySelector("path").setAttribute("d", DM_ICON_PATH); 
-        toastName.textContent = data.senderName; 
-      }
-      
-      toastMessage.textContent = data.message;
-      if (!soundMuted) { notifySound.currentTime = 0; notifySound.play().catch(() => { }); }
-      toast.style.top = "20px";
-
-      const handleToastNavigation = () => {
-        toast.style.top = "-120px";
-        if (data.type === "group_mention") {
-            window.location.href = data.redirectUrl;
-        } else if (window.location.pathname.includes('/chat/inbox') && typeof window.openChat === 'function' && data.chatId && data.senderName) {
-            window.openChat(data.chatId, data.senderName);
-        } else {
-            window.location.href = data.redirectUrl;
-        }
-      };
-
-      toast.onclick = handleToastNavigation;
-      toastViewBtn.onclick = (e) => {
-        e.stopPropagation();
-        handleToastNavigation();
-      };
-
-      setTimeout(() => { 
-        toast.style.top = "-120px"; 
-        setTimeout(() => { 
-          toastShowing = false; 
-          processToastQueue(); 
-        }, 400); 
-      }, 5000);
-    }
-
-    const callToast = document.getElementById('callToast');
-    window.callRingtone = new Audio('/assets/ringtone.mp3');
-    window.callRingtone.loop = true;
-    let isRinging = false;
-    let wasRinging = false;
-
     const safeCallName = myNickname.replace(/[.#$\[\]]/g, '_');
     const myCallRef = ref(dbDefault, 'calls/' + safeCallName);
 
@@ -478,11 +403,13 @@
         }
         document.getElementById('callToastAvatar').innerText = avatarLetter;
 
-        document.getElementById('callToastType').innerText = `Incoming ${callData.type.charAt(0).toUpperCase() + callData.type.slice(1)} Call...`;
+        const callType = callData.type || 'video';
+        document.getElementById('callToastType').innerText = `Incoming ${callType.charAt(0).toUpperCase() + callType.slice(1)} Call...`;
         callToast.style.top = '20px';
+        
         const ringtoneMuted = localStorage.getItem("ringtoneMuted") === "true";
         if (!ringtoneMuted) {
-          window.callRingtone.play().catch(() => { });
+          window.callRingtone.play().catch(() => {});
         }
 
         document.getElementById('callToastAcceptBtn').onclick = async () => {
@@ -493,17 +420,18 @@
           window.callRingtone.currentTime = 0;
 
           if (window.acceptIncomingCall) {
-            await window.acceptIncomingCall(callData.caller, callData.type);
+            await window.acceptIncomingCall(callData.caller, callType);
           }
         };
 
-        document.getElementById('callToastRejectBtn').onclick = () => {
+        document.getElementById('callToastRejectBtn').onclick = async () => {
           isRinging = false;
           wasRinging = false;
           callToast.style.top = '-150px';
           window.callRingtone.pause();
           window.callRingtone.currentTime = 0;
-          remove(ref(dbDefault, `calls/${safeCallName}`));
+          await update(ref(dbDefault, `calls/${safeCallName}`), { status: 'rejected' });
+          setTimeout(() => remove(ref(dbDefault, `calls/${safeCallName}`)), 800);
         };
       }
       else if (!callData || callData.status === 'ended' || callData.status === 'rejected') {
@@ -522,36 +450,97 @@
         }
       }
     });
+  }
 
-    let toastStartY = 0;
-    
-    toast.addEventListener('touchstart', (e) => {
-      toastStartY = e.touches[0].clientY;
-    }, { passive: true });
-
-    toast.addEventListener('touchmove', (e) => {
-      let currentY = e.touches[0].clientY;
-      if (toastStartY - currentY > 40) { 
-        toast.style.top = "-120px";
-      }
-    }, { passive: true });
-
-    let callStartY = 0;
-
-    callToast.addEventListener('touchstart', (e) => {
-      callStartY = e.touches[0].clientY;
-    }, { passive: true });
-
-    callToast.addEventListener('touchmove', (e) => {
-      let currentY = e.touches[0].clientY;
-      if (callStartY - currentY > 40) { 
-        callToast.style.top = "-150px";
-        isRinging = false;
-        wasRinging = false;
-        window.callRingtone.pause(); 
-        window.callRingtone.currentTime = 0;
-        remove(ref(dbDefault, `calls/${safeCallName}`));
-      }
-    }, { passive: true });
+  window.addEventListener('nicknameUpdated', (e) => {
+    myNickname = e.detail.nickname;
+    startListeners();
   });
+
+  function processToastQueue() {
+    if (toastShowing || toastQueue.length === 0) return;
+    toastShowing = true;
+    const data = toastQueue.shift();
+    
+    if (data.type === "group_mention") {
+      toastIconWrapper.style.background = "#5b9bd5"; 
+      toastIcon.querySelector("path").setAttribute("d", REPLY_ICON_PATH); 
+      toastName.textContent = `New Reply in ${data.groupName}`;
+    } else if (data.type === "reply") { 
+      toastIconWrapper.style.background = "#5b9bd5"; 
+      toastIcon.querySelector("path").setAttribute("d", REPLY_ICON_PATH); 
+      toastName.textContent = data.senderName + " replied to you"; 
+    } else { 
+      toastIconWrapper.style.background = "#25D366"; 
+      toastIcon.querySelector("path").setAttribute("d", DM_ICON_PATH); 
+      toastName.textContent = data.senderName; 
+    }
+    
+    toastMessage.textContent = data.message;
+    if (!soundMuted) { notifySound.currentTime = 0; notifySound.play().catch(() => {}); }
+    toast.style.top = "20px";
+
+    const handleToastNavigation = () => {
+      toast.style.top = "-120px";
+      if (data.type === "group_mention") {
+          window.location.href = data.redirectUrl;
+      } else if (window.location.pathname.includes('/chat/inbox') && typeof window.openChat === 'function' && data.chatId && data.senderName) {
+          window.openChat(data.chatId, data.senderName);
+      } else {
+          window.location.href = data.redirectUrl;
+      }
+    };
+
+    toast.onclick = handleToastNavigation;
+    toastViewBtn.onclick = (e) => {
+      e.stopPropagation();
+      handleToastNavigation();
+    };
+
+    setTimeout(() => { 
+      toast.style.top = "-120px"; 
+      setTimeout(() => { 
+        toastShowing = false; 
+        processToastQueue(); 
+      }, 400); 
+    }, 5000);
+  }
+
+  const callToast = document.getElementById('callToast');
+  window.callRingtone = new Audio('/assets/ringtone.mp3');
+  window.callRingtone.loop = true;
+  let isRinging = false;
+  let wasRinging = false;
+
+  startListeners();
+
+  let toastStartY = 0;
+  toast.addEventListener('touchstart', (e) => {
+    toastStartY = e.touches[0].clientY;
+  }, { passive: true });
+
+  toast.addEventListener('touchmove', (e) => {
+    let currentY = e.touches[0].clientY;
+    if (toastStartY - currentY > 40) toast.style.top = "-120px";
+  }, { passive: true });
+
+  let callStartY = 0;
+  callToast.addEventListener('touchstart', (e) => {
+    callStartY = e.touches[0].clientY;
+  }, { passive: true });
+
+  callToast.addEventListener('touchmove', (e) => {
+    let currentY = e.touches[0].clientY;
+    if (callStartY - currentY > 40) { 
+      callToast.style.top = "-150px";
+      isRinging = false;
+      wasRinging = false;
+      window.callRingtone.pause(); 
+      window.callRingtone.currentTime = 0;
+      if (myNickname) {
+        const safeCallName = myNickname.replace(/[.#$\[\]]/g, '_');
+        update(ref(dbDefault, `calls/${safeCallName}`), { status: 'rejected' });
+      }
+    }
+  }, { passive: true });
 </script>
