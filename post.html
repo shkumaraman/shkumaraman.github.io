@@ -280,7 +280,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 }
 .light-mode .timestamp { color: var(--light-text-dim); }
 
-.buttons { display: flex; gap: 6px; flex-wrap: wrap; }
+.buttons { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 
 .buttons button {
   padding: 6px 12px;
@@ -296,10 +296,54 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 }
 .buttons button:active { transform: scale(0.97); }
 
+.friend-btn-slot {
+  display: contents;
+}
+
+.friend-btn {
+  background: #ffffff !important;
+  color: #111114 !important;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+}
+.friend-btn svg {
+  width: 14px;
+  height: 14px;
+  stroke: #111114 !important;
+  fill: none !important;
+}
+.friend-btn:hover {
+  background: var(--accent) !important;
+  color: #ffffff !important;
+}
+.friend-btn:hover svg {
+  stroke: #ffffff !important;
+}
+.light-mode .friend-btn {
+  background: #181818 !important;
+  color: #ffffff !important;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+}
+.light-mode .friend-btn svg {
+  stroke: #ffffff !important;
+}
+.light-mode .friend-btn:hover {
+  background: var(--accent) !important;
+  color: #ffffff !important;
+}
+.light-mode .friend-btn:hover svg {
+  stroke: #ffffff !important;
+}
+
 .share-btn-post {
   background: var(--accent-dim);
   color: var(--accent);
   border: 0.5px solid var(--accent-border) !important;
+}
+.share-btn-post svg {
+  width: 14px;
+  height: 14px;
+  stroke: var(--accent);
+  fill: none;
 }
 .share-btn-post:hover { background: rgba(255,107,74,0.22); }
 
@@ -307,6 +351,12 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   background: rgba(255,77,77,0.12);
   color: #ff6b6b;
   border: 0.5px solid rgba(255,77,77,0.25) !important;
+}
+.delete-btn svg {
+  width: 14px;
+  height: 14px;
+  stroke: #ff6b6b;
+  fill: none;
 }
 .delete-btn:hover { background: rgba(255,77,77,0.2); }
 
@@ -446,16 +496,25 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 {% include menu.html %}
 
 <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
+    import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
     import { getDatabase, ref, push, set, onValue, remove } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
 
-    const firebaseConfig = {
+    const postsFirebaseConfig = {
       databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app"
     };
 
-    const app = initializeApp(firebaseConfig);
+    const friendsFirebaseConfig = {
+      databaseURL: "https://talkrush3-default-rtdb.asia-southeast1.firebasedatabase.app"
+    };
+
+    const apps = getApps();
+    const app = apps.find(a => a.name === "[DEFAULT]") || initializeApp(postsFirebaseConfig);
     const db = getDatabase(app);
     const postsRef = ref(db, "posts");
+
+    const friendApp = apps.find(a => a.name === "TalkRushFriendApp") || initializeApp(friendsFirebaseConfig, "TalkRushFriendApp");
+    const friendsDb = getDatabase(friendApp);
+    const friendsRef = ref(friendsDb, "friends");
 
     const POST_EXPIRY_DAYS = 30;
     const MILLISECONDS_IN_DAY = 24 * 60 * 60 * 1000;
@@ -466,6 +525,29 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     let displayedPosts = [];
     let currentSearchTerm = '';
     let highlightPostId = null;
+    let myFriendsMap = {};
+
+    let currentNickname = localStorage.getItem("talkrush_nickname");
+
+    window.addEventListener('nicknameUpdated', (e) => {
+      currentNickname = e.detail.nickname;
+      updateAllFriendButtons();
+    });
+
+    onValue(friendsRef, (snapshot) => {
+      myFriendsMap = {};
+      if (snapshot.exists()) {
+        snapshot.forEach(child => {
+          const friendData = child.val();
+          if (friendData.nickname1 === currentNickname) {
+            myFriendsMap[friendData.nickname2] = child.key;
+          } else if (friendData.nickname2 === currentNickname) {
+            myFriendsMap[friendData.nickname1] = child.key;
+          }
+        });
+      }
+      updateAllFriendButtons();
+    });
 
     async function loadBannedWords() {
       try {
@@ -572,6 +654,42 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       return "just now";
     }
 
+    function getFriendButtonHtml(targetNickname) {
+      const nick = getNickname();
+      if (!targetNickname || targetNickname === 'Guest' || targetNickname === nick) {
+        return '';
+      }
+
+      let displayName = targetNickname;
+      if (displayName.startsWith("TR|")) {
+        displayName = displayName.substring(3);
+      }
+
+      const isFriend = !!myFriendsMap[targetNickname];
+
+      return isFriend ? `
+        <button class="friend-btn" onclick="messageUser('${targetNickname.replace(/'/g, "\\'")}')" title="Message ${displayName}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          Message
+        </button>
+      ` : `
+        <button class="friend-btn" onclick="addFriend('${targetNickname.replace(/'/g, "\\'")}')" title="Add ${displayName}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+          Add Friend
+        </button>
+      `;
+    }
+
+    function updateAllFriendButtons() {
+      const slots = document.querySelectorAll('.friend-btn-slot');
+      slots.forEach(slot => {
+        const nickname = slot.getAttribute('data-nickname');
+        if (nickname) {
+          slot.innerHTML = getFriendButtonHtml(nickname);
+        }
+      });
+    }
+
     function displayPosts() {
       const postsContainer = document.getElementById("postsContainer");
       postsContainer.innerHTML = "";
@@ -592,8 +710,8 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
         if (isPostExpired(post.timestamp)) return;
 
         const div = document.createElement("div");
-        const currentNickname = getNickname();
-        const isMyPost = currentNickname && post.nickname === currentNickname;
+        const currentNick = getNickname();
+        const isMyPost = currentNick && post.nickname === currentNick;
 
         div.className = "post";
         div.setAttribute("data-post-id", postId);
@@ -618,12 +736,17 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
           <div class="post-content">${displayText}</div>
           <div class="timestamp">${timeSince(post.timestamp)}</div>
           <div class="buttons">
+            <span class="friend-btn-slot" data-nickname="${post.nickname || ''}">
+              ${getFriendButtonHtml(post.nickname)}
+            </span>
             <button class="share-btn-post" onclick='sharePost("${postId}", ${JSON.stringify(post).replace(/'/g, "\\'")})'>
-              <i class="fas fa-share"></i> Share
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+              Share
             </button>
             ${isMyPost ? `
-              <button class="delete-btn" onclick="deletePost('${postId}', '${post.nickname.replace(/'/g, "\\'")}')">
-                <i class="fas fa-trash"></i> Delete
+              <button class="delete-btn" onclick="deletePost('${postId}', '${(post.nickname || '').replace(/'/g, "\\'")}')">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                Delete
               </button>
             ` : ''}
           </div>
@@ -646,6 +769,49 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       }
     }
 
+    window.addFriend = async (targetNickname) => {
+      const currentNick = getNickname();
+      if (!currentNick || currentNick === 'Guest') {
+        AlertKit.warning("Nickname Required", "Please set your nickname first to add friends.");
+        return;
+      }
+
+      let displayName = targetNickname;
+      if (displayName.startsWith("TR|")) {
+        displayName = displayName.substring(3);
+      }
+
+      const isConfirmed = await AlertKit.confirm(
+        'Add Friend',
+        `Do you want to add ${displayName} to your friends list?`,
+        'Yes, Add',
+        'Cancel'
+      );
+
+      if (!isConfirmed) return;
+
+      try {
+        const newChatRef = push(ref(friendsDb, 'friends'));
+        await set(newChatRef, {
+          nickname1: currentNick,
+          nickname2: targetNickname,
+          lastMessageText: "Say Hi!",
+          lastTimestamp: Date.now(),
+          lastSender: currentNick
+        });
+        AlertKit.toast(`Added ${displayName} as a friend!`, 'success');
+      } catch (error) {
+        AlertKit.error("Error", "Failed to add friend. Please try again.");
+      }
+    };
+
+    window.messageUser = (targetNickname) => {
+      const chatId = myFriendsMap[targetNickname];
+      if (chatId) {
+        window.location.href = `inbox.html?chatId=${encodeURIComponent(chatId)}&friend=${encodeURIComponent(targetNickname)}`;
+      }
+    };
+
     window.sharePost = function(postId, post) {
       const shareUrl = window.location.origin + window.location.pathname + '?postId=' + postId;
       if (typeof window.openShareModal === 'function') {
@@ -658,12 +824,12 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     };
 
     window.deletePost = async function(postId, postNickname) {
-      const currentNickname = getNickname();
-      if (!currentNickname) { 
+      const currentNick = getNickname();
+      if (!currentNick) { 
         AlertKit.error("Wait!", "Please set your nickname first!"); 
         return; 
       }
-      if (postNickname !== currentNickname) { 
+      if (postNickname !== currentNick) { 
         AlertKit.error("Hold on", "You can only delete your own posts!"); 
         return; 
       }
