@@ -99,12 +99,10 @@
     <video id="localVideo" autoplay playsinline muted></video>
 
     <div class="active-call-controls">
-      <button class="action-btn" id="toggleMuteBtn" style="background: rgba(255,255,255,0.2);"
-        onclick="window.toggleAudio()">
+      <button class="action-btn" id="toggleMuteBtn" style="background: rgba(255,255,255,0.2);" onclick="window.toggleAudio()">
         <i class="fas fa-microphone"></i>
       </button>
-      <button class="action-btn" id="toggleVideoBtn" style="background: rgba(255,255,255,0.2);"
-        onclick="window.toggleVideo()">
+      <button class="action-btn" id="toggleVideoBtn" style="background: rgba(255,255,255,0.2);" onclick="window.toggleVideo()">
         <i class="fas fa-video"></i>
       </button>
       <button class="action-btn btn-reject" onclick="window.endCall()">
@@ -115,44 +113,41 @@
 </div>
 
 <script type="module">
-  import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
+  import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
   import { getDatabase, ref, set, onValue, remove, update } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
 
   const firebaseConfig = {
     databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app"
   };
 
-  const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+  const apps = getApps();
+  const app = apps.find(a => a.name === "[DEFAULT]") || initializeApp(firebaseConfig);
   const db = getDatabase(app);
 
-  document.addEventListener('DOMContentLoaded', () => {
-    const globalNickname = localStorage.getItem("talkrush_nickname");
-    if (!globalNickname) return;
+  let peer = null;
+  let localStream = null;
+  let currentActiveCall = null;
+  let activeCallType = 'audio';
+  let isAudioMuted = false;
+  let isVideoPaused = false;
+  let outboundCallListener = null;
+  let inboundCallListener = null;
+  let activeTarget = null;
+  let safeActiveTarget = null;
 
-    const safeGlobalNickname = globalNickname.replace(/[.#$\[\]]/g, '_');
+  function initPeer() {
+    if (peer && !peer.destroyed) return peer;
+    if (typeof Peer === 'undefined') return null;
 
-    const peer = new Peer(undefined, {
+    peer = new Peer(undefined, {
       config: {
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
           { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun2.l.google.com:19302' },
-          { urls: 'stun:stun3.l.google.com:19302' },
-          { urls: 'stun:stun4.l.google.com:19302' }
+          { urls: 'stun:stun2.l.google.com:19302' }
         ]
       }
     });
-    window.myCallPeer = peer;
-
-    let localStream = null;
-    let currentActiveCall = null;
-    let activeCallType = 'audio';
-    let isAudioMuted = false;
-    let isVideoPaused = false;
-    let outboundCallListener = null;
-    let inboundCallListener = null;
-    let activeTarget = null;
-    let safeActiveTarget = null;
 
     peer.on('call', (call) => {
       currentActiveCall = call;
@@ -161,10 +156,14 @@
       } else {
         call.answer();
       }
+
       call.on('stream', (remoteStream) => {
         const text = document.getElementById('callingStatusText');
         const rVideo = document.getElementById('remoteVideo');
-        if (rVideo) rVideo.srcObject = remoteStream;
+        if (rVideo) {
+          rVideo.srcObject = remoteStream;
+          rVideo.play().catch(() => {});
+        }
         if (text) {
           if (activeCallType === 'audio') {
             text.innerText = "In Call with " + (activeTarget || "Friend");
@@ -174,290 +173,327 @@
           }
         }
       });
+
       call.on('close', cleanupCallUI);
       call.on('error', cleanupCallUI);
     });
 
-    window.startOutgoingCall = async (targetNickname, callType) => {
-      activeTarget = targetNickname;
-      safeActiveTarget = targetNickname.replace(/[.#$\[\]]/g, '_');
-      activeCallType = callType;
-      
-      const modal = document.getElementById('customCallModal');
-      const text = document.getElementById('callingStatusText');
-      const rVideo = document.getElementById('remoteVideo');
-      
-      if (modal) modal.style.display = 'flex';
-      if (text) {
-        text.innerText = "Calling " + targetNickname + "...";
-        text.style.display = 'block';
-      }
-      if (rVideo) rVideo.srcObject = null;
+    window.myCallPeer = peer;
+    return peer;
+  }
 
-      try {
-        localStream = await navigator.mediaDevices.getUserMedia({
-          video: callType === 'video',
-          audio: true
-        });
-      } catch (err) {
-        if (callType === 'video') {
-          try {
-            localStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
-            activeCallType = 'audio';
-          } catch (audioErr) {
-            cleanupCallUI();
-            return;
-          }
-        } else {
-          cleanupCallUI();
-          return;
-        }
-      }
+  function waitForPeerId() {
+    const p = initPeer();
+    if (!p) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      if (p.id) return resolve(p.id);
+      p.on('open', (id) => resolve(id));
+      setTimeout(() => resolve(p.id || null), 4000);
+    });
+  }
 
-      const vBtn = document.getElementById('toggleVideoBtn');
-      if (vBtn) vBtn.style.display = activeCallType === 'audio' ? 'none' : 'flex';
+  initPeer();
 
-      const lVideo = document.getElementById('localVideo');
-      if (lVideo) {
-        lVideo.srcObject = localStream;
-        lVideo.style.display = activeCallType === 'video' ? 'block' : 'none';
-      }
+  window.startOutgoingCall = async (targetNickname, callType) => {
+    const globalNickname = localStorage.getItem("talkrush_nickname");
+    if (!globalNickname) {
+      if (window.AlertKit) AlertKit.error("Nickname Missing", "Please set your nickname first.");
+      return;
+    }
 
-      const getPeerId = () => {
-        return new Promise((resolve) => {
-          if (peer && peer.id) {
-            resolve(peer.id);
-          } else if (peer) {
-            peer.on('open', (id) => {
-              resolve(id);
-            });
-            setTimeout(() => resolve(null), 3000);
-          } else {
-            resolve(null);
-          }
-        });
-      };
-      
-      const currentPeerId = await getPeerId() || ("user_" + globalNickname.replace(/[^a-zA-Z0-9]/g, '_'));
-      
-      const targetCallRef = ref(db, `calls/${safeActiveTarget}`);
-      
-      await set(targetCallRef, {
-        caller: globalNickname,
-        callerPeerId: currentPeerId,
-        receiver: targetNickname,
-        type: activeCallType,
-        status: 'calling',
-        timestamp: Date.now()
+    activeTarget = targetNickname;
+    safeActiveTarget = targetNickname.replace(/[.#$\[\]]/g, '_');
+    activeCallType = callType;
+
+    const modal = document.getElementById('customCallModal');
+    const text = document.getElementById('callingStatusText');
+    const rVideo = document.getElementById('remoteVideo');
+
+    if (modal) modal.style.display = 'flex';
+    if (text) {
+      text.innerText = "Calling " + targetNickname + "...";
+      text.style.display = 'block';
+    }
+    if (rVideo) rVideo.srcObject = null;
+
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia({
+        video: callType === 'video',
+        audio: true
       });
-
-      if (outboundCallListener) outboundCallListener();
-      outboundCallListener = onValue(targetCallRef, (snap) => {
-        const data = snap.val();
-        
-        if (!data) {
+    } catch (err) {
+      if (callType === 'video') {
+        try {
+          localStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+          activeCallType = 'audio';
+        } catch (audioErr) {
           cleanupCallUI();
+          if (window.AlertKit) AlertKit.error("Permission Denied", "Mic/Camera access is needed.");
           return;
         }
+      } else {
+        cleanupCallUI();
+        if (window.AlertKit) AlertKit.error("Permission Denied", "Mic access is needed.");
+        return;
+      }
+    }
 
-        if (data.status === 'accepted') {
-          const stText = document.getElementById('callingStatusText');
-          if (stText) stText.innerText = "Connecting media...";
+    const vBtn = document.getElementById('toggleVideoBtn');
+    if (vBtn) vBtn.style.display = activeCallType === 'audio' ? 'none' : 'flex';
 
-          if (data.type === 'audio' && activeCallType === 'video') {
-            activeCallType = 'audio';
-            const vButton = document.getElementById('toggleVideoBtn');
-            const localVid = document.getElementById('localVideo');
-            if (vButton) vButton.style.display = 'none';
-            if (localVid) localVid.style.display = 'none';
+    const lVideo = document.getElementById('localVideo');
+    if (lVideo) {
+      lVideo.srcObject = localStream;
+      lVideo.style.display = activeCallType === 'video' ? 'block' : 'none';
+      lVideo.play().catch(() => {});
+    }
+
+    const currentPeerId = await waitForPeerId();
+    if (!currentPeerId) {
+      cleanupCallUI();
+      if (window.AlertKit) AlertKit.error("Call Error", "Could not connect to call server. Try again.");
+      return;
+    }
+
+    const targetCallRef = ref(db, `calls/${safeActiveTarget}`);
+
+    await set(targetCallRef, {
+      caller: globalNickname,
+      callerPeerId: currentPeerId,
+      receiver: targetNickname,
+      type: activeCallType,
+      status: 'calling',
+      timestamp: Date.now()
+    });
+
+    if (outboundCallListener) outboundCallListener();
+    outboundCallListener = onValue(targetCallRef, (snap) => {
+      const data = snap.val();
+
+      if (!data) {
+        cleanupCallUI();
+        return;
+      }
+
+      if (data.status === 'accepted') {
+        const stText = document.getElementById('callingStatusText');
+        if (stText) stText.innerText = "Connecting media...";
+
+        if (data.type === 'audio' && activeCallType === 'video') {
+          activeCallType = 'audio';
+          const vButton = document.getElementById('toggleVideoBtn');
+          const localVid = document.getElementById('localVideo');
+          if (vButton) vButton.style.display = 'none';
+          if (localVid) localVid.style.display = 'none';
+        }
+
+        const targetPeerId = data.receiverPeerId;
+        if (!targetPeerId) return;
+
+        const currentPeerInstance = initPeer();
+        if (!currentPeerInstance) return;
+
+        const call = currentPeerInstance.call(targetPeerId, localStream);
+        currentActiveCall = call;
+
+        call.on('stream', (remoteStream) => {
+          const stxt = document.getElementById('callingStatusText');
+          const rVid = document.getElementById('remoteVideo');
+          if (rVid) {
+            rVid.srcObject = remoteStream;
+            rVid.play().catch(() => {});
           }
-
-          const targetPeerId = data.receiverPeerId || ("user_" + targetNickname.replace(/[^a-zA-Z0-9]/g, '_'));
-          const call = peer.call(targetPeerId, localStream);
-          currentActiveCall = call;
-
-          call.on('stream', (remoteStream) => {
-            const stxt = document.getElementById('callingStatusText');
-            const rVid = document.getElementById('remoteVideo');
-            if (rVid) rVid.srcObject = remoteStream;
-            if (stxt) {
-              if (activeCallType === 'audio') {
-                stxt.innerText = "In Call with " + targetNickname;
-                stxt.style.display = 'block';
-              } else {
-                stxt.style.display = 'none';
-              }
+          if (stxt) {
+            if (activeCallType === 'audio') {
+              stxt.innerText = "In Call with " + targetNickname;
+              stxt.style.display = 'block';
+            } else {
+              stxt.style.display = 'none';
             }
-          });
-          
-          call.on('close', cleanupCallUI);
-          call.on('error', cleanupCallUI);
-
-        } else if (data.status === 'rejected' || data.status === 'ended') {
-          cleanupCallUI();
-        }
-      });
-    };
-
-    window.acceptIncomingCall = async (callerNickname, callType) => {
-      activeTarget = callerNickname;
-      safeActiveTarget = callerNickname.replace(/[.#$\[\]]/g, '_');
-      activeCallType = callType;
-      
-      const myCallRef = ref(db, `calls/${safeGlobalNickname}`);
-
-      try {
-        localStream = await navigator.mediaDevices.getUserMedia({
-          video: callType === 'video',
-          audio: true
-        });
-      } catch (err) {
-        if (callType === 'video') {
-          try {
-            localStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
-            activeCallType = 'audio';
-          } catch (audioErr) {
-            update(myCallRef, { status: 'rejected' });
-            return false;
           }
-        } else {
+        });
+
+        call.on('close', cleanupCallUI);
+        call.on('error', cleanupCallUI);
+
+      } else if (data.status === 'rejected' || data.status === 'ended') {
+        cleanupCallUI();
+      }
+    });
+  };
+
+  window.acceptIncomingCall = async (callerNickname, callType) => {
+    const globalNickname = localStorage.getItem("talkrush_nickname");
+    if (!globalNickname) return false;
+
+    activeTarget = callerNickname;
+    safeActiveTarget = callerNickname.replace(/[.#$\[\]]/g, '_');
+    const safeGlobalNickname = globalNickname.replace(/[.#$\[\]]/g, '_');
+    activeCallType = callType;
+
+    const myCallRef = ref(db, `calls/${safeGlobalNickname}`);
+
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia({
+        video: callType === 'video',
+        audio: true
+      });
+    } catch (err) {
+      if (callType === 'video') {
+        try {
+          localStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+          activeCallType = 'audio';
+        } catch (audioErr) {
           update(myCallRef, { status: 'rejected' });
           return false;
         }
+      } else {
+        update(myCallRef, { status: 'rejected' });
+        return false;
       }
+    }
 
-      const vBtn = document.getElementById('toggleVideoBtn');
-      if (vBtn) vBtn.style.display = activeCallType === 'audio' ? 'none' : 'flex';
+    const vBtn = document.getElementById('toggleVideoBtn');
+    if (vBtn) vBtn.style.display = activeCallType === 'audio' ? 'none' : 'flex';
+
+    const lVideo = document.getElementById('localVideo');
+    if (lVideo) {
+      lVideo.srcObject = localStream;
+      lVideo.style.display = activeCallType === 'video' ? 'block' : 'none';
+      lVideo.play().catch(() => {});
+    }
+
+    const rVideo = document.getElementById('remoteVideo');
+    if (rVideo) rVideo.srcObject = null;
+
+    const text = document.getElementById('callingStatusText');
+    if (text) {
+      text.innerText = "Connecting...";
+      text.style.display = 'block';
+    }
+
+    const modal = document.getElementById('customCallModal');
+    if (modal) modal.style.display = 'flex';
+
+    const currentPeerId = await waitForPeerId();
+    if (!currentPeerId) {
+      update(myCallRef, { status: 'rejected' });
+      cleanupCallUI();
+      return false;
+    }
+
+    update(myCallRef, {
+      status: 'accepted',
+      receiverPeerId: currentPeerId,
+      type: activeCallType
+    });
+
+    if (inboundCallListener) inboundCallListener();
+    inboundCallListener = onValue(myCallRef, (snap) => {
+      const data = snap.val();
+      if (!data || data.status === 'ended') {
+        cleanupCallUI();
+      }
+    });
+
+    return true;
+  };
+
+  window.forceEndCallUI = () => {
+    const modal = document.getElementById('customCallModal');
+    if (modal && modal.style.display === 'flex') {
+      cleanupCallUI();
+    }
+  };
+
+  window.endCall = () => {
+    cleanupCallUI();
+  };
+
+  window.toggleAudio = () => {
+    if (!localStream || !localStream.getAudioTracks()[0]) return;
+    isAudioMuted = !isAudioMuted;
+    localStream.getAudioTracks()[0].enabled = !isAudioMuted;
+    const btn = document.getElementById('toggleMuteBtn');
+    if (btn) {
+      btn.innerHTML = isAudioMuted ? '<i class="fas fa-microphone-slash"></i>' : '<i class="fas fa-microphone"></i>';
+      btn.style.color = isAudioMuted ? '#FF3B30' : 'white';
+    }
+  };
+
+  window.toggleVideo = () => {
+    if (!localStream || !localStream.getVideoTracks()[0]) return;
+    isVideoPaused = !isVideoPaused;
+    localStream.getVideoTracks()[0].enabled = !isVideoPaused;
+    const btn = document.getElementById('toggleVideoBtn');
+    if (btn) {
+      btn.innerHTML = isVideoPaused ? '<i class="fas fa-video-slash"></i>' : '<i class="fas fa-video"></i>';
+      btn.style.color = isVideoPaused ? '#FF3B30' : 'white';
+    }
+  };
+
+  function cleanupCallUI() {
+    const globalNickname = localStorage.getItem("talkrush_nickname");
+    const safeGlobalNickname = globalNickname ? globalNickname.replace(/[.#$\[\]]/g, '_') : null;
+
+    try {
+      if (safeActiveTarget) remove(ref(db, `calls/${safeActiveTarget}`));
+      if (safeGlobalNickname) remove(ref(db, `calls/${safeGlobalNickname}`));
+    } catch (e) {}
+
+    try {
+      if (currentActiveCall) {
+        currentActiveCall.close();
+        currentActiveCall = null;
+      }
+    } catch (e) {}
+
+    try {
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+        localStream = null;
+      }
+    } catch (e) {}
+
+    try {
+      const modal = document.getElementById('customCallModal');
+      if (modal) modal.style.display = 'none';
 
       const lVideo = document.getElementById('localVideo');
-      if (lVideo) {
-        lVideo.srcObject = localStream;
-        lVideo.style.display = activeCallType === 'video' ? 'block' : 'none';
-      }
+      if (lVideo) lVideo.srcObject = null;
 
       const rVideo = document.getElementById('remoteVideo');
       if (rVideo) rVideo.srcObject = null;
 
       const text = document.getElementById('callingStatusText');
-      if (text) {
-        text.innerText = "Connecting...";
-        text.style.display = 'block';
+      if (text) text.style.display = 'none';
+
+      const mBtn = document.getElementById('toggleMuteBtn');
+      if (mBtn) {
+        mBtn.innerHTML = '<i class="fas fa-microphone"></i>';
+        mBtn.style.color = 'white';
       }
 
-      const modal = document.getElementById('customCallModal');
-      if (modal) modal.style.display = 'flex';
-
-      const currentPeerId = peer.id || ("user_" + globalNickname.replace(/[^a-zA-Z0-9]/g, '_'));
-      update(myCallRef, {
-        status: 'accepted',
-        receiverPeerId: currentPeerId,
-        type: activeCallType
-      });
-
-      if (inboundCallListener) inboundCallListener();
-      inboundCallListener = onValue(myCallRef, (snap) => {
-        const data = snap.val();
-        if (!data || data.status === 'ended') {
-          cleanupCallUI();
-        }
-      });
-
-      return true;
-    };
-
-    window.forceEndCallUI = () => {
-      const modal = document.getElementById('customCallModal');
-      if (modal && modal.style.display === 'flex') {
-        cleanupCallUI();
+      const vBtn = document.getElementById('toggleVideoBtn');
+      if (vBtn) {
+        vBtn.innerHTML = '<i class="fas fa-video"></i>';
+        vBtn.style.color = 'white';
+        vBtn.style.display = 'flex';
       }
-    };
+    } catch (e) {}
 
-    window.endCall = () => {
-      cleanupCallUI();
-    };
+    activeTarget = null;
+    safeActiveTarget = null;
+    isAudioMuted = false;
+    isVideoPaused = false;
 
-    window.toggleAudio = () => {
-      if (!localStream || !localStream.getAudioTracks()[0]) return;
-      isAudioMuted = !isAudioMuted;
-      localStream.getAudioTracks()[0].enabled = !isAudioMuted;
-      const btn = document.getElementById('toggleMuteBtn');
-      if (btn) {
-        btn.innerHTML = isAudioMuted ? '<i class="fas fa-microphone-slash"></i>' : '<i class="fas fa-microphone"></i>';
-        btn.style.color = isAudioMuted ? '#FF3B30' : 'white';
-      }
-    };
-
-    window.toggleVideo = () => {
-      if (!localStream || !localStream.getVideoTracks()[0]) return;
-      isVideoPaused = !isVideoPaused;
-      localStream.getVideoTracks()[0].enabled = !isVideoPaused;
-      const btn = document.getElementById('toggleVideoBtn');
-      if (btn) {
-        btn.innerHTML = isVideoPaused ? '<i class="fas fa-video-slash"></i>' : '<i class="fas fa-video"></i>';
-        btn.style.color = isVideoPaused ? '#FF3B30' : 'white';
-      }
-    };
-
-    function cleanupCallUI() {
-      try {
-        if (safeActiveTarget) remove(ref(db, `calls/${safeActiveTarget}`));
-        if (safeGlobalNickname) remove(ref(db, `calls/${safeGlobalNickname}`));
-      } catch (e) {}
-
-      try {
-        if (currentActiveCall) {
-          currentActiveCall.close();
-          currentActiveCall = null;
-        }
-      } catch (e) {}
-
-      try {
-        if (localStream) {
-          localStream.getTracks().forEach(track => track.stop());
-          localStream = null;
-        }
-      } catch (e) {}
-
-      try {
-        const modal = document.getElementById('customCallModal');
-        if (modal) modal.style.display = 'none';
-
-        const lVideo = document.getElementById('localVideo');
-        if (lVideo) lVideo.srcObject = null;
-
-        const rVideo = document.getElementById('remoteVideo');
-        if (rVideo) rVideo.srcObject = null;
-
-        const text = document.getElementById('callingStatusText');
-        if (text) text.style.display = 'none';
-
-        const mBtn = document.getElementById('toggleMuteBtn');
-        if (mBtn) {
-          mBtn.innerHTML = '<i class="fas fa-microphone"></i>';
-          mBtn.style.color = 'white';
-        }
-
-        const vBtn = document.getElementById('toggleVideoBtn');
-        if (vBtn) {
-          vBtn.innerHTML = '<i class="fas fa-video"></i>';
-          vBtn.style.color = 'white';
-          vBtn.style.display = 'flex';
-        }
-      } catch (e) {}
-
-      activeTarget = null;
-      safeActiveTarget = null;
-      isAudioMuted = false;
-      isVideoPaused = false;
-
-      if (outboundCallListener) { 
-        outboundCallListener(); 
-        outboundCallListener = null; 
-      }
-      if (inboundCallListener) {
-        inboundCallListener();
-        inboundCallListener = null;
-      }
+    if (outboundCallListener) { 
+      outboundCallListener(); 
+      outboundCallListener = null; 
     }
-  });
+    if (inboundCallListener) {
+      inboundCallListener();
+      inboundCallListener = null;
+    }
+  }
 </script>
