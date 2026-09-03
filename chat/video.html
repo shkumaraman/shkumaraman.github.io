@@ -441,15 +441,24 @@ video { width: 100%; height: 100%; object-fit: cover; }
 {% include menu.html %}
 
 <script type="module">
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
+import { initializeApp, getApps } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
 import { getDatabase, ref, onValue, get, set, update, remove, push } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
 
 const firebaseConfig = {
   databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app"
 };
 
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
+const apps = getApps();
+const defaultApp = apps.find(a => a.name === '[DEFAULT]') || initializeApp(firebaseConfig);
+const db = getDatabase(defaultApp);
+
+const friendFirebaseConfig = {
+  databaseURL: "https://talkrush3-default-rtdb.asia-southeast1.firebasedatabase.app"
+};
+const friendAppName = "TalkRushFriendApp";
+const existingFriendApp = apps.find(a => a.name === friendAppName);
+const friendApp = existingFriendApp ? existingFriendApp : initializeApp(friendFirebaseConfig, friendAppName);
+const friendDb = getDatabase(friendApp);
     
 let peer, myConn, myId, waitingRef, waitingEntryRef;
 let isConnected = false;
@@ -581,7 +590,6 @@ function setupChatEvents() {
   chatInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMessage(); });
 }
 
-// New Add Friend Logic
 friendBtn.onclick = async () => {
   if (!myConn || !isConnected || !checkDataChannel()) {
     addMessage("Chat not ready for friend request", 'system'); return;
@@ -589,7 +597,7 @@ friendBtn.onclick = async () => {
   
   friendBtn.disabled = true;
   try {
-    const newChatRef = push(ref(db, 'friends'));
+    const newChatRef = push(ref(friendDb, 'friends'));
     await set(newChatRef, {
       nickname1: myNickname,
       nickname2: currentStrangerNickname,
