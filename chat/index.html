@@ -137,15 +137,25 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 }
 
 #strangerCard .card-avatar {
-  width: 38px; height: 38px;
+  width: 38px; 
+  height: 38px;
   border-radius: 50%;
   background: var(--accent-dim);
   border: 1.5px solid var(--accent-border);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 16px; color: var(--accent);
+  display: flex; 
+  align-items: center; 
+  justify-content: center;
+  font-size: 16px; 
+  color: var(--accent);
   flex-shrink: 0;
+  overflow: hidden;
 }
-#strangerCard .card-avatar img { width: 100%; height: 100%; object-fit: contain; }
+
+#strangerCard .card-avatar img { 
+  width: 22px; 
+  height: 22px; 
+  object-fit: contain; 
+}
 
 #strangerCard .card-info { flex: 1; min-width: 0; }
 
@@ -633,15 +643,26 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 {% include play.html %}
 
 <script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
+  import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
   import { getDatabase, ref, set, get, remove, update, push } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
 
+  // Matchmaking / Random chat DB (Default)
   const firebaseConfig = {
     databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app"
   };
 
-  const app = initializeApp(firebaseConfig);
-  const db = getDatabase(app);
+  const apps = getApps();
+  const defaultApp = apps.find(a => a.name === '[DEFAULT]') || initializeApp(firebaseConfig);
+  const db = getDatabase(defaultApp);
+
+  // Dedicated Friends DB (TalkRushFriendApp)
+  const friendFirebaseConfig = {
+    databaseURL: "https://talkrush3-default-rtdb.asia-southeast1.firebasedatabase.app"
+  };
+  const friendAppName = "TalkRushFriendApp";
+  const existingFriendApp = apps.find(a => a.name === friendAppName);
+  const friendApp = existingFriendApp ? existingFriendApp : initializeApp(friendFirebaseConfig, friendAppName);
+  const friendDb = getDatabase(friendApp);
 
   let GIPHY_API_KEY = '';
   let CHAT_END_IMAGE = '/assets/chat_end.png';
@@ -1076,7 +1097,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     
     friendBtn.disabled = true;
     try {
-      const newChatRef = push(ref(db, 'friends'));
+      const newChatRef = push(ref(friendDb, 'friends'));
       await set(newChatRef, {
         nickname1: myNickname,
         nickname2: currentStrangerNickname,
