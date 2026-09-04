@@ -422,59 +422,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
 #imgInput, #gifInput { display: none; }
 
-.gif-modal {
-  display: none;
-  position: absolute;
-  bottom: 60px; right: 10px;
-  width: min(300px, calc(100% - 20px));
-  max-height: 380px;
-  background: var(--dark-surface);
-  border-radius: 14px;
-  border: 0.5px solid var(--dark-border2);
-  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-  z-index: 1001;
-  padding: 12px;
-  overflow: hidden;
-  flex-direction: column;
-  gap: 8px;
-}
-.light-mode .gif-modal {
-  background: var(--light-surface);
-  border-color: var(--light-border2);
-}
-
-.gif-search {
-  width: 100%;
-  padding: 8px 12px;
-  border-radius: 8px;
-  border: 0.5px solid var(--dark-border2);
-  background: var(--dark-input-bg);
-  color: var(--dark-text);
-  font-size: 13px; outline: none;
-}
-.light-mode .gif-search {
-  background: var(--light-input-bg);
-  border-color: var(--light-border2);
-  color: var(--light-text);
-}
-
-.gif-results {
-  flex: 1;
-  overflow-y: auto;
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 6px;
-  max-height: 290px;
-}
-
-.gif-item {
-  width: 100%; height: 90px;
-  object-fit: cover;
-  border-radius: 8px;
-  cursor: pointer; transition: transform 0.15s;
-}
-.gif-item:hover { transform: scale(1.03); }
-
 .keyword-bubble {
   background: rgba(255,255,255,0.05);
   border-radius: 20px;
@@ -547,6 +494,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     <button id="skipBtn" title="Skip">
       <i class="fas fa-forward-step"></i>
     </button>
+
     <div class="input-area">
       <input type="text" id="msgInput" placeholder="Type your message..." />
       <div class="input-icons">
@@ -554,16 +502,15 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
         <label for="gifInput" class="icon-btn" title="Send GIF"><i class="fas fa-film"></i></label>
       </div>
     </div>
+
+    <button id="voiceRecordBtn" class="voice-record-btn" title="Record Voice">
+      <i class="fas fa-microphone"></i>
+    </button>
     <button id="sendBtn" class="send-btn" title="Send"><i class="fas fa-paper-plane"></i></button>
   </div>
   
   <input type="file" id="imgInput" accept="image/*" />
   <input type="file" id="gifInput" accept="image/gif" />
-  
-  <div class="gif-modal" id="gifModal">
-    <input type="text" class="gif-search" id="gifSearch" placeholder="Search GIFs..." />
-    <div class="gif-results" id="gifResults"></div>
-  </div>
 </div>
 
 <ins class="adsbygoogle"
@@ -641,6 +588,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
 {% include menu.html %}
 {% include play.html %}
+{% include media.html %}
 
 <script type="module">
   import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
@@ -673,6 +621,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       GIPHY_API_KEY = keys.giphy || '';
       if (keys.chatEndImage) CHAT_END_IMAGE = keys.chatEndImage;
       if (keys.chatEndLink) CHAT_END_LINK = keys.chatEndLink;
+      if (window.MediaHub) MediaHub.setApiKey(GIPHY_API_KEY);
     } catch (e) {}
   }
 
@@ -697,6 +646,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   let myTags = JSON.parse(localStorage.getItem("talkrush_tags") || "[]");
 
   const friendBtn = document.getElementById('friendBtn');
+  const chatLog = document.getElementById("chatLog");
 
   function isSingleEmoji(text) {
     if (!text) return false;
@@ -757,6 +707,21 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
   window.addEventListener('load', async () => {
     await loadKeys();
+    MediaHub.init({
+      giphyApiKey: GIPHY_API_KEY,
+      onSendVoice: (base64Data, duration) => {
+        if (myConn && isConnected) {
+          myConn.send({ type: "audio", blob: base64Data, duration: duration });
+          MediaHub.appendVoiceMessage(chatLog, "me", base64Data, duration);
+        }
+      },
+      onSelectGif: (gifUrl) => {
+        if (myConn && isConnected) {
+          myConn.send({ type: "gif", url: gifUrl });
+          appendGif("me", gifUrl);
+        }
+      }
+    });
     showNewChatButton();
     logSystem("Click 'Start New Chat' to begin chatting with a stranger!");
   });
@@ -797,7 +762,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       currentStrangerNickname = getFallbackName();
       hideFriendButton();
       hideStrangerCard();
-      document.getElementById("chatLog").innerHTML = "";
+      chatLog.innerHTML = "";
       hideNewChatButton();
       startPeer();
     }
@@ -1052,6 +1017,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       if (typeof data === "string") appendMessage("stranger", data);
       else if (data.type === "image") appendImage("stranger", data.blob);
       else if (data.type === "gif") appendGif("stranger", data.url);
+      else if (data.type === "audio") MediaHub.appendVoiceMessage(chatLog, "stranger", data.blob, data.duration);
       else if (data.type === "typing") showTypingIndicator();
       else if (data.type === "tags") {
         currentStrangerNickname = data.nickname || getFallbackName();
@@ -1108,7 +1074,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       logSystem("You added " + currentStrangerNickname + " as a friend.");
       hideFriendButton();
     } catch (error) {
-      console.error(error);
       logSystem("Failed to add friend. Please try again.");
       friendBtn.disabled = false;
     }
@@ -1154,13 +1119,13 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     time.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     div.appendChild(time);
     
-    document.getElementById("chatLog").appendChild(div);
+    chatLog.appendChild(div);
     scrollToBottom();
   }
 
   const appendImage = (sender, blob) => appendMessage(sender, blob, "image");
   const appendGif = (sender, url) => appendMessage(sender, url, "gif");
-  const scrollToBottom = () => { const log = document.getElementById("chatLog"); log.scrollTop = log.scrollHeight; };
+  const scrollToBottom = () => { chatLog.scrollTop = chatLog.scrollHeight; };
 
   function appendSystemImage(src, linkUrl) {
     const wrapper = document.createElement("div");
@@ -1181,7 +1146,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       wrapper.appendChild(img);
     }
     
-    document.getElementById("chatLog").appendChild(wrapper);
+    chatLog.appendChild(wrapper);
     scrollToBottom();
   }
 
@@ -1190,7 +1155,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     const div = document.createElement("div");
     div.className = "msg system-msg";
     div.textContent = msg;
-    document.getElementById("chatLog").appendChild(div);
+    chatLog.appendChild(div);
     currentSystemMessage = div;
     scrollToBottom();
   }
@@ -1284,7 +1249,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   };
 
   document.getElementById("newChatBtn").onclick = () => {
-    document.getElementById("chatLog").innerHTML = "";
+    chatLog.innerHTML = "";
     hideFriendButton();
     hideNewChatButton();
     hideStrangerCard();
@@ -1296,60 +1261,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     currentStrangerNickname = getFallbackName();
     startPeer();
   };
-
-  const gifModal = document.getElementById("gifModal");
-  const gifSearch = document.getElementById("gifSearch");
-  const gifResults = document.getElementById("gifResults");
-  const gifBtn = document.querySelector('[for="gifInput"]');
-
-  gifBtn.onclick = (e) => {
-    e.preventDefault();
-    gifModal.style.display = gifModal.style.display === "flex" ? "none" : "flex";
-    if (gifModal.style.display === "flex") fetchTrendingGifs();
-  };
-
-  gifSearch.addEventListener("keypress", (e) => { if (e.key === "Enter") searchGifs(gifSearch.value); });
-
-  async function fetchTrendingGifs() {
-    try {
-      const res = await fetch(`https://api.giphy.com/v1/gifs/trending?api_key=${GIPHY_API_KEY}&limit=20`);
-      displayGifs((await res.json()).data);
-    } catch { logSystem("Failed to load GIFs"); }
-  }
-
-  async function searchGifs(query) {
-    if (!query.trim()) { fetchTrendingGifs(); return; }
-    try {
-      const res = await fetch(`https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_API_KEY}&q=${encodeURIComponent(query)}&limit=20`);
-      displayGifs((await res.json()).data);
-    } catch { logSystem("Failed to search GIFs"); }
-  }
-
-  function displayGifs(gifs) {
-    gifResults.innerHTML = "";
-    gifs.forEach(gif => {
-      const gifUrl = gif.images.fixed_height.url;
-      const img = document.createElement("img");
-      img.src = gifUrl;
-      img.className = "gif-item";
-      img.onclick = () => {
-        if (myConn && isConnected) {
-          myConn.send({ type: "gif", url: gifUrl });
-          appendGif("me", gifUrl);
-          gifModal.style.display = "none";
-        }
-      };
-      gifResults.appendChild(img);
-    });
-  }
-
-  window.addEventListener("click", (e) => {
-    if (gifModal.style.display === "flex" && 
-        !gifModal.contains(e.target) && 
-        !gifBtn.contains(e.target)) {
-      gifModal.style.display = "none";
-    }
-  });
 
   window.addEventListener('nicknameUpdated', function(e) {
     myNickname = e.detail.nickname;
