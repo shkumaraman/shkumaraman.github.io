@@ -491,7 +491,7 @@
 
   let cachedFriends = [];
   let selectedChatIds = new Set();
-  let currentSharePayload = "";
+  let currentShareItem = { type: "text", text: "", url: "", duration: 0 };
 
   function getAvatarLetter(name) {
     if (!name) return "?";
@@ -516,6 +516,47 @@
       toast.style.opacity = "0";
       setTimeout(() => toast.style.display = "none", 300);
     }, 2500);
+  }
+
+  function detectMediaType(url) {
+    if (typeof url !== "string") return "text";
+    const cleanUrl = url.split("?")[0].toLowerCase();
+    
+    if (cleanUrl.match(/\.(webm|mp3|wav|ogg|m4a|aac|opus)$/) || cleanUrl.includes("voice.") || cleanUrl.includes("/audio")) {
+      return "audio";
+    }
+    if (cleanUrl.match(/\.gif$/) || url.includes("giphy.com")) {
+      return "gif";
+    }
+    if (cleanUrl.match(/\.(jpeg|jpg|png|webp|svg)$/) || url.includes("i.ibb.co") || url.includes("cloudinary.com")) {
+      return "image";
+    }
+    return "text";
+  }
+
+  function parseSharePayload(payload) {
+    if (!payload) {
+      return { type: "text", text: window.location.href, url: "", duration: 0 };
+    }
+
+    if (typeof payload === "object") {
+      const type = payload.type || detectMediaType(payload.url || "");
+      return {
+        type: type,
+        url: payload.url || "",
+        text: payload.text || "",
+        duration: Number(payload.duration) || 0
+      };
+    }
+
+    const detected = detectMediaType(payload);
+    if (detected === "audio") {
+      return { type: "audio", url: payload, text: "", duration: 0 };
+    } else if (detected === "image" || detected === "gif") {
+      return { type: detected, url: payload, text: "", duration: 0 };
+    }
+
+    return { type: "text", text: payload, url: "", duration: 0 };
   }
 
   async function fetchFriendsForShare() {
@@ -610,7 +651,7 @@
   }
 
   window.openShareModal = function(payload = "") {
-    currentSharePayload = typeof payload === 'object' ? (payload.url || payload.text || window.location.href) : (payload || window.location.href);
+    currentShareItem = parseSharePayload(payload);
     selectedChatIds.clear();
     
     const overlay = document.getElementById("shareModalOverlay");
@@ -631,7 +672,7 @@
   };
 
   window.copyShareContent = function() {
-    const toCopy = currentSharePayload || window.location.href;
+    const toCopy = currentShareItem.url || currentShareItem.text || window.location.href;
     navigator.clipboard.writeText(toCopy).then(() => {
       showShareToast("Copied to clipboard!");
     }).catch(() => {
@@ -642,7 +683,7 @@
   window.openNativeShare = async function() {
     const shareData = {
       title: document.title,
-      url: currentSharePayload || window.location.href
+      url: currentShareItem.url || currentShareItem.text || window.location.href
     };
 
     if (navigator.share) {
@@ -653,13 +694,6 @@
       copyShareContent();
     }
   };
-
-  function isMediaUrl(url) {
-    if (typeof url !== 'string') return false;
-    return url.includes("i.ibb.co") || 
-           url.includes("giphy.com") || 
-           url.match(/\.(jpeg|jpg|gif|png|webp)$/i) != null;
-  }
 
   window.sendSharedContent = async function() {
     if (selectedChatIds.size === 0) return;
@@ -679,60 +713,47 @@
         const messagesRef = ref(db, `messages/${chatId}`);
         const friendRef = ref(db, `friends/${chatId}`);
 
-        if (isMediaUrl(currentSharePayload)) {
-          const msgType = currentSharePayload.includes("giphy.com") ? "gif" : "image";
-          
-          promises.push(set(push(messagesRef), {
-            nickname: myNickname,
-            url: currentSharePayload,
-            timestamp: baseTime,
-            type: msgType
-          }));
+        let primaryMessage = {
+          nickname: myNickname,
+          timestamp: baseTime,
+          type: currentShareItem.type
+        };
 
-          let lastText = msgType === "gif" ? "🎯 GIF" : "📷 Photo";
+        let lastText = "";
 
-          if (customText) {
-            promises.push(set(push(messagesRef), {
-              nickname: myNickname,
-              text: customText,
-              timestamp: baseTime + 1,
-              type: "text"
-            }));
-            lastText = customText.substring(0, 30) + (customText.length > 30 ? '...' : '');
-          }
-
-          promises.push(update(friendRef, {
-             lastMessageText: lastText,
-             lastTimestamp: customText ? baseTime + 1 : baseTime,
-             lastSender: myNickname
-          }));
-
+        if (currentShareItem.type === "audio") {
+          primaryMessage.url = currentShareItem.url;
+          primaryMessage.duration = currentShareItem.duration || 0;
+          lastText = "🎤 Voice note";
+        } else if (currentShareItem.type === "image") {
+          primaryMessage.url = currentShareItem.url;
+          lastText = "📷 Photo";
+        } else if (currentShareItem.type === "gif") {
+          primaryMessage.url = currentShareItem.url;
+          lastText = "🎯 GIF";
         } else {
+          primaryMessage.text = currentShareItem.text || currentShareItem.url;
+          const display = primaryMessage.text;
+          lastText = display.substring(0, 30) + (display.length > 30 ? '...' : '');
+        }
+
+        promises.push(set(push(messagesRef), primaryMessage));
+
+        if (customText) {
           promises.push(set(push(messagesRef), {
             nickname: myNickname,
-            text: currentSharePayload,
-            timestamp: baseTime,
+            text: customText,
+            timestamp: baseTime + 1,
             type: "text"
           }));
-
-          let lastText = currentSharePayload.substring(0, 30) + (currentSharePayload.length > 30 ? '...' : '');
-
-          if (customText) {
-            promises.push(set(push(messagesRef), {
-              nickname: myNickname,
-              text: customText,
-              timestamp: baseTime + 1,
-              type: "text"
-            }));
-            lastText = customText.substring(0, 30) + (customText.length > 30 ? '...' : '');
-          }
-          
-          promises.push(update(friendRef, {
-             lastMessageText: lastText,
-             lastTimestamp: customText ? baseTime + 1 : baseTime,
-             lastSender: myNickname
-          }));
+          lastText = customText.substring(0, 30) + (customText.length > 30 ? '...' : '');
         }
+
+        promises.push(update(friendRef, {
+          lastMessageText: lastText,
+          lastTimestamp: customText ? baseTime + 1 : baseTime,
+          lastSender: myNickname
+        }));
       });
 
       await Promise.all(promises);
