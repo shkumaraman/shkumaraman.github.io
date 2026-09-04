@@ -409,7 +409,7 @@ window.MediaHub = (function () {
   }
 
   function formatTime(totalSeconds) {
-    if (!totalSeconds || isNaN(totalSeconds)) return "0:00";
+    if (!totalSeconds || !Number.isFinite(totalSeconds) || totalSeconds <= 0) return "0:00";
     const mins = Math.floor(totalSeconds / 60);
     const secs = Math.floor(totalSeconds % 60);
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
@@ -467,9 +467,10 @@ window.MediaHub = (function () {
       bars.push(bar);
     }
 
+    const parsedInitialDur = Number(initialDuration) || 0;
     const timeLabel = document.createElement("span");
     timeLabel.className = "audio-duration-txt";
-    timeLabel.textContent = formatTime(initialDuration);
+    timeLabel.textContent = formatTime(parsedInitialDur);
 
     bubble.appendChild(playBtn);
     bubble.appendChild(timeline);
@@ -483,8 +484,18 @@ window.MediaHub = (function () {
 
     const audio = new Audio(sourceData);
 
+    function getValidDuration() {
+      if (Number.isFinite(audio.duration) && audio.duration > 0) {
+        return audio.duration;
+      }
+      return parsedInitialDur > 0 ? parsedInitialDur : 0;
+    }
+
     audio.onloadedmetadata = () => {
-      timeLabel.textContent = formatTime(audio.duration);
+      const dur = getValidDuration();
+      if (dur > 0) {
+        timeLabel.textContent = formatTime(dur);
+      }
     };
 
     const playIcon = playBtn.querySelector("i");
@@ -502,26 +513,30 @@ window.MediaHub = (function () {
     };
 
     audio.ontimeupdate = () => {
-      const progress = audio.currentTime / (audio.duration || 1);
-      timeLabel.textContent = formatTime(audio.currentTime);
-      const activeIdx = Math.floor(progress * bars.length);
-      bars.forEach((bar, index) => {
-        bar.classList.toggle("played", index <= activeIdx);
-      });
+      const dur = getValidDuration();
+      if (dur > 0) {
+        const progress = Math.min(1, audio.currentTime / dur);
+        timeLabel.textContent = formatTime(audio.currentTime);
+        const activeIdx = Math.floor(progress * bars.length);
+        bars.forEach((bar, index) => {
+          bar.classList.toggle("played", index <= activeIdx);
+        });
+      }
     };
 
     timeline.onclick = (e) => {
-      const rect = timeline.getBoundingClientRect();
-      const clickX = e.clientX - rect.left;
-      const ratio = Math.max(0, Math.min(1, clickX / rect.width));
-      if (audio.duration) {
-        audio.currentTime = ratio * audio.duration;
+      const dur = getValidDuration();
+      if (dur > 0) {
+        const rect = timeline.getBoundingClientRect();
+        const clickX = e.clientX - rect.left;
+        const ratio = Math.max(0, Math.min(1, clickX / rect.width));
+        audio.currentTime = ratio * dur;
       }
     };
 
     audio.onended = () => {
       playIcon.className = "fas fa-play";
-      timeLabel.textContent = formatTime(audio.duration || initialDuration);
+      timeLabel.textContent = formatTime(getValidDuration());
       bars.forEach((bar) => bar.classList.remove("played"));
     };
 
