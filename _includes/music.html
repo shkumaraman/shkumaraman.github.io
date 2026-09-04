@@ -348,8 +348,8 @@
         databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app"
     };
 
-    const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-    const database = getDatabase(app);
+    const defaultApp = getApps().find(a => a.name === "[DEFAULT]") || initializeApp(firebaseConfig);
+    const database = getDatabase(defaultApp, firebaseConfig.databaseURL);
 
     function formatTime(seconds) {
         if (isNaN(seconds) || seconds < 0) return "0:00";
@@ -377,6 +377,7 @@
         hasUserLeft: false,
         isBackgroundPaused: false,
         isRemoteUpdate: false,
+        isSeeking: false,
 
         init: function() {
             if (document.readyState === 'loading') {
@@ -522,7 +523,21 @@
             prevBtn.addEventListener('click', this.handlePrev.bind(this));
             nextBtn.addEventListener('click', this.handleNext.bind(this));
             muteBtn.addEventListener('click', this.handleMute.bind(this));
-            seekBar.addEventListener('input', this.handleSeek.bind(this));
+
+            seekBar.addEventListener('input', (e) => {
+                this.isSeeking = true;
+                const sec = parseInt(e.target.value, 10);
+                const d = Math.floor(this.player ? this.player.getDuration() || 0 : 0);
+                document.getElementById('curTime').textContent = formatTime(sec);
+                const progress = d > 0 ? (sec / d) * 100 : 0;
+                seekBar.style.background = `linear-gradient(to right, #ff5252 ${progress}%, #ddd ${progress}%)`;
+            });
+
+            seekBar.addEventListener('change', () => {
+                this.isSeeking = false;
+                this.handleSeek();
+            });
+
             loopBtn.addEventListener('click', this.handleLoop.bind(this));
         },
         
@@ -905,7 +920,7 @@
         },
         
         updatePlayerUI: function() {
-            if (!this.player) return;
+            if (!this.player || this.isSeeking) return;
             
             const t = Math.floor(this.player.getCurrentTime() || 0);
             const d = Math.floor(this.player.getDuration() || 0);
@@ -939,7 +954,7 @@
         },
         
         firebaseInitialized: function() {
-            return !!database && !!app;
+            return !!database && !!defaultApp;
         },
         
         destroy: function() {
