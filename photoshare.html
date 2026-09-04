@@ -141,6 +141,37 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 }
 .grid-item .remove-btn:hover { transform: scale(1.1); }
 
+.expiry-selector-wrap {
+  display: flex; align-items: center; justify-content: space-between;
+  background: var(--dark-surface); border: 0.5px solid var(--dark-border2);
+  padding: 12px 16px; border-radius: 12px; margin-bottom: 15px;
+}
+.light-mode .expiry-selector-wrap { background: var(--light-surface); border-color: var(--light-border2); }
+
+.expiry-label {
+  font-size: 13px; font-weight: 600; color: var(--dark-text);
+  display: flex; align-items: center; gap: 8px;
+}
+.light-mode .expiry-label { color: var(--light-text); }
+.expiry-label i { color: var(--accent); }
+
+.expiry-select {
+  background: var(--dark-input-bg); color: var(--dark-text);
+  border: 0.5px solid var(--dark-border2); padding: 8px 12px;
+  border-radius: 8px; font-size: 13px; font-weight: 600;
+  outline: none; cursor: pointer; transition: all 0.2s;
+}
+.light-mode .expiry-select {
+  background: var(--light-input-bg); border-color: var(--light-border2); color: var(--light-text);
+}
+.expiry-select:focus { border-color: var(--accent); }
+.expiry-select option {
+  background: var(--dark-header-bg); color: var(--dark-text);
+}
+.light-mode .expiry-select option {
+  background: var(--light-header-bg); color: var(--light-text);
+}
+
 .progress-wrap {
   display: none; margin-bottom: 20px; background: var(--dark-surface);
   padding: 16px; border-radius: 12px; border: 0.5px solid var(--dark-border2);
@@ -239,6 +270,20 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
     <div class="photo-grid" id="previewContainer"></div>
 
+    <div class="expiry-selector-wrap" id="expiryWrap" style="display: none;">
+      <label for="expirySelect" class="expiry-label">
+        <i class="fas fa-clock"></i> Expire photos after:
+      </label>
+      <select id="expirySelect" class="expiry-select">
+        <option value="600000">10 Minutes</option>
+        <option value="1800000">30 Minutes</option>
+        <option value="3600000" selected>1 Hour</option>
+        <option value="21600000">6 Hours</option>
+        <option value="43200000">12 Hours</option>
+        <option value="86400000">1 Day (24 Hours)</option>
+      </select>
+    </div>
+
     <div class="progress-wrap" id="progressWrap">
       <div class="progress-label" id="progressLabel">Uploading 1 of 3...</div>
       <div class="progress-bar">
@@ -317,9 +362,35 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 {% include menu.html %}
 
 <script type="module">
+  const notify = {
+    toast: (msg, type = 'info') => {
+      if (window.AlertKit && typeof window.AlertKit.toast === 'function') {
+        window.AlertKit.toast(msg, type);
+      } else {
+        alert(msg);
+      }
+    },
+    error: (title, msg) => {
+      if (window.AlertKit && typeof window.AlertKit.error === 'function') {
+        window.AlertKit.error(title, msg);
+      } else {
+        alert(`${title}: ${msg}`);
+      }
+    },
+    success: (title, msg) => {
+      if (window.AlertKit && typeof window.AlertKit.success === 'function') {
+        window.AlertKit.success(title, msg);
+      } else {
+        alert(`${title}: ${msg}`);
+      }
+    }
+  };
+
   const uploadArea = document.getElementById('uploadArea');
   const fileInput = document.getElementById('fileInput');
   const previewContainer = document.getElementById('previewContainer');
+  const expiryWrap = document.getElementById('expiryWrap');
+  const expirySelect = document.getElementById('expirySelect');
   const generateBtn = document.getElementById('generateBtn');
   const codeDisplay = document.getElementById('codeDisplay');
   const shareButtons = document.getElementById('shareButtons');
@@ -340,27 +411,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   let uploadedFiles = [];
   let shareCode = '';
 
-  async function cleanupExpiredPhotos() {
-    try {
-      const res = await fetch(`${window.MEDIA_STORAGE_URL}/photos`);
-      const allData = await res.json();
-      if (!allData) return;
-
-      const now = Date.now();
-      for (const [code, item] of Object.entries(allData)) {
-        if (item && item.expires && item.expires < now) {
-          const images = item.images || [];
-          for (const imgUrl of images) {
-            if (window.deleteMediaFromServer) {
-              await window.deleteMediaFromServer(imgUrl);
-            }
-          }
-          await fetch(`${window.MEDIA_STORAGE_URL}/photos/${code}`, { method: 'DELETE' });
-        }
-      }
-    } catch (e) {}
-  }
-
   function dataURLtoBlob(dataurl) {
     const arr = dataurl.split(',');
     const mime = arr[0].match(/:(.*?);/)[1];
@@ -374,7 +424,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   }
 
   uploadArea.addEventListener('click', () => fileInput.click());
-  fileInput.addEventListener('change', handleFileSelect);
+  fileInput.addEventListener('change', (e) => processFiles(Array.from(e.target.files)));
   generateBtn.addEventListener('click', generateShareCode);
   copyBtn.addEventListener('click', copyCode);
   shareBtn.addEventListener('click', shareCodeViaAPI);
@@ -440,26 +490,22 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     });
   }
 
-  function handleFileSelect(event) {
-    processFiles(Array.from(event.target.files));
-  }
-
   function processFiles(files) {
     const remaining = MAX_IMAGES - uploadedFiles.length;
     if (remaining <= 0) { 
-      AlertKit.toast(`Maximum ${MAX_IMAGES} photos allowed`, 'warning'); 
+      notify.toast(`Maximum ${MAX_IMAGES} photos allowed`, 'warning'); 
       return; 
     }
     const toAdd = files.slice(0, remaining);
-    if (files.length > remaining) AlertKit.toast(`Only ${remaining} more photo(s) can be added`, 'info');
+    if (files.length > remaining) notify.toast(`Only ${remaining} more photo(s) can be added`, 'info');
 
     toAdd.forEach(file => {
       if (!file.type.startsWith('image/')) { 
-        AlertKit.toast(`${file.name} is not an image`, 'error'); 
+        notify.toast(`${file.name} is not an image`, 'error'); 
         return; 
       }
       if (file.size > 15 * 1024 * 1024) { 
-        AlertKit.toast(`${file.name} is too large (max 15MB)`, 'warning'); 
+        notify.toast(`${file.name} is too large (max 15MB)`, 'warning'); 
         return; 
       }
 
@@ -478,7 +524,10 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
           uploadedFiles.splice(parseInt(item.dataset.index), 1);
           item.remove();
           updateIndices();
-          if (uploadedFiles.length === 0) generateBtn.style.display = 'none';
+          if (uploadedFiles.length === 0) {
+            generateBtn.style.display = 'none';
+            expiryWrap.style.display = 'none';
+          }
         });
 
         previewContainer.appendChild(item);
@@ -486,7 +535,10 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       reader.readAsDataURL(file);
     });
 
-    if (uploadedFiles.length > 0) generateBtn.style.display = 'flex';
+    if (uploadedFiles.length > 0) {
+      generateBtn.style.display = 'flex';
+      expiryWrap.style.display = 'flex';
+    }
     fileInput.value = '';
   }
 
@@ -495,28 +547,35 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   }
 
   async function getAvailableShareCode() {
-    let code, exists;
+    let code, exists, attempts = 0;
     do {
       code = Math.floor(10000 + Math.random() * 90000).toString();
+      attempts++;
       try {
         const res = await fetch(`${window.MEDIA_STORAGE_URL}/photos/${code}`);
-        const data = await res.json();
-        exists = data && data.expires && data.expires > Date.now();
+        if (res.status === 404) {
+          exists = false;
+        } else if (res.ok) {
+          const data = await res.json();
+          exists = Boolean(data && data.expires && data.expires > Date.now());
+        } else {
+          exists = false;
+        }
       } catch (e) {
         exists = false;
       }
-    } while (exists);
+    } while (exists && attempts < 8);
     return code;
   }
 
   async function generateShareCode() {
     if (uploadedFiles.length === 0) { 
-      AlertKit.toast('Please upload at least one photo', 'warning'); 
+      notify.toast('Please upload at least one photo', 'warning'); 
       return; 
     }
 
-    if (!window.uploadMediaToServer) {
-      AlertKit.error('Error', 'Storage server client is not initialized.');
+    if (!window.uploadMediaToServer || !window.MEDIA_STORAGE_URL) {
+      notify.error('Error', 'Storage server client is not configured.');
       return;
     }
 
@@ -544,9 +603,11 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       }
 
       shareCode = await getAvailableShareCode();
-      const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
 
-      await fetch(`${window.MEDIA_STORAGE_URL}/photos/${shareCode}`, {
+      const duration = parseInt(expirySelect.value, 10) || 3600000;
+      const expiresAt = Date.now() + duration;
+
+      const saveRes = await fetch(`${window.MEDIA_STORAGE_URL}/photos/${shareCode}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -555,26 +616,29 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
         })
       });
 
+      if (!saveRes.ok) throw new Error('Database write error');
+
       progressWrap.classList.remove('active');
       generateBtn.style.display = 'none';
+      expiryWrap.style.display = 'none';
 
       codeDisplay.textContent = shareCode;
       codeDisplay.style.display = 'block';
       shareButtons.style.display = 'flex';
 
-      AlertKit.success('Success', 'Photos uploaded! Share the code below.');
+      notify.success('Success', 'Photos uploaded! Share the code below.');
     } catch (error) {
       progressWrap.classList.remove('active');
       generateBtn.disabled = false;
       generateBtn.innerHTML = '<i class="fas fa-magic"></i> Generate Share Code';
-      AlertKit.error('Upload Failed', 'Failed to upload photos to server.');
+      notify.error('Upload Failed', 'Failed to upload photos to server.');
     }
   }
 
   function copyCode() {
     navigator.clipboard.writeText(shareCode)
-      .then(() => AlertKit.toast('Code copied!', 'success'))
-      .catch(() => AlertKit.toast('Failed to copy', 'error'));
+      .then(() => notify.toast('Code copied!', 'success'))
+      .catch(() => notify.toast('Failed to copy', 'error'));
   }
 
   function shareCodeViaAPI() {
@@ -589,7 +653,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   async function viewPhotos() {
     const code = codeInput.value.trim();
     if (code.length !== 5 || !/^\d+$/.test(code)) { 
-      AlertKit.toast('Please enter a valid 5-digit code', 'warning'); 
+      notify.toast('Please enter a valid 5-digit code', 'warning'); 
       return; 
     }
 
@@ -599,38 +663,42 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
     try {
       const res = await fetch(`${window.MEDIA_STORAGE_URL}/photos/${code}`);
-      const data = await res.json();
 
       viewBtn.disabled = false;
       viewBtn.innerHTML = '<i class="fas fa-eye"></i> View';
 
+      if (res.status === 404) {
+        notify.toast('No photos found for this code', 'error');
+        return;
+      }
+
+      if (!res.ok) {
+        notify.toast('Unable to fetch photos from server', 'error');
+        return;
+      }
+
+      const data = await res.json();
+
       if (!data) { 
-        AlertKit.toast('No photos found for this code', 'error'); 
+        notify.toast('No photos found for this code', 'error'); 
         return; 
       }
 
       if (data.expires && data.expires < Date.now()) {
-        AlertKit.error('Expired', 'This code has expired!');
-        const images = data.images || [];
-        for (const imgUrl of images) {
-          if (window.deleteMediaFromServer) {
-            await window.deleteMediaFromServer(imgUrl);
-          }
-        }
-        await fetch(`${window.MEDIA_STORAGE_URL}/photos/${code}`, { method: 'DELETE' });
+        notify.error('Expired', 'This share code has expired and is no longer available.');
         return;
       }
 
-      const images = data.images || [];
+      const images = Array.isArray(data.images) ? data.images : [];
       if (images.length === 0) { 
-        AlertKit.toast('No photos found for this code', 'error'); 
+        notify.toast('No photos found for this code', 'error'); 
         return; 
       }
 
       images.forEach((src, idx) => {
         const item = document.createElement('div');
         item.className = 'grid-item';
-        item.title = "Click to view full image";
+        item.title = 'Click to view full image';
 
         const img = document.createElement('img');
         img.src = src;
@@ -638,16 +706,13 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
         img.loading = 'lazy';
 
         item.appendChild(img);
-        item.addEventListener('click', () => {
-          window.open(src, '_blank');
-        });
-
+        item.addEventListener('click', () => window.open(src, '_blank'));
         viewerGallery.appendChild(item);
       });
     } catch (error) {
       viewBtn.disabled = false;
       viewBtn.innerHTML = '<i class="fas fa-eye"></i> View';
-      AlertKit.toast('Error loading photos', 'error');
+      notify.toast('Error loading photos', 'error');
     }
   }
 
@@ -665,5 +730,4 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   }
 
   checkUrlForCode();
-  cleanupExpiredPhotos();
 </script>
