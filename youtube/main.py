@@ -1,16 +1,47 @@
-from fastapi import FastAPI, HTTPException
-import requests
-import re
 import json
+import re
+from contextlib import asynccontextmanager
+from urllib.parse import quote_plus
+
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+import httpx
 
 # -------------------------------------------------------------
-# 🛡 CORS ENABLED
+# 🌐 LIFESPAN & HTTP CLIENT (Reusable Connection Pool)
+# -------------------------------------------------------------
+DEFAULT_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+}
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # App start hone par HTTP client initialize hoga
+    app.state.client = httpx.AsyncClient(
+        headers=DEFAULT_HEADERS,
+        timeout=12.0,
+        follow_redirects=True,
+    )
+    yield
+    # App band hone par connection cleanly close hoga
+    await app.state.client.aclose()
+
+
+# -------------------------------------------------------------
+# 🚀 FASTAPI APP SETUP
 # -------------------------------------------------------------
 app = FastAPI(
     title="Unofficial YouTube API",
-    description="YouTube Search + Details",
+    description="Fast, Non-blocking YouTube Search & Video Details Scraper",
     version="1.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -22,41 +53,36 @@ app.add_middleware(
 )
 
 
-@app.get("/")
-async def root():
-    return {
-        "name": "YouTube API",
-        "version": "1.0",
-        "status": "ok",
-        "docs": "/docs",
-    }
-
-
 # -------------------------------------------------------------
-# 🔥 SUPER STABLE MOBILE SEARCH
+# 🔍 SEARCH PARSER HELPER
 # -------------------------------------------------------------
-def youtube_search_mobile(query: str, limit: int = 10):
-    url = f"https://m.youtube.com/results?search_query={query.replace(' ', '+')}"
-    headers = {"User-Agent": "Mozilla/5.0"}
+def parse_youtube_search(html: str, limit: int = 10) -> list:
+    # ytInitialData extract karne ke multiple regex patterns
+    match = re.search(
+        r"var\s+ytInitialData\s*=\s*({.+?});\s*<\/script>", html
+    ) or re.search(r"ytInitialData\s*=\s*({.+?});", html)
 
-    try:
-        html = requests.get(url, headers=headers, timeout=10).text
-    except:
+    if not match:
         return []
 
     try:
-        raw_json = re.search(r"var ytInitialData = (.*?);</script>", html).group(1)
-        data = json.loads(raw_json)
-    except:
+        data = json.loads(match.group(1))
+    except Exception:
         return []
+
+    # Section List dhoondna (Desktop aur Mobile dono cover karta hai)
+    sections = []
+    try:
+        sections = data["contents"]["twoColumnSearchResultsRenderer"][
+            "primaryContents"
+        ]["sectionListRenderer"]["contents"]
+    except KeyError:
+        try:
+            sections = data["contents"]["sectionListRenderer"]["contents"]
+        except KeyError:
+            return []
 
     results = []
-
-    try:
-        main = data["contents"]["twoColumnSearchResultsRenderer"]["primaryContents"]
-        sections = main["sectionListRenderer"]["contents"]
-    except:
-        return []
 
     for sec in sections:
         items = sec.get("itemSectionRenderer", {}).get("contents", [])
@@ -66,29 +92,63 @@ def youtube_search_mobile(query: str, limit: int = 10):
                 continue
 
             vid = video.get("videoId", "")
-            title = video.get("title", {}).get("runs", [{}])[0].get("text", "")
-            thumbnail = video.get("thumbnail", {}).get("thumbnails", [{}])[-1].get("url", "")
-            channel = video.get("ownerText", {}).get("runs", [{}])[0].get("text", "")
-            duration_obj = video.get("lengthText", {})
-            duration = (
-                duration_obj.get("simpleText")
-                or (duration_obj.get("runs", [{}])[0].get("text") if "runs" in duration_obj else None)
-            )
-            view_obj = video.get("viewCountText", {})
-            views = (
-                view_obj.get("simpleText")
-                or (view_obj.get("runs", [{}])[0].get("text") if "runs" in view_obj else None)
+            if not vid:
+                continue
+
+            # Title
+            title = ""
+            if "title" in video and "runs" in video["title"]:
+                title = "".join(
+                    r.get("text", "") for r in video["title"]["runs"]
+                )
+            elif "title" in video and "simpleText" in video["title"]:
+                title = video["title"]["simpleText"]
+
+            # Thumbnail
+            thumbs = video.get("thumbnail", {}).get("thumbnails", [])
+            thumbnail = (
+                thumbs[-1].get("url", "")
+                if thumbs
+                else f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg"
             )
 
-            results.append({
-                "videoId": vid,
-                "title": title,
-                "url": f"https://www.youtube.com/watch?v={vid}",
-                "thumbnail": thumbnail,
-                "channel": channel,
-                "views": views,
-                "duration": duration,
-            })
+            # Channel / Author
+            channel_runs = video.get("ownerText", {}).get("runs", [])
+            channel = channel_runs[0].get("text", "") if channel_runs else ""
+
+            # Duration
+            duration_obj = video.get("lengthText", {})
+            duration = duration_obj.get("simpleText") or (
+                duration_obj.get("runs", [{}])[0].get("text")
+                if "runs" in duration_obj
+                else None
+            )
+
+            # Views
+            view_obj = video.get("viewCountText", {})
+            views = view_obj.get("simpleText") or (
+                view_obj.get("runs", [{}])[0].get("text")
+                if "runs" in view_obj
+                else None
+            )
+
+            # Published Time (e.g., "2 days ago")
+            published_time = video.get("publishedTimeText", {}).get(
+                "simpleText"
+            )
+
+            results.append(
+                {
+                    "videoId": vid,
+                    "title": title,
+                    "url": f"https://www.youtube.com/watch?v={vid}",
+                    "thumbnail": thumbnail,
+                    "channel": channel,
+                    "views": views,
+                    "duration": duration,
+                    "publishedTime": published_time,
+                }
+            )
 
             if len(results) >= limit:
                 return results
@@ -96,33 +156,134 @@ def youtube_search_mobile(query: str, limit: int = 10):
     return results
 
 
+# -------------------------------------------------------------
+# 📌 ROUTES
+# -------------------------------------------------------------
+@app.get("/")
+async def root():
+    return {
+        "name": "Unofficial YouTube API",
+        "version": "2.0",
+        "status": "online",
+        "docs": "/docs",
+    }
+
+
 @app.get("/search/videos")
-async def search_videos(query: str, limit: int = 10):
+async def search_videos(
+    query: str = Query(..., description="Search keyword"),
+    limit: int = Query(10, ge=1, le=50, description="Max results (1 to 50)"),
+):
+    encoded_query = quote_plus(query)
+    url = f"https://www.youtube.com/results?search_query={encoded_query}"
+
     try:
-        data = youtube_search_mobile(query, limit)
-        return {"ok": True, "query": query, "count": len(data), "results": data}
+        client: httpx.AsyncClient = app.state.client
+        resp = await client.get(url)
+        if resp.status_code != 200:
+            raise HTTPException(
+                status_code=resp.status_code,
+                detail="YouTube returned an error",
+            )
+
+        data = parse_youtube_search(resp.text, limit=limit)
+        return {
+            "ok": True,
+            "query": query,
+            "count": len(data),
+            "results": data,
+        }
+    except HTTPException:
+        raise
     except Exception as e:
         return {"ok": False, "error": str(e), "results": []}
 
 
-# -------------------------------------------------------------
-# 🎯 VIDEO DETAILS
-# -------------------------------------------------------------
 @app.get("/video/{video_id}")
 async def video_details(video_id: str):
-    url = f"https://m.youtube.com/watch?v={video_id}"
-    headers = {"User-Agent": "Mozilla/5.0"}
+    # Clean ID validation (YouTube IDs are typically 11 alphanumeric chars)
+    if not re.match(r"^[a-zA-Z0-9_-]{11}$", video_id):
+        raise HTTPException(
+            status_code=400, detail="Invalid YouTube Video ID format"
+        )
+
+    url = f"https://www.youtube.com/watch?v={video_id}"
 
     try:
-        html = requests.get(url, headers=headers, timeout=10).text
-    except:
-        raise HTTPException(status_code=500, detail="Failed to connect")
+        client: httpx.AsyncClient = app.state.client
+        resp = await client.get(url)
+        if resp.status_code != 200:
+            raise HTTPException(
+                status_code=resp.status_code,
+                detail="Failed to load YouTube watch page",
+            )
 
-    match = re.search(r'"title":"(.*?)"', html)
-    title = match.group(1).encode("utf-8").decode("unicode_escape") if match else "Unknown"
+        html = resp.text
 
-    return {
-        "videoId": video_id,
-        "title": title,
-        "url": f"https://www.youtube.com/watch?v={video_id}",
-    }
+        # 1. Primary: ytInitialPlayerResponse extract karna
+        player_match = re.search(
+            r"ytInitialPlayerResponse\s*=\s*({.+?});", html
+        )
+        if player_match:
+            try:
+                player_data = json.loads(player_match.group(1))
+                details = player_data.get("videoDetails", {})
+                thumbs = details.get("thumbnail", {}).get("thumbnails", [])
+                thumbnail_url = (
+                    thumbs[-1].get("url")
+                    if thumbs
+                    else f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
+                )
+
+                return {
+                    "ok": True,
+                    "videoId": video_id,
+                    "title": details.get("title"),
+                    "channel": details.get("author"),
+                    "channelId": details.get("channelId"),
+                    "durationSeconds": int(details.get("lengthSeconds", 0))
+                    if details.get("lengthSeconds")
+                    else None,
+                    "views": details.get("viewCount"),
+                    "isLive": details.get("isLiveContent", False),
+                    "description": details.get("shortDescription", ""),
+                    "thumbnail": thumbnail_url,
+                    "url": f"https://www.youtube.com/watch?v={video_id}",
+                }
+            except Exception:
+                pass
+
+        # 2. Fallback: Agar player data na mile toh OpenGraph Meta Tags se fetch karein
+        og_title = re.search(
+            r'<meta\s+property="og:title"\s+content="([^"]*)"', html
+        )
+        og_image = re.search(
+            r'<meta\s+property="og:image"\s+content="([^"]*)"', html
+        )
+        og_desc = re.search(
+            r'<meta\s+property="og:description"\s+content="([^"]*)"', html
+        )
+
+        title = og_title.group(1) if og_title else "Unknown"
+
+        return {
+            "ok": True,
+            "videoId": video_id,
+            "title": title,
+            "channel": None,
+            "views": None,
+            "durationSeconds": None,
+            "isLive": False,
+            "description": og_desc.group(1) if og_desc else "",
+            "thumbnail": og_image.group(1)
+            if og_image
+            else f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg",
+            "url": f"https://www.youtube.com/watch?v={video_id}",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Internal Server Error: {str(e)}"
+        )
