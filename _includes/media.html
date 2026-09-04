@@ -121,8 +121,8 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  min-width: 200px;
-  max-width: 260px;
+  min-width: 220px;
+  max-width: 280px;
   padding: 4px 0;
   user-select: none;
 }
@@ -140,7 +140,7 @@
   justify-content: center;
   cursor: pointer;
   flex-shrink: 0;
-  transition: transform 0.1s ease, background-color 0.2s ease;
+  transition: transform 0.1s ease;
 }
 .audio-play-trigger:active {
   transform: scale(0.95);
@@ -150,7 +150,7 @@
   flex: 1;
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 2.5px;
   height: 28px;
   cursor: pointer;
   padding: 2px 0;
@@ -158,13 +158,14 @@
 
 .waveform-line {
   flex: 1;
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.2);
-  transition: background-color 0.15s ease, transform 0.1s ease;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.22);
+  transition: background-color 0.15s ease, height 0.2s ease;
   pointer-events: none;
+  min-height: 4px;
 }
 .light-mode .waveform-line {
-  background: rgba(0, 0, 0, 0.15);
+  background: rgba(0, 0, 0, 0.18);
 }
 .waveform-line.played {
   background: var(--accent);
@@ -253,30 +254,6 @@
 }
 </style>
 
-<template id="audio-bubble-template">
-  <div class="audio-msg-bubble">
-    <button class="audio-play-trigger"><i class="fas fa-play"></i></button>
-    <div class="waveform-timeline">
-      <span class="waveform-line" style="height: 30%;"></span>
-      <span class="waveform-line" style="height: 50%;"></span>
-      <span class="waveform-line" style="height: 85%;"></span>
-      <span class="waveform-line" style="height: 40%;"></span>
-      <span class="waveform-line" style="height: 95%;"></span>
-      <span class="waveform-line" style="height: 60%;"></span>
-      <span class="waveform-line" style="height: 100%;"></span>
-      <span class="waveform-line" style="height: 75%;"></span>
-      <span class="waveform-line" style="height: 45%;"></span>
-      <span class="waveform-line" style="height: 90%;"></span>
-      <span class="waveform-line" style="height: 65%;"></span>
-      <span class="waveform-line" style="height: 35%;"></span>
-      <span class="waveform-line" style="height: 80%;"></span>
-      <span class="waveform-line" style="height: 50%;"></span>
-      <span class="waveform-line" style="height: 25%;"></span>
-    </div>
-    <span class="audio-duration-txt">0:00</span>
-  </div>
-</template>
-
 <div class="gif-modal" id="gifModal">
   <input type="text" class="gif-search" id="gifSearch" placeholder="Search GIFs..." />
   <div class="gif-results" id="gifResults"></div>
@@ -292,6 +269,7 @@ window.MediaHub = (function () {
   let voiceSendCallback = null;
   let gifSelectCallback = null;
   let giphyApiKey = '';
+  let audioContextInstance = null;
 
   const inputArea = document.querySelector(".input-area");
   const sendBtn = document.getElementById("sendBtn");
@@ -305,6 +283,14 @@ window.MediaHub = (function () {
   const gifSearch = document.getElementById("gifSearch");
   const gifResults = document.getElementById("gifResults");
   let gifBtn = null;
+
+  function getAudioContext() {
+    if (!audioContextInstance) {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) audioContextInstance = new AudioCtx();
+    }
+    return audioContextInstance;
+  }
 
   async function requestAudioStream() {
     try {
@@ -398,31 +384,85 @@ window.MediaHub = (function () {
   }
 
   function formatTime(totalSeconds) {
+    if (!totalSeconds || isNaN(totalSeconds)) return "0:00";
     const mins = Math.floor(totalSeconds / 60);
     const secs = Math.floor(totalSeconds % 60);
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
   }
 
+  async function calculateWaveformPeaks(audioSource, barCount = 24) {
+    try {
+      const response = await fetch(audioSource);
+      const arrayBuffer = await response.arrayBuffer();
+      const ctx = getAudioContext();
+      if (!ctx) throw new Error();
+      const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+      const channelData = audioBuffer.getChannelData(0);
+      const step = Math.floor(channelData.length / barCount);
+      const peaks = [];
+
+      for (let i = 0; i < barCount; i++) {
+        let sum = 0;
+        const start = i * step;
+        for (let j = 0; j < step; j++) {
+          sum += Math.abs(channelData[start + j] || 0);
+        }
+        peaks.push(sum / step);
+      }
+
+      const maxPeak = Math.max(...peaks) || 1;
+      return peaks.map(p => Math.max(15, Math.min(100, Math.round((p / maxPeak) * 100))));
+    } catch {
+      const fallback = [];
+      for (let i = 0; i < barCount; i++) {
+        fallback.push(Math.floor(25 + Math.random() * 65));
+      }
+      return fallback;
+    }
+  }
+
   function createAudioBubble(sourceData, initialDuration = 0) {
-    const template = document.getElementById("audio-bubble-template");
-    const node = template.content.cloneNode(true);
-    const bubble = node.querySelector(".audio-msg-bubble");
-    const playBtn = node.querySelector(".audio-play-trigger");
-    const playIcon = playBtn.querySelector("i");
-    const timeLabel = node.querySelector(".audio-duration-txt");
-    const timeline = node.querySelector(".waveform-timeline");
-    const bars = node.querySelectorAll(".waveform-line");
+    const bubble = document.createElement("div");
+    bubble.className = "audio-msg-bubble";
+
+    const playBtn = document.createElement("button");
+    playBtn.className = "audio-play-trigger";
+    playBtn.innerHTML = '<i class="fas fa-play"></i>';
+
+    const timeline = document.createElement("div");
+    timeline.className = "waveform-timeline";
+
+    const bars = [];
+    const barCount = 24;
+    for (let i = 0; i < barCount; i++) {
+      const bar = document.createElement("span");
+      bar.className = "waveform-line";
+      bar.style.height = "30%";
+      timeline.appendChild(bar);
+      bars.push(bar);
+    }
+
+    const timeLabel = document.createElement("span");
+    timeLabel.className = "audio-duration-txt";
+    timeLabel.textContent = formatTime(initialDuration);
+
+    bubble.appendChild(playBtn);
+    bubble.appendChild(timeline);
+    bubble.appendChild(timeLabel);
+
+    calculateWaveformPeaks(sourceData, barCount).then(peaks => {
+      peaks.forEach((peak, idx) => {
+        if (bars[idx]) bars[idx].style.height = `${peak}%`;
+      });
+    });
 
     const audio = new Audio(sourceData);
-
-    if (initialDuration > 0) {
-      timeLabel.textContent = formatTime(initialDuration);
-    }
 
     audio.onloadedmetadata = () => {
       timeLabel.textContent = formatTime(audio.duration);
     };
 
+    const playIcon = playBtn.querySelector("i");
     playBtn.onclick = () => {
       if (audio.paused) {
         document.querySelectorAll("audio").forEach((item) => {
@@ -461,6 +501,23 @@ window.MediaHub = (function () {
     };
 
     return bubble;
+  }
+
+  function appendVoiceMessage(chatContainer, sender, audioData, duration = 0) {
+    if (!chatContainer) return;
+    const msgDiv = document.createElement("div");
+    msgDiv.className = "msg " + sender;
+
+    const bubble = createAudioBubble(audioData, duration);
+    msgDiv.appendChild(bubble);
+
+    const timeDiv = document.createElement("div");
+    timeDiv.className = "timestamp";
+    timeDiv.textContent = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    msgDiv.appendChild(timeDiv);
+
+    chatContainer.appendChild(msgDiv);
+    chatContainer.scrollTop = chatContainer.scrollHeight;
   }
 
   async function fetchTrendingGifs() {
@@ -542,7 +599,8 @@ window.MediaHub = (function () {
     setApiKey: function (key) {
       giphyApiKey = key;
     },
-    renderAudioBubble: createAudioBubble
+    createAudioBubble: createAudioBubble,
+    appendVoiceMessage: appendVoiceMessage
   };
 })();
 </script>
