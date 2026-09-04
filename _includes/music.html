@@ -341,15 +341,14 @@
 <div id="player"></div>
 
 <script type="module">
-    import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
+    import { initializeApp, getApp, getApps } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
     import { getDatabase, ref, set, get, onValue, off, remove, update } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
 
     const firebaseConfig = {
         databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app"
     };
 
-    const apps = getApps();
-    const app = apps.find(a => a.name === "[DEFAULT]") || initializeApp(firebaseConfig);
+    const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
     const database = getDatabase(app);
 
     function formatTime(seconds) {
@@ -421,7 +420,7 @@
                                     }
                                 }
                             }).catch((error) => {
-                                console.error(error);
+                                console.error("Firebase read error:", error);
                             });
                         }
                     }, 1000);
@@ -460,12 +459,12 @@
                     if (lastUpdate < sixHoursAgo) {
                         const groupRef = ref(database, `music/${groupKey}`);
                         remove(groupRef).catch((error) => {
-                            console.error(error);
+                            console.error("Cleanup error:", error);
                         });
                     }
                 });
             }).catch((error) => {
-                console.error(error);
+                console.error("Cleanup read error:", error);
             });
         },
         
@@ -475,6 +474,7 @@
         
         setupPlayer: function() {
             if (!database) {
+                console.error("Firebase not initialized");
                 return;
             }
             
@@ -560,10 +560,7 @@
                     this.processNewSong(currentSong, status, actualTime);
                     setTimeout(() => { this.isRemoteUpdate = false; }, 2000);
                 } else {
-                    let currentTime = 0;
-                    if (this.player && typeof this.player.getCurrentTime === 'function') {
-                        currentTime = this.player.getCurrentTime();
-                    }
+                    const currentTime = this.player.getCurrentTime();
                     if (Math.abs(currentTime - actualTime) > 3) {
                         this.isRemoteUpdate = true;
                         this.player.seekTo(actualTime, true);
@@ -596,7 +593,13 @@
                 height: '0', 
                 width: '0', 
                 videoId: '',
-                playerVars: { controls: 0, modestbranding: 1, rel: 0, playsinline: 1 },
+                playerVars: { 
+                    controls: 0, 
+                    modestbranding: 1, 
+                    rel: 0, 
+                    playsinline: 1,
+                    origin: window.location.origin
+                },
                 events: { 
                     onReady: () => { 
                         this.ytReady = true; 
@@ -685,7 +688,7 @@
                     setTimeout(() => { this.isRemoteUpdate = false; }, 2000);
                 }
             }).catch((error) => {
-                console.error(error);
+                console.error("Check saved state error:", error);
             });
         },
         
@@ -735,10 +738,7 @@
             if (now - this.lastAutoUpdate < 2000) return;
             this.lastAutoUpdate = now;
             
-            let currentTime = 0;
-            if (this.player && typeof this.player.getCurrentTime === 'function') {
-                currentTime = Math.floor(this.player.getCurrentTime());
-            }
+            const currentTime = this.player ? Math.floor(this.player.getCurrentTime()) : 0;
             
             const stateObj = {
                 currentSong: this.currentSongUrl,
@@ -750,7 +750,7 @@
             
             const stateRef = this.getFirebaseRef();
             set(stateRef, stateObj).catch((error) => {
-                console.error(error);
+                console.error("Update state error:", error);
             });
         },
         
@@ -787,9 +787,8 @@
             results.forEach(result => {
                 const item = document.createElement('div');
                 item.className = 'search-result-item';
-                const secureThumb = (result.thumbnail || '').replace(/^http:\/\//i, 'https://');
                 item.innerHTML = `
-                    <img src="${secureThumb}" alt="Thumbnail" class="result-thumbnail" onerror="this.src='/chat/logo.png'">
+                    <img src="${result.thumbnail}" alt="Thumbnail" class="result-thumbnail" onerror="this.src='/chat/logo.png'">
                     <div class="result-info">
                         <div class="result-title">${result.title}</div>
                         <div class="result-channel">${result.channel}</div>
@@ -810,8 +809,7 @@
         selectVideo: function(video) {
             this.currentSongUrl = video.videoId;
             document.getElementById('searchInput').value = video.title;
-            const secureThumb = (video.thumbnail || '').replace(/^http:\/\//i, 'https://');
-            document.getElementById('videoThumbnail').src = secureThumb || '/chat/logo.png';
+            document.getElementById('videoThumbnail').src = video.thumbnail || '/chat/logo.png';
             
             this.currentVideoTitle = video.title;
             document.getElementById('nowPlaying').textContent = 'Playing: ' + video.title;
@@ -907,7 +905,7 @@
         },
         
         updatePlayerUI: function() {
-            if (!this.player || typeof this.player.getCurrentTime !== 'function') return;
+            if (!this.player) return;
             
             const t = Math.floor(this.player.getCurrentTime() || 0);
             const d = Math.floor(this.player.getDuration() || 0);
@@ -934,7 +932,7 @@
                         timestamp: t,
                         lastUpdate: now
                     }).catch((error) => {
-                        console.error(error);
+                        console.error("Auto update error:", error);
                     });
                 }
             }
