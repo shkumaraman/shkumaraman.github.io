@@ -1,4 +1,10 @@
 <style>
+:root {
+  --skip-red: rgba(255, 71, 87, 0.15);
+  --skip-red-text: #ff4757;
+  --skip-red-border: rgba(255, 71, 87, 0.3);
+}
+
 .voice-record-btn {
   background: none;
   border: none;
@@ -282,7 +288,9 @@ window.MediaHub = (function () {
   let voiceSendCallback = null;
   let gifSelectCallback = null;
   let giphyApiKey = '';
-  let audioContextInstance = null;
+
+  let currentlyPlayingAudio = null;
+  let currentPlayIcon = null;
 
   let inputArea = null;
   let sendBtn = null;
@@ -320,14 +328,6 @@ window.MediaHub = (function () {
       </div>
     `;
     inputArea.insertAdjacentHTML("beforebegin", barHtml);
-  }
-
-  function getAudioContext() {
-    if (!audioContextInstance) {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (AudioCtx) audioContextInstance = new AudioCtx();
-    }
-    return audioContextInstance;
   }
 
   async function requestAudioStream() {
@@ -399,6 +399,11 @@ window.MediaHub = (function () {
 
   function finishVoiceRecording() {
     if (!mediaRecorder || mediaRecorder.state === "inactive") return;
+    if (currentSeconds < 1) {
+      abortVoiceRecording();
+      return;
+    }
+
     const duration = currentSeconds;
 
     mediaRecorder.onstop = () => {
@@ -426,35 +431,19 @@ window.MediaHub = (function () {
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
   }
 
-  async function calculateWaveformPeaks(audioSource, barCount = 24) {
-    try {
-      const response = await fetch(audioSource);
-      const arrayBuffer = await response.arrayBuffer();
-      const ctx = getAudioContext();
-      if (!ctx) throw new Error();
-      const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
-      const channelData = audioBuffer.getChannelData(0);
-      const step = Math.floor(channelData.length / barCount);
-      const peaks = [];
-
-      for (let i = 0; i < barCount; i++) {
-        let sum = 0;
-        const start = i * step;
-        for (let j = 0; j < step; j++) {
-          sum += Math.abs(channelData[start + j] || 0);
-        }
-        peaks.push(sum / step);
-      }
-
-      const maxPeak = Math.max(...peaks) || 1;
-      return peaks.map(p => Math.max(15, Math.min(100, Math.round((p / maxPeak) * 100))));
-    } catch {
-      const fallback = [];
-      for (let i = 0; i < barCount; i++) {
-        fallback.push(Math.floor(25 + Math.random() * 65));
-      }
-      return fallback;
+  function generateWaveformBars(seedString, count = 24) {
+    let hash = 0;
+    const str = String(seedString || "talkrush_audio");
+    for (let i = 0; i < str.length; i++) {
+      hash = (hash << 5) - hash + str.charCodeAt(i);
+      hash |= 0;
     }
+    const bars = [];
+    for (let i = 0; i < count; i++) {
+      const pseudo = Math.abs(Math.sin(hash + i * 1.618));
+      bars.push(Math.floor(20 + pseudo * 75));
+    }
+    return bars;
   }
 
   function createAudioBubble(sourceData, initialDuration = 0) {
@@ -470,10 +459,12 @@ window.MediaHub = (function () {
 
     const bars = [];
     const barCount = 24;
+    const peakHeights = generateWaveformBars(sourceData, barCount);
+
     for (let i = 0; i < barCount; i++) {
       const bar = document.createElement("span");
       bar.className = "waveform-line";
-      bar.style.height = "30%";
+      bar.style.height = `${peakHeights[i]}%`;
       timeline.appendChild(bar);
       bars.push(bar);
     }
@@ -486,12 +477,6 @@ window.MediaHub = (function () {
     bubble.appendChild(playBtn);
     bubble.appendChild(timeline);
     bubble.appendChild(timeLabel);
-
-    calculateWaveformPeaks(sourceData, barCount).then(peaks => {
-      peaks.forEach((peak, idx) => {
-        if (bars[idx]) bars[idx].style.height = `${peak}%`;
-      });
-    });
 
     const audio = new Audio(sourceData);
 
@@ -512,14 +497,20 @@ window.MediaHub = (function () {
     const playIcon = playBtn.querySelector("i");
     playBtn.onclick = () => {
       if (audio.paused) {
-        document.querySelectorAll("audio").forEach((item) => {
-          if (item !== audio) item.pause();
-        });
-        audio.play();
-        playIcon.className = "fas fa-pause";
+        if (currentlyPlayingAudio && currentlyPlayingAudio !== audio) {
+          currentlyPlayingAudio.pause();
+          if (currentPlayIcon) currentPlayIcon.className = "fas fa-play";
+        }
+        audio.play().then(() => {
+          playIcon.className = "fas fa-pause";
+          currentlyPlayingAudio = audio;
+          currentPlayIcon = playIcon;
+        }).catch(() => {});
       } else {
         audio.pause();
         playIcon.className = "fas fa-play";
+        currentlyPlayingAudio = null;
+        currentPlayIcon = null;
       }
     };
 
@@ -549,6 +540,10 @@ window.MediaHub = (function () {
       playIcon.className = "fas fa-play";
       timeLabel.textContent = formatTime(getValidDuration());
       bars.forEach((bar) => bar.classList.remove("played"));
+      if (currentlyPlayingAudio === audio) {
+        currentlyPlayingAudio = null;
+        currentPlayIcon = null;
+      }
     };
 
     return bubble;
