@@ -306,7 +306,7 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
 
   #msgInput {
     width: 100%;
-    padding: 7px 70px 7px 12px;
+    padding: 7px 98px 7px 12px;
     border-radius: 8px;
     border: 0.5px solid var(--dark-border2);
     background: var(--dark-input-bg);
@@ -399,71 +399,33 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
     background: var(--accent-hover);
   }
 
-  #imgInput,
-  #gifInput {
+  #imgInput {
     display: none;
   }
 
-  .gif-modal {
-    display: none;
-    position: absolute;
-    bottom: 60px;
-    right: 10px;
-    width: min(300px, calc(100% - 20px));
-    max-height: 380px;
-    background: var(--dark-surface);
-    border-radius: 14px;
-    border: 0.5px solid var(--dark-border2);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-    z-index: 1001;
-    padding: 12px;
-    overflow: hidden;
-    flex-direction: column;
+  .uploading-bubble {
+    display: flex;
+    align-items: center;
     gap: 8px;
+    font-size: 12px;
+    color: var(--dark-text-muted);
+    font-style: italic;
   }
 
-  .light-mode .gif-modal {
-    background: var(--light-surface);
-    border-color: var(--light-border2);
+  .upload-spinner {
+    width: 13px;
+    height: 13px;
+    border: 2px solid var(--dark-text-muted);
+    border-top-color: var(--dark-text);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    flex-shrink: 0;
   }
 
-  .gif-search {
-    width: 100%;
-    padding: 8px 12px;
-    border-radius: 8px;
-    border: 0.5px solid var(--dark-border2);
-    background: var(--dark-input-bg);
-    color: var(--dark-text);
-    font-size: 13px;
-    outline: none;
-  }
-
-  .light-mode .gif-search {
-    background: var(--light-input-bg);
-    border-color: var(--light-border2);
-    color: var(--light-text);
-  }
-
-  .gif-results {
-    flex: 1;
-    overflow-y: auto;
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 6px;
-    max-height: 290px;
-  }
-
-  .gif-item {
-    width: 100%;
-    height: 90px;
-    object-fit: cover;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: transform 0.15s;
-  }
-
-  .gif-item:hover {
-    transform: scale(1.03);
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   .msg.msg-single-emoji {
@@ -807,20 +769,15 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
     <div class="input-area">
       <input type="text" id="msgInput" placeholder="Type your message..." />
       <div class="input-icons">
-        <label for="imgInput" class="icon-btn" title="Send Image"><i class="fas fa-image"></i></label>
-        <label for="gifInput" class="icon-btn" title="Send GIF"><i class="fas fa-film"></i></label>
+        <button type="button" id="imgBtn" class="icon-btn" title="Send Image"><i class="fas fa-image"></i></button>
+        <button type="button" id="gifTriggerBtn" class="icon-btn" title="Send GIF"><i class="fas fa-film"></i></button>
+        <button type="button" id="voiceRecordBtn" class="icon-btn" title="Record Voice"><i class="fas fa-microphone"></i></button>
       </div>
     </div>
     <button id="sendBtn" class="send-btn" title="Send"><i class="fas fa-paper-plane"></i></button>
   </div>
 
   <input type="file" id="imgInput" accept="image/*" />
-  <input type="file" id="gifInput" accept="image/gif" />
-
-  <div class="gif-modal" id="gifModal">
-    <input type="text" class="gif-search" id="gifSearch" placeholder="Search GIFs..." />
-    <div class="gif-results" id="gifResults"></div>
-  </div>
 </div>
 
 <ins class="adsbygoogle" style="display:block" data-ad-client="ca-pub-7059052735946479" data-ad-slot="8592327962"
@@ -877,6 +834,7 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
   </div>
 </main>
 
+{% include media.html %}
 {% include menu.html %}
 
 <script type="module">
@@ -905,7 +863,8 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
     try {
       const res = await fetch('/key.json');
       const keys = await res.json();
-      GIPHY_API_KEY = keys.giphy;
+      GIPHY_API_KEY = keys.giphy || '';
+      if (window.MediaHub) MediaHub.setApiKey(GIPHY_API_KEY);
     } catch(e) {}
   }
 
@@ -930,10 +889,7 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
     msgInput: document.getElementById("msgInput"),
     sendBtn: document.getElementById("sendBtn"),
     imgInput: document.getElementById("imgInput"),
-    gifModal: document.getElementById("gifModal"),
-    gifSearch: document.getElementById("gifSearch"),
-    gifResults: document.getElementById("gifResults"),
-    gifBtn: document.querySelector('[for="gifInput"]'),
+    imgBtn: document.getElementById("imgBtn"),
     skipBtn: document.getElementById("skipBtn"),
     typingIndicator: document.getElementById("typingIndicator")
   };
@@ -986,6 +942,15 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
       codePoints.push(char.codePointAt(0).toString(16));
     }
     return codePoints.filter(c => c !== 'fe0f').join('_');
+  }
+
+  function showUploadingBubble() {
+    const div = document.createElement("div");
+    div.className = "msg me";
+    div.innerHTML = `<div class="uploading-bubble"><div class="upload-spinner"></div><span>Uploading...</span></div>`;
+    el.chatLog.appendChild(div);
+    utils.scrollToBottom();
+    return div;
   }
 
   const storage = {
@@ -1266,8 +1231,13 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
       if (typeof data === 'string') { msg.append("stranger", data); return; }
       if (!data?.type) return;
       const handlers = {
-        'image': () => msg.append("stranger", data.blob, 'image'),
+        'image': () => msg.append("stranger", data.url || data.blob, 'image'),
         'gif': () => msg.append("stranger", data.url, 'gif'),
+        'audio': () => {
+          if (window.MediaHub) {
+            MediaHub.appendVoiceMessage(el.chatLog, "stranger", data.url || data.blob, data.duration);
+          }
+        },
         'typing': () => msg.showTyping(),
         'nickname': () => { 
           if (data.nickname) {
@@ -1292,47 +1262,6 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
       state.myConn.send(text);
       msg.append("me", text);
       el.msgInput.value = "";
-    },
-
-    sendFile: (file, type) => {
-      if (!file || !state.myConn || !state.isConnected) return;
-      const reader = new FileReader();
-      reader.onload = () => { state.myConn.send({ type, blob: reader.result }); msg.append("me", reader.result, 'image'); };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const gifs = {
-    fetch: async () => {
-      try {
-        const res = await fetch(`https://api.giphy.com/v1/gifs/trending?api_key=${GIPHY_API_KEY}&limit=20`);
-        gifs.display((await res.json()).data);
-      } catch { AlertKit.error("Oops", "Failed to load GIFs"); }
-    },
-
-    search: async (query) => {
-      if (!query.trim()) { gifs.fetch(); return; }
-      try {
-        const res = await fetch(`https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_API_KEY}&q=${encodeURIComponent(query)}&limit=20`);
-        gifs.display((await res.json()).data);
-      } catch { AlertKit.error("Oops", "Failed to search GIFs"); }
-    },
-
-    display: (data) => {
-      el.gifResults.innerHTML = "";
-      data.forEach(gif => {
-        const url = gif.images.fixed_height.url;
-        const img = document.createElement("img");
-        img.src = url; img.className = "gif-item"; img.alt = "GIF";
-        img.onclick = () => {
-          if (state.myConn && state.isConnected) {
-            state.myConn.send({ type: "gif", url });
-            msg.append("me", url, 'gif');
-            utils.hide(el.gifModal);
-          }
-        };
-        el.gifResults.appendChild(img);
-      });
     }
   };
 
@@ -1388,16 +1317,26 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
     el.msgInput.addEventListener("input", () => { if (state.myConn && state.isConnected) state.myConn.send({ type: "typing" }); });
     el.sendBtn.onclick = conn.send;
 
-    el.imgInput.addEventListener("change", (e) => { 
-      const f = e.target.files[0]; 
-      if (f) {
-        if (f.size > 10 * 1024 * 1024) {
-          AlertKit.warning("Too Large", "Image size limit is 10MB.");
-        } else {
-          conn.sendFile(f, "image"); 
-        }
+    el.imgBtn.onclick = () => el.imgInput.click();
+    el.imgInput.addEventListener("change", async (e) => {
+      const file = e.target.files[0];
+      if (!file || !state.myConn || !state.isConnected) return;
+      if (file.size > 10 * 1024 * 1024) {
+        AlertKit.warning("Too Large", "Image size limit is 10MB.");
+        e.target.value = "";
+        return;
       }
-      e.target.value = ""; 
+      const loadingBubble = showUploadingBubble();
+      try {
+        const imageUrl = await window.uploadMediaToServer(file, file.name);
+        state.myConn.send({ type: "image", url: imageUrl });
+        msg.append("me", imageUrl, "image");
+      } catch (err) {
+        AlertKit.error("Failed", "Failed to upload image. Please try again.");
+      } finally {
+        loadingBubble.remove();
+      }
+      e.target.value = "";
     });
 
     el.skipBtn.onclick = async () => {
@@ -1413,15 +1352,6 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
       document.getElementById('callTypeModal').style.display = 'flex';
     };
 
-    el.gifBtn.onclick = (e) => {
-      e.preventDefault();
-      const visible = el.gifModal.style.display === "block" || el.gifModal.style.display === "flex";
-      utils[visible ? 'hide' : 'showBlock'](el.gifModal);
-      if (!visible) gifs.fetch();
-    };
-
-    el.gifSearch.addEventListener("keypress", (e) => { if (e.key === "Enter") gifs.search(el.gifSearch.value); });
-
     document.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
       if (!state.escPressedOnce) {
@@ -1436,12 +1366,6 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
     });
 
     window.addEventListener("click", (e) => {
-      if (el.gifModal.style.display === "block" || el.gifModal.style.display === "flex") {
-        if (!el.gifModal.contains(e.target) && !el.gifBtn.contains(e.target)) {
-          utils.hide(el.gifModal);
-        }
-      }
-
       if (e.target === el.prRoomModal) {
         utils.hide(el.prRoomModal);
       }
@@ -1454,6 +1378,36 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
 
   window.addEventListener('load', async () => {
     await loadKeys();
+
+    if (window.MediaHub) {
+      MediaHub.init({
+        giphyApiKey: GIPHY_API_KEY,
+        onSendVoice: async (base64Data, duration) => {
+          if (!state.myConn || !state.isConnected) return;
+          const loadingBubble = showUploadingBubble();
+          try {
+            const res = await fetch(base64Data);
+            const audioBlob = await res.blob();
+            const audioUrl = await window.uploadMediaToServer(audioBlob, "voice.webm");
+            state.myConn.send({ type: "audio", url: audioUrl, duration: duration });
+            if (window.MediaHub) {
+              MediaHub.appendVoiceMessage(el.chatLog, "me", audioUrl, duration);
+            }
+          } catch (err) {
+            AlertKit.error("Failed", "Failed to upload voice note.");
+          } finally {
+            loadingBubble.remove();
+          }
+        },
+        onSelectGif: (url) => {
+          if (state.myConn && state.isConnected) {
+            state.myConn.send({ type: "gif", url });
+            msg.append("me", url, "gif");
+          }
+        }
+      });
+    }
+
     const savedRoom = storage.loadRoomCode();
     if (savedRoom) { state.currentRoomCode = savedRoom.roomCode; if (state.currentRoomCode) el.prRoomCodeInput.value = state.currentRoomCode; }
     const savedPeer = storage.loadPeerId();
