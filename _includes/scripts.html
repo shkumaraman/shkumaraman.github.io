@@ -72,22 +72,38 @@ document.addEventListener('contextmenu', function(e) {
 })();
 </script>
 
+<!-- HF Storage -->
 <script>
   window.MEDIA_STORAGE_URL = "https://shkumaraman-backend.hf.space";
 
-  window.uploadMediaToServer = async function(fileOrBlob, originalName = "file") {
-    const formData = new FormData();
-    formData.append("file", fileOrBlob, originalName);
-    formData.append("target_path", "uploads");
+  window.uploadMediaToServer = function(fileOrBlob, originalName = "file") {
+    return new Promise((resolve, reject) => {
+      const formData = new FormData();
+      formData.append("file", fileOrBlob, originalName);
+      formData.append("target_path", "uploads");
 
-    const res = await fetch(`${window.MEDIA_STORAGE_URL}/api/upload`, {
-      method: "POST",
-      body: formData
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `${window.MEDIA_STORAGE_URL}/api/upload`, true);
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const result = JSON.parse(xhr.responseText);
+            resolve(result.data.url);
+          } catch (e) {
+            reject(new Error("Invalid JSON response from server"));
+          }
+        } else {
+          reject(new Error(`Upload failed: ${xhr.status} - ${xhr.responseText}`));
+        }
+      };
+
+      xhr.onerror = () => {
+        reject(new Error("Network error occurred during upload"));
+      };
+
+      xhr.send(formData);
     });
-
-    if (!res.ok) throw new Error("Upload failed");
-    const result = await res.json();
-    return result.data.url;
   };
 
   window.deleteMediaFromServer = async function(fileUrl) {
