@@ -185,7 +185,6 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
   .msg-row {
     display: flex;
     align-items: center;
-    gap: 6px;
     width: 100%;
   }
 
@@ -195,37 +194,6 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
 
   .msg-row.stranger {
     justify-content: flex-start;
-  }
-
-  .msg-forward-btn {
-    background: none;
-    border: none;
-    color: var(--dark-icon-color);
-    font-size: 13px;
-    cursor: pointer;
-    width: 28px;
-    height: 28px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    opacity: 0.65;
-    transition: opacity 0.15s, background 0.15s, transform 0.15s;
-    flex-shrink: 0;
-  }
-
-  .msg-forward-btn:hover {
-    opacity: 1;
-    background: rgba(255, 255, 255, 0.08);
-    transform: scale(1.1);
-  }
-
-  .light-mode .msg-forward-btn {
-    color: var(--light-icon-color);
-  }
-
-  .light-mode .msg-forward-btn:hover {
-    background: rgba(0, 0, 0, 0.05);
   }
 
   .msg {
@@ -539,31 +507,6 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
   .light-mode .context-menu-item { color: var(--light-text); }
   .context-menu-item:hover { background: rgba(255,255,255,0.05); }
   .light-mode .context-menu-item:hover { background: rgba(0,0,0,0.04); }
-
-  .uploading-bubble {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 12px;
-    color: var(--dark-text-muted);
-    font-style: italic;
-  }
-
-  .upload-spinner {
-    width: 13px;
-    height: 13px;
-    border: 2px solid var(--dark-text-muted);
-    border-top-color: var(--dark-text);
-    border-radius: 50%;
-    animation: spin 0.7s linear infinite;
-    flex-shrink: 0;
-  }
-
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
 
   .msg.msg-single-emoji {
     background: transparent !important;
@@ -934,7 +877,6 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
 <div class="context-menu" id="contextMenu">
   <div class="context-menu-item" id="contextReplyBtn">↩ Reply</div>
   <div class="context-menu-item" id="contextEditBtn">✎ Edit</div>
-  <div class="context-menu-item" id="contextForwardBtn"><i class="fa-solid fa-share"></i> Forward</div>
   <div class="context-menu-item" id="contextDeleteBtn" style="color: #ff4d4d;">🗑 Delete</div>
 </div>
 
@@ -1109,25 +1051,6 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
     return codePoints.filter(c => c !== 'fe0f').join('_');
   }
 
-  function showUploadingBubble() {
-    const row = document.createElement("div");
-    row.className = "msg-row me";
-    row.innerHTML = `<div class="msg"><div class="uploading-bubble"><div class="upload-spinner"></div><span>Uploading...</span></div></div>`;
-    el.chatLog.appendChild(row);
-    utils.scrollToBottom();
-    return row;
-  }
-
-  window.forwardMessage = function(content) {
-    if (window.openShareModal) {
-      window.openShareModal(content);
-    } else if (navigator.clipboard) {
-      navigator.clipboard.writeText(content).then(() => {
-        AlertKit.toast("Message link copied to clipboard!", "success");
-      });
-    }
-  };
-
   function setReply(messageData) {
     if (state.editingMsgKey) clearEdit();
     state.replyingTo = messageData;
@@ -1209,21 +1132,10 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
         if (state.myConn && state.isConnected) {
           state.myConn.send({ type: "delete_msg", key: target.key });
         }
-        if ((target.type === 'image' || target.type === 'audio') && target.url && window.deleteMediaFromServer) {
-          window.deleteMediaFromServer(target.url);
-        }
       }
     } else {
       hideContextMenu();
     }
-  });
-
-  document.getElementById('contextForwardBtn').addEventListener('click', () => {
-    if (state.contextTargetMsg) {
-      const forwardPayload = state.contextTargetMsg.type === 'text' ? state.contextTargetMsg.text : state.contextTargetMsg.url;
-      window.forwardMessage(forwardPayload);
-    }
-    hideContextMenu();
   });
 
   function addMessageInteractions(div, msgData, isMe) {
@@ -1244,11 +1156,6 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
         dragging = false;
         div.style.transform = '';
         div.classList.remove('swiping');
-        const forwardBtn = div.parentNode.querySelector('.msg-forward-btn');
-        if (forwardBtn) {
-          forwardBtn.style.transform = '';
-          forwardBtn.style.transition = '';
-        }
         showContextMenu(e.touches[0].clientX, e.touches[0].clientY, msgData, isMe);
       }, 500);
     }, { passive: true });
@@ -1262,11 +1169,6 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
         const moveX = Math.min(Math.abs(dx), 60) * (isMe ? -1 : 1);
         div.style.transform = `translateX(${moveX}px)`;
         div.classList.add('swiping');
-        const forwardBtn = div.parentNode.querySelector('.msg-forward-btn');
-        if (forwardBtn) {
-          forwardBtn.style.transform = `translateX(${moveX}px)`;
-          forwardBtn.style.transition = 'none';
-        }
       }
     }, { passive: true });
 
@@ -1276,11 +1178,6 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
       dragging = false;
       div.style.transform = '';
       div.classList.remove('swiping');
-      const forwardBtn = div.parentNode.querySelector('.msg-forward-btn');
-      if (forwardBtn) {
-        forwardBtn.style.transform = '';
-        forwardBtn.style.transition = '';
-      }
       if ((isMe ? e.changedTouches[0].clientX - startX < -60 : e.changedTouches[0].clientX - startX > 60)) {
         setReply(msgData);
       }
@@ -1339,13 +1236,6 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
       const row = document.createElement("div");
       row.className = `msg-row ${isMe ? 'me' : 'stranger'}`;
       row.setAttribute('data-key', msgData.key);
-
-      const forwardPayload = msgData.type === 'text' ? msgData.text : msgData.url;
-      const forwardBtn = document.createElement("button");
-      forwardBtn.className = "msg-forward-btn";
-      forwardBtn.title = "Forward";
-      forwardBtn.innerHTML = `<i class="fa-solid fa-share"></i>`;
-      forwardBtn.onclick = () => window.forwardMessage(forwardPayload);
 
       const bubble = document.createElement("div");
       bubble.className = "msg";
@@ -1410,14 +1300,7 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
 
       addMessageInteractions(bubble, msgData, isMe);
 
-      if (isMe) {
-        row.appendChild(forwardBtn);
-        row.appendChild(bubble);
-      } else {
-        row.appendChild(bubble);
-        row.appendChild(forwardBtn);
-      }
-
+      row.appendChild(bubble);
       el.chatLog.appendChild(row);
       utils.scrollToBottom();
     },
@@ -1758,7 +1641,7 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
     el.sendBtn.onclick = conn.send;
 
     el.imgBtn.onclick = () => el.imgInput.click();
-    el.imgInput.addEventListener("change", async (e) => {
+    el.imgInput.addEventListener("change", (e) => {
       const file = e.target.files[0];
       if (!file || !state.myConn || !state.isConnected) return;
       if (file.size > 10 * 1024 * 1024) {
@@ -1766,14 +1649,13 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
         e.target.value = "";
         return;
       }
-      const loadingBubble = showUploadingBubble();
-      try {
-        const imageUrl = await window.uploadMediaToServer(file, file.name);
+      const reader = new FileReader();
+      reader.onload = () => {
         const msgKey = 'img_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
         const message = {
           key: msgKey,
           type: "image",
-          url: imageUrl,
+          url: reader.result,
           timestamp: Date.now(),
           nickname: myNickname,
           replyTo: getReplyPayload()
@@ -1781,11 +1663,8 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
         clearReply();
         msg.append(message, true);
         state.myConn.send({ type: 'chat_msg', message });
-      } catch (err) {
-        AlertKit.error("Failed", "Failed to upload image. Please try again.");
-      } finally {
-        loadingBubble.remove();
-      }
+      };
+      reader.readAsDataURL(file);
       e.target.value = "";
     });
 
@@ -1832,31 +1711,21 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
     if (window.MediaHub) {
       MediaHub.init({
         giphyApiKey: GIPHY_API_KEY,
-        onSendVoice: async (base64Data, duration) => {
+        onSendVoice: (base64Data, duration) => {
           if (!state.myConn || !state.isConnected) return;
-          const loadingBubble = showUploadingBubble();
-          try {
-            const res = await fetch(base64Data);
-            const audioBlob = await res.blob();
-            const audioUrl = await window.uploadMediaToServer(audioBlob, "voice.webm");
-            const msgKey = 'audio_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
-            const message = {
-              key: msgKey,
-              type: "audio",
-              url: audioUrl,
-              duration: duration,
-              timestamp: Date.now(),
-              nickname: myNickname,
-              replyTo: getReplyPayload()
-            };
-            clearReply();
-            msg.append(message, true);
-            state.myConn.send({ type: 'chat_msg', message });
-          } catch (err) {
-            AlertKit.error("Failed", "Failed to upload voice note.");
-          } finally {
-            loadingBubble.remove();
-          }
+          const msgKey = 'audio_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+          const message = {
+            key: msgKey,
+            type: "audio",
+            url: base64Data,
+            duration: duration,
+            timestamp: Date.now(),
+            nickname: myNickname,
+            replyTo: getReplyPayload()
+          };
+          clearReply();
+          msg.append(message, true);
+          state.myConn.send({ type: 'chat_msg', message });
         },
         onSelectGif: (url) => {
           if (!state.myConn || !state.isConnected) return;
