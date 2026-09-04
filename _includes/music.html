@@ -341,15 +341,16 @@
 <div id="player"></div>
 
 <script type="module">
-    import { initializeApp, getApp, getApps } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
+    import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
     import { getDatabase, ref, set, get, onValue, off, remove, update } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
 
     const firebaseConfig = {
         databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app"
     };
 
-    const defaultApp = getApps().find(a => a.name === "[DEFAULT]") || initializeApp(firebaseConfig);
-    const database = getDatabase(defaultApp, firebaseConfig.databaseURL);
+    const apps = getApps();
+    const defaultApp = apps.find(a => a.name === '[DEFAULT]') || initializeApp(firebaseConfig);
+    const database = getDatabase(defaultApp);
 
     function formatTime(seconds) {
         if (isNaN(seconds) || seconds < 0) return "0:00";
@@ -398,7 +399,7 @@
                     setTimeout(() => {
                         this.isBackgroundPaused = false;
                         
-                        if (this.ytReady && this.currentSongUrl) {
+                        if (this.ytReady && this.currentSongUrl && this.player && typeof this.player.seekTo === 'function') {
                             get(this.getFirebaseRef()).then((snapshot) => {
                                 const data = snapshot.val();
                                 if (data) {
@@ -410,11 +411,11 @@
                                         setTimeout(() => { this.isRemoteUpdate = false; }, 1000);
                                     }
                                     
-                                    if (status === 'playing' && this.player.getPlayerState() !== YT.PlayerState.PLAYING) {
+                                    if (status === 'playing' && typeof this.player.getPlayerState === 'function' && this.player.getPlayerState() !== YT.PlayerState.PLAYING) {
                                         this.isRemoteUpdate = true;
                                         this.player.playVideo();
                                         setTimeout(() => { this.isRemoteUpdate = false; }, 1000);
-                                    } else if (status === 'paused' && this.player.getPlayerState() !== YT.PlayerState.PAUSED) {
+                                    } else if (status === 'paused' && typeof this.player.getPlayerState === 'function' && this.player.getPlayerState() !== YT.PlayerState.PAUSED) {
                                         this.isRemoteUpdate = true;
                                         this.player.pauseVideo();
                                         setTimeout(() => { this.isRemoteUpdate = false; }, 1000);
@@ -527,7 +528,7 @@
             seekBar.addEventListener('input', (e) => {
                 this.isSeeking = true;
                 const sec = parseInt(e.target.value, 10);
-                const d = Math.floor(this.player ? this.player.getDuration() || 0 : 0);
+                const d = Math.floor(this.player && this.ytReady && typeof this.player.getDuration === 'function' ? this.player.getDuration() || 0 : 0);
                 document.getElementById('curTime').textContent = formatTime(sec);
                 const progress = d > 0 ? (sec / d) * 100 : 0;
                 seekBar.style.background = `linear-gradient(to right, #ff5252 ${progress}%, #ddd ${progress}%)`;
@@ -568,27 +569,27 @@
                     if (actualTime < 0) actualTime = 0;
                 }
 
-                const currentVid = this.player ? this.player.getVideoData().video_id : '';
+                const currentVid = (this.player && typeof this.player.getVideoData === 'function') ? this.player.getVideoData().video_id : '';
                 
                 if (!currentVid || currentVid !== vid) {
                     this.isRemoteUpdate = true;
                     this.processNewSong(currentSong, status, actualTime);
                     setTimeout(() => { this.isRemoteUpdate = false; }, 2000);
                 } else {
-                    const currentTime = this.player.getCurrentTime();
+                    const currentTime = (typeof this.player.getCurrentTime === 'function') ? this.player.getCurrentTime() : 0;
                     if (Math.abs(currentTime - actualTime) > 3) {
                         this.isRemoteUpdate = true;
                         this.player.seekTo(actualTime, true);
                         setTimeout(() => { this.isRemoteUpdate = false; }, 1000);
                     }
                     
-                    if (status === 'playing' && this.player.getPlayerState() !== YT.PlayerState.PLAYING) {
+                    if (status === 'playing' && typeof this.player.getPlayerState === 'function' && this.player.getPlayerState() !== YT.PlayerState.PLAYING) {
                         this.isRemoteUpdate = true;
                         this.player.playVideo();
                         this.isPlaying = true;
                         this.updatePlayPauseIcon();
                         setTimeout(() => { this.isRemoteUpdate = false; }, 1000);
-                    } else if (status === 'paused' && this.player.getPlayerState() !== YT.PlayerState.PAUSED) {
+                    } else if (status === 'paused' && typeof this.player.getPlayerState === 'function' && this.player.getPlayerState() !== YT.PlayerState.PAUSED) {
                         this.isRemoteUpdate = true;
                         this.player.pauseVideo();
                         this.isPlaying = false;
@@ -619,8 +620,10 @@
                     onReady: () => { 
                         this.ytReady = true; 
                         this.checkSavedState(); 
-                        this.isMuted = this.player.isMuted();
-                        this.updateMuteIcon();
+                        if (typeof this.player.isMuted === 'function') {
+                            this.isMuted = this.player.isMuted();
+                            this.updateMuteIcon();
+                        }
                     },
                     onError: this.onPlayerError.bind(this),
                     onStateChange: this.onPlayerStateChange.bind(this)
@@ -746,14 +749,13 @@
         
         updateState: function(status) {
             if (this.hasUserLeft || this.isRemoteUpdate) return;
-            
             if (!this.firebaseInitialized() || !this.currentSongUrl) return;
 
             const now = Date.now();
             if (now - this.lastAutoUpdate < 2000) return;
             this.lastAutoUpdate = now;
             
-            const currentTime = this.player ? Math.floor(this.player.getCurrentTime()) : 0;
+            const currentTime = (this.player && typeof this.player.getCurrentTime === 'function') ? Math.floor(this.player.getCurrentTime()) : 0;
             
             const stateObj = {
                 currentSong: this.currentSongUrl,
@@ -843,7 +845,7 @@
         },
         
         handlePlayPause: function() {
-            if (!this.ytReady) return;
+            if (!this.ytReady || !this.player) return;
             
             document.getElementById('errorMessage').style.display = 'none';
             
@@ -863,7 +865,7 @@
         },
         
         handleMute: function() {
-            if (!this.player) return;
+            if (!this.player || !this.ytReady) return;
             if (this.player.isMuted()) {
                 this.player.unMute();
                 this.isMuted = false;
@@ -875,7 +877,7 @@
         },
         
         handlePrev: function() {
-            if (!this.player) return;
+            if (!this.player || !this.ytReady) return;
             const newTime = Math.max(0, this.player.getCurrentTime() - 10);
             this.player.seekTo(newTime, true);
             
@@ -886,7 +888,7 @@
         },
         
         handleNext: function() {
-            if (!this.player) return;
+            if (!this.player || !this.ytReady) return;
             const currentTime = this.player.getCurrentTime();
             const duration = this.player.getDuration();
             const newTime = Math.min(duration, currentTime + 10);
@@ -899,7 +901,7 @@
         },
         
         handleSeek: function() {
-            if (!this.player) return;
+            if (!this.player || !this.ytReady) return;
             const sec = parseInt(document.getElementById('seekBar').value, 10);
             this.player.seekTo(sec, true);
             
@@ -920,7 +922,7 @@
         },
         
         updatePlayerUI: function() {
-            if (!this.player || this.isSeeking) return;
+            if (!this.player || !this.ytReady || typeof this.player.getCurrentTime !== 'function' || this.isSeeking) return;
             
             const t = Math.floor(this.player.getCurrentTime() || 0);
             const d = Math.floor(this.player.getDuration() || 0);
@@ -970,7 +972,7 @@
     musicPlayer.init();
 
     setInterval(() => {
-        if (musicPlayer.player) {
+        if (musicPlayer.player && musicPlayer.ytReady && typeof musicPlayer.player.getCurrentTime === 'function') {
             musicPlayer.updatePlayerUI();
         }
     }, 1000);
