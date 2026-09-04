@@ -675,7 +675,7 @@ description: "View your chat history and messages with friends."
 
   #msgInput {
     width: 100%;
-    padding: 7px 70px 7px 12px;
+    padding: 7px 98px 7px 12px;
     border-radius: 8px;
     border: 0.5px solid var(--dark-border2);
     background: var(--dark-input-bg);
@@ -769,71 +769,8 @@ description: "View your chat history and messages with friends."
     background: var(--accent-hover);
   }
 
-  #imgInput,
-  #gifInput {
+  #imgInput {
     display: none;
-  }
-
-  .gif-modal {
-    display: none;
-    position: fixed;
-    bottom: 62px;
-    right: 10px;
-    width: min(300px, calc(100% - 20px));
-    max-height: 380px;
-    background: var(--dark-surface);
-    border-radius: 14px;
-    border: 0.5px solid var(--dark-border2);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-    z-index: 10003;
-    padding: 12px;
-    overflow: hidden;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .light-mode .gif-modal {
-    background: var(--light-surface);
-    border-color: var(--light-border2);
-  }
-
-  .gif-search {
-    width: 100%;
-    padding: 8px 12px;
-    border-radius: 8px;
-    border: 0.5px solid var(--dark-border2);
-    background: var(--dark-input-bg);
-    color: var(--dark-text);
-    font-size: 13px;
-    outline: none;
-  }
-
-  .light-mode .gif-search {
-    background: var(--light-input-bg);
-    border-color: var(--light-border2);
-    color: var(--light-text);
-  }
-
-  .gif-results {
-    flex: 1;
-    overflow-y: auto;
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 6px;
-    max-height: 290px;
-  }
-
-  .gif-item {
-    width: 100%;
-    height: 90px;
-    object-fit: cover;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: transform 0.15s;
-  }
-
-  .gif-item:hover {
-    transform: scale(1.03);
   }
 
   .uploading-bubble {
@@ -887,10 +824,6 @@ description: "View your chat history and messages with friends."
       border-radius: 0 0 12px 12px;
       border-left: 0.5px solid var(--dark-border);
       border-right: 0.5px solid var(--dark-border);
-    }
-
-    .gif-modal {
-      right: calc(50% - 360px + 10px);
     }
   }
 
@@ -1135,8 +1068,9 @@ description: "View your chat history and messages with friends."
       <div class="input-area">
         <input type="text" id="msgInput" placeholder="Type your message..." />
         <div class="input-icons">
-          <label for="imgInput" class="icon-btn" title="Send Image" id="imgBtn"><i class="fas fa-image"></i></label>
-          <label for="gifInput" class="icon-btn" title="Send GIF" id="gifBtn"><i class="fas fa-film"></i></label>
+          <button type="button" id="imgBtn" class="icon-btn" title="Send Image"><i class="fas fa-image"></i></button>
+          <button type="button" id="gifTriggerBtn" class="icon-btn" title="Send GIF"><i class="fas fa-film"></i></button>
+          <button type="button" id="voiceRecordBtn" class="icon-btn" title="Record Voice"><i class="fas fa-microphone"></i></button>
         </div>
       </div>
       <button id="sendBtn" class="send-btn" title="Send"><i class="fas fa-paper-plane"></i></button>
@@ -1145,12 +1079,6 @@ description: "View your chat history and messages with friends."
 </div>
 
 <input type="file" id="imgInput" accept="image/*">
-<input type="file" id="gifInput" accept="image/gif">
-
-<div class="gif-modal" id="gifModal">
-  <input type="text" class="gif-search" id="gifSearch" placeholder="Search GIFs..." />
-  <div class="gif-results" id="gifResults"></div>
-</div>
 
 <div class="context-menu" id="contextMenu">
   <div class="context-menu-item" id="contextReplyBtn">↩ Reply</div>
@@ -1204,6 +1132,7 @@ description: "View your chat history and messages with friends."
   </div>
 </main>
 
+{% include media.html %}
 {% include menu.html %}
 
 <script type="module">
@@ -1216,30 +1145,15 @@ description: "View your chat history and messages with friends."
 
   const MESSAGE_LIMIT = 25;
 
-  let IMGBB_API_KEY = '';
   let GIPHY_API_KEY = '';
 
   async function loadKeys() {
-    const res = await fetch('/key.json');
-    const keys = await res.json();
-    IMGBB_API_KEY = keys.imgbb;
-    GIPHY_API_KEY = keys.giphy;
-  }
-
-  async function uploadToImgBB(file) {
-    const formData = new FormData();
-    formData.append('image', file);
-    formData.append('expiration', '604800');
-
-    const response = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
-      method: 'POST',
-      body: formData
-    });
-
-    if (!response.ok) throw new Error('ImgBB upload failed');
-    const data = await response.json();
-    if (!data.success) throw new Error('ImgBB upload unsuccessful');
-    return data.data.url;
+    try {
+      const res = await fetch('/key.json');
+      const keys = await res.json();
+      GIPHY_API_KEY = keys.giphy || '';
+      if (window.MediaHub) MediaHub.setApiKey(GIPHY_API_KEY);
+    } catch (e) {}
   }
 
   let currentUserId = null;
@@ -1407,7 +1321,7 @@ description: "View your chat history and messages with friends."
   function setReply(msg) {
     if (editingMsgKey) clearEdit();
     replyingTo = msg;
-    const preview = msg.type === "text" ? msg.text : `📷 ${msg.type}`;
+    const preview = msg.type === "text" ? msg.text : (msg.type === "audio" ? "🎤 Voice note" : `📷 ${msg.type}`);
     replyBarText.textContent = `${msg.nickname || currentFriendName}: ${preview}`;
     replyBar.classList.add('active');
     msgInput.focus();
@@ -1431,7 +1345,7 @@ description: "View your chat history and messages with friends."
     if (!replyingTo) return null;
     return {
       nickname: replyingTo.nickname || currentFriendName,
-      preview: replyingTo.type === "text" ? replyingTo.text : `📷 ${replyingTo.type}`,
+      preview: replyingTo.type === "text" ? replyingTo.text : (replyingTo.type === "audio" ? "🎤 Voice note" : `📷 ${replyingTo.type}`),
       originalId: replyingTo.timestamp
     };
   }
@@ -1476,6 +1390,7 @@ description: "View your chat history and messages with friends."
     if (contextTargetMsg && currentChatId) {
       const msgKey = contextTargetMsg.key;
       const chatId = currentChatId;
+      const targetMsg = contextTargetMsg;
 
       hideContextMenu();
 
@@ -1488,6 +1403,9 @@ description: "View your chat history and messages with friends."
       
       if (isConfirmed) {
         remove(ref(db, `messages/${chatId}/${msgKey}`));
+        if ((targetMsg.type === 'image' || targetMsg.type === 'audio') && targetMsg.url && window.deleteMediaFromServer) {
+          window.deleteMediaFromServer(targetMsg.url);
+        }
       }
     } else {
       hideContextMenu();
@@ -1559,6 +1477,42 @@ description: "View your chat history and messages with friends."
     myNickname = localStorage.getItem("talkrush_nickname") || "Guest";
     currentUserId = 'user_' + Math.random().toString(36).substr(2, 9);
     await loadKeys();
+    
+    if (window.MediaHub) {
+      MediaHub.init({
+        giphyApiKey: GIPHY_API_KEY,
+        onSendVoice: async (base64Data, duration) => {
+          if (!currentChatId) return;
+          const loadingBubble = showUploadingBubble();
+          try {
+            const res = await fetch(base64Data);
+            const audioBlob = await res.blob();
+            const audioUrl = await window.uploadMediaToServer(audioBlob, "voice.webm");
+            const message = { nickname: myNickname, type: "audio", timestamp: Date.now(), url: audioUrl, duration: duration };
+            if (replyingTo) {
+              message.replyTo = getReplyPayload();
+              clearReply();
+            }
+            const newMsgRef = push(ref(db, `messages/${currentChatId}`));
+            await set(newMsgRef, message);
+            maintainMessageLimit();
+            update(ref(db, `friends/${currentChatId}`), {
+              lastMessageText: '🎤 Voice note',
+              lastTimestamp: message.timestamp,
+              lastSender: myNickname
+            });
+          } catch (err) {
+            AlertKit.error("Failed", "Failed to upload voice note.");
+          } finally {
+            loadingBubble.remove();
+          }
+        },
+        onSelectGif: (url) => {
+          sendGifToChat(url);
+        }
+      });
+    }
+
     loadFriends();
     setupEventListeners();
     checkUrlNavigation();
@@ -1592,18 +1546,11 @@ description: "View your chat history and messages with friends."
       remove(ref(db, `typing/${currentChatId}/${currentUserId}`));
     });
 
-    document.getElementById('imgInput').addEventListener('change', handleImageUpload);
-
-    document.getElementById('gifBtn').onclick = (e) => {
-      e.preventDefault();
-      const gifModal = document.getElementById("gifModal");
-      gifModal.style.display = gifModal.style.display === "flex" ? "none" : "flex";
-      if (gifModal.style.display === "flex") fetchTrendingGifs();
+    document.getElementById('imgBtn').onclick = () => {
+      document.getElementById('imgInput').click();
     };
 
-    document.getElementById('gifSearch').addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') searchGifs(document.getElementById('gifSearch').value);
-    });
+    document.getElementById('imgInput').addEventListener('change', handleImageUpload);
 
     document.getElementById('sendBtn').onclick = sendMessage;
 
@@ -1622,16 +1569,6 @@ description: "View your chat history and messages with friends."
         window.startOutgoingCall(currentFriendName, type);
       }
     };
-
-    window.addEventListener("click", (e) => {
-      const gifModal = document.getElementById("gifModal");
-      const gifBtn = document.getElementById("gifBtn");
-      if (gifModal.style.display === "flex" &&
-        !gifModal.contains(e.target) &&
-        !gifBtn.contains(e.target)) {
-        gifModal.style.display = "none";
-      }
-    });
 
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && currentChatId) closeChat();
@@ -1851,6 +1788,7 @@ description: "View your chat history and messages with friends."
         let displayMsg = '';
         if (msg.type === 'image') displayMsg = '📷 Image';
         else if (msg.type === 'gif') displayMsg = '🎯 GIF';
+        else if (msg.type === 'audio') displayMsg = '🎤 Voice note';
         else if (msg.type === 'text') {
           displayMsg = msg.text.length > 30 ? msg.text.substring(0, 30) + '...' : msg.text;
         }
@@ -1931,22 +1869,30 @@ description: "View your chat history and messages with friends."
     });
   }
 
-  function maintainMessageLimit() {
+  async function maintainMessageLimit() {
     if (!currentChatId) return;
 
-    get(ref(db, `messages/${currentChatId}`)).then((snapshot) => {
+    try {
+      const snapshot = await get(ref(db, `messages/${currentChatId}`));
+      if (!snapshot.exists()) return;
+
       const messages = [];
       snapshot.forEach((childSnapshot) => {
-        messages.push({ key: childSnapshot.key, timestamp: childSnapshot.val().timestamp });
+        messages.push({ key: childSnapshot.key, timestamp: childSnapshot.val().timestamp, val: childSnapshot.val() });
       });
 
       if (messages.length > MESSAGE_LIMIT) {
         messages.sort((a, b) => a.timestamp - b.timestamp);
         const updates = {};
-        messages.slice(0, messages.length - MESSAGE_LIMIT).forEach(msg => { updates[msg.key] = null; });
-        update(ref(db, `messages/${currentChatId}`), updates);
+        messages.slice(0, messages.length - MESSAGE_LIMIT).forEach(msg => { 
+          updates[msg.key] = null; 
+          if (msg.val && (msg.val.type === 'image' || msg.val.type === 'audio') && msg.val.url && window.deleteMediaFromServer) {
+            window.deleteMediaFromServer(msg.val.url);
+          }
+        });
+        await update(ref(db, `messages/${currentChatId}`), updates);
       }
-    });
+    } catch (e) {}
   }
 
   function sendMessage() {
@@ -1993,7 +1939,7 @@ description: "View your chat history and messages with friends."
     const loadingBubble = showUploadingBubble();
 
     try {
-      const imageUrl = await uploadToImgBB(file);
+      const imageUrl = await window.uploadMediaToServer(file, file.name);
       loadingBubble.remove();
 
       const message = { nickname: myNickname, url: imageUrl, timestamp: Date.now(), type: "image" };
@@ -2018,6 +1964,26 @@ description: "View your chat history and messages with friends."
     }
 
     e.target.value = '';
+  }
+
+  function sendGifToChat(url) {
+    if (!currentChatId) return;
+    const message = { nickname: myNickname, url: url, timestamp: Date.now(), type: "gif" };
+    
+    if (replyingTo) {
+      message.replyTo = getReplyPayload();
+      clearReply();
+    }
+
+    const newMsgRef = push(ref(db, `messages/${currentChatId}`));
+    set(newMsgRef, message).then(() => {
+      maintainMessageLimit();
+      update(ref(db, `friends/${currentChatId}`), {
+        lastMessageText: '🎯 GIF',
+        lastTimestamp: message.timestamp,
+        lastSender: myNickname
+      });
+    });
   }
 
   function showUploadingBubble() {
@@ -2089,7 +2055,10 @@ description: "View your chat history and messages with friends."
       bubble.appendChild(replyDiv);
     }
 
-    if (msg.type === 'image' || msg.type === 'gif') {
+    if (msg.type === "audio" && window.MediaHub) {
+      const audioBubble = MediaHub.createAudioBubble(msg.url, msg.duration);
+      bubble.appendChild(audioBubble);
+    } else if (msg.type === 'image' || msg.type === 'gif') {
       const img = document.createElement("img");
       img.src = msg.url;
       bubble.appendChild(img);
@@ -2157,54 +2126,4 @@ description: "View your chat history and messages with friends."
       remove(ref(db, "typing/" + chatId));
     }
   };
-
-  async function fetchTrendingGifs() {
-    try {
-      const response = await fetch(`https://api.giphy.com/v1/gifs/trending?api_key=${GIPHY_API_KEY}&limit=20`);
-      const data = await response.json();
-      displayGifs(data.data);
-    } catch (error) { }
-  }
-
-  async function searchGifs(query) {
-    if (!query.trim()) { fetchTrendingGifs(); return; }
-    try {
-      const response = await fetch(`https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_API_KEY}&q=${encodeURIComponent(query)}&limit=20`);
-      const data = await response.json();
-      displayGifs(data.data);
-    } catch (error) { }
-  }
-
-  function displayGifs(gifs) {
-    const gifResults = document.getElementById('gifResults');
-    gifResults.innerHTML = "";
-
-    gifs.forEach(gif => {
-      const gifUrl = gif.images.fixed_height.url;
-      const img = document.createElement("img");
-      img.src = gifUrl;
-      img.className = "gif-item";
-      img.onclick = () => {
-        if (!currentChatId) return;
-        const message = { nickname: myNickname, url: gifUrl, timestamp: Date.now(), type: "gif" };
-        
-        if (replyingTo) {
-          message.replyTo = getReplyPayload();
-          clearReply();
-        }
-
-        const newMsgRef = push(ref(db, `messages/${currentChatId}`));
-        set(newMsgRef, message).then(() => {
-          maintainMessageLimit();
-          update(ref(db, `friends/${currentChatId}`), {
-            lastMessageText: '🎯 GIF',
-            lastTimestamp: message.timestamp,
-            lastSender: myNickname
-          });
-        });
-        document.getElementById('gifModal').style.display = 'none';
-      };
-      gifResults.appendChild(img);
-    });
-  }
 </script>
