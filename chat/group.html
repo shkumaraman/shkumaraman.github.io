@@ -655,10 +655,10 @@ window.forwardMessage = function(content) {
 
 let myNickname = 'Guest';
 let currentGroup = null;
-let lastMessageTimestamp = 0;
 const MESSAGE_LIMIT = 25;
 let isSendingMessage = false;
-let initialMessagesLoaded = false;
+let isPruning = false;
+const renderedMessageKeys = new Set();
 let groupPasswordRequired = false;
 let groupAdminNickname = null;
 let passwordVerified = false;
@@ -819,37 +819,21 @@ function joinGroupChat() {
 
   clearMyRepliesForCurrentGroup();
 
-  const messagesRefQuery = query(ref(db, `group_messages/${currentGroup}`), orderByChild("timestamp"), limitToLast(MESSAGE_LIMIT));
   const messagesRef = ref(db, `group_messages/${currentGroup}`);
-
-  if (!initialMessagesLoaded) {
-    get(messagesRefQuery).then((snapshot) => {
-      const messages = snapshot.val();
-      if (messages) {
-        Object.entries(messages).forEach(([key, msg]) => {
-          msg.key = key;
-          if (msg.timestamp > lastMessageTimestamp) {
-            displayMessage(msg);
-            lastMessageTimestamp = msg.timestamp;
-          }
-        });
-      }
-      scrollToBottom();
-      initialMessagesLoaded = true;
-    });
-  }
+  const messagesRefQuery = query(messagesRef, orderByChild("timestamp"), limitToLast(MESSAGE_LIMIT));
 
   onChildAdded(messagesRefQuery, (snapshot) => {
+    const key = snapshot.key;
+    if (renderedMessageKeys.has(key)) return;
+    renderedMessageKeys.add(key);
+
     const msg = snapshot.val();
-    msg.key = snapshot.key;
-    if (msg.timestamp > lastMessageTimestamp) {
-      displayMessage(msg);
-      lastMessageTimestamp = msg.timestamp;
-      scrollToBottom();
-      
-      if (msg.replyTo && msg.replyTo.nickname === myNickname) {
-         clearMyRepliesForCurrentGroup();
-      }
+    msg.key = key;
+    displayMessage(msg);
+    scrollToBottom();
+    
+    if (msg.replyTo && msg.replyTo.nickname === myNickname) {
+      clearMyRepliesForCurrentGroup();
     }
   });
 
@@ -860,6 +844,7 @@ function joinGroupChat() {
   });
 
   onChildRemoved(messagesRef, (snapshot) => {
+    renderedMessageKeys.delete(snapshot.key);
     removeMessageFromDOM(snapshot.key);
   });
 
@@ -977,26 +962,42 @@ document.getElementById('unpinBtn').addEventListener('click', async (e) => {
 });
 
 async function maintainMessageLimit() {
-  if (!currentGroup) return;
+  if (!currentGroup || isPruning) return;
+  isPruning = true;
+
   try {
-    const snapshot = await get(ref(db, `group_messages/${currentGroup}`));
+    const pruneQuery = query(
+      ref(db, `group_messages/${currentGroup}`),
+      orderByChild("timestamp"),
+      limitToLast(MESSAGE_LIMIT + 10)
+    );
+
+    const snapshot = await get(pruneQuery);
     if (!snapshot.exists()) return;
     
     const messages = [];
-    snapshot.forEach(child => messages.push({ key: child.key, timestamp: child.val().timestamp }));
+    snapshot.forEach(child => {
+      messages.push({ key: child.key, ...child.val() });
+    });
     
     if (messages.length > MESSAGE_LIMIT) {
       messages.sort((a, b) => a.timestamp - b.timestamp);
+      const toDelete = messages.slice(0, messages.length - MESSAGE_LIMIT);
+      
       const updates = {};
-      messages.slice(0, messages.length - MESSAGE_LIMIT).forEach(msg => {
-        updates[msg.key] = null;
-        if (msg.url && (msg.type === 'image' || msg.type === 'audio') && window.deleteMediaFromServer) {
-          window.deleteMediaFromServer(msg.url);
+      for (const msg of toDelete) {
+        updates[`/group_messages/${currentGroup}/${msg.key}`] = null;
+        if (msg.url && (msg.type === 'image' || msg.type === 'audio') && typeof window.deleteMediaFromServer === 'function') {
+          window.deleteMediaFromServer(msg.url).catch(() => {});
         }
-      });
-      await update(ref(db, `group_messages/${currentGroup}`), updates);
+      }
+      
+      await update(ref(db), updates);
     }
-  } catch (error) {}
+  } catch (error) {
+  } finally {
+    isPruning = false;
+  }
 }
 
 async function pushMessageToDB(message) {
@@ -1274,7 +1275,7 @@ function addMessageInteractions(div, msg, isMe) {
 }
 
 function displayMessage(msg) {
-  if (document.querySelector(`[data-id="${msg.timestamp}"]`)) return;
+  if (document.querySelector(`.msg-row[data-key="${msg.key}"]`)) return;
   const isMe = msg.nickname === myNickname;
 
   const row = document.createElement("div");
