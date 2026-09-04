@@ -988,7 +988,12 @@ async function maintainMessageLimit() {
     if (messages.length > MESSAGE_LIMIT) {
       messages.sort((a, b) => a.timestamp - b.timestamp);
       const updates = {};
-      messages.slice(0, messages.length - MESSAGE_LIMIT).forEach(msg => updates[msg.key] = null);
+      messages.slice(0, messages.length - MESSAGE_LIMIT).forEach(msg => {
+        updates[msg.key] = null;
+        if (msg.url && (msg.type === 'image' || msg.type === 'audio') && window.deleteMediaFromServer) {
+          window.deleteMediaFromServer(msg.url);
+        }
+      });
       await update(ref(db, `group_messages/${currentGroup}`), updates);
     }
   } catch (error) {}
@@ -1167,6 +1172,7 @@ document.getElementById('contextDeleteBtn').addEventListener('click', async () =
   if (contextTargetMsg && currentGroup) {
     const msgKey = contextTargetMsg.key;
     const groupName = currentGroup;
+    const targetMsg = contextTargetMsg;
     hideContextMenu();
 
     const isConfirmed = await AlertKit.confirm(
@@ -1178,6 +1184,9 @@ document.getElementById('contextDeleteBtn').addEventListener('click', async () =
     
     if (isConfirmed) {
       remove(ref(db, `group_messages/${groupName}/${msgKey}`));
+      if ((targetMsg.type === 'image' || targetMsg.type === 'audio') && targetMsg.url && window.deleteMediaFromServer) {
+        window.deleteMediaFromServer(targetMsg.url);
+      }
     }
   } else {
     hideContextMenu();
