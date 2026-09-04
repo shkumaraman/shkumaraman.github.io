@@ -199,42 +199,82 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   gap: 4px;
   min-height: 0;
   background: transparent;
+  scroll-behavior: smooth;
 }
 
 #chatLog::-webkit-scrollbar { width: 3px; }
 #chatLog::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 3px; }
 .light-mode #chatLog::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.1); }
 
+.msg-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.msg-row.me {
+  justify-content: flex-end;
+}
+
+.msg-row.stranger {
+  justify-content: flex-start;
+}
+
 .msg {
   padding: 8px 12px;
   border-radius: 14px;
   max-width: 78%;
   word-wrap: break-word;
-  font-size: 14px; line-height: 1.45;
+  font-size: 14px;
+  line-height: 1.45;
   position: relative;
+  touch-action: pan-y;
+  transition: transform 0.2s ease, background-color 0.5s ease;
+  user-select: none;
 }
 
-.me {
+.msg.swiping { transition: none; }
+
+.msg-row.me .msg {
   align-self: flex-end;
   background: var(--dark-msg-me);
   color: var(--dark-msg-me-text);
   border-bottom-right-radius: 4px;
 }
-.light-mode .me {
+.light-mode .msg-row.me .msg {
   background: var(--light-msg-me);
   color: var(--light-msg-me-text);
 }
 
-.stranger {
+.msg-row.stranger .msg {
   align-self: flex-start;
   background: var(--dark-msg-them);
   color: var(--dark-msg-them-text);
   border-bottom-left-radius: 4px;
 }
-.light-mode .stranger {
+.light-mode .msg-row.stranger .msg {
   background: var(--light-msg-them);
   color: var(--light-msg-them-text);
 }
+
+.reply-preview {
+  background: rgba(255,255,255,0.05);
+  border-left: 3px solid #888;
+  border-radius: 8px 8px 0 0;
+  padding: 5px 10px;
+  font-size: 0.8em;
+  margin-bottom: 4px;
+  color: var(--dark-text-muted);
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.reply-preview:hover { background: rgba(255,255,255,0.1); }
+.light-mode .reply-preview { background: rgba(0,0,0,0.04); color: var(--light-text-muted); border-left-color: #aaa; }
+.light-mode .reply-preview:hover { background: rgba(0,0,0,0.08); }
 
 .timestamp {
   font-size: 10px;
@@ -243,6 +283,14 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   margin-top: 3px;
 }
 .light-mode .timestamp { color: var(--light-text-dim); }
+
+.edited-label {
+  font-size: 9px;
+  color: var(--dark-text-dim);
+  margin-left: 3px;
+  font-style: italic;
+}
+.light-mode .edited-label { color: var(--light-text-dim); }
 
 .msg img { max-width: 100%; max-height: 260px; border-radius: 8px; display: block; margin-bottom: 4px; }
 
@@ -254,10 +302,10 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   position: relative;
 }
 
-.light-mode .me.msg-single-emoji,
-.light-mode .stranger.msg-single-emoji,
-.me.msg-single-emoji,
-.stranger.msg-single-emoji {
+.light-mode .msg-row.me .msg.msg-single-emoji,
+.light-mode .msg-row.stranger .msg.msg-single-emoji,
+.msg-row.me .msg.msg-single-emoji,
+.msg-row.stranger .msg.msg-single-emoji {
   background: transparent !important;
 }
 
@@ -333,17 +381,46 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 .new-chat-btn:active { transform: translateX(-50%) scale(0.98); }
 .new-chat-btn.hidden { display: none !important; }
 
+.chat-controls-wrapper {
+  display: flex;
+  flex-direction: column;
+  background: var(--dark-surface);
+  border-top: 0.5px solid var(--dark-border);
+  z-index: 1000;
+  flex-shrink: 0;
+}
+.light-mode .chat-controls-wrapper {
+  background: var(--light-surface);
+  border-top-color: var(--light-border2);
+}
+
+.reply-bar, .edit-bar {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--dark-input-bg);
+  border-bottom: 0.5px solid var(--dark-border2);
+  font-size: 0.85em;
+  color: var(--dark-text-muted);
+}
+.reply-bar.active, .edit-bar.active { display: flex; }
+.light-mode .reply-bar, .light-mode .edit-bar { background: var(--light-input-bg); border-bottom-color: var(--light-border2); color: var(--light-text-muted); }
+
+.edit-bar { background: rgba(52, 183, 241, 0.1); }
+.light-mode .edit-bar { background: rgba(52, 183, 241, 0.05); }
+
+.reply-bar-text { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.reply-bar-close { background: none; border: none; color: var(--dark-icon-color); cursor: pointer; font-size: 1.1em; padding: 0 4px; }
+
 .chat-controls {
   display: flex;
   align-items: center;
   padding: 7px 10px;
-  background: var(--dark-surface);
-  border-top: 0.5px solid var(--dark-border);
-  z-index: 1000;
   gap: 6px;
-  flex-shrink: 0;
+  width: 100%;
+  box-sizing: border-box;
 }
-.light-mode .chat-controls { background: var(--light-surface); border-top-color: var(--light-border2); }
 
 #skipBtn {
   width: 44px; height: 44px;
@@ -420,7 +497,38 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 }
 .send-btn:hover { background: var(--accent-hover); }
 
-#imgInput, #gifInput { display: none; }
+#imgInput { display: none; }
+
+.context-menu {
+  display: none;
+  position: fixed;
+  background: var(--dark-surface);
+  border: 0.5px solid var(--dark-border2);
+  border-radius: 10px;
+  padding: 6px 0;
+  z-index: 99999;
+  min-width: 150px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+}
+.light-mode .context-menu {
+  background: var(--light-surface);
+  border-color: var(--light-border2);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+}
+.context-menu.active { display: block; }
+.context-menu-item {
+  padding: 10px 18px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--dark-text);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: background 0.15s;
+}
+.light-mode .context-menu-item { color: var(--light-text); }
+.context-menu-item:hover { background: rgba(255,255,255,0.05); }
+.light-mode .context-menu-item:hover { background: rgba(0,0,0,0.04); }
 
 .keyword-bubble {
   background: rgba(255,255,255,0.05);
@@ -442,7 +550,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 }
 
 @media (min-width: 769px) {
-  .chat-controls {
+  .chat-controls-wrapper {
     border-radius: 0 0 12px 12px;
     border-left: 0.5px solid var(--dark-border);
     border-right: 0.5px solid var(--dark-border);
@@ -490,25 +598,44 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     <i class="fas fa-rotate-right"></i> Start New Chat
   </button>
   
-  <div class="chat-controls">
-    <button id="skipBtn" title="Skip">
-      <i class="fas fa-forward-step"></i>
-    </button>
-
-    <div class="input-area">
-      <input type="text" id="msgInput" placeholder="Type your message..." />
-      <div class="input-icons">
-        <label for="imgInput" class="icon-btn" title="Send Image"><i class="fas fa-image"></i></label>
-        <label for="gifInput" class="icon-btn" title="Send GIF"><i class="fas fa-film"></i></label>
-        <button type="button" id="voiceRecordBtn" class="icon-btn" title="Record Voice"><i class="fas fa-microphone"></i></button>
-      </div>
+  <div class="chat-controls-wrapper">
+    <div class="reply-bar" id="replyBar">
+      <span>↩</span>
+      <span class="reply-bar-text" id="replyBarText"></span>
+      <button class="reply-bar-close" id="replyBarClose">✕</button>
     </div>
 
-    <button id="sendBtn" class="send-btn" title="Send"><i class="fas fa-paper-plane"></i></button>
+    <div class="edit-bar" id="editBar">
+      <span>✎</span>
+      <span class="reply-bar-text">Editing message...</span>
+      <button class="reply-bar-close" id="editBarClose">✕</button>
+    </div>
+
+    <div class="chat-controls">
+      <button id="skipBtn" title="Skip">
+        <i class="fas fa-forward-step"></i>
+      </button>
+
+      <div class="input-area">
+        <input type="text" id="msgInput" placeholder="Type your message..." />
+        <div class="input-icons">
+          <button type="button" id="imgBtn" class="icon-btn" title="Send Image"><i class="fas fa-image"></i></button>
+          <button type="button" id="gifTriggerBtn" class="icon-btn" title="Send GIF"><i class="fas fa-film"></i></button>
+          <button type="button" id="voiceRecordBtn" class="icon-btn" title="Record Voice"><i class="fas fa-microphone"></i></button>
+        </div>
+      </div>
+
+      <button id="sendBtn" class="send-btn" title="Send"><i class="fas fa-paper-plane"></i></button>
+    </div>
   </div>
   
   <input type="file" id="imgInput" accept="image/*" />
-  <input type="file" id="gifInput" accept="image/gif" />
+</div>
+
+<div class="context-menu" id="contextMenu">
+  <div class="context-menu-item" id="contextReplyBtn">↩ Reply</div>
+  <div class="context-menu-item" id="contextEditBtn">✎ Edit</div>
+  <div class="context-menu-item" id="contextDeleteBtn" style="color: #ff4d4d;">🗑 Delete</div>
 </div>
 
 <ins class="adsbygoogle"
@@ -584,6 +711,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   </div>
 </main>
 
+{% include media.html %}
 {% include menu.html %}
 {% include play.html %}
 
@@ -632,6 +760,10 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   let botFallbackTimer = null;
   let currentBotData = null;
 
+  let replyingTo = null;
+  let editingMsgKey = null;
+  let contextTargetMsg = null;
+
   const getFallbackName = () => "Guest" + Math.floor(1000 + Math.random() * 9000);
   let currentStrangerNickname = getFallbackName();
 
@@ -644,6 +776,25 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
   const friendBtn = document.getElementById('friendBtn');
   const chatLog = document.getElementById("chatLog");
+  const msgInput = document.getElementById("msgInput");
+  const replyBar = document.getElementById("replyBar");
+  const replyBarText = document.getElementById("replyBarText");
+  const editBar = document.getElementById("editBar");
+  const contextMenu = document.getElementById("contextMenu");
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text || "";
+    return div.innerHTML;
+  }
+
+  function linkifyText(text) {
+    const escaped = escapeHtml(text);
+    const urlRegex = /(https?:\/\/[^\s<>"']+)/g;
+    return escaped.replace(urlRegex, (url) => {
+      return `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline; word-break: break-all;">${url}</a>`;
+    });
+  }
 
   function isSingleEmoji(text) {
     if (!text) return false;
@@ -702,20 +853,346 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     card.style.opacity = "1";
   }
 
+  function setReply(msgData) {
+    if (editingMsgKey) clearEdit();
+    replyingTo = msgData;
+    const preview = msgData.type === "text" ? msgData.text : (msgData.type === "audio" ? "🎤 Voice note" : `📷 ${msgData.type}`);
+    replyBarText.textContent = `${msgData.nickname || 'Stranger'}: ${preview}`;
+    replyBar.classList.add('active');
+    msgInput.focus();
+  }
+
+  function clearReply() {
+    replyingTo = null;
+    replyBar.classList.remove('active');
+    replyBarText.textContent = '';
+  }
+  document.getElementById('replyBarClose').addEventListener('click', clearReply);
+
+  function clearEdit() {
+    editingMsgKey = null;
+    editBar.classList.remove('active');
+    msgInput.value = '';
+  }
+  document.getElementById('editBarClose').addEventListener('click', clearEdit);
+
+  function getReplyPayload() {
+    if (!replyingTo) return null;
+    return {
+      nickname: replyingTo.nickname || 'Stranger',
+      preview: replyingTo.type === "text" ? replyingTo.text : (replyingTo.type === "audio" ? "🎤 Voice note" : `📷 ${replyingTo.type}`),
+      originalId: replyingTo.key
+    };
+  }
+
+  function showContextMenu(x, y, msgData, isMe) {
+    contextTargetMsg = msgData;
+    document.getElementById('contextEditBtn').style.display = (isMe && msgData.type === 'text') ? 'flex' : 'none';
+    document.getElementById('contextDeleteBtn').style.display = isMe ? 'flex' : 'none';
+    contextMenu.style.left = Math.min(x, window.innerWidth - 170) + 'px';
+    contextMenu.style.top = Math.min(y, window.innerHeight - 180) + 'px';
+    contextMenu.classList.add('active');
+  }
+
+  function hideContextMenu() {
+    contextMenu.classList.remove('active');
+    contextTargetMsg = null;
+  }
+
+  ['click', 'touchstart'].forEach(evt => document.addEventListener(evt, (e) => {
+    if (!contextMenu.contains(e.target)) hideContextMenu();
+  }, { passive: true }));
+
+  document.getElementById('contextReplyBtn').addEventListener('click', () => {
+    if (contextTargetMsg) setReply(contextTargetMsg);
+    hideContextMenu();
+  });
+
+  document.getElementById('contextEditBtn').addEventListener('click', () => {
+    if (contextTargetMsg && contextTargetMsg.type === 'text') {
+      clearReply();
+      editingMsgKey = contextTargetMsg.key;
+      msgInput.value = contextTargetMsg.text;
+      editBar.classList.add('active');
+      msgInput.focus();
+    }
+    hideContextMenu();
+  });
+
+  document.getElementById('contextDeleteBtn').addEventListener('click', async () => {
+    if (contextTargetMsg) {
+      const target = contextTargetMsg;
+      hideContextMenu();
+      const isConfirmed = await AlertKit.confirm(
+        'Delete Message?',
+        'This message will be deleted for both participants.',
+        'Delete',
+        'Cancel'
+      );
+      if (isConfirmed) {
+        removeMessageFromDOM(target.key);
+        if (myConn && isConnected) {
+          myConn.send({ type: "delete_msg", key: target.key });
+        }
+      }
+    } else {
+      hideContextMenu();
+    }
+  });
+
+  function addMessageInteractions(div, msgData, isMe) {
+    let holdTimer, holdTriggered = false, startX, startY, dragging = false;
+
+    div.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      showContextMenu(e.clientX, e.clientY, msgData, isMe);
+    });
+
+    div.addEventListener('touchstart', e => {
+      holdTriggered = false;
+      dragging = true;
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+      holdTimer = setTimeout(() => {
+        holdTriggered = true;
+        dragging = false;
+        div.style.transform = '';
+        div.classList.remove('swiping');
+        showContextMenu(e.touches[0].clientX, e.touches[0].clientY, msgData, isMe);
+      }, 500);
+    }, { passive: true });
+
+    div.addEventListener('touchmove', e => {
+      if (holdTriggered || !dragging) return;
+      const dx = e.touches[0].clientX - startX;
+      if (Math.abs(e.touches[0].clientY - startY) > Math.abs(dx) || Math.abs(dx) > 10) clearTimeout(holdTimer);
+
+      if ((isMe ? dx < 0 : dx > 0)) {
+        const moveX = Math.min(Math.abs(dx), 60) * (isMe ? -1 : 1);
+        div.style.transform = `translateX(${moveX}px)`;
+        div.classList.add('swiping');
+      }
+    }, { passive: true });
+
+    div.addEventListener('touchend', e => {
+      clearTimeout(holdTimer);
+      if (holdTriggered) return;
+      dragging = false;
+      div.style.transform = '';
+      div.classList.remove('swiping');
+      if ((isMe ? e.changedTouches[0].clientX - startX < -60 : e.changedTouches[0].clientX - startX > 60)) {
+        setReply(msgData);
+      }
+    });
+  }
+
+  function updateMessageInDOM(msgData) {
+    const row = document.querySelector(`.msg-row[data-key="${msgData.key}"]`);
+    if (!row) return;
+    const bubble = row.querySelector('.msg');
+    if (!bubble) return;
+
+    const textDiv = bubble.querySelector('.text-content');
+    if (textDiv && msgData.type === 'text') {
+      textDiv.innerHTML = '';
+      if (isSingleEmoji(msgData.text)) {
+        bubble.classList.add('msg-single-emoji');
+        const emojiText = msgData.text.trim();
+        const codePointStr = getEmojiCodePoint(emojiText);
+        const img = document.createElement('img');
+        img.src = `https://fonts.gstatic.com/s/e/notoemoji/latest/${codePointStr}/512.webp`;
+        img.className = 'animated-emoji-img';
+        img.alt = emojiText;
+        img.onerror = () => { textDiv.textContent = emojiText; };
+        textDiv.appendChild(img);
+      } else {
+        bubble.classList.remove('msg-single-emoji');
+        textDiv.innerHTML = linkifyText(msgData.text);
+      }
+      if (msgData.edited && !bubble.querySelector('.edited-label')) {
+        const editedSpan = document.createElement('span');
+        editedSpan.className = 'edited-label';
+        editedSpan.textContent = '(edited)';
+        const timeDiv = bubble.querySelector('.timestamp');
+        if (timeDiv) timeDiv.appendChild(editedSpan);
+      }
+    }
+  }
+
+  function removeMessageFromDOM(key) {
+    const row = document.querySelector(`.msg-row[data-key="${key}"]`);
+    if (row) row.remove();
+  }
+
+  function appendMessage(msgData, isMe) {
+    const row = document.createElement("div");
+    row.className = `msg-row ${isMe ? 'me' : 'stranger'}`;
+    row.setAttribute('data-key', msgData.key);
+
+    const bubble = document.createElement("div");
+    bubble.className = "msg";
+    bubble.setAttribute('data-id', msgData.key);
+
+    if (msgData.replyTo) {
+      const replyDiv = document.createElement("div");
+      replyDiv.className = "reply-preview";
+      replyDiv.textContent = `${msgData.replyTo.nickname}: ${msgData.replyTo.preview}`;
+      if (msgData.replyTo.originalId) {
+        replyDiv.title = "Click to jump to original message";
+        replyDiv.addEventListener("click", () => {
+          const target = document.querySelector(`[data-id="${msgData.replyTo.originalId}"]`);
+          if (target) {
+            target.scrollIntoView({ behavior: "smooth", block: "center" });
+            const oldBg = target.style.backgroundColor;
+            target.style.backgroundColor = "rgba(91, 155, 213, 0.4)";
+            setTimeout(() => target.style.backgroundColor = oldBg, 1500);
+          }
+        });
+      }
+      bubble.appendChild(replyDiv);
+    }
+
+    if (msgData.type === 'text') {
+      const textDiv = document.createElement("div");
+      textDiv.className = "text-content";
+      if (isSingleEmoji(msgData.text)) {
+        bubble.classList.add("msg-single-emoji");
+        const emojiText = msgData.text.trim();
+        const codePointStr = getEmojiCodePoint(emojiText);
+        const img = document.createElement('img');
+        img.src = `https://fonts.gstatic.com/s/e/notoemoji/latest/${codePointStr}/512.webp`;
+        img.className = 'animated-emoji-img';
+        img.alt = emojiText;
+        img.onerror = () => { textDiv.textContent = emojiText; };
+        textDiv.appendChild(img);
+      } else {
+        textDiv.innerHTML = linkifyText(msgData.text);
+      }
+      bubble.appendChild(textDiv);
+    } else if (msgData.type === 'audio' && window.MediaHub) {
+      const audioBubble = MediaHub.createAudioBubble(msgData.blob, msgData.duration);
+      bubble.appendChild(audioBubble);
+    } else {
+      const img = document.createElement("img");
+      img.src = msgData.blob || msgData.url;
+      img.alt = msgData.type;
+      bubble.appendChild(img);
+    }
+
+    const time = document.createElement("div");
+    time.className = "timestamp";
+    time.textContent = new Date(msgData.timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    if (msgData.edited) {
+      const editedSpan = document.createElement('span');
+      editedSpan.className = 'edited-label';
+      editedSpan.textContent = '(edited)';
+      time.appendChild(editedSpan);
+    }
+    bubble.appendChild(time);
+
+    addMessageInteractions(bubble, msgData, isMe);
+
+    row.appendChild(bubble);
+    chatLog.appendChild(row);
+    scrollToBottom();
+  }
+
+  const scrollToBottom = () => { chatLog.scrollTop = chatLog.scrollHeight; };
+
+  function appendSystemImage(src, linkUrl) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "system-message system-image";
+    
+    const img = document.createElement("img");
+    img.src = src;
+    img.className = "chat-end-image";
+    
+    if (linkUrl && linkUrl.trim() !== '') {
+      const a = document.createElement("a");
+      a.href = linkUrl;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      a.appendChild(img);
+      wrapper.appendChild(a);
+    } else {
+      wrapper.appendChild(img);
+    }
+    
+    chatLog.appendChild(wrapper);
+    scrollToBottom();
+  }
+
+  function logSystem(msg) {
+    clearSystemMessage();
+    const div = document.createElement("div");
+    div.className = "msg system-msg";
+    div.textContent = msg;
+    chatLog.appendChild(div);
+    currentSystemMessage = div;
+    scrollToBottom();
+  }
+
+  function clearSystemMessage() {
+    currentSystemMessage?.parentNode?.removeChild(currentSystemMessage);
+    currentSystemMessage = null;
+  }
+
+  const showNewChatButton = () => {
+    const btn = document.getElementById("newChatBtn");
+    btn.classList.remove("hidden");
+    btn.style.display = "flex";
+  };
+  const hideNewChatButton = () => {
+    const btn = document.getElementById("newChatBtn");
+    btn.classList.add("hidden");
+    setTimeout(() => {
+        if(btn.classList.contains("hidden")) {
+            btn.style.display = "none";
+        }
+    }, 200);
+  };
+
+  function showTypingIndicator() {
+    typingIndicator.style.display = "block";
+    clearTimeout(typingTimeout);
+    typingTimeout = setTimeout(() => { typingIndicator.style.display = "none"; }, 1000);
+  }
+
   window.addEventListener('load', async () => {
     await loadKeys();
     MediaHub.init({
       giphyApiKey: GIPHY_API_KEY,
       onSendVoice: (base64Data, duration) => {
+        const msgKey = 'audio_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+        const message = {
+          key: msgKey,
+          type: "audio",
+          blob: base64Data,
+          duration: duration,
+          timestamp: Date.now(),
+          nickname: myNickname,
+          replyTo: getReplyPayload()
+        };
+        clearReply();
+        appendMessage(message, true);
         if (myConn && isConnected) {
-          myConn.send({ type: "audio", blob: base64Data, duration: duration });
-          MediaHub.appendVoiceMessage(chatLog, "me", base64Data, duration);
+          myConn.send({ type: "chat_msg", message });
         }
       },
       onSelectGif: (gifUrl) => {
+        const msgKey = 'gif_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+        const message = {
+          key: msgKey,
+          type: "gif",
+          url: gifUrl,
+          timestamp: Date.now(),
+          nickname: myNickname,
+          replyTo: getReplyPayload()
+        };
+        clearReply();
+        appendMessage(message, true);
         if (myConn && isConnected) {
-          myConn.send({ type: "gif", url: gifUrl });
-          appendGif("me", gifUrl);
+          myConn.send({ type: "chat_msg", message });
         }
       }
     });
@@ -759,6 +1236,9 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       currentStrangerNickname = getFallbackName();
       hideFriendButton();
       hideStrangerCard();
+      clearReply();
+      clearEdit();
+      hideContextMenu();
       chatLog.innerHTML = "";
       hideNewChatButton();
       startPeer();
@@ -957,7 +1437,14 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       showTypingIndicator();
       setTimeout(() => {
         if (!botActive) return;
-        appendMessage("stranger", currentBotData.messages[currentBotData.index]);
+        const msgKey = 'bot_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+        appendMessage({
+          key: msgKey,
+          type: "text",
+          text: currentBotData.messages[currentBotData.index],
+          timestamp: Date.now(),
+          nickname: currentStrangerNickname
+        }, false);
         currentBotData.index++;
       }, 800);
     }, 1000);
@@ -973,6 +1460,9 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     showNewChatButton();
     hideFriendButton();
     hideStrangerCard();
+    clearReply();
+    clearEdit();
+    hideContextMenu();
   }
 
   function connectToPeer(otherId) {
@@ -1011,10 +1501,16 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     conn.on("data", (data) => {
       window.dispatchEvent(new CustomEvent('webrtc_data_received', { detail: data }));
 
-      if (typeof data === "string") appendMessage("stranger", data);
-      else if (data.type === "image") appendImage("stranger", data.blob);
-      else if (data.type === "gif") appendGif("stranger", data.url);
-      else if (data.type === "audio") MediaHub.appendVoiceMessage(chatLog, "stranger", data.blob, data.duration);
+      if (typeof data === "string") {
+        const msgKey = 'stranger_' + Date.now();
+        appendMessage({ key: msgKey, type: 'text', text: data, timestamp: Date.now(), nickname: currentStrangerNickname }, false);
+      }
+      else if (data.type === "chat_msg") appendMessage(data.message, false);
+      else if (data.type === "edit_msg") updateMessageInDOM(data);
+      else if (data.type === "delete_msg") removeMessageFromDOM(data.key);
+      else if (data.type === "image") appendMessage({ key: 'img_' + Date.now(), type: 'image', blob: data.blob, timestamp: Date.now(), nickname: currentStrangerNickname }, false);
+      else if (data.type === "gif") appendMessage({ key: 'gif_' + Date.now(), type: 'gif', url: data.url, timestamp: Date.now(), nickname: currentStrangerNickname }, false);
+      else if (data.type === "audio") appendMessage({ key: 'audio_' + Date.now(), type: 'audio', blob: data.blob, duration: data.duration, timestamp: Date.now(), nickname: currentStrangerNickname }, false);
       else if (data.type === "typing") showTypingIndicator();
       else if (data.type === "tags") {
         currentStrangerNickname = data.nickname || getFallbackName();
@@ -1043,6 +1539,9 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     hideFriendButton();
     hideStrangerCard();
     cleanUpWaitingList();
+    clearReply();
+    clearEdit();
+    hideContextMenu();
   }
 
   function cleanUpWaitingList() {
@@ -1081,120 +1580,39 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     logSystem(data.nickname + " added you as friend.");
   }
 
-  function appendMessage(sender, content, type = "text") {
-    const div = document.createElement("div");
-    div.className = "msg " + sender;
-    
-    if (type === "text") {
-      if (isSingleEmoji(content)) {
-        div.classList.add("msg-single-emoji");
-        const emojiText = content.trim();
-        const codePointStr = getEmojiCodePoint(emojiText);
-
-        const img = document.createElement("img");
-        img.src = `https://fonts.gstatic.com/s/e/notoemoji/latest/${codePointStr}/512.webp`;
-        img.className = "animated-emoji-img";
-        img.alt = emojiText;
-        img.onerror = () => {
-          img.remove();
-          div.classList.remove("msg-single-emoji");
-          const textNode = document.createTextNode(emojiText);
-          div.insertBefore(textNode, div.firstChild);
-        };
-        div.appendChild(img);
-      } else {
-        div.textContent = content;
-      }
-    } else {
-      const img = document.createElement("img");
-      img.src = content;
-      div.appendChild(img);
-    }
-    
-    const time = document.createElement("div");
-    time.className = "timestamp";
-    time.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    div.appendChild(time);
-    
-    chatLog.appendChild(div);
-    scrollToBottom();
-  }
-
-  const appendImage = (sender, blob) => appendMessage(sender, blob, "image");
-  const appendGif = (sender, url) => appendMessage(sender, url, "gif");
-  const scrollToBottom = () => { chatLog.scrollTop = chatLog.scrollHeight; };
-
-  function appendSystemImage(src, linkUrl) {
-    const wrapper = document.createElement("div");
-    wrapper.className = "system-message system-image";
-    
-    const img = document.createElement("img");
-    img.src = src;
-    img.className = "chat-end-image";
-    
-    if (linkUrl && linkUrl.trim() !== '') {
-      const a = document.createElement("a");
-      a.href = linkUrl;
-      a.target = "_blank";
-      a.rel = "noopener noreferrer";
-      a.appendChild(img);
-      wrapper.appendChild(a);
-    } else {
-      wrapper.appendChild(img);
-    }
-    
-    chatLog.appendChild(wrapper);
-    scrollToBottom();
-  }
-
-  function logSystem(msg) {
-    clearSystemMessage();
-    const div = document.createElement("div");
-    div.className = "msg system-msg";
-    div.textContent = msg;
-    chatLog.appendChild(div);
-    currentSystemMessage = div;
-    scrollToBottom();
-  }
-
-  function clearSystemMessage() {
-    currentSystemMessage?.parentNode?.removeChild(currentSystemMessage);
-    currentSystemMessage = null;
-  }
-
-  const showNewChatButton = () => {
-    const btn = document.getElementById("newChatBtn");
-    btn.classList.remove("hidden");
-    btn.style.display = "flex";
-  };
-  const hideNewChatButton = () => {
-    const btn = document.getElementById("newChatBtn");
-    btn.classList.add("hidden");
-    setTimeout(() => {
-        if(btn.classList.contains("hidden")) {
-            btn.style.display = "none";
-        }
-    }, 200);
-  };
-
-  function showTypingIndicator() {
-    typingIndicator.style.display = "block";
-    clearTimeout(typingTimeout);
-    typingTimeout = setTimeout(() => { typingIndicator.style.display = "none"; }, 1000);
-  }
-
   document.getElementById("msgInput").addEventListener("keypress", (e) => { if (e.key === "Enter") sendMessage(); });
   document.getElementById("msgInput").addEventListener("input", () => { if (myConn && isConnected && !botActive) myConn.send({ type: "typing" }); });
   document.getElementById("sendBtn").onclick = sendMessage;
 
   function sendMessage() {
-    const input = document.getElementById("msgInput");
-    const msg = input.value.trim();
+    const msg = msgInput.value.trim();
     if (!msg) return;
 
+    if (editingMsgKey) {
+      const updatePayload = { type: 'edit_msg', key: editingMsgKey, text: msg, edited: true };
+      updateMessageInDOM(updatePayload);
+      if (myConn && isConnected && !botActive) {
+        myConn.send(updatePayload);
+      }
+      clearEdit();
+      msgInput.value = "";
+      return;
+    }
+
+    const msgKey = 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+    const message = {
+      key: msgKey,
+      type: "text",
+      text: msg,
+      timestamp: Date.now(),
+      nickname: myNickname,
+      replyTo: getReplyPayload()
+    };
+    clearReply();
+
     if (botActive) {
-      appendMessage("me", msg);
-      input.value = "";
+      appendMessage(message, true);
+      msgInput.value = "";
 
       if (currentBotData.index >= currentBotData.messages.length) {
         setTimeout(() => endBotSession(), 1500);
@@ -1206,7 +1624,14 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
         showTypingIndicator();
         setTimeout(() => {
           if (!botActive) return;
-          appendMessage("stranger", currentBotData.messages[currentBotData.index]);
+          const botKey = 'bot_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+          appendMessage({
+            key: botKey,
+            type: "text",
+            text: currentBotData.messages[currentBotData.index],
+            timestamp: Date.now(),
+            nickname: currentStrangerNickname
+          }, false);
           currentBotData.index++;
           if (currentBotData.index >= currentBotData.messages.length) {
             setTimeout(() => endBotSession(), 1500);
@@ -1216,18 +1641,37 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       return;
     }
 
-    if (msg && myConn && isConnected) {
-      myConn.send(msg);
-      appendMessage("me", msg);
-      input.value = "";
+    if (myConn && isConnected) {
+      myConn.send({ type: "chat_msg", message });
+      appendMessage(message, true);
+      msgInput.value = "";
     }
   }
 
+  document.getElementById("imgBtn").onclick = () => document.getElementById("imgInput").click();
   document.getElementById("imgInput").addEventListener("change", (e) => {
     const file = e.target.files[0];
     if (!file || !myConn || !isConnected) return;
+    if (file.size > 10 * 1024 * 1024) {
+      AlertKit.warning("Too Large", "Image size limit is 10MB.");
+      e.target.value = "";
+      return;
+    }
     const reader = new FileReader();
-    reader.onload = () => { myConn.send({ type: "image", blob: reader.result }); appendImage("me", reader.result); };
+    reader.onload = () => {
+      const msgKey = 'img_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+      const message = {
+        key: msgKey,
+        type: "image",
+        blob: reader.result,
+        timestamp: Date.now(),
+        nickname: myNickname,
+        replyTo: getReplyPayload()
+      };
+      clearReply();
+      appendMessage(message, true);
+      myConn.send({ type: "chat_msg", message });
+    };
     reader.readAsDataURL(file);
     e.target.value = "";
   });
@@ -1241,6 +1685,9 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     currentStrangerNickname = getFallbackName();
     hideFriendButton();
     hideStrangerCard();
+    clearReply();
+    clearEdit();
+    hideContextMenu();
     logSystem("Chat ended. Click 'Start New Chat' to find someone new.");
     showNewChatButton();
   };
@@ -1250,6 +1697,9 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     hideFriendButton();
     hideNewChatButton();
     hideStrangerCard();
+    clearReply();
+    clearEdit();
+    hideContextMenu();
     if (botFallbackTimer) { clearTimeout(botFallbackTimer); botFallbackTimer = null; }
     if (botActive) { botActive = false; currentBotData = null; }
     if (myConn) { myConn.close(); myConn = null; }
