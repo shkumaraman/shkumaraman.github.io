@@ -78,8 +78,6 @@ document.addEventListener('contextmenu', function(e) {
 
   window.uploadMediaToServer = function(fileOrBlob, originalName = "file") {
     return new Promise((resolve, reject) => {
-      console.log("Uploading file to server:", originalName);
-      
       const formData = new FormData();
       formData.append("file", fileOrBlob, originalName);
       formData.append("target_path", "uploads");
@@ -92,19 +90,17 @@ document.addEventListener('contextmenu', function(e) {
         if (xhr.status >= 200 && xhr.status < 300) {
           try {
             const result = JSON.parse(xhr.responseText);
-            console.log("Upload successful:", result.data.url);
-            resolve(result.data.url);
+            const secureUrl = (result.data.url || '').replace(/^http:\/\//i, 'https://');
+            resolve(secureUrl);
           } catch (e) {
             reject(new Error("Invalid JSON response from server"));
           }
         } else {
-          console.error("Upload Error:", xhr.status, xhr.responseText);
           reject(new Error(`Upload failed (${xhr.status})`));
         }
       };
 
       xhr.onerror = (err) => {
-        console.error("XHR Network Error:", err);
         reject(new Error("Network error or CORS policy blocked the upload"));
       };
 
@@ -126,26 +122,11 @@ document.addEventListener('contextmenu', function(e) {
         const baseUrl = window.MEDIA_STORAGE_URL.replace(/\/$/, "");
         const deleteUrl = `${baseUrl}/uploads/${pushId}`;
         
-        console.log("Attempting to delete media from server:", deleteUrl);
-        
-        const response = await fetch(deleteUrl, {
+        await fetch(deleteUrl, {
           method: "DELETE",
           mode: "cors"
         });
-
-        if (response.ok) {
-          console.log("File successfully deleted from server.");
-        } else {
-          const errText = await response.text();
-          console.error("Failed to delete file. Status:", response.status, errText);
-          
-          if (response.status === 403) {
-            console.warn("Permission Denied (403)");
-          }
-        }
       }
-    } catch (e) {
-      console.error("Error in deleteMediaFromServer:", e);
-    }
+    } catch (e) {}
   };
 </script>
