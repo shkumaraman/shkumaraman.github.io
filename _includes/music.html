@@ -747,12 +747,12 @@
                 .catch(() => "Unknown Title");
         },
         
-        updateState: function(status) {
+        updateState: function(status, force = false) {
             if (this.hasUserLeft || this.isRemoteUpdate) return;
             if (!this.firebaseInitialized() || !this.currentSongUrl) return;
 
             const now = Date.now();
-            if (now - this.lastAutoUpdate < 2000) return;
+            if (!force && (now - this.lastAutoUpdate < 2000)) return;
             this.lastAutoUpdate = now;
             
             const currentTime = (this.player && typeof this.player.getCurrentTime === 'function') ? Math.floor(this.player.getCurrentTime()) : 0;
@@ -834,14 +834,24 @@
             const vid = video.videoId;
             if (!vid) return;
             
+            const now = Date.now();
+            this.lastAutoUpdate = now;
+            const stateRef = this.getFirebaseRef();
+            set(stateRef, {
+                currentSong: vid,
+                status: 'playing',
+                timestamp: 0,
+                lastUpdate: now,
+                loop: this.isLooping
+            }).catch((error) => {
+                console.error("Immediate song save error:", error);
+            });
+
             this.isRemoteUpdate = false;
             this.player.loadVideoById({ videoId: vid, startSeconds: 0 });
             this.player.playVideo();
             this.isPlaying = true;
             this.updatePlayPauseIcon();
-            
-            this.lastAutoUpdate = 0;
-            this.updateState('playing');
         },
         
         handlePlayPause: function() {
@@ -883,7 +893,7 @@
             
             if (this.currentSongUrl && !this.hasUserLeft) {
                 this.lastAutoUpdate = 0;
-                this.updateState(this.isPlaying ? 'playing' : 'paused');
+                this.updateState(this.isPlaying ? 'playing' : 'paused', true);
             }
         },
         
@@ -896,7 +906,7 @@
             
             if (this.currentSongUrl && !this.hasUserLeft) {
                 this.lastAutoUpdate = 0;
-                this.updateState(this.isPlaying ? 'playing' : 'paused');
+                this.updateState(this.isPlaying ? 'playing' : 'paused', true);
             }
         },
         
@@ -907,7 +917,7 @@
             
             if (this.currentSongUrl && !this.hasUserLeft) {
                 this.lastAutoUpdate = 0;
-                this.updateState(this.isPlaying ? 'playing' : 'paused');
+                this.updateState(this.isPlaying ? 'playing' : 'paused', true);
             }
         },
 
@@ -917,7 +927,7 @@
             
             if (this.currentSongUrl && !this.hasUserLeft) {
                 this.lastAutoUpdate = 0;
-                this.updateState(this.isPlaying ? 'playing' : 'paused');
+                this.updateState(this.isPlaying ? 'playing' : 'paused', true);
             }
         },
         
