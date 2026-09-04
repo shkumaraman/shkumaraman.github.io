@@ -1135,7 +1135,7 @@ description: "View your chat history and messages with friends."
 
 <script type="module">
   import { initializeApp, getApps } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
-  import { getDatabase, ref, onValue, get, set, update, remove, push, onChildAdded, onChildChanged, onChildRemoved } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
+  import { getDatabase, ref, onValue, get, set, update, remove, push, onChildAdded, onChildChanged, onChildRemoved, query, orderByChild, limitToLast } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
 
   const firebaseConfig = {
     databaseURL: "https://talkrush3-default-rtdb.asia-southeast1.firebasedatabase.app"
@@ -1164,7 +1164,8 @@ description: "View your chat history and messages with friends."
   let typingListener = null;
   let myNickname = null;
   let myFriendsData = {};
-  let lastMessageTimestamp = 0;
+  let isPruning = false;
+  const renderedMessageKeys = new Set();
   
   let replyingTo = null;
   let editingMsgKey = null;
@@ -1292,8 +1293,9 @@ description: "View your chat history and messages with friends."
     if (window.openShareModal) {
       window.openShareModal(content);
     } else if (navigator.clipboard) {
-      navigator.clipboard.writeText(content).then(() => {
-        AlertKit.toast("Message link copied to clipboard!", "success");
+      const copyText = typeof content === 'object' ? (content.url || content.text || '') : content;
+      navigator.clipboard.writeText(copyText).then(() => {
+        AlertKit.toast("Message copied to clipboard!", "success");
       });
     }
   };
@@ -1412,8 +1414,7 @@ description: "View your chat history and messages with friends."
 
   document.getElementById('contextForwardBtn').addEventListener('click', () => {
     if (contextTargetMsg) {
-      const forwardPayload = contextTargetMsg.type === 'text' ? contextTargetMsg.text : contextTargetMsg.url;
-      window.forwardMessage(forwardPayload);
+      window.forwardMessage(contextTargetMsg);
     }
     hideContextMenu();
   });
@@ -1605,13 +1606,13 @@ description: "View your chat history and messages with friends."
     if (typingListener) { typingListener(); typingListener = null; }
 
     document.getElementById('chatLog').innerHTML = '';
+    renderedMessageKeys.clear();
     hideTypingIndicator();
     clearReply(); 
     clearEdit();
 
     currentChatId = chatId;
     currentFriendName = friendName;
-    lastMessageTimestamp = 0;
 
     document.getElementById('chatAvatar').textContent = getAvatarLetter(friendName);
     document.getElementById('chatName').textContent = friendName;
@@ -1623,7 +1624,7 @@ description: "View your chat history and messages with friends."
     const newUrl = `${location.pathname}?chatId=${encodeURIComponent(chatId)}&friend=${encodeURIComponent(friendName)}`;
     history.pushState({ chat: chatId }, '', newUrl);
 
-    loadMessages();
+    listenForMessages();
     listenForTyping();
   };
 
@@ -1736,63 +1737,34 @@ description: "View your chat history and messages with friends."
     });
   }
 
-  function loadMessages() {
-    const chatDiv = document.getElementById('chatLog');
-    chatDiv.innerHTML = '';
-    lastMessageTimestamp = 0;
-
-    if (!currentChatId) return;
-
-    const loadingChatId = currentChatId;
-
-    get(ref(db, `messages/${loadingChatId}`)).then((snapshot) => {
-      if (currentChatId !== loadingChatId) return;
-
-      const messages = snapshot.val();
-      if (messages) {
-        const messageArray = Object.entries(messages).map(([key, val]) => ({ ...val, key }));
-        messageArray.sort((a, b) => a.timestamp - b.timestamp);
-        messageArray.forEach(msg => {
-          if (msg.timestamp > lastMessageTimestamp) {
-            appendMessageToChat(msg, msg.nickname === myNickname);
-            lastMessageTimestamp = msg.timestamp;
-          }
-        });
-      }
-      scrollToBottom();
-
-      listenForMessages();
-    }).catch(() => {
-      if (currentChatId === loadingChatId) listenForMessages();
-    });
-  }
-
   function listenForMessages() {
     if (!currentChatId) return;
 
     const messagesRef = ref(db, `messages/${currentChatId}`);
+    const messagesQuery = query(messagesRef, orderByChild("timestamp"), limitToLast(MESSAGE_LIMIT));
 
-    messagesListener = onChildAdded(messagesRef, (snapshot) => {
+    messagesListener = onChildAdded(messagesQuery, (snapshot) => {
+      const key = snapshot.key;
+      if (renderedMessageKeys.has(key)) return;
+      renderedMessageKeys.add(key);
+
       const msg = snapshot.val();
-      msg.key = snapshot.key;
+      msg.key = key;
 
       if (!currentChatId || snapshot.ref.parent.key !== currentChatId) return;
 
-      if (msg && msg.timestamp > lastMessageTimestamp) {
-        appendMessageToChat(msg, msg.nickname === myNickname);
-        lastMessageTimestamp = msg.timestamp;
-        scrollToBottom();
+      appendMessageToChat(msg, msg.nickname === myNickname);
+      scrollToBottom();
 
-        let displayMsg = '';
-        if (msg.type === 'image') displayMsg = '📷 Image';
-        else if (msg.type === 'gif') displayMsg = '🎯 GIF';
-        else if (msg.type === 'audio') displayMsg = '🎤 Voice note';
-        else if (msg.type === 'text') {
-          displayMsg = msg.text.length > 30 ? msg.text.substring(0, 30) + '...' : msg.text;
-        }
-
-        updateFriendListOrder(currentChatId, displayMsg, msg.timestamp);
+      let displayMsg = '';
+      if (msg.type === 'image') displayMsg = '📷 Image';
+      else if (msg.type === 'gif') displayMsg = '🎯 GIF';
+      else if (msg.type === 'audio') displayMsg = '🎤 Voice note';
+      else if (msg.type === 'text') {
+        displayMsg = msg.text.length > 30 ? msg.text.substring(0, 30) + '...' : msg.text;
       }
+
+      updateFriendListOrder(currentChatId, displayMsg, msg.timestamp);
     });
 
     messageChangedListener = onChildChanged(messagesRef, (snapshot) => {
@@ -1802,6 +1774,7 @@ description: "View your chat history and messages with friends."
     });
 
     messageRemovedListener = onChildRemoved(messagesRef, (snapshot) => {
+      renderedMessageKeys.delete(snapshot.key);
       removeMessageFromDOM(snapshot.key);
     });
   }
@@ -1868,10 +1841,17 @@ description: "View your chat history and messages with friends."
   }
 
   async function maintainMessageLimit() {
-    if (!currentChatId) return;
+    if (!currentChatId || isPruning) return;
+    isPruning = true;
 
     try {
-      const snapshot = await get(ref(db, `messages/${currentChatId}`));
+      const pruneQuery = query(
+        ref(db, `messages/${currentChatId}`),
+        orderByChild("timestamp"),
+        limitToLast(MESSAGE_LIMIT + 10)
+      );
+
+      const snapshot = await get(pruneQuery);
       if (!snapshot.exists()) return;
 
       const messages = [];
@@ -1881,16 +1861,20 @@ description: "View your chat history and messages with friends."
 
       if (messages.length > MESSAGE_LIMIT) {
         messages.sort((a, b) => a.timestamp - b.timestamp);
+        const toDelete = messages.slice(0, messages.length - MESSAGE_LIMIT);
         const updates = {};
-        messages.slice(0, messages.length - MESSAGE_LIMIT).forEach(msg => { 
-          updates[msg.key] = null; 
-          if (msg.val && (msg.val.type === 'image' || msg.val.type === 'audio') && msg.val.url && window.deleteMediaFromServer) {
-            window.deleteMediaFromServer(msg.val.url);
+        for (const msg of toDelete) {
+          updates[`/messages/${currentChatId}/${msg.key}`] = null;
+          if (msg.val && (msg.val.type === 'image' || msg.val.type === 'audio') && msg.val.url && typeof window.deleteMediaFromServer === 'function') {
+            window.deleteMediaFromServer(msg.val.url).catch(() => {});
           }
-        });
-        await update(ref(db, `messages/${currentChatId}`), updates);
+        }
+        await update(ref(db), updates);
       }
-    } catch (e) {}
+    } catch (e) {
+    } finally {
+      isPruning = false;
+    }
   }
 
   function sendMessage() {
@@ -2006,9 +1990,9 @@ description: "View your chat history and messages with friends."
     clearReply();
     clearEdit();
     document.getElementById('chatLog').innerHTML = '';
+    renderedMessageKeys.clear();
     currentChatId = null;
     currentFriendName = "";
-    lastMessageTimestamp = 0;
     document.getElementById('friendsContainer').style.display = 'flex';
     document.getElementById('chatContainer').style.display = 'none';
     document.getElementById('pageTitle').textContent = 'Messages';
@@ -2016,18 +2000,18 @@ description: "View your chat history and messages with friends."
   };
 
   function appendMessageToChat(msg, isMe) {
+    if (document.querySelector(`.msg-row[data-key="${msg.key}"]`)) return;
+
     const chatDiv = document.getElementById('chatLog');
     const row = document.createElement("div");
     row.className = `msg-row ${isMe ? 'me' : 'stranger'}`;
     row.setAttribute('data-key', msg.key);
 
-    const forwardPayload = msg.type === 'text' ? msg.text : msg.url;
-
     const forwardBtn = document.createElement("button");
     forwardBtn.className = "msg-forward-btn";
     forwardBtn.title = "Forward";
     forwardBtn.innerHTML = `<i class="fa-solid fa-share"></i>`;
-    forwardBtn.onclick = () => window.forwardMessage(forwardPayload);
+    forwardBtn.onclick = () => window.forwardMessage(msg);
 
     const bubble = document.createElement("div");
     bubble.className = "msg";
