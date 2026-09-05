@@ -561,7 +561,8 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 <div class="chat-container">
   <header class="app-header">
     <div class="header-left">
-      <button class="menu-btn header-toggle" onclick="toggleMenu()">&#9776;</button>      <img src="logo.png" alt="TalkRush Logo" class="logo">
+      <button class="menu-btn header-toggle" onclick="toggleMenu()">&#9776;</button>
+      <img src="logo.png" alt="TalkRush Logo" class="logo">
       <h1 class="app-title">Strangers Chat</h1>
     </div>
     <div class="header-right">
@@ -583,7 +584,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
         <img src="/assets/user.png" onerror="this.style.display='none'" />
       </div>
       <div class="card-info">
-        <p class="card-name">Stranger</p>
+        <p class="card-name" id="cardStrangerName">Stranger</p>
         <p class="card-status" id="cardStatus">Connected! Say Hi 👋</p>
         <div id="cardTags"></div>
       </div>
@@ -736,6 +737,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   let GIPHY_API_KEY = '';
   let CHAT_END_IMAGE = '/assets/chat_end.png';
   let CHAT_END_LINK = '';
+  let CHAT_API_URL = '';
 
   async function loadKeys() {
     try {
@@ -744,6 +746,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       GIPHY_API_KEY = keys.giphy || '';
       if (keys.chatEndImage) CHAT_END_IMAGE = keys.chatEndImage;
       if (keys.chatEndLink) CHAT_END_LINK = keys.chatEndLink;
+      if (keys.chatapi) CHAT_API_URL = keys.chatapi;
       if (window.MediaHub) MediaHub.setApiKey(GIPHY_API_KEY);
     } catch (e) {}
   }
@@ -754,9 +757,11 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   let escPressedOnce = false;
   let escTimer = null;
   let heartbeatInterval;
+
   let botActive = false;
   let botFallbackTimer = null;
-  let currentBotData = null;
+  let botChatHistory = [];
+  let currentBotPersonaId = null;
 
   let replyingTo = null;
   let editingMsgKey = null;
@@ -817,9 +822,15 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     return codePoints.filter(c => c !== 'fe0f').join('_');
   }
 
-  function showStrangerCard(tags) {
+  function showStrangerCard(tags, customName = null) {
     const card = document.getElementById("strangerCard");
+    const nameEl = document.getElementById("cardStrangerName");
     const tagsDiv = document.getElementById("cardTags");
+    
+    if (nameEl) {
+      nameEl.textContent = customName || currentStrangerNickname;
+    }
+
     tagsDiv.innerHTML = "";
     if (tags && tags.length > 0) {
       tags.forEach(tag => {
@@ -929,7 +940,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       );
       if (isConfirmed) {
         removeMessageFromDOM(target.key);
-        if (myConn && isConnected) {
+        if (myConn && isConnected && !botActive) {
           myConn.send({ type: "delete_msg", key: target.key });
         }
       }
@@ -1153,7 +1164,12 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   function showTypingIndicator() {
     typingIndicator.style.display = "block";
     clearTimeout(typingTimeout);
-    typingTimeout = setTimeout(() => { typingIndicator.style.display = "none"; }, 1000);
+    typingTimeout = setTimeout(() => { typingIndicator.style.display = "none"; }, 4000);
+  }
+
+  function hideTypingIndicator() {
+    clearTimeout(typingTimeout);
+    typingIndicator.style.display = "none";
   }
 
   window.addEventListener('load', async () => {
@@ -1173,7 +1189,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
         };
         clearReply();
         appendMessage(message, true);
-        if (myConn && isConnected) {
+        if (myConn && isConnected && !botActive) {
           myConn.send({ type: "chat_msg", message });
         }
       },
@@ -1189,7 +1205,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
         };
         clearReply();
         appendMessage(message, true);
-        if (myConn && isConnected) {
+        if (myConn && isConnected && !botActive) {
           myConn.send({ type: "chat_msg", message });
         }
       }
@@ -1227,7 +1243,10 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       clearTimeout(escTimer);
       escPressedOnce = false;
       if (botFallbackTimer) { clearTimeout(botFallbackTimer); botFallbackTimer = null; }
-      if (botActive) { botActive = false; currentBotData = null; }
+      botActive = false;
+      botChatHistory = [];
+      currentBotPersonaId = null;
+      hideTypingIndicator();
       if (myConn) { myConn.close(); myConn = null; }
       cleanUpWaitingList();
       isConnected = false;
@@ -1374,7 +1393,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
       if (botFallbackTimer) clearTimeout(botFallbackTimer);
       botFallbackTimer = setTimeout(() => {
-        if (!isConnected) startBotSession();
+        if (!isConnected) startAiBotSession();
       }, 8000);
 
       setTimeout(() => {
@@ -1402,65 +1421,104 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     });
   }
 
-  async function startBotSession() {
+  async function startAiBotSession() {
     if (isConnected || botActive) return;
 
-    let botData;
-    try {
-      const res = await fetch('/bot.json');
-      botData = await res.json();
-    } catch {
-      return;
-    }
-
-    const botKeys = Object.keys(botData);
-    const randomKey = botKeys[Math.floor(Math.random() * botKeys.length)];
-    const botMessages = botData[randomKey];
-
-    if (!botMessages || botMessages.length === 0) return;
+    if (!CHAT_API_URL) await loadKeys();
+    if (!CHAT_API_URL) return;
 
     cleanUpWaitingList();
     botActive = true;
     isConnected = true;
-    currentBotData = { messages: [...botMessages], index: 0 };
-    currentStrangerNickname = getFallbackName(); 
+    botChatHistory = [];
 
     clearSystemMessage();
     hideNewChatButton();
     showFriendButton();
-    showStrangerCard([]);
 
-    setTimeout(() => {
+    try {
+      const res = await fetch(CHAT_API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "init",
+          gender: myGenderInterest
+        })
+      });
+
+      const initData = await res.json();
       if (!botActive) return;
-      showTypingIndicator();
+
+      currentBotPersonaId = initData.persona_id;
+      currentStrangerNickname = initData.name;
+
+      showStrangerCard([initData.city, initData.identity], currentStrangerNickname);
+
       setTimeout(() => {
         if (!botActive) return;
-        const msgKey = 'bot_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+        showTypingIndicator();
+        setTimeout(() => {
+          if (!botActive) return;
+          hideTypingIndicator();
+          const msgKey = 'bot_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+          appendMessage({
+            key: msgKey,
+            type: "text",
+            text: initData.greeting,
+            timestamp: Date.now(),
+            nickname: currentStrangerNickname
+          }, false);
+          botChatHistory.push({ role: "assistant", content: initData.greeting });
+        }, 1200);
+      }, 1000);
+
+    } catch (err) {
+      endConnection();
+    }
+  }
+
+  async function requestAiResponse(userMessage) {
+    if (!CHAT_API_URL) await loadKeys();
+    if (!CHAT_API_URL) {
+      hideTypingIndicator();
+      return;
+    }
+
+    try {
+      const response = await fetch(CHAT_API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "chat",
+          persona_id: currentBotPersonaId,
+          history: botChatHistory
+        })
+      });
+
+      const data = await response.json();
+      if (!botActive) return;
+
+      const reply = data.reply || "Hmm bolo";
+      botChatHistory.push({ role: "assistant", content: reply });
+
+      const typingDelay = Math.min(Math.max(reply.length * 40, 1500), 3200);
+
+      setTimeout(() => {
+        if (!botActive) return;
+        hideTypingIndicator();
+        const botKey = 'bot_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
         appendMessage({
-          key: msgKey,
+          key: botKey,
           type: "text",
-          text: currentBotData.messages[currentBotData.index],
+          text: reply,
           timestamp: Date.now(),
           nickname: currentStrangerNickname
         }, false);
-        currentBotData.index++;
-      }, 800);
-    }, 1000);
-  }
+      }, typingDelay);
 
-  function endBotSession() {
-    botActive = false;
-    isConnected = false;
-    currentBotData = null;
-    currentStrangerNickname = getFallbackName();
-    appendSystemImage(CHAT_END_IMAGE, CHAT_END_LINK);
-    logSystem("Stranger disconnected!");
-    showNewChatButton();
-    hideFriendButton();
-    hideStrangerCard();
-    clearReply();
-    clearEdit();
-    hideContextMenu();
+    } catch (err) {
+      if (botActive) hideTypingIndicator();
+    }
   }
 
   function connectToPeer(otherId) {
@@ -1512,7 +1570,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       else if (data.type === "typing") showTypingIndicator();
       else if (data.type === "tags") {
         currentStrangerNickname = data.nickname || getFallbackName();
-        showStrangerCard(data.tags || []);
+        showStrangerCard(data.tags || [], currentStrangerNickname);
       }
       else if (data.type === "friend_added") handleFriendAdded(data);
     });
@@ -1532,6 +1590,10 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     logSystem("Stranger disconnected!");
     if (myConn) { myConn.close(); myConn = null; }
     isConnected = false;
+    botActive = false;
+    botChatHistory = [];
+    currentBotPersonaId = null;
+    hideTypingIndicator();
     currentStrangerNickname = getFallbackName();
     showNewChatButton();
     hideFriendButton();
@@ -1551,7 +1613,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   function hideFriendButton() { friendBtn.style.display = 'none'; friendBtn.disabled = false; }
 
   friendBtn.onclick = async () => {
-    if (!myConn || !isConnected || !peer?.id) return;
+    if (!isConnected) return;
     
     friendBtn.disabled = true;
     try {
@@ -1564,7 +1626,9 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
         lastSender: myNickname
       });
       
-      myConn.send({ type: 'friend_added', nickname: myNickname });
+      if (myConn && !botActive) {
+        myConn.send({ type: 'friend_added', nickname: myNickname });
+      }
       logSystem("You added " + currentStrangerNickname + " as a friend.");
       hideFriendButton();
     } catch (error) {
@@ -1611,31 +1675,9 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     if (botActive) {
       appendMessage(message, true);
       msgInput.value = "";
-
-      if (currentBotData.index >= currentBotData.messages.length) {
-        setTimeout(() => endBotSession(), 1500);
-        return;
-      }
-
-      setTimeout(() => {
-        if (!botActive) return;
-        showTypingIndicator();
-        setTimeout(() => {
-          if (!botActive) return;
-          const botKey = 'bot_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
-          appendMessage({
-            key: botKey,
-            type: "text",
-            text: currentBotData.messages[currentBotData.index],
-            timestamp: Date.now(),
-            nickname: currentStrangerNickname
-          }, false);
-          currentBotData.index++;
-          if (currentBotData.index >= currentBotData.messages.length) {
-            setTimeout(() => endBotSession(), 1500);
-          }
-        }, 800);
-      }, 1200 + Math.random() * 800);
+      botChatHistory.push({ role: "user", content: msg });
+      showTypingIndicator();
+      requestAiResponse(msg);
       return;
     }
 
@@ -1649,7 +1691,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   document.getElementById("imgBtn").onclick = () => document.getElementById("imgInput").click();
   document.getElementById("imgInput").addEventListener("change", (e) => {
     const file = e.target.files[0];
-    if (!file || !myConn || !isConnected) return;
+    if (!file || !isConnected) return;
     if (file.size > 10 * 1024 * 1024) {
       AlertKit.warning("Too Large", "Image size limit is 10MB.");
       e.target.value = "";
@@ -1668,7 +1710,9 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       };
       clearReply();
       appendMessage(message, true);
-      myConn.send({ type: "chat_msg", message });
+      if (myConn && !botActive) {
+        myConn.send({ type: "chat_msg", message });
+      }
     };
     reader.readAsDataURL(file);
     e.target.value = "";
@@ -1676,7 +1720,10 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
   document.getElementById("skipBtn").onclick = () => {
     if (botFallbackTimer) { clearTimeout(botFallbackTimer); botFallbackTimer = null; }
-    if (botActive) { botActive = false; currentBotData = null; }
+    botActive = false;
+    botChatHistory = [];
+    currentBotPersonaId = null;
+    hideTypingIndicator();
     if (myConn) { myConn.close(); myConn = null; }
     cleanUpWaitingList();
     isConnected = false;
@@ -1699,7 +1746,10 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     clearEdit();
     hideContextMenu();
     if (botFallbackTimer) { clearTimeout(botFallbackTimer); botFallbackTimer = null; }
-    if (botActive) { botActive = false; currentBotData = null; }
+    botActive = false;
+    botChatHistory = [];
+    currentBotPersonaId = null;
+    hideTypingIndicator();
     if (myConn) { myConn.close(); myConn = null; }
     cleanUpWaitingList();
     isConnected = false;
