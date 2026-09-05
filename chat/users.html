@@ -386,7 +386,8 @@ body.light-mode {
 
 <header class="app-header">
   <div class="header-left">
-    <button class="menu-btn header-toggle" onclick="toggleMenu()">&#9776;</button>    <img src="logo.png" alt="TalkRush Logo" class="logo">
+    <button class="menu-btn header-toggle" onclick="toggleMenu()">&#9776;</button>
+    <img src="logo.png" alt="TalkRush Logo" class="logo">
     <h1 class="app-title">Online Users</h1>
   </div>
   <div class="header-right">
@@ -484,19 +485,23 @@ body.light-mode {
   const apps = getApps();
   const existingApp = apps.find(a => a.name === targetAppName);
   const app = existingApp ? existingApp : initializeApp(firebaseConfig, targetAppName);
-  
   const db = getDatabase(app);
 
   const usersGrid = document.getElementById('usersGrid');
   const onlineCount = document.getElementById('onlineCount');
 
   let currentNickname = localStorage.getItem("talkrush_nickname");
-  
+  let isInitialLoaded = false;
+  let onlineUsersCount = 0;
+  let myFriendsMap = {}; 
+
   window.addEventListener('nicknameUpdated', (e) => {
-    currentNickname = e.detail.nickname;
+    currentNickname = e.detail?.nickname;
+    updateAllFriendButtons();
   });
 
   const timeAgo = (timestamp) => {
+    if (!timestamp) return "Just now";
     const seconds = Math.floor((Date.now() - timestamp) / 1000);
     if (seconds < 60) return "Just now";
     const minutes = Math.floor(seconds / 60);
@@ -505,24 +510,26 @@ body.light-mode {
     return `${hours}h ago`;
   };
 
-  let onlineUsersCount = 0;
-  let myFriendsMap = {}; 
-
   const usersRef = ref(db, 'users');
   const friendsRef = ref(db, 'friends');
 
   function checkEmptyState() {
-    if (onlineUsersCount === 0) {
+    onlineCount.innerText = onlineUsersCount;
+    if (onlineUsersCount === 0 && isInitialLoaded) {
       usersGrid.innerHTML = '<div class="empty-state" id="emptyStateMsg"><i class="fas fa-ghost" style="font-size:30px; margin-bottom:10px;"></i><br>No one is online right now.</div>';
-    } else {
+    } else if (onlineUsersCount > 0) {
       const emptyMsg = document.getElementById('emptyStateMsg');
       if (emptyMsg) emptyMsg.remove();
     }
-    onlineCount.innerText = onlineUsersCount;
   }
 
-  usersGrid.innerHTML = '';
-  checkEmptyState();
+  onValue(usersRef, (snapshot) => {
+    isInitialLoaded = true;
+    if (!snapshot.exists()) {
+      onlineUsersCount = 0;
+      checkEmptyState();
+    }
+  }, { onlyOnce: true });
 
   onValue(friendsRef, (snapshot) => {
     myFriendsMap = {};
@@ -548,10 +555,7 @@ body.light-mode {
       const isFriend = !!myFriendsMap[nickname];
       const actionGroup = card.querySelector('.action-group');
       if (actionGroup) {
-        let displayName = nickname;
-        if (displayName.startsWith("TR|")) {
-          displayName = displayName.substring(3);
-        }
+        let displayName = nickname.startsWith("TR|") ? nickname.substring(3) : nickname;
         
         actionGroup.innerHTML = isFriend ? `
           <button class="action-btn" onclick="messageUser('${nickname}')" title="Message ${displayName}">
@@ -570,6 +574,8 @@ body.light-mode {
     const user = snapshot.val();
     const safeKey = snapshot.key;
     
+    if (document.getElementById(`user-card-${safeKey}`)) return;
+
     onlineUsersCount++;
     checkEmptyState();
 
@@ -621,23 +627,37 @@ body.light-mode {
     
     if (cardToRemove) {
       cardToRemove.remove();
-      onlineUsersCount--;
+      onlineUsersCount = Math.max(0, onlineUsersCount - 1);
       checkEmptyState();
     }
   });
 
   window.addFriend = async (targetNickname) => {
     if (!currentNickname || currentNickname === 'Guest') {
-      AlertKit.warning("Nickname Required", "Please set your nickname first to add friends.");
+      if (window.AlertKit) {
+        AlertKit.warning("Nickname Required", "Please set your nickname first to add friends.");
+      } else {
+        alert("Please set your nickname first to add friends.");
+      }
       return;
     }
 
-    const isConfirmed = await AlertKit.confirm(
-      'Add Friend',
-      `Do you want to add ${targetNickname} to your friends list?`,
-      'Yes, Add',
-      'Cancel'
-    );
+    if (myFriendsMap[targetNickname]) {
+      window.messageUser(targetNickname);
+      return;
+    }
+
+    let isConfirmed = false;
+    if (window.AlertKit) {
+      isConfirmed = await AlertKit.confirm(
+        'Add Friend',
+        `Do you want to add ${targetNickname} to your friends list?`,
+        'Yes, Add',
+        'Cancel'
+      );
+    } else {
+      isConfirmed = confirm(`Add ${targetNickname} as a friend?`);
+    }
 
     if (!isConfirmed) return;
 
@@ -650,9 +670,15 @@ body.light-mode {
         lastTimestamp: Date.now(),
         lastSender: currentNickname
       });
-      AlertKit.toast(`Added ${targetNickname} as a friend!`, 'success');
+      if (window.AlertKit) {
+        AlertKit.toast(`Added ${targetNickname} as a friend!`, 'success');
+      }
     } catch (error) {
-      AlertKit.error("Error", "Failed to add friend. Please try again.");
+      if (window.AlertKit) {
+        AlertKit.error("Error", "Failed to add friend. Please try again.");
+      } else {
+        alert("Failed to add friend. Please try again.");
+      }
     }
   };
 
