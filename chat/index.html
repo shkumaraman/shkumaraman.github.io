@@ -766,8 +766,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   let editingMsgKey = null;
   let contextTargetMsg = null;
 
-  const getFallbackName = () => "Guest" + Math.floor(1000 + Math.random() * 9000);
-  let currentStrangerNickname = getFallbackName();
+  let currentStrangerNickname = "Stranger";
 
   const typingIndicator = document.getElementById("typingIndicator");
   let typingTimeout;
@@ -821,10 +820,10 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     return codePoints.filter(c => c !== 'fe0f').join('_');
   }
 
-  function showStrangerCard(tags, customName = null) {
+  function showStrangerCard(tags) {
     const card = document.getElementById("strangerCard");
     const nameEl = document.getElementById("cardStrangerName");
-    if (nameEl) nameEl.textContent = customName || currentStrangerNickname;
+    if (nameEl) nameEl.textContent = "Stranger";
 
     const tagsDiv = document.getElementById("cardTags");
     tagsDiv.innerHTML = "";
@@ -862,7 +861,8 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     if (editingMsgKey) clearEdit();
     replyingTo = msgData;
     const preview = msgData.type === "text" ? msgData.text : (msgData.type === "audio" ? "🎤 Voice note" : `📷 ${msgData.type}`);
-    replyBarText.textContent = `${msgData.nickname || 'Stranger'}: ${preview}`;
+    const senderName = msgData.nickname === myNickname ? "You" : "Stranger";
+    replyBarText.textContent = `${senderName}: ${preview}`;
     replyBar.classList.add('active');
     msgInput.focus();
   }
@@ -884,7 +884,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   function getReplyPayload() {
     if (!replyingTo) return null;
     return {
-      nickname: replyingTo.nickname || 'Stranger',
+      nickname: replyingTo.nickname,
       preview: replyingTo.type === "text" ? replyingTo.text : (replyingTo.type === "audio" ? "🎤 Voice note" : `📷 ${replyingTo.type}`),
       originalId: replyingTo.key
     };
@@ -1041,7 +1041,8 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     if (msgData.replyTo) {
       const replyDiv = document.createElement("div");
       replyDiv.className = "reply-preview";
-      replyDiv.textContent = `${msgData.replyTo.nickname}: ${msgData.replyTo.preview}`;
+      const repName = msgData.replyTo.nickname === myNickname ? "You" : "Stranger";
+      replyDiv.textContent = `${repName}: ${msgData.replyTo.preview}`;
       if (msgData.replyTo.originalId) {
         replyDiv.title = "Click to jump to original message";
         replyDiv.addEventListener("click", () => {
@@ -1160,7 +1161,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   function showTypingIndicator() {
     typingIndicator.style.display = "block";
     clearTimeout(typingTimeout);
-    typingTimeout = setTimeout(() => { typingIndicator.style.display = "none"; }, 1000);
+    typingTimeout = setTimeout(() => { typingIndicator.style.display = "none"; }, 4000);
   }
 
   function hideTypingIndicator() {
@@ -1246,7 +1247,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       if (myConn) { myConn.close(); myConn = null; }
       cleanUpWaitingList();
       isConnected = false;
-      currentStrangerNickname = getFallbackName();
+      currentStrangerNickname = "Stranger";
       hideFriendButton();
       hideStrangerCard();
       clearReply();
@@ -1268,7 +1269,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   function startPeer() {
     clearSystemMessage();
     isConnected = false;
-    currentStrangerNickname = getFallbackName();
+    currentStrangerNickname = "Stranger";
     logSystem("Looking for a stranger...");
 
     if (peer && peer.id && !peer.destroyed && !peer.disconnected) {
@@ -1448,7 +1449,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       clearSystemMessage();
       hideNewChatButton();
       showFriendButton();
-      showStrangerCard([initData.city, initData.identity], currentStrangerNickname);
+      showStrangerCard([initData.city, initData.identity]);
 
       setTimeout(() => {
         if (!botActive) return;
@@ -1545,6 +1546,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   }
 
   function setupConnection(conn) {
+    if (botFallbackTimer) { clearTimeout(botFallbackTimer); botFallbackTimer = null; }
     if (myConn && myConn !== conn) myConn.close();
     myConn = conn;
     window.gameWebRTCConn = conn;
@@ -1567,7 +1569,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       else if (data.type === "audio") appendMessage({ key: 'audio_' + Date.now(), type: 'audio', blob: data.blob, duration: data.duration, timestamp: Date.now(), nickname: currentStrangerNickname }, false);
       else if (data.type === "typing") showTypingIndicator();
       else if (data.type === "tags") {
-        currentStrangerNickname = data.nickname || getFallbackName();
+        currentStrangerNickname = data.nickname || "Stranger";
         showStrangerCard(data.tags || []);
       }
       else if (data.type === "friend_added") handleFriendAdded(data);
@@ -1592,7 +1594,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     botChatHistory = [];
     currentBotPersonaId = null;
     hideTypingIndicator();
-    currentStrangerNickname = getFallbackName();
+    currentStrangerNickname = "Stranger";
     showNewChatButton();
     hideFriendButton();
     hideStrangerCard();
@@ -1611,9 +1613,28 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   function hideFriendButton() { friendBtn.style.display = 'none'; friendBtn.disabled = false; }
 
   friendBtn.onclick = async () => {
-    if (!myConn || !isConnected || !peer?.id) return;
+    if (!myConn || !isConnected) return;
     
     friendBtn.disabled = true;
+    let targetNickname = "Stranger";
+    let isConfirmed = false;
+    
+    if (window.AlertKit) {
+      isConfirmed = await AlertKit.confirm(
+        'Add Friend',
+        `Do you want to add ${targetNickname} to your friends list?`,
+        'Yes, Add',
+        'Cancel'
+      );
+    } else {
+      isConfirmed = confirm(`Add ${targetNickname} as a friend?`);
+    }
+
+    if (!isConfirmed) {
+      friendBtn.disabled = false;
+      return;
+    }
+
     try {
       const newChatRef = push(ref(friendDb, 'friends'));
       await set(newChatRef, {
@@ -1625,7 +1646,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       });
       
       myConn.send({ type: 'friend_added', nickname: myNickname });
-      logSystem("You added " + currentStrangerNickname + " as a friend.");
+      logSystem(`You added ${targetNickname} as a friend.`);
       hideFriendButton();
     } catch (error) {
       logSystem("Failed to add friend. Please try again.");
@@ -1635,7 +1656,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
   function handleFriendAdded(data) {
     hideFriendButton();
-    logSystem(data.nickname + " added you as friend.");
+    logSystem("Stranger added you as friend.");
   }
 
   document.getElementById("msgInput").addEventListener("keypress", (e) => { if (e.key === "Enter") sendMessage(); });
@@ -1688,7 +1709,11 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     const file = e.target.files[0];
     if (!file || !myConn || !isConnected) return;
     if (file.size > 10 * 1024 * 1024) {
-      AlertKit.warning("Too Large", "Image size limit is 10MB.");
+      if (window.AlertKit) {
+        AlertKit.warning("Too Large", "Image size limit is 10MB.");
+      } else {
+        alert("Image size limit is 10MB.");
+      }
       e.target.value = "";
       return;
     }
@@ -1722,7 +1747,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     if (myConn) { myConn.close(); myConn = null; }
     cleanUpWaitingList();
     isConnected = false;
-    currentStrangerNickname = getFallbackName();
+    currentStrangerNickname = "Stranger";
     hideFriendButton();
     hideStrangerCard();
     clearReply();
@@ -1748,7 +1773,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     if (myConn) { myConn.close(); myConn = null; }
     cleanUpWaitingList();
     isConnected = false;
-    currentStrangerNickname = getFallbackName();
+    currentStrangerNickname = "Stranger";
     startPeer();
   };
 
