@@ -1427,15 +1427,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     if (!CHAT_API_URL) await loadKeys();
     if (!CHAT_API_URL) return;
 
-    cleanUpWaitingList();
-    botActive = true;
-    isConnected = true;
-    botChatHistory = [];
-
-    clearSystemMessage();
-    hideNewChatButton();
-    showFriendButton();
-
     try {
       const res = await fetch(CHAT_API_URL, {
         method: "POST",
@@ -1446,8 +1437,21 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
         })
       });
 
+      if (!res.ok) {
+        return; 
+      }
+
       const initData = await res.json();
-      if (!botActive) return;
+      if (isConnected && !botActive) return;
+
+      cleanUpWaitingList();
+      botActive = true;
+      isConnected = true;
+      botChatHistory = [];
+
+      clearSystemMessage();
+      hideNewChatButton();
+      showFriendButton();
 
       currentBotPersonaId = initData.persona_id;
       currentStrangerNickname = initData.name;
@@ -1473,16 +1477,13 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       }, 1000);
 
     } catch (err) {
-      endConnection();
+      botActive = false;
     }
   }
 
   async function requestAiResponse(userMessage) {
     if (!CHAT_API_URL) await loadKeys();
-    if (!CHAT_API_URL) {
-      hideTypingIndicator();
-      return;
-    }
+    if (!CHAT_API_URL) return;
 
     try {
       const response = await fetch(CHAT_API_URL, {
@@ -1501,20 +1502,25 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       const reply = data.reply || "Hmm bolo";
       botChatHistory.push({ role: "assistant", content: reply });
 
-      const typingDelay = Math.min(Math.max(reply.length * 40, 1500), 3200);
+      const readDelay = Math.floor(Math.random() * 1000) + 1500;
+      const typingDelay = Math.min(Math.max(reply.length * 50, 1500), 4000);
 
       setTimeout(() => {
         if (!botActive) return;
-        hideTypingIndicator();
-        const botKey = 'bot_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
-        appendMessage({
-          key: botKey,
-          type: "text",
-          text: reply,
-          timestamp: Date.now(),
-          nickname: currentStrangerNickname
-        }, false);
-      }, typingDelay);
+        showTypingIndicator();
+        setTimeout(() => {
+          if (!botActive) return;
+          hideTypingIndicator();
+          const botKey = 'bot_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+          appendMessage({
+            key: botKey,
+            type: "text",
+            text: reply,
+            timestamp: Date.now(),
+            nickname: currentStrangerNickname
+          }, false);
+        }, typingDelay);
+      }, readDelay);
 
     } catch (err) {
       if (botActive) hideTypingIndicator();
@@ -1547,6 +1553,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   }
 
   function setupConnection(conn) {
+    if (botFallbackTimer) { clearTimeout(botFallbackTimer); botFallbackTimer = null; }
     if (myConn && myConn !== conn) myConn.close();
     myConn = conn;
     window.gameWebRTCConn = conn;
@@ -1632,7 +1639,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       logSystem("You added " + currentStrangerNickname + " as a friend.");
       hideFriendButton();
     } catch (error) {
-      logSystem("Failed to add friend. Please try again.");
       friendBtn.disabled = false;
     }
   };
@@ -1676,7 +1682,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       appendMessage(message, true);
       msgInput.value = "";
       botChatHistory.push({ role: "user", content: msg });
-      showTypingIndicator();
       requestAiResponse(msg);
       return;
     }
@@ -1693,7 +1698,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     const file = e.target.files[0];
     if (!file || !isConnected) return;
     if (file.size > 10 * 1024 * 1024) {
-      AlertKit.warning("Too Large", "Image size limit is 10MB.");
       e.target.value = "";
       return;
     }
