@@ -1,101 +1,85 @@
 <script type="module">
   import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
-  import { getDatabase, ref, set, onDisconnect, get, remove, onValue } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
+  import { getDatabase, ref, set, onDisconnect, remove, onValue } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
 
   const firebaseConfig = {
     databaseURL: "https://talkrush3-default-rtdb.asia-southeast1.firebasedatabase.app"
   };
 
-  let app;
   const apps = getApps();
   const targetAppName = "TalkRushFriendApp";
-  const existingApp = apps.find(a => a.name === targetAppName);
-
-  if (existingApp) {
-    app = existingApp;
-  } else {
-    app = initializeApp(firebaseConfig, targetAppName);
-  }
-
+  const app = apps.find(a => a.name === targetAppName) || initializeApp(firebaseConfig, targetAppName);
   const db = getDatabase(app);
   window.firebaseDB = db;
 
-  document.addEventListener("DOMContentLoaded", function () {
-    let currentNickname = localStorage.getItem("talkrush_nickname");
-    let myOnlineRef = null;
+  let currentNickname = localStorage.getItem("talkrush_nickname");
+  let myOnlineRef = null;
+  let isInternalNavigation = false;
 
-    const sanitizeKey = (name) => name ? name.replace(/[.#$\[\]]/g, '_') : 'Guest';
+  const sanitizeKey = (name) => name ? name.replace(/[.#$\[\]]/g, '_') : null;
 
-    const registerPresence = (nickname) => {
-      if (!nickname) return;
-      
-      const safeKey = sanitizeKey(nickname);
-      myOnlineRef = ref(db, `users/${safeKey}`);
+  const registerPresence = (nickname) => {
+    if (!nickname) return;
 
-      onDisconnect(myOnlineRef).remove().then(() => {
-        set(myOnlineRef, {
-          nickname: nickname,
-          timestamp: Date.now()
-        });
-      });
-    };
+    const safeKey = sanitizeKey(nickname);
+    if (!safeKey) return;
 
-    const connectedRef = ref(db, ".info/connected");
-    onValue(connectedRef, (snap) => {
-      if (snap.val() === true) {
-        currentNickname = localStorage.getItem("talkrush_nickname");
-        if (currentNickname) {
-          registerPresence(currentNickname);
-        }
-      }
-    });
+    myOnlineRef = ref(db, `users/${safeKey}`);
 
-    window.addEventListener('nicknameUpdated', async (e) => {
-      const newNickname = e.detail.nickname;
-      if (!newNickname || newNickname === currentNickname) return;
+    onDisconnect(myOnlineRef).remove();
 
+    set(myOnlineRef, {
+      nickname: nickname,
+      timestamp: Date.now()
+    }).catch(() => {});
+  };
+
+  const connectedRef = ref(db, ".info/connected");
+  onValue(connectedRef, (snap) => {
+    if (snap.val() === true) {
+      currentNickname = localStorage.getItem("talkrush_nickname");
       if (currentNickname) {
-        const oldSafeKey = sanitizeKey(currentNickname);
-        try {
-          if (myOnlineRef) onDisconnect(myOnlineRef).cancel();
-          await remove(ref(db, `users/${oldSafeKey}`));
-        } catch (err) {}
+        registerPresence(currentNickname);
       }
+    }
+  });
 
-      currentNickname = newNickname;
-      registerPresence(currentNickname);
-    });
+  window.addEventListener('nicknameUpdated', async (e) => {
+    const newNickname = e.detail?.nickname;
+    if (!newNickname || newNickname === currentNickname) return;
 
-    window.spinDiceAndConnect = async (callType = 'video') => {
-      const usersRef = ref(db, 'users');
-      
+    if (currentNickname) {
+      const oldSafeKey = sanitizeKey(currentNickname);
       try {
-        const snapshot = await get(usersRef);
-        if (!snapshot.exists()) {
-           alert("Currently, no one is online!");
-           return;
-        }
+        if (myOnlineRef) onDisconnect(myOnlineRef).cancel();
+        await remove(ref(db, `users/${oldSafeKey}`));
+      } catch (err) {}
+    }
 
-        const usersData = snapshot.val();
-        const availableUsers = Object.values(usersData).filter(user => user.nickname !== currentNickname);
+    currentNickname = newNickname;
+    registerPresence(currentNickname);
+  });
 
-        if (availableUsers.length === 0) {
-           alert("No one else is online at the moment!");
-           return;
-        }
+  document.addEventListener('click', (e) => {
+    const link = e.target.closest('a');
+    if (link && link.href && link.origin === window.location.origin && !link.target && !link.hasAttribute('download')) {
+      isInternalNavigation = true;
+    }
+  }, true);
 
-        const randomIndex = Math.floor(Math.random() * availableUsers.length);
-        const randomTarget = availableUsers[randomIndex];
+  document.addEventListener('submit', () => {
+    isInternalNavigation = true;
+  }, true);
 
-        if (typeof window.startOutgoingCall === 'function') {
-           window.startOutgoingCall(randomTarget.nickname, callType);
-        } else {
-           alert("Calling system is not loaded!");
-        }
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'F5' || ((e.ctrlKey || e.metaKey) && (e.key === 'r' || e.key === 'R'))) {
+      isInternalNavigation = true;
+    }
+  });
 
-      } catch (error) {
-        alert("An error occurred, please try again!");
-      }
-    };
+  window.addEventListener('beforeunload', () => {
+    if (isInternalNavigation && myOnlineRef) {
+      onDisconnect(myOnlineRef).cancel();
+    }
   });
 </script>
