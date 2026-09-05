@@ -8,6 +8,7 @@
 **No login. No registration.** Just instant, anonymous chats!  
 
 **Text & Media Sharing** – Exchange messages, images, and more.  
+**Voice Messages** – Record and send quick, real-time voice notes directly in chat.  
 **Make Friends & Stay Connected** – Make new friends on the platform and easily connect with them later via private audio and video calls.  
 **Personal Audio & Video Calls** – Connect instantly with strangers using voice and face-to-face calling.  
 **Personal Private Rooms** – Create a dedicated, private room for exclusive one-on-one conversations.  
