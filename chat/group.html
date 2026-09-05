@@ -107,6 +107,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 .pinned-bar {
   display: none; position: absolute; top: 50px; left: 0; width: 100%; background: rgba(91, 155, 213, 0.1);
   border-bottom: 0.5px solid var(--dark-border); padding: 7px 14px; z-index: 999; align-items: center; gap: 10px;
+  cursor: pointer; user-select: none; touch-action: pan-y;
 }
 .pinned-bar.active { display: flex; }
 .light-mode .pinned-bar { background: #e8f0fe; border-bottom-color: #b3c6f7; }
@@ -114,7 +115,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 .pinned-text { flex: 1; font-size: 0.82em; color: var(--dark-text-muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .light-mode .pinned-text { color: var(--light-text-muted); }
 .pinned-nickname { font-size: 0.75em; color: #5b9bd5; font-weight: bold; flex-shrink: 0; }
-.unpin-btn { background: none; border: none; color: var(--dark-icon-color); cursor: pointer; font-size: 0.9em; padding: 0 4px; flex-shrink: 0; }
 
 #chatLog {
   flex: 1; padding: 12px 10px; overflow-y: auto; display: flex; flex-direction: column;
@@ -458,7 +458,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     <span class="pin-icon">📌</span>
     <span class="pinned-text" id="pinnedText"></span>
     <span class="pinned-nickname" id="pinnedNickname"></span>
-    <button class="unpin-btn" id="unpinBtn" title="Unpin">✕</button>
   </div>
 
   <div class="pinned-modal-overlay" id="pinnedModalOverlay">
@@ -505,6 +504,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
 <div class="context-menu" id="contextMenu">
   <div class="context-menu-item" id="contextPinBtn">📌 Pin Message</div>
+  <div class="context-menu-item" id="contextUnpinBtn" style="display: none;">📌 Unpin Message</div>
   <div class="context-menu-item" id="contextReplyBtn">↩ Reply</div>
   <div class="context-menu-item" id="contextEditBtn">✎ Edit</div>
   <div class="context-menu-item" id="contextForwardBtn"><i class="fa-solid fa-share"></i> Forward</div>
@@ -935,9 +935,54 @@ document.getElementById('pinnedModalOverlay').addEventListener('click', (e) => {
   if (e.target.id === 'pinnedModalOverlay') hidePinnedModal();
 });
 
-document.getElementById('pinnedBar').addEventListener('click', (e) => {
-  if (e.target.id === 'unpinBtn') return;
-  const data = document.getElementById('pinnedBar')._pinnedData;
+const pinnedBar = document.getElementById('pinnedBar');
+let pinHoldTimer = null;
+let pinHoldTriggered = false;
+let pinStartX = 0, pinStartY = 0;
+
+pinnedBar.addEventListener('contextmenu', e => {
+  e.preventDefault();
+  if (myNickname === groupAdminNickname && pinnedBar._pinnedData) {
+    showPinnedContextMenu(e.clientX, e.clientY);
+  }
+});
+
+pinnedBar.addEventListener('touchstart', e => {
+  pinHoldTriggered = false;
+  if (!e.touches || e.touches.length === 0) return;
+  pinStartX = e.touches[0].clientX;
+  pinStartY = e.touches[0].clientY;
+  pinHoldTimer = setTimeout(() => {
+    pinHoldTriggered = true;
+    if (myNickname === groupAdminNickname && pinnedBar._pinnedData) {
+      showPinnedContextMenu(e.touches[0].clientX, e.touches[0].clientY);
+    }
+  }, 500);
+}, { passive: true });
+
+pinnedBar.addEventListener('touchmove', e => {
+  if (pinHoldTriggered || !pinHoldTimer) return;
+  const dx = e.touches[0].clientX - pinStartX;
+  const dy = e.touches[0].clientY - pinStartY;
+  if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+    clearTimeout(pinHoldTimer);
+    pinHoldTimer = null;
+  }
+}, { passive: true });
+
+pinnedBar.addEventListener('touchend', () => {
+  if (pinHoldTimer) {
+    clearTimeout(pinHoldTimer);
+    pinHoldTimer = null;
+  }
+});
+
+pinnedBar.addEventListener('click', () => {
+  if (pinHoldTriggered) {
+    pinHoldTriggered = false;
+    return;
+  }
+  const data = pinnedBar._pinnedData;
   if (!data) return;
   
   document.getElementById('pinnedModalSender').textContent = data.nickname;
@@ -957,10 +1002,17 @@ document.getElementById('pinnedBar').addEventListener('click', (e) => {
   document.getElementById('pinnedModalOverlay').classList.add('active');
 });
 
-document.getElementById('unpinBtn').addEventListener('click', async (e) => {
-  e.stopPropagation();
-  await set(ref(db, `groups/${currentGroup}/pinnedMessage`), null);
-});
+function showPinnedContextMenu(x, y) {
+  contextTargetMsg = null;
+  document.querySelectorAll('.context-menu-item').forEach(el => el.style.display = 'none');
+  
+  const unpinBtn = document.getElementById('contextUnpinBtn');
+  unpinBtn.style.display = 'flex';
+  
+  contextMenu.style.left = Math.min(x, window.innerWidth - 170) + 'px';
+  contextMenu.style.top = Math.min(y, window.innerHeight - 100) + 'px';
+  contextMenu.classList.add('active');
+}
 
 async function maintainMessageLimit() {
   if (!currentGroup || isPruning) return;
@@ -1128,10 +1180,16 @@ function showContextMenu(x, y, msg, isMe) {
   contextMenu.style.top = Math.min(y, window.innerHeight - 200) + 'px';
 
   const isAdmin = myNickname === groupAdminNickname;
-  
-  document.getElementById('contextPinBtn').style.display = isAdmin ? 'flex' : 'none';
+  const pinnedData = document.getElementById('pinnedBar')._pinnedData;
+  const isThisPinned = pinnedData && pinnedData.timestamp === msg.timestamp;
+
+  document.getElementById('contextPinBtn').style.display = (isAdmin && !isThisPinned) ? 'flex' : 'none';
+  document.getElementById('contextUnpinBtn').style.display = (isAdmin && isThisPinned) ? 'flex' : 'none';
+
+  document.getElementById('contextReplyBtn').style.display = 'flex';
+  document.getElementById('contextForwardBtn').style.display = 'flex';
   document.getElementById('contextEditBtn').style.display = (isMe && msg.type === 'text') ? 'flex' : 'none';
-  document.getElementById('contextDeleteBtn').style.display = isMe || isAdmin ? 'flex' : 'none';
+  document.getElementById('contextDeleteBtn').style.display = (isMe || isAdmin) ? 'flex' : 'none';
   
   const showAdminActions = isAdmin && msg.nickname !== myNickname;
   document.getElementById('contextKickBtn').style.display = showAdminActions ? 'flex' : 'none';
@@ -1151,6 +1209,13 @@ function hideContextMenu() {
 
 document.getElementById('contextPinBtn').addEventListener('click', async () => {
   if (contextTargetMsg && myNickname === groupAdminNickname) await pinMessage(contextTargetMsg);
+  hideContextMenu();
+});
+
+document.getElementById('contextUnpinBtn').addEventListener('click', async () => {
+  if (myNickname === groupAdminNickname) {
+    await set(ref(db, `groups/${currentGroup}/pinnedMessage`), null);
+  }
   hideContextMenu();
 });
 
