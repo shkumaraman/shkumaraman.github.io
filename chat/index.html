@@ -757,7 +757,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   let escPressedOnce = false;
   let escTimer = null;
   let heartbeatInterval;
-
   let botActive = false;
   let botFallbackTimer = null;
   let botChatHistory = [];
@@ -825,12 +824,9 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   function showStrangerCard(tags, customName = null) {
     const card = document.getElementById("strangerCard");
     const nameEl = document.getElementById("cardStrangerName");
-    const tagsDiv = document.getElementById("cardTags");
-    
-    if (nameEl) {
-      nameEl.textContent = customName || currentStrangerNickname;
-    }
+    if (nameEl) nameEl.textContent = customName || currentStrangerNickname;
 
+    const tagsDiv = document.getElementById("cardTags");
     tagsDiv.innerHTML = "";
     if (tags && tags.length > 0) {
       tags.forEach(tag => {
@@ -1164,7 +1160,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   function showTypingIndicator() {
     typingIndicator.style.display = "block";
     clearTimeout(typingTimeout);
-    typingTimeout = setTimeout(() => { typingIndicator.style.display = "none"; }, 4000);
+    typingTimeout = setTimeout(() => { typingIndicator.style.display = "none"; }, 1000);
   }
 
   function hideTypingIndicator() {
@@ -1417,7 +1413,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
             connectToPeer(chosen.otherId);
           }
         });
-      }, 2500);
+      }, 3000);
     });
   }
 
@@ -1437,9 +1433,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
         })
       });
 
-      if (!res.ok) {
-        return; 
-      }
+      if (!res.ok) return;
 
       const initData = await res.json();
       if (isConnected && !botActive) return;
@@ -1448,14 +1442,12 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       botActive = true;
       isConnected = true;
       botChatHistory = [];
+      currentBotPersonaId = initData.persona_id;
+      currentStrangerNickname = initData.name;
 
       clearSystemMessage();
       hideNewChatButton();
       showFriendButton();
-
-      currentBotPersonaId = initData.persona_id;
-      currentStrangerNickname = initData.name;
-
       showStrangerCard([initData.city, initData.identity], currentStrangerNickname);
 
       setTimeout(() => {
@@ -1502,7 +1494,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       const reply = data.reply || "Hmm bolo";
       botChatHistory.push({ role: "assistant", content: reply });
 
-      const readDelay = Math.floor(Math.random() * 1000) + 1500;
+      const readDelay = Math.floor(Math.random() * 1000) + 1500; 
       const typingDelay = Math.min(Math.max(reply.length * 50, 1500), 4000);
 
       setTimeout(() => {
@@ -1553,7 +1545,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   }
 
   function setupConnection(conn) {
-    if (botFallbackTimer) { clearTimeout(botFallbackTimer); botFallbackTimer = null; }
     if (myConn && myConn !== conn) myConn.close();
     myConn = conn;
     window.gameWebRTCConn = conn;
@@ -1577,7 +1568,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       else if (data.type === "typing") showTypingIndicator();
       else if (data.type === "tags") {
         currentStrangerNickname = data.nickname || getFallbackName();
-        showStrangerCard(data.tags || [], currentStrangerNickname);
+        showStrangerCard(data.tags || []);
       }
       else if (data.type === "friend_added") handleFriendAdded(data);
     });
@@ -1620,7 +1611,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   function hideFriendButton() { friendBtn.style.display = 'none'; friendBtn.disabled = false; }
 
   friendBtn.onclick = async () => {
-    if (!isConnected) return;
+    if (!myConn || !isConnected || !peer?.id) return;
     
     friendBtn.disabled = true;
     try {
@@ -1633,12 +1624,11 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
         lastSender: myNickname
       });
       
-      if (myConn && !botActive) {
-        myConn.send({ type: 'friend_added', nickname: myNickname });
-      }
+      myConn.send({ type: 'friend_added', nickname: myNickname });
       logSystem("You added " + currentStrangerNickname + " as a friend.");
       hideFriendButton();
     } catch (error) {
+      logSystem("Failed to add friend. Please try again.");
       friendBtn.disabled = false;
     }
   };
@@ -1696,8 +1686,9 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   document.getElementById("imgBtn").onclick = () => document.getElementById("imgInput").click();
   document.getElementById("imgInput").addEventListener("change", (e) => {
     const file = e.target.files[0];
-    if (!file || !isConnected) return;
+    if (!file || !myConn || !isConnected) return;
     if (file.size > 10 * 1024 * 1024) {
+      AlertKit.warning("Too Large", "Image size limit is 10MB.");
       e.target.value = "";
       return;
     }
