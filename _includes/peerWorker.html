@@ -1,6 +1,15 @@
 <script type="module">
   import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
-  import { getDatabase, ref, set, onDisconnect, remove, onValue } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
+  import { 
+    getDatabase, 
+    ref, 
+    set, 
+    update,
+    onDisconnect, 
+    onValue, 
+    serverTimestamp,
+    remove 
+  } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
 
   const firebaseConfig = {
     databaseURL: "https://talkrush3-default-rtdb.asia-southeast1.firebasedatabase.app"
@@ -13,36 +22,38 @@
   window.firebaseDB = db;
 
   let currentNickname = localStorage.getItem("talkrush_nickname");
-  let myOnlineRef = null;
-  let isInternalNavigation = false;
+  let unsubscribeConnected = null;
 
-  const sanitizeKey = (name) => name ? name.replace(/[.#$\[\]]/g, '_') : null;
+  const sanitizeKey = (name) => name ? name.replace(/[.#$\[\]\/]/g, '_') : null;
 
-  const registerPresence = (nickname) => {
+  const bindPresence = (nickname) => {
     if (!nickname) return;
-
     const safeKey = sanitizeKey(nickname);
     if (!safeKey) return;
 
-    myOnlineRef = ref(db, `users/${safeKey}`);
+    const userRef = ref(db, `users/${safeKey}`);
+    const connectedRef = ref(db, ".info/connected");
 
-    onDisconnect(myOnlineRef).remove();
+    if (unsubscribeConnected) {
+      unsubscribeConnected();
+    }
 
-    set(myOnlineRef, {
-      nickname: nickname,
-      timestamp: Date.now()
-    }).catch(() => {});
+    unsubscribeConnected = onValue(connectedRef, async (snap) => {
+      if (snap.val() === true) {
+        await set(userRef, {
+          nickname: nickname,
+          timestamp: serverTimestamp()
+        });
+        await onDisconnect(userRef).update({
+          timestamp: serverTimestamp()
+        });
+      }
+    });
   };
 
-  const connectedRef = ref(db, ".info/connected");
-  onValue(connectedRef, (snap) => {
-    if (snap.val() === true) {
-      currentNickname = localStorage.getItem("talkrush_nickname");
-      if (currentNickname) {
-        registerPresence(currentNickname);
-      }
-    }
-  });
+  if (currentNickname) {
+    bindPresence(currentNickname);
+  }
 
   window.addEventListener('nicknameUpdated', async (e) => {
     const newNickname = e.detail?.nickname;
@@ -51,35 +62,12 @@
     if (currentNickname) {
       const oldSafeKey = sanitizeKey(currentNickname);
       try {
-        if (myOnlineRef) onDisconnect(myOnlineRef).cancel();
         await remove(ref(db, `users/${oldSafeKey}`));
-      } catch (err) {}
+      } catch (_) {}
     }
 
     currentNickname = newNickname;
-    registerPresence(currentNickname);
-  });
-
-  document.addEventListener('click', (e) => {
-    const link = e.target.closest('a');
-    if (link && link.href && link.origin === window.location.origin && !link.target && !link.hasAttribute('download')) {
-      isInternalNavigation = true;
-    }
-  }, true);
-
-  document.addEventListener('submit', () => {
-    isInternalNavigation = true;
-  }, true);
-
-  window.addEventListener('keydown', (e) => {
-    if (e.key === 'F5' || ((e.ctrlKey || e.metaKey) && (e.key === 'r' || e.key === 'R'))) {
-      isInternalNavigation = true;
-    }
-  });
-
-  window.addEventListener('beforeunload', () => {
-    if (isInternalNavigation && myOnlineRef) {
-      onDisconnect(myOnlineRef).cancel();
-    }
+    localStorage.setItem("talkrush_nickname", newNickname);
+    bindPresence(currentNickname);
   });
 </script>
