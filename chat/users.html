@@ -18,16 +18,13 @@ description: "See who is online right now. Find active strangers, add them as fr
   --light-text: #333;
   --light-icon-color: #666;
   --light-icon-hover-bg: rgba(0,0,0,0.05);
-
   --accent: #ff6b4a;
   --accent-hover: #ff5535;
   --accent-dim: rgba(255,107,74,0.15);
   --accent-border: rgba(255,107,74,0.25);
-  
   --dark-surface: #111114;
   --dark-border2: rgba(255,255,255,0.08);
   --dark-text-muted: rgba(255,255,255,0.4);
-  
   --light-surface: #ffffff;
   --light-border2: rgba(0,0,0,0.1);
   --light-text-muted: rgba(0,0,0,0.4);
@@ -232,6 +229,37 @@ body.light-mode {
   color: var(--accent);
   background: var(--light-icon-hover-bg);
 }
+
+.clear-search-btn {
+  position: absolute;
+  right: 45px;
+  background: none;
+  border: none;
+  color: var(--dark-icon-color);
+  cursor: pointer;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+  display: none;
+}
+
+.clear-search-btn.visible {
+  display: flex;
+}
+
+.clear-search-btn svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+}
+
+.clear-search-btn:hover { background: var(--dark-icon-hover-bg); }
+.light-mode .clear-search-btn { color: var(--light-icon-color); }
+.light-mode .clear-search-btn:hover { background: var(--light-icon-hover-bg); }
 
 .users-grid {
   display: grid;
@@ -483,6 +511,7 @@ body.light-mode {
            (adsbygoogle = window.adsbygoogle || []).push({});
       </script>
   </div>
+  
   <div class="page-title">
     <h2>Active Now</h2>
     <div class="online-badge">
@@ -494,6 +523,12 @@ body.light-mode {
   <div class="search-section">
     <div class="search-box">
       <input type="text" id="activeSearchInput" class="search-input" placeholder="Search active users..." autocomplete="off">
+      <button id="clearActiveSearch" class="clear-search-btn" title="Clear search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
       <button class="search-icon-btn" aria-label="Search">
         <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="11" cy="11" r="8"></circle>
@@ -574,25 +609,12 @@ body.light-mode {
   const usersGrid = document.getElementById('usersGrid');
   const onlineCount = document.getElementById('onlineCount');
   const activeSearchInput = document.getElementById('activeSearchInput');
+  const clearActiveSearch = document.getElementById('clearActiveSearch');
   const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 
   let currentNickname = localStorage.getItem("talkrush_nickname");
   let isInitialLoaded = false;
   let myFriendsMap = {};
-
-  const themeToggleBtn = document.getElementById('themeToggle');
-  if (themeToggleBtn) {
-    if (localStorage.getItem('talkrush_theme') === 'light') {
-      document.body.classList.add('light-mode');
-      themeToggleBtn.innerHTML = '<i class="fas fa-sun"></i>';
-    }
-    themeToggleBtn.addEventListener('click', () => {
-      document.body.classList.toggle('light-mode');
-      const isLight = document.body.classList.contains('light-mode');
-      localStorage.setItem('talkrush_theme', isLight ? 'light' : 'dark');
-      themeToggleBtn.innerHTML = isLight ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>';
-    });
-  }
 
   const timeAgo = (timestamp) => {
     if (!timestamp) return "Just now";
@@ -611,6 +633,15 @@ body.light-mode {
 
   function handleSearchFilter() {
     const searchTerm = activeSearchInput.value.toLowerCase().trim();
+    
+    if (clearActiveSearch) {
+      if (searchTerm) {
+        clearActiveSearch.classList.add('visible');
+      } else {
+        clearActiveSearch.classList.remove('visible');
+      }
+    }
+
     const allCards = usersGrid.querySelectorAll('.user-card');
     let visibleCount = 0;
 
@@ -640,7 +671,16 @@ body.light-mode {
     }
   }
 
-  activeSearchInput.addEventListener('input', handleSearchFilter);
+  if (activeSearchInput) {
+    activeSearchInput.addEventListener('input', handleSearchFilter);
+  }
+
+  if (clearActiveSearch) {
+    clearActiveSearch.addEventListener('click', () => {
+      activeSearchInput.value = '';
+      handleSearchFilter();
+    });
+  }
 
   function updateGridState() {
     const cards = usersGrid.querySelectorAll('.user-card');
@@ -655,7 +695,7 @@ body.light-mode {
       emptyMsg.remove();
     }
 
-    if (activeSearchInput.value) {
+    if (activeSearchInput && activeSearchInput.value) {
       handleSearchFilter();
     }
   }
