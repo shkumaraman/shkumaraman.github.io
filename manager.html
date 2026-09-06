@@ -1,6 +1,6 @@
 ---
 layout: default
-title: "TalkRush-Crone"
+title: "TalkRush-Manager"
 description: "Database Cleanup utility for TalkRush"
 ---
 
@@ -93,21 +93,21 @@ description: "Database Cleanup utility for TalkRush"
   .light-mode .header-toggle { color: var(--light-icon-color); }
   .light-mode .header-toggle:hover { background: var(--light-icon-hover-bg); }
 
-  .crone-container {
+  .manager-container {
     max-width: 720px;
     margin: 70px auto 20px;
     padding: 0 15px;
   }
 
-  .crone-page-title {
+  .manager-page-title {
     font-size: 1.5em;
     font-weight: 700;
     margin-bottom: 20px;
     color: var(--dark-text);
   }
-  .light-mode .crone-page-title { color: var(--light-text); }
+  .light-mode .manager-page-title { color: var(--light-text); }
 
-  .crone-section {
+  .manager-section {
     background: var(--dark-card);
     border: 1px solid var(--dark-border2);
     border-radius: 12px;
@@ -115,13 +115,13 @@ description: "Database Cleanup utility for TalkRush"
     margin-bottom: 20px;
     transition: background 0.3s, border-color 0.3s;
   }
-  .light-mode .crone-section {
+  .light-mode .manager-section {
     background: var(--light-surface);
     border: 1px solid var(--light-border2);
     box-shadow: 0 2px 8px rgba(0,0,0,0.04);
   }
 
-  .crone-header {
+  .manager-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -129,15 +129,15 @@ description: "Database Cleanup utility for TalkRush"
     padding-bottom: 15px;
     margin-bottom: 15px;
   }
-  .light-mode .crone-header { border-bottom-color: var(--light-border2); }
+  .light-mode .manager-header { border-bottom-color: var(--light-border2); }
 
-  .crone-title {
+  .manager-title {
     font-size: 1.1em;
     font-weight: 600;
     margin: 0;
     color: var(--dark-text);
   }
-  .light-mode .crone-title { color: var(--light-text); }
+  .light-mode .manager-title { color: var(--light-text); }
 
   .clean-btn {
     background: var(--accent);
@@ -205,23 +205,27 @@ description: "Database Cleanup utility for TalkRush"
     <img src="logo.png" alt="TalkRush Logo" class="logo" onerror="this.style.display='none'">
     <h1 class="app-title">TalkRush Admin</h1>
   </div>
-  <div class="header-right">
-    <button class="header-toggle" id="themeToggle" title="Toggle Dark/Light Mode">
-      <i class="fas fa-moon"></i>
-    </button>
-  </div>
 </header>
 
-<div class="crone-container">
-  <h2 class="crone-page-title">Database Cleanup Utility</h2>
+<div class="manager-container">
+  <h2 class="manager-page-title">TalkRush Manager</h2>
 
-  <div class="crone-section">
-    <div class="crone-header">
-      <h3 class="crone-title">Users and Messages</h3>
+  <div class="manager-section">
+    <div class="manager-header">
+      <h3 class="manager-title">1v1 Friends Chats</h3>
       <button class="clean-btn" id="cleanUsersBtn">Clean</button>
     </div>
-    <div class="status-text" id="usersStatus">Idle (Deletes 7+ days offline chats)</div>
+    <div class="status-text" id="usersStatus">Idle (Deletes 7+ days offline private chats)</div>
     <div class="log-area" id="usersLogs"></div>
+  </div>
+
+  <div class="manager-section">
+    <div class="manager-header">
+      <h3 class="manager-title">Inactive Groups</h3>
+      <button class="clean-btn" id="cleanGroupsBtn">Clean</button>
+    </div>
+    <div class="status-text" id="groupsStatus">Idle (Deletes groups dead for 15+ days)</div>
+    <div class="log-area" id="groupsLogs"></div>
   </div>
 
 </div>
@@ -232,12 +236,17 @@ description: "Database Cleanup utility for TalkRush"
   import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
   import { getDatabase, ref, query, orderByChild, endAt, get, update } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
 
-  const firebaseConfig = {
+  const firebaseConfigUsers = {
     databaseURL: "https://talkrush3-default-rtdb.asia-southeast1.firebasedatabase.app"
   };
+  const appUsers = initializeApp(firebaseConfigUsers, "TalkRushManagerAppUsers");
+  const dbUsers = getDatabase(appUsers);
 
-  const app = initializeApp(firebaseConfig, "TalkRushCronApp");
-  const db = getDatabase(app);
+  const firebaseConfigGroups = {
+    databaseURL: "https://talkrush2-default-rtdb.asia-southeast1.firebasedatabase.app"
+  };
+  const appGroups = initializeApp(firebaseConfigGroups, "TalkRushManagerAppGroups");
+  const dbGroups = getDatabase(appGroups);
 
   const cleanUsersBtn = document.getElementById('cleanUsersBtn');
   const usersStatus = document.getElementById('usersStatus');
@@ -248,13 +257,12 @@ description: "Database Cleanup utility for TalkRush"
     entry.className = 'log-entry';
     entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
     usersLogs.prepend(entry);
-    console.log(message);
   }
 
-  async function cleanUsersMessages() {
+  cleanUsersBtn.addEventListener('click', async () => {
     cleanUsersBtn.disabled = true;
     cleanUsersBtn.textContent = "Cleaning...";
-    usersStatus.textContent = "Scanning database for old users and messages...";
+    usersStatus.textContent = "Scanning database for old private chats...";
     usersStatus.style.color = "#34B7F1";
 
     try {
@@ -263,7 +271,7 @@ description: "Database Cleanup utility for TalkRush"
       
       logToUsers(`Cutoff Time: ${new Date(cutoffTime).toLocaleString()}`);
 
-      const friendsRef = ref(db, 'friends');
+      const friendsRef = ref(dbUsers, 'friends');
       const oldChatsQuery = query(friendsRef, orderByChild('lastTimestamp'), endAt(cutoffTime));
       
       const snapshot = await get(oldChatsQuery);
@@ -271,34 +279,27 @@ description: "Database Cleanup utility for TalkRush"
       if (!snapshot.exists()) {
         usersStatus.textContent = "Database is clean. No old data found.";
         usersStatus.style.color = "#25D366";
-        logToUsers("No chats matched the cleanup criteria.");
-        cleanUsersBtn.textContent = "Clean";
-        cleanUsersBtn.disabled = false;
-        return;
+        logToUsers("No private chats matched the cleanup criteria.");
+      } else {
+        const updates = {};
+        let count = 0;
+
+        snapshot.forEach((childSnap) => {
+          const chatId = childSnap.key;
+          updates[`friends/${chatId}`] = null;
+          updates[`messages/${chatId}`] = null;
+          count++;
+        });
+
+        if (count > 0) {
+          usersStatus.textContent = `Deleting ${count} private chat records...`;
+          await update(ref(dbUsers), updates);
+          
+          usersStatus.textContent = `Successfully deleted ${count} old records.`;
+          usersStatus.style.color = "#25D366";
+          logToUsers(`Cleaned up ${count} inactive threads from friends and messages.`);
+        }
       }
-
-      const updates = {};
-      let count = 0;
-
-      snapshot.forEach((childSnap) => {
-        const chatId = childSnap.key;
-        
-        updates[`friends/${chatId}`] = null;
-        updates[`messages/${chatId}`] = null;
-        
-        logToUsers(`Marked for deletion: ${chatId}`);
-        count++;
-      });
-
-      if (count > 0) {
-        usersStatus.textContent = `Deleting ${count} records...`;
-        await update(ref(db), updates);
-        
-        usersStatus.textContent = `Successfully deleted ${count} old records.`;
-        usersStatus.style.color = "#25D366";
-        logToUsers(`Successfully cleaned up ${count} inactive threads from friends and messages nodes.`);
-      }
-
     } catch (error) {
       usersStatus.textContent = "Error occurred!";
       usersStatus.style.color = "#ff4d4d";
@@ -307,7 +308,97 @@ description: "Database Cleanup utility for TalkRush"
 
     cleanUsersBtn.textContent = "Clean";
     cleanUsersBtn.disabled = false;
+  });
+
+  const cleanGroupsBtn = document.getElementById('cleanGroupsBtn');
+  const groupsStatus = document.getElementById('groupsStatus');
+  const groupsLogs = document.getElementById('groupsLogs');
+
+  function logToGroups(message) {
+    const entry = document.createElement('div');
+    entry.className = 'log-entry';
+    entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+    groupsLogs.prepend(entry);
   }
 
-  cleanUsersBtn.addEventListener('click', cleanUsersMessages);
+  cleanGroupsBtn.addEventListener('click', async () => {
+    cleanGroupsBtn.disabled = true;
+    cleanGroupsBtn.textContent = "Cleaning...";
+    groupsStatus.textContent = "Scanning for dead groups...";
+    groupsStatus.style.color = "#34B7F1";
+
+    try {
+      const FIFTEEN_DAYS_MS = 15 * 24 * 60 * 60 * 1000;
+      const cutoffTime = Date.now() - FIFTEEN_DAYS_MS;
+      
+      logToGroups(`Cutoff Time: ${new Date(cutoffTime).toLocaleString()}`);
+
+      const groupsSnap = await get(ref(dbGroups, 'groups'));
+      
+      if (!groupsSnap.exists()) {
+        groupsStatus.textContent = "No groups found.";
+        groupsStatus.style.color = "#25D366";
+        cleanGroupsBtn.textContent = "Clean";
+        cleanGroupsBtn.disabled = false;
+        return;
+      }
+
+      const deadGroups = [];
+      groupsSnap.forEach((childSnap) => {
+        const groupName = childSnap.key;
+        const groupData = childSnap.val();
+        const lastActivity = groupData.lastActivity || 0;
+
+        if (lastActivity < cutoffTime) {
+          deadGroups.push(groupName);
+        }
+      });
+
+      if (deadGroups.length === 0) {
+        groupsStatus.textContent = "No dead groups found.";
+        groupsStatus.style.color = "#25D366";
+        logToGroups("All groups are active within the last 15 days.");
+      } else {
+        const updates = {};
+        
+        deadGroups.forEach(groupName => {
+          updates[`groups/${groupName}`] = null;
+          updates[`group_messages/${groupName}`] = null;
+          logToGroups(`Marked dead group: ${groupName}`);
+        });
+
+        const repliesSnap = await get(ref(dbGroups, 'group_reply'));
+        if (repliesSnap.exists()) {
+          let replyCleanCount = 0;
+          repliesSnap.forEach((userNode) => {
+            const userKey = userNode.key;
+            deadGroups.forEach(groupName => {
+              if (userNode.hasChild(groupName)) {
+                updates[`group_reply/${userKey}/${groupName}`] = null;
+                replyCleanCount++;
+              }
+            });
+          });
+          if (replyCleanCount > 0) {
+             logToGroups(`Found and marked ${replyCleanCount} orphaned replies/pings for deletion.`);
+          }
+        }
+
+        groupsStatus.textContent = `Deleting ${deadGroups.length} dead groups...`;
+        await update(ref(dbGroups), updates);
+        
+        groupsStatus.textContent = `Successfully deleted ${deadGroups.length} groups.`;
+        groupsStatus.style.color = "#25D366";
+        logToGroups(`Deleted ${deadGroups.length} groups completely (Data + Messages + Replies).`);
+      }
+
+    } catch (error) {
+      groupsStatus.textContent = "Error occurred!";
+      groupsStatus.style.color = "#ff4d4d";
+      logToGroups(`Error: ${error.message}`);
+    }
+
+    cleanGroupsBtn.textContent = "Clean";
+    cleanGroupsBtn.disabled = false;
+  });
 </script>
