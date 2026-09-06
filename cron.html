@@ -1,0 +1,238 @@
+---
+layout: default
+title: "TalkRush-Crone"
+description: "Database Cleanup utility for TalkRush"
+---
+
+<style>
+  :root {
+    --dark-bg: #121212;
+    --dark-card: #1a1a1e;
+    --dark-border2: rgba(255, 255, 255, 0.08);
+    --dark-text: #fff;
+    --dark-text-muted: rgba(255, 255, 255, 0.4);
+    --accent: #ff6b4a;
+    --accent-hover: #ff5535;
+  }
+
+  html, body { overflow-x: hidden; }
+
+body {
+  background: var(--dark-bg);
+  color: var(--dark-text);
+}
+body.light-mode { background: var(--light-bg); color: var(--light-text); }
+
+.app-header {
+  position: fixed !important;
+  top: 0; left: 0;
+  width: 100%;
+  height: 50px;
+  background: var(--dark-header-bg);
+  padding: 8px 15px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+  border-bottom: 1px solid var(--dark-header-border);
+  z-index: 10000;
+}
+  
+  .crone-container {
+    max-width: 720px;
+    margin: 60px auto 20px;
+    padding: 0 15px;
+  }
+
+  .crone-page-title {
+    font-size: 1.5em;
+    font-weight: 700;
+    margin-bottom: 20px;
+    color: var(--dark-text);
+  }
+
+  .crone-section {
+    background: var(--dark-card);
+    border: 1px solid var(--dark-border2);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+
+  .crone-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--dark-border2);
+    padding-bottom: 15px;
+    margin-bottom: 15px;
+  }
+
+  .crone-title {
+    font-size: 1.1em;
+    font-weight: 600;
+    margin: 0;
+    color: var(--dark-text);
+  }
+
+  .clean-btn {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    padding: 8px 20px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+
+  .clean-btn:hover {
+    background: var(--accent-hover);
+  }
+
+  .clean-btn:disabled {
+    background: #555;
+    cursor: not-allowed;
+    color: #aaa;
+  }
+
+  .status-text {
+    font-size: 13px;
+    color: var(--dark-text-muted);
+    margin-bottom: 10px;
+    font-weight: 600;
+  }
+
+  .log-area {
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--dark-border2);
+    border-radius: 8px;
+    padding: 10px;
+    max-height: 150px;
+    overflow-y: auto;
+    font-size: 12px;
+    color: var(--dark-text-muted);
+  }
+
+  .log-entry {
+    margin-bottom: 5px;
+    padding-bottom: 5px;
+    border-bottom: 1px dashed rgba(255, 255, 255, 0.03);
+  }
+  
+  .log-entry:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+  }
+
+  .log-area::-webkit-scrollbar {
+    width: 4px;
+  }
+  
+  .log-area::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+  }
+</style>
+
+<div class="crone-container">
+  <h2 class="crone-page-title">TalkRush-Crone</h2>
+
+  <div class="crone-section">
+    <div class="crone-header">
+      <h3 class="crone-title">Users Messages</h3>
+      <button class="clean-btn" id="cleanUsersBtn">Clean</button>
+    </div>
+    <div class="status-text" id="usersStatus">Idle (Deletes 7+ days offline chats)</div>
+    <div class="log-area" id="usersLogs"></div>
+  </div>
+
+</div>
+
+<script type="module">
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
+  import { getDatabase, ref, query, orderByChild, endAt, get, update } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
+
+  const firebaseConfig = {
+    databaseURL: "https://talkrush3-default-rtdb.asia-southeast1.firebasedatabase.app"
+  };
+
+  const app = initializeApp(firebaseConfig, "TalkRushCronApp");
+  const db = getDatabase(app);
+
+  const cleanUsersBtn = document.getElementById('cleanUsersBtn');
+  const usersStatus = document.getElementById('usersStatus');
+  const usersLogs = document.getElementById('usersLogs');
+
+  function logToUsers(message) {
+    const entry = document.createElement('div');
+    entry.className = 'log-entry';
+    entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+    usersLogs.prepend(entry);
+    console.log(message);
+  }
+
+  async function cleanUsersMessages() {
+    cleanUsersBtn.disabled = true;
+    cleanUsersBtn.textContent = "Cleaning...";
+    usersStatus.textContent = "Scanning database for old chats...";
+    usersStatus.style.color = "#34B7F1";
+
+    try {
+      const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+      const cutoffTime = Date.now() - SEVEN_DAYS_MS;
+      
+      logToUsers(`Cutoff Time: ${new Date(cutoffTime).toLocaleString()}`);
+
+      const friendsRef = ref(db, 'friends');
+      const oldChatsQuery = query(friendsRef, orderByChild('lastTimestamp'), endAt(cutoffTime));
+      
+      const snapshot = await get(oldChatsQuery);
+
+      if (!snapshot.exists()) {
+        usersStatus.textContent = "Database is clean. No old chats found.";
+        usersStatus.style.color = "#25D366";
+        logToUsers("No chats matched the cleanup criteria.");
+        cleanUsersBtn.textContent = "Clean";
+        cleanUsersBtn.disabled = false;
+        return;
+      }
+
+      const updates = {};
+      let count = 0;
+
+      snapshot.forEach((childSnap) => {
+        const chatId = childSnap.key;
+        
+        updates[`friends/${chatId}`] = null;
+        updates[`messages/${chatId}`] = null;
+        
+        logToUsers(`Marked for deletion: ${chatId}`);
+        count++;
+      });
+
+      if (count > 0) {
+        usersStatus.textContent = `Deleting ${count} chats...`;
+        await update(ref(db), updates);
+        
+        usersStatus.textContent = `Successfully deleted ${count} old chats.`;
+        usersStatus.style.color = "#25D366";
+        logToUsers(`Successfully cleaned up ${count} inactive threads from friends and messages nodes.`);
+      }
+
+    } catch (error) {
+      usersStatus.textContent = "Error occurred!";
+      usersStatus.style.color = "#ff4d4d";
+      logToUsers(`Error: ${error.message}`);
+    }
+
+    cleanUsersBtn.textContent = "Clean";
+    cleanUsersBtn.disabled = false;
+  }
+
+  cleanUsersBtn.addEventListener('click', cleanUsersMessages);
+
+</script>
