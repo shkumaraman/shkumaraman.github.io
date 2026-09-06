@@ -165,6 +165,74 @@ body.light-mode {
   box-shadow: 0 0 5px #22c55e;
 }
 
+.search-section {
+  margin-bottom: 25px;
+}
+
+.search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.search-input {
+  width: 100%;
+  padding: 14px 45px 14px 20px;
+  border-radius: 25px;
+  border: 1px solid var(--dark-border2);
+  background: var(--dark-surface);
+  color: var(--dark-text);
+  font-size: 15px;
+  outline: none;
+  transition: border-color 0.3s, box-shadow 0.3s;
+  box-sizing: border-box;
+}
+
+.search-input:focus { 
+  border-color: var(--accent); 
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+
+.light-mode .search-input {
+  background: var(--light-surface);
+  border-color: var(--light-border2);
+  color: var(--light-text);
+}
+
+.search-icon-btn {
+  position: absolute;
+  right: 12px;
+  background: none;
+  border: none;
+  padding: 8px;
+  color: var(--dark-text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: color 0.2s, background 0.2s, transform 0.1s;
+}
+
+.search-icon-btn:hover {
+  color: var(--accent);
+  background: var(--dark-icon-hover-bg);
+}
+
+.search-icon-btn:active {
+  transform: scale(0.9);
+}
+
+.light-mode .search-icon-btn {
+  color: var(--light-text-muted);
+}
+
+.light-mode .search-icon-btn:hover {
+  color: var(--accent);
+  background: var(--light-icon-hover-bg);
+}
+
 .users-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -423,6 +491,18 @@ body.light-mode {
     </div>
   </div>
 
+  <div class="search-section">
+    <div class="search-box">
+      <input type="text" id="activeSearchInput" class="search-input" placeholder="Search active users..." autocomplete="off">
+      <button class="search-icon-btn" aria-label="Search">
+        <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+      </button>
+    </div>
+  </div>
+
   <div class="users-grid" id="usersGrid">
     <div class="empty-state" id="emptyStateMsg"><i class="fas fa-ghost" style="font-size:30px; margin-bottom:10px;"></i><br>Loading users...</div>
   </div>
@@ -493,6 +573,7 @@ body.light-mode {
 
   const usersGrid = document.getElementById('usersGrid');
   const onlineCount = document.getElementById('onlineCount');
+  const activeSearchInput = document.getElementById('activeSearchInput');
   const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 
   let currentNickname = localStorage.getItem("talkrush_nickname");
@@ -528,16 +609,54 @@ body.light-mode {
     return (Date.now() - timestamp) <= SIX_HOURS_MS;
   };
 
+  function handleSearchFilter() {
+    const searchTerm = activeSearchInput.value.toLowerCase().trim();
+    const allCards = usersGrid.querySelectorAll('.user-card');
+    let visibleCount = 0;
+
+    allCards.forEach(card => {
+      const nickname = (card.dataset.nickname || '').toLowerCase();
+      const cleanName = nickname.startsWith('tr|') ? nickname.substring(3) : nickname;
+      
+      if (nickname.includes(searchTerm) || cleanName.includes(searchTerm)) {
+        card.style.display = 'flex';
+        visibleCount++;
+      } else {
+        card.style.display = 'none';
+      }
+    });
+
+    let noResultsMsg = document.getElementById('noResultsMsg');
+    if (visibleCount === 0 && allCards.length > 0 && searchTerm !== '') {
+      if (!noResultsMsg) {
+        noResultsMsg = document.createElement('div');
+        noResultsMsg.className = 'empty-state';
+        noResultsMsg.id = 'noResultsMsg';
+        noResultsMsg.innerHTML = '<svg viewBox="0 0 24 24" width="32" height="32" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 12px; opacity: 0.4;"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg><p style="margin: 0; font-size: 15px;">No matching users found.</p>';
+        usersGrid.appendChild(noResultsMsg);
+      }
+    } else if (noResultsMsg) {
+      noResultsMsg.remove();
+    }
+  }
+
+  activeSearchInput.addEventListener('input', handleSearchFilter);
+
   function updateGridState() {
     const cards = usersGrid.querySelectorAll('.user-card');
     onlineCount.textContent = cards.length;
     const emptyMsg = document.getElementById('emptyStateMsg');
+    
     if (cards.length === 0 && isInitialLoaded) {
       if (!emptyMsg) {
         usersGrid.innerHTML = '<div class="empty-state" id="emptyStateMsg"><i class="fas fa-ghost" style="font-size:30px; margin-bottom:10px;"></i><br>No one is online right now.</div>';
       }
     } else if (cards.length > 0 && emptyMsg) {
       emptyMsg.remove();
+    }
+
+    if (activeSearchInput.value) {
+      handleSearchFilter();
     }
   }
 
