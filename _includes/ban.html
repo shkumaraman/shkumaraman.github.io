@@ -1,0 +1,443 @@
+<style>
+  .ban-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.88);
+    backdrop-filter: blur(8px);
+    z-index: 999999;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    box-sizing: border-box;
+  }
+
+  .ban-overlay.active {
+    display: flex;
+  }
+
+  .ban-card {
+    background: var(--dark-surface, #18181b);
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    border-radius: 16px;
+    padding: 28px 22px;
+    max-width: 380px;
+    width: 100%;
+    text-align: center;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.7), 0 0 25px rgba(239, 68, 68, 0.25);
+    color: var(--dark-text, #fff);
+  }
+
+  .light-mode .ban-card {
+    background: var(--light-surface, #ffffff);
+    border-color: rgba(239, 68, 68, 0.4);
+    color: var(--light-text, #18181b);
+  }
+
+  .ban-icon-wrap {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 16px;
+    color: #ef4444;
+    font-size: 26px;
+  }
+
+  .ban-title {
+    font-size: 18px;
+    font-weight: 700;
+    margin: 0 0 8px;
+    color: #ef4444;
+  }
+
+  .ban-desc {
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--dark-text-muted, #a1a1aa);
+    margin: 0 0 16px;
+  }
+
+  .light-mode .ban-desc {
+    color: var(--light-text-muted, #71717a);
+  }
+
+  .ban-reason-box {
+    background: rgba(239, 68, 68, 0.08);
+    border: 0.5px solid rgba(239, 68, 68, 0.25);
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 12px;
+    color: #f87171;
+    font-weight: 500;
+    margin-bottom: 20px;
+    word-break: break-word;
+  }
+
+  .ban-btn {
+    width: 100%;
+    padding: 11px;
+    background: #ef4444;
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+
+  .ban-btn:hover {
+    background: #dc2626;
+  }
+
+  .chat-disabled-banner {
+    display: none;
+    padding: 10px 14px;
+    background: rgba(239, 68, 68, 0.15);
+    border-top: 1px solid rgba(239, 68, 68, 0.3);
+    color: #ef4444;
+    font-size: 12px;
+    font-weight: 600;
+    text-align: center;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .chat-disabled-banner.active {
+    display: block;
+  }
+</style>
+
+<div id="talkrushBanModal" class="ban-overlay">
+  <div class="ban-card">
+    <div class="ban-icon-wrap">
+      <i class="fa-solid fa-ban"></i>
+    </div>
+    <h3 class="ban-title">Device & Account Banned</h3>
+    <p class="ban-desc">Your device has been permanently flagged and restricted from messaging for illegal platform promotion.</p>
+    <div id="banReasonText" class="ban-reason-box">Competitor Promotion Detected</div>
+    <button class="ban-btn" onclick="window.location.href='/'">Return to Home</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  const BAN_KEY = 'tr_sec_ban';
+  const FP_KEY = 'tr_sec_fp';
+  const BAN_EXPIRY_DAYS = 365;
+  const FLOOD_WINDOW_MS = 4000;
+  const FLOOD_MAX_COUNT = 5;
+
+  let messageTimestamps = [];
+
+  function generateDeviceFingerprint() {
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = 200;
+      canvas.height = 50;
+      const ctx = canvas.getContext('2d');
+      ctx.textBaseline = 'top';
+      ctx.font = "14px 'Arial'";
+      ctx.fillStyle = '#f60';
+      ctx.fillRect(100, 1, 62, 20);
+      ctx.fillStyle = '#069';
+      ctx.fillText('TalkRush-Security-FP', 2, 15);
+      ctx.fillStyle = 'rgba(102, 204, 0, 0.7)';
+      ctx.fillText('TalkRush-Security-FP', 4, 17);
+      
+      let glInfo = '';
+      try {
+        const gl = document.createElement('canvas').getContext('webgl');
+        if (gl) {
+          const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+          if (debugInfo) {
+            glInfo = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
+          }
+        }
+      } catch (_) {}
+
+      const raw = [
+        canvas.toDataURL(),
+        glInfo,
+        navigator.userAgent,
+        screen.width + 'x' + screen.height,
+        screen.colorDepth,
+        navigator.hardwareConcurrency || '',
+        Intl.DateTimeFormat().resolvedOptions().timeZone || ''
+      ].join('###');
+
+      let hash = 0;
+      for (let i = 0; i < raw.length; i++) {
+        hash = ((hash << 5) - hash) + raw.charCodeAt(i);
+        hash |= 0;
+      }
+      return 'FP_' + Math.abs(hash).toString(36);
+    } catch (_) {
+      return 'FP_FALLBACK';
+    }
+  }
+
+  const currentDeviceFp = generateDeviceFingerprint();
+
+  function setCookie(name, val, days) {
+    const d = new Date();
+    d.setTime(d.getTime() + (days * 24 * 60 * 60 * 1000));
+    document.cookie = `${name}=${encodeURIComponent(val)};expires=${d.toUTCString()};path=/;SameSite=Lax`;
+  }
+
+  function getCookie(name) {
+    const v = document.cookie.match('(^|;) ?' + name + '=([^;]*)(;|$)');
+    return v ? decodeURIComponent(v[2]) : null;
+  }
+
+  function getStoredBan() {
+    let raw = localStorage.getItem(BAN_KEY) || sessionStorage.getItem(BAN_KEY) || getCookie(BAN_KEY);
+    if (!raw) return null;
+
+    try {
+      const data = JSON.parse(raw);
+      if (Date.now() > data.expiresAt) {
+        localStorage.removeItem(BAN_KEY);
+        sessionStorage.removeItem(BAN_KEY);
+        setCookie(BAN_KEY, '', -1);
+        return null;
+      }
+      localStorage.setItem(BAN_KEY, raw);
+      sessionStorage.setItem(BAN_KEY, raw);
+      setCookie(BAN_KEY, raw, BAN_EXPIRY_DAYS);
+      return data;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function applyDeviceBan(reason) {
+    const banPayload = {
+      banned: true,
+      fp: currentDeviceFp,
+      reason: reason || 'Promotion of competitor platforms',
+      bannedAt: Date.now(),
+      expiresAt: Date.now() + (BAN_EXPIRY_DAYS * 24 * 60 * 60 * 1000)
+    };
+
+    const str = JSON.stringify(banPayload);
+    try {
+      localStorage.setItem(BAN_KEY, str);
+      sessionStorage.setItem(BAN_KEY, str);
+      setCookie(BAN_KEY, str, BAN_EXPIRY_DAYS);
+      localStorage.setItem(FP_KEY, currentDeviceFp);
+    } catch (_) {}
+
+    enforceBanUI(banPayload);
+  }
+
+  function enforceBanUI(banPayload) {
+    const modal = document.getElementById('talkrushBanModal');
+    const reasonEl = document.getElementById('banReasonText');
+    if (reasonEl) {
+      reasonEl.textContent = banPayload.reason;
+    }
+    if (modal) {
+      modal.classList.add('active');
+    }
+
+    const msgInput = document.getElementById('msgInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const imgBtn = document.getElementById('imgBtn');
+    const gifBtn = document.getElementById('gifTriggerBtn');
+    const voiceBtn = document.getElementById('voiceRecordBtn');
+    const imgInput = document.getElementById('imgInput');
+
+    if (msgInput) {
+      msgInput.disabled = true;
+      msgInput.value = '';
+      msgInput.placeholder = 'Chatting disabled (Device Banned)';
+    }
+    if (sendBtn) sendBtn.disabled = true;
+    if (imgBtn) imgBtn.style.display = 'none';
+    if (gifBtn) gifBtn.style.display = 'none';
+    if (voiceBtn) voiceBtn.style.display = 'none';
+    if (imgInput) imgInput.disabled = true;
+
+    const chatControls = document.querySelector('.chat-controls-wrapper') || document.querySelector('.chat-controls');
+    if (chatControls && !document.getElementById('banDisabledNotice')) {
+      const notice = document.createElement('div');
+      notice.id = 'banDisabledNotice';
+      notice.className = 'chat-disabled-banner active';
+      notice.textContent = 'Device permanently restricted for spamming third-party platforms.';
+      chatControls.parentNode.insertBefore(notice, chatControls);
+    }
+  }
+
+  function cleanAndNormalize(str) {
+    if (!str) return '';
+    let s = str.toLowerCase();
+
+    s = s.replace(/[\u200B-\u200D\uFEFF]/g, '');
+    s = s.normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
+
+    const leetMap = {
+      '@': 'a', '4': 'a',
+      '8': 'b',
+      '3': 'e',
+      '1': 'i', '!': 'i', '|': 'i',
+      '0': 'o',
+      '5': 's', '$': 's',
+      '7': 't', '+': 't',
+      '9': 'g'
+    };
+
+    s = s.split('').map(c => leetMap[c] || c).join('');
+    return s;
+  }
+
+  function detectProhibitedPlatforms(text) {
+    if (!text) return false;
+
+    const normalized = cleanAndNormalize(text);
+    const stripped = normalized.replace(/[^a-z0-9]/g, '');
+
+    const directWords = [
+      'chatib',
+      'joingy',
+      'knotchat',
+      'subichat',
+      'talkwithstranger',
+      'talktostranger',
+      'talktostrangers',
+      'justalk',
+      'justtalk',
+      'telegram'
+    ];
+
+    for (const word of directWords) {
+      if (stripped.includes(word)) {
+        return true;
+      }
+    }
+
+    if (stripped.includes('y99')) {
+      return true;
+    }
+
+    if (stripped.includes('chitchat') && (stripped.includes('gg') || stripped.includes('com'))) {
+      return true;
+    }
+
+    const regexPatterns = [
+      /chat\s*ib/i,
+      /join\s*gy/i,
+      /y\s*9\s*9/i,
+      /chit\s*chat\s*(\.|\s|\/)?\s*gg/i,
+      /knot\s*(\.|\s|\/)?\s*chat/i,
+      /subi\s*(\.|\s|\/)?\s*chat/i,
+      /talk\s*(with|to)\s*stranger/i,
+      /jus\s*t?\s*talk/i,
+      /tele\s*gram/i,
+      /(^|\W)t\s*(\.|\/|\(|\))\s*me(\W|$)/i,
+      /(^|\W)tg\s*:\s*\/?\/?/i
+    ];
+
+    return regexPatterns.some(rgx => rgx.test(normalized));
+  }
+
+  function checkSpamFlood() {
+    const now = Date.now();
+    messageTimestamps = messageTimestamps.filter(ts => now - ts < FLOOD_WINDOW_MS);
+    messageTimestamps.push(now);
+    return messageTimestamps.length >= FLOOD_MAX_COUNT;
+  }
+
+  function interceptAction(e) {
+    const activeBan = getStoredBan();
+    if (activeBan) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      enforceBanUI(activeBan);
+      return false;
+    }
+
+    const msgInput = document.getElementById('msgInput');
+    if (!msgInput) return true;
+
+    const rawText = msgInput.value.trim();
+    if (!rawText) return true;
+
+    if (detectProhibitedPlatforms(rawText)) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      msgInput.value = '';
+
+      applyDeviceBan('Spam / Competitor Platform Promotion');
+
+      if (window.AlertKit && window.AlertKit.error) {
+        window.AlertKit.error('Device Suspended', 'Competitor links and platform promotion are strictly prohibited.');
+      }
+      return false;
+    }
+
+    if (checkSpamFlood()) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      msgInput.value = '';
+
+      applyDeviceBan('Rapid flooding & bot-like spamming');
+
+      if (window.AlertKit && window.AlertKit.error) {
+        window.AlertKit.error('Device Suspended', 'Excessive message flooding detected.');
+      }
+      return false;
+    }
+
+    return true;
+  }
+
+  function initBanEngine() {
+    const activeBan = getStoredBan();
+    if (activeBan) {
+      enforceBanUI(activeBan);
+      return;
+    }
+
+    window.addEventListener('keydown', (e) => {
+      if (e.target && e.target.id === 'msgInput' && e.key === 'Enter' && !e.shiftKey) {
+        interceptAction(e);
+      }
+    }, true);
+
+    window.addEventListener('click', (e) => {
+      const target = e.target.closest('#sendBtn');
+      if (target) {
+        interceptAction(e);
+      }
+    }, true);
+
+    const imgInput = document.getElementById('imgInput');
+    if (imgInput) {
+      imgInput.addEventListener('change', (e) => {
+        const ban = getStoredBan();
+        if (ban) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          imgInput.value = '';
+          enforceBanUI(ban);
+        }
+      }, true);
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initBanEngine);
+  } else {
+    initBanEngine();
+  }
+})();
+</script>
