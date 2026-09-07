@@ -4,10 +4,10 @@
     getDatabase, 
     ref, 
     set, 
-    update,
+    update, 
     onDisconnect, 
     onValue, 
-    serverTimestamp,
+    serverTimestamp, 
     remove 
   } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
 
@@ -24,13 +24,32 @@
 
   let currentNickname = localStorage.getItem("talkrush_nickname");
   let unsubscribeConnected = null;
+  let userCountry = "";
+  let userFlag = "";
 
   const sanitizeKey = (name) => name ? name.replace(/[.#$\[\]\/]/g, '_') : null;
 
-  const bindPresence = (nickname) => {
+  const fetchLocation = async () => {
+    try {
+      const res = await fetch('https://ipapi.co/json/');
+      const data = await res.json();
+      if (data && data.country_name && data.country_code) {
+        userCountry = data.country_name;
+        userFlag = data.country_code.toUpperCase().replace(/./g, char => 
+          String.fromCodePoint(char.charCodeAt(0) + 127397)
+        );
+      }
+    } catch (_) {}
+  };
+
+  const bindPresence = async (nickname) => {
     if (!nickname) return;
     const safeKey = sanitizeKey(nickname);
     if (!safeKey) return;
+
+    if (!userCountry) {
+      await fetchLocation();
+    }
 
     const userRef = ref(dbUsers, `users/${safeKey}`);
     const connectedRef = ref(dbUsers, ".info/connected");
@@ -43,6 +62,8 @@
       if (snap.val() === true) {
         await set(userRef, {
           nickname: nickname,
+          country: userCountry,
+          flag: userFlag,
           timestamp: serverTimestamp()
         });
         await onDisconnect(userRef).update({
