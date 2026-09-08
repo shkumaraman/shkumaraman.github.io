@@ -1,5 +1,5 @@
 <style>
-  .ban-overlay {
+  .ban-overlay, .warning-overlay {
     display: none;
     position: fixed;
     top: 0;
@@ -14,36 +14,54 @@
     padding: 20px;
     box-sizing: border-box;
   }
-  .ban-overlay.active {
+  .ban-overlay.active, .warning-overlay.active {
     display: flex;
   }
-  .ban-card {
+  .ban-card, .warning-card {
     background: var(--dark-surface, #18181b);
-    border: 1px solid rgba(239, 68, 68, 0.4);
     border-radius: 16px;
     padding: 26px 20px;
     max-width: 380px;
     width: 100%;
     text-align: center;
-    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.7), 0 0 25px rgba(239, 68, 68, 0.25);
     color: var(--dark-text, #fff);
+  }
+  .ban-card {
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.7), 0 0 25px rgba(239, 68, 68, 0.25);
+  }
+  .warning-card {
+    border: 1px solid rgba(234, 179, 8, 0.4);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.7), 0 0 25px rgba(234, 179, 8, 0.15);
   }
   .light-mode .ban-card {
     background: var(--light-surface, #ffffff);
     border-color: rgba(239, 68, 68, 0.4);
     color: var(--light-text, #18181b);
   }
-  .ban-icon-wrap {
+  .light-mode .warning-card {
+    background: var(--light-surface, #ffffff);
+    border-color: rgba(234, 179, 8, 0.4);
+    color: var(--light-text, #18181b);
+  }
+  .ban-icon-wrap, .warning-icon-wrap {
     width: 58px;
     height: 58px;
     border-radius: 50%;
-    background: rgba(239, 68, 68, 0.15);
-    border: 1px solid rgba(239, 68, 68, 0.3);
     display: flex;
     align-items: center;
     justify-content: center;
     margin: 0 auto 14px;
+  }
+  .ban-icon-wrap {
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid rgba(239, 68, 68, 0.3);
     color: #ef4444;
+  }
+  .warning-icon-wrap {
+    background: rgba(234, 179, 8, 0.15);
+    border: 1px solid rgba(234, 179, 8, 0.3);
+    color: #eab308;
   }
   .ban-title {
     font-size: 18px;
@@ -51,13 +69,19 @@
     margin: 0 0 6px;
     color: #ef4444;
   }
-  .ban-desc {
+  .warning-title {
+    font-size: 18px;
+    font-weight: 700;
+    margin: 0 0 6px;
+    color: #eab308;
+  }
+  .ban-desc, .warning-desc {
     font-size: 13px;
     line-height: 1.5;
     color: var(--dark-text-muted, #a1a1aa);
     margin: 0 0 14px;
   }
-  .light-mode .ban-desc {
+  .light-mode .ban-desc, .light-mode .warning-desc {
     color: var(--light-text-muted, #71717a);
   }
   .ban-reason-box {
@@ -139,11 +163,9 @@
   .copy-email-btn:active {
     transform: scale(0.96);
   }
-  .ban-btn {
+  .ban-btn, .warning-btn {
     width: 100%;
     padding: 11px;
-    background: #ef4444;
-    color: #fff;
     border: none;
     border-radius: 10px;
     font-size: 13px;
@@ -151,8 +173,19 @@
     cursor: pointer;
     transition: background 0.2s;
   }
+  .ban-btn {
+    background: #ef4444;
+    color: #fff;
+  }
   .ban-btn:hover {
     background: #dc2626;
+  }
+  .warning-btn {
+    background: #eab308;
+    color: #000;
+  }
+  .warning-btn:hover {
+    background: #ca8a04;
   }
   .chat-disabled-banner {
     display: none;
@@ -170,6 +203,21 @@
     display: block;
   }
 </style>
+
+<div id="talkrushWarningModal" class="warning-overlay">
+  <div class="warning-card">
+    <div class="warning-icon-wrap">
+      <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+        <line x1="12" y1="9" x2="12" y2="13"></line>
+        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+      </svg>
+    </div>
+    <h3 class="warning-title" id="warningTitleText">Warning</h3>
+    <p class="warning-desc" id="warningDescText">Promoting other platforms is not allowed.</p>
+    <button class="warning-btn" onclick="document.getElementById('talkrushWarningModal').classList.remove('active')">I Understand</button>
+  </div>
+</div>
 
 <div id="talkrushBanModal" class="ban-overlay">
   <div class="ban-card">
@@ -205,6 +253,7 @@
 (() => {
   const BAN_KEY = 'tr_sec_ban';
   const FP_KEY = 'tr_sec_fp';
+  const STRIKE_KEY = 'tr_sec_strikes';
   const BAN_EXPIRY_DAYS = 365;
   const FLOOD_WINDOW_MS = 4000;
   const FLOOD_MAX_COUNT = 5;
@@ -297,6 +346,34 @@
     }
   }
 
+  function getStrikes() {
+    return parseInt(localStorage.getItem(STRIKE_KEY) || '0', 10);
+  }
+
+  function addStrike() {
+    const strikes = getStrikes() + 1;
+    localStorage.setItem(STRIKE_KEY, strikes);
+    return strikes;
+  }
+
+  function showWarningUI(strikeCount) {
+    const modal = document.getElementById('talkrushWarningModal');
+    const title = document.getElementById('warningTitleText');
+    const desc = document.getElementById('warningDescText');
+    
+    if (strikeCount === 1) {
+      title.textContent = "Warning (1/2)";
+      desc.textContent = "Promoting other platforms or unauthorized links is not allowed.";
+    } else if (strikeCount === 2) {
+      title.textContent = "Final Warning (2/2)";
+      desc.textContent = "This is your final warning. The next violation will result in a permanent device ban.";
+    }
+    
+    if (modal) {
+      modal.classList.add('active');
+    }
+  }
+
   function applyDeviceBan(reason) {
     const banPayload = {
       banned: true,
@@ -316,6 +393,11 @@
   }
 
   function enforceBanUI(banPayload) {
+    const warningModal = document.getElementById('talkrushWarningModal');
+    if (warningModal) {
+      warningModal.classList.remove('active');
+    }
+
     const modal = document.getElementById('talkrushBanModal');
     const reasonEl = document.getElementById('banReasonText');
     if (reasonEl) reasonEl.textContent = banPayload.reason;
@@ -444,7 +526,13 @@
       e.preventDefault();
       e.stopImmediatePropagation();
       targetInput.value = '';
-      applyDeviceBan('Spam / Promotion Detected');
+      
+      const strikes = addStrike();
+      if (strikes >= 3) {
+        applyDeviceBan('Repeated unauthorized promotion after warnings');
+      } else {
+        showWarningUI(strikes);
+      }
       return false;
     }
 
