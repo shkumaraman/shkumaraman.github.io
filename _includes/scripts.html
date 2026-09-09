@@ -103,9 +103,6 @@ document.addEventListener('contextmenu', function(e) {
             if (err.detail) errorMsg = err.detail;
           } catch(e) {}
           
-          if (window.AlertKit) {
-            AlertKit.warning("Image Blocked", errorMsg);
-          }
           reject(new Error("NSFW_BLOCKED"));
         } else {
           reject(new Error(`Upload failed (${xhr.status})`));
@@ -124,17 +121,16 @@ document.addEventListener('contextmenu', function(e) {
     if (!fileUrl || !window.MEDIA_STORAGE_URL) return;
     
     try {
+      const baseUrl = window.MEDIA_STORAGE_URL.replace(/\/$/, "");
       const urlObj = new URL(fileUrl);
-      const pathParts = urlObj.pathname.split('/').filter(p => p); 
+      const pathParts = urlObj.pathname.split('/').filter(Boolean); 
       
       if (pathParts[0] === 'uploads' && pathParts[1]) {
         const filename = pathParts[1];
-        const pushId = filename.substring(0, filename.lastIndexOf(".")) || filename;
+        const dotIndex = filename.lastIndexOf(".");
+        const pushId = dotIndex > 0 ? filename.substring(0, dotIndex) : filename;
         
-        const baseUrl = window.MEDIA_STORAGE_URL.replace(/\/$/, "");
-        const deleteUrl = `${baseUrl}/uploads/${pushId}`;
-        
-        await fetch(deleteUrl, {
+        await fetch(`${baseUrl}/uploads/${pushId}`, {
           method: "DELETE",
           mode: "cors"
         });
