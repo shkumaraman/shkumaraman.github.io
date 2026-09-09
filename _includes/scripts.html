@@ -93,7 +93,7 @@ document.addEventListener('contextmenu', function(e) {
     }
     isModelLoading = true;
     try {
-      nsfwModelInstance = await nsfwjs.load();
+      nsfwModelInstance = await nsfwjs.load('MobileNetV2');
     } catch (e) {
     } finally {
       isModelLoading = false;
@@ -111,7 +111,9 @@ document.addEventListener('contextmenu', function(e) {
     }
 
     const model = await getNSFWModel();
-    if (!model) return true;
+    if (!model) {
+      return true;
+    }
 
     return new Promise((resolve) => {
       const img = new Image();
@@ -119,19 +121,27 @@ document.addEventListener('contextmenu', function(e) {
       img.src = objectUrl;
 
       img.onload = async () => {
+        img.width = img.naturalWidth || 400;
+        img.height = img.naturalHeight || 400;
+
         try {
           const predictions = await model.classify(img);
           URL.revokeObjectURL(objectUrl);
 
-          for (let i = 0; i < predictions.length; i++) {
-            const pred = predictions[i];
-            if ((pred.className === "Porn" || pred.className === "Hentai") && pred.probability > 0.50) {
-              return resolve(false);
-            }
-            if (pred.className === "Sexy" && pred.probability > 0.75) {
-              return resolve(false);
-            }
+          let pornProb = 0, hentaiProb = 0, sexyProb = 0;
+          predictions.forEach(p => {
+            if (p.className === 'Porn') pornProb = p.probability;
+            if (p.className === 'Hentai') hentaiProb = p.probability;
+            if (p.className === 'Sexy') sexyProb = p.probability;
+          });
+
+          const hardcoreScore = pornProb + hentaiProb;
+          const softcoreScore = sexyProb;
+
+          if (hardcoreScore > 0.35 || softcoreScore > 0.60) {
+            return resolve(false);
           }
+
           resolve(true);
         } catch (err) {
           URL.revokeObjectURL(objectUrl);
