@@ -956,8 +956,8 @@ pinnedBar.addEventListener('touchstart', e => {
 
 pinnedBar.addEventListener('touchmove', e => {
   if (pinHoldTriggered || !pinHoldTimer) return;
-  const dx = e.touches[0].clientX - pinStartX;
-  const dy = e.touches[0].clientY - pinStartY;
+  const dx = e.touches[0].clientX - startX;
+  const dy = e.touches[0].clientY - startY;
   if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
     clearTimeout(pinHoldTimer);
     pinHoldTimer = null;
@@ -1091,9 +1091,18 @@ function sendMessageToGroup(text) {
 
 async function sendImageToGroup(file) {
   if (isSendingMessage || !passwordVerified) return;
+
+  if (typeof window.checkImageSafety === 'function') {
+    const isSafe = await window.checkImageSafety(file);
+    if (!isSafe) {
+      AlertKit.warning("Image Blocked", "Nudity or explicit content is not allowed in public rooms.");
+      return;
+    }
+  }
+
   const loadingBubble = showUploadingBubble();
   try {
-    const imageUrl = await window.uploadMediaToServer(file, file.name);
+    const imageUrl = await window.uploadMediaToServer(file, file.name, true);
     const message = { type: "image", timestamp: Date.now(), url: imageUrl, nickname: myNickname };
     if (replyingTo) {
       message.replyTo = {
@@ -1105,7 +1114,11 @@ async function sendImageToGroup(file) {
     }
     await pushMessageToDB(message);
   } catch (err) {
-    AlertKit.error("Failed", "Failed to upload image. Please try again.");
+    if (err.message === "NSFW_BLOCKED") {
+      AlertKit.warning("Image Blocked", "Nudity or explicit content is not allowed in public rooms.");
+    } else {
+      AlertKit.error("Failed", "Failed to upload image. Please try again.");
+    }
   } finally {
     loadingBubble.remove();
   }
