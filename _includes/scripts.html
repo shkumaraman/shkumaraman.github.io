@@ -76,11 +76,12 @@ document.addEventListener('contextmenu', function(e) {
 <script>
   window.MEDIA_STORAGE_URL = "https://shkumaraman-backend.hf.space";
 
-  window.uploadMediaToServer = function(fileOrBlob, originalName = "file") {
+  window.uploadMediaToServer = async function(fileOrBlob, originalName = "file", isPublic = false) {
     return new Promise((resolve, reject) => {
       const formData = new FormData();
       formData.append("file", fileOrBlob, originalName);
       formData.append("target_path", "uploads");
+      formData.append("is_public", isPublic ? "true" : "false");
 
       const baseUrl = window.MEDIA_STORAGE_URL.replace(/\/$/, "");
       const xhr = new XMLHttpRequest();
@@ -95,12 +96,23 @@ document.addEventListener('contextmenu', function(e) {
           } catch (e) {
             reject(new Error("Invalid JSON response from server"));
           }
+        } else if (xhr.status === 400) {
+          let errorMsg = "Explicit content is not allowed.";
+          try {
+            const err = JSON.parse(xhr.responseText);
+            if (err.detail) errorMsg = err.detail;
+          } catch(e) {}
+          
+          if (window.AlertKit) {
+            AlertKit.warning("Image Blocked", errorMsg);
+          }
+          reject(new Error("NSFW_BLOCKED"));
         } else {
           reject(new Error(`Upload failed (${xhr.status})`));
         }
       };
 
-      xhr.onerror = (err) => {
+      xhr.onerror = () => {
         reject(new Error("Network error or CORS policy blocked the upload"));
       };
 
