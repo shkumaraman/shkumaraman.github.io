@@ -224,6 +224,15 @@ description: "Database Cleanup utility for TalkRush"
     <div class="log-area" id="groupsLogs"></div>
   </div>
 
+  <div class="manager-section">
+    <div class="manager-header">
+      <h3 class="manager-title">Old Media (Photos & Voice)</h3>
+      <button class="clean-btn" id="cleanMediaBtn">Clean</button>
+    </div>
+    <div class="status-text" id="mediaStatus">Idle (Deletes photos/audio older than 15 days)</div>
+    <div class="log-area" id="mediaLogs"></div>
+  </div>
+
 </div>
 
 <script type="module">
@@ -383,7 +392,7 @@ description: "Database Cleanup utility for TalkRush"
         
         groupsStatus.textContent = `Successfully deleted ${deadGroups.length} groups.`;
         groupsStatus.style.color = "#25D366";
-        logToGroups(`Deleted ${deadGroups.length} groups completely (Data + Messages + Replies).`);
+        logToGroups(`Deleted ${deadGroups.length} groups completely.`);
       }
 
     } catch (error) {
@@ -394,5 +403,104 @@ description: "Database Cleanup utility for TalkRush"
 
     cleanGroupsBtn.textContent = "Clean";
     cleanGroupsBtn.disabled = false;
+  });
+
+  const cleanMediaBtn = document.getElementById('cleanMediaBtn');
+  const mediaStatus = document.getElementById('mediaStatus');
+  const mediaLogs = document.getElementById('mediaLogs');
+
+  function logToMedia(message) {
+    const entry = document.createElement('div');
+    entry.className = 'log-entry';
+    entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+    mediaLogs.prepend(entry);
+  }
+
+  cleanMediaBtn.addEventListener('click', async () => {
+    cleanMediaBtn.disabled = true;
+    cleanMediaBtn.textContent = "Cleaning...";
+    mediaStatus.textContent = "Scanning both databases for old media...";
+    mediaStatus.style.color = "#34B7F1";
+
+    const FIFTEEN_DAYS_MS = 15 * 24 * 60 * 60 * 1000;
+    const cutoffTime = Date.now() - FIFTEEN_DAYS_MS;
+    let deletedMediaCount = 0;
+
+    try {
+      logToMedia("Scanning Group Messages for old media...");
+      const groupMsgsSnap = await get(ref(dbGroups, 'group_messages'));
+      const groupUpdates = {};
+
+      if (groupMsgsSnap.exists()) {
+        const promises = [];
+
+        groupMsgsSnap.forEach(groupNode => {
+          const groupName = groupNode.key;
+          groupNode.forEach(msgNode => {
+            const msg = msgNode.val();
+            if (msg.timestamp < cutoffTime && (msg.type === 'image' || msg.type === 'audio' || msg.type === 'gif')) {
+              groupUpdates[`group_messages/${groupName}/${msgNode.key}`] = null;
+              
+              if (msg.url && typeof window.deleteMediaFromServer === 'function') {
+                promises.push(window.deleteMediaFromServer(msg.url));
+                deletedMediaCount++;
+              }
+            }
+          });
+        });
+        
+        await Promise.all(promises);
+      }
+
+      if (Object.keys(groupUpdates).length > 0) {
+        await update(ref(dbGroups), groupUpdates);
+        logToMedia(`Deleted ${Object.keys(groupUpdates).length} old media entries from Groups.`);
+      } else {
+        logToMedia("No old media found in Groups.");
+      }
+
+      logToMedia("Scanning Inbox Messages for old media...");
+      const inboxMsgsSnap = await get(ref(dbUsers, 'messages'));
+      const inboxUpdates = {};
+
+      if (inboxMsgsSnap.exists()) {
+        const promises = [];
+
+        inboxMsgsSnap.forEach(chatNode => {
+          const chatId = chatNode.key;
+          chatNode.forEach(msgNode => {
+            const msg = msgNode.val();
+            if (msg.timestamp < cutoffTime && (msg.type === 'image' || msg.type === 'audio' || msg.type === 'gif')) {
+              inboxUpdates[`messages/${chatId}/${msgNode.key}`] = null;
+              
+              if (msg.url && typeof window.deleteMediaFromServer === 'function') {
+                promises.push(window.deleteMediaFromServer(msg.url));
+                deletedMediaCount++;
+              }
+            }
+          });
+        });
+
+        await Promise.all(promises);
+      }
+
+      if (Object.keys(inboxUpdates).length > 0) {
+        await update(ref(dbUsers), inboxUpdates);
+        logToMedia(`Deleted ${Object.keys(inboxUpdates).length} old media entries from Inbox.`);
+      } else {
+        logToMedia("No old media found in Inbox.");
+      }
+
+      mediaStatus.textContent = `Success! Cleaned ${deletedMediaCount} old media files.`;
+      mediaStatus.style.color = "#25D366";
+
+    } catch (error) {
+      mediaStatus.textContent = "Error occurred!";
+      mediaStatus.style.color = "#ff4d4d";
+      logToMedia(`Error: ${error.message}`);
+    }
+
+    cleanMediaBtn.textContent = "Clean";
+    cleanMediaBtn.disabled = false;
   });
 </script>
