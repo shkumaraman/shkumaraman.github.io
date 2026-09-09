@@ -1,0 +1,216 @@
+<style>
+  .warning-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.88);
+    backdrop-filter: blur(8px);
+    z-index: 999999;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    box-sizing: border-box;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+  .warning-overlay.active {
+    display: flex;
+    opacity: 1;
+  }
+  .warning-card {
+    background: var(--dark-surface, #18181b);
+    border-radius: 16px;
+    padding: 28px 22px;
+    max-width: 360px;
+    width: 100%;
+    text-align: center;
+    color: var(--dark-text, #fff);
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.7), 0 0 30px rgba(239, 68, 68, 0.2);
+    transform: translateY(20px);
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  }
+  .warning-overlay.active .warning-card {
+    transform: translateY(0);
+  }
+  .light-mode .warning-card {
+    background: var(--light-surface, #ffffff);
+    border-color: rgba(239, 68, 68, 0.4);
+    color: var(--light-text, #18181b);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15), 0 0 25px rgba(239, 68, 68, 0.15);
+  }
+  .warning-icon-wrap {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 16px;
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: #ef4444;
+  }
+  .warning-title {
+    font-size: 20px;
+    font-weight: 700;
+    margin: 0 0 8px;
+    color: #ef4444;
+  }
+  .warning-desc {
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--dark-text-muted, #a1a1aa);
+    margin: 0 0 22px;
+  }
+  .light-mode .warning-desc {
+    color: var(--light-text-muted, #71717a);
+  }
+  .warning-btn {
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    background: #ef4444;
+    color: #fff;
+    transition: background 0.2s, transform 0.1s;
+  }
+  .warning-btn:hover {
+    background: #dc2626;
+  }
+  .warning-btn:active {
+    transform: scale(0.97);
+  }
+</style>
+
+<div id="talkrushWarningModal" class="warning-overlay">
+  <div class="warning-card">
+    <div class="warning-icon-wrap">
+      <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+        <line x1="12" y1="9" x2="12" y2="13"></line>
+        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+      </svg>
+    </div>
+    <h3 class="warning-title">Action Blocked</h3>
+    <p class="warning-desc">Promoting other platforms, websites, or sharing OnlyFans links is strictly prohibited on this platform.</p>
+    <button class="warning-btn" onclick="document.getElementById('talkrushWarningModal').classList.remove('active')">Got it, Close</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  const FLOOD_WINDOW_MS = 4000;
+  const FLOOD_MAX_COUNT = 5;
+  let messageTimestamps = [];
+
+  function cleanAndNormalize(str) {
+    if (!str) return '';
+    let s = str.toLowerCase();
+    s = s.replace(/[\u200B-\u200D\uFEFF]/g, '');
+    s = s.normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
+    
+    const leetMap = {
+      '@': 'a', '4': 'a', '8': 'b', '3': 'e',
+      '1': 'i', '!': 'i', '|': 'i', '0': 'o',
+      '5': 's', '$': 's', '7': 't', '+': 't', '9': 'g'
+    };
+    s = s.split('').map(c => leetMap[c] || c).join('');
+    return s;
+  }
+
+  function detectProhibitedPlatforms(text) {
+    if (!text) return false;
+    const normalized = cleanAndNormalize(text);
+    const stripped = normalized.replace(/[^a-z0-9]/g, ''); 
+
+    const directWords = [
+      'chatib', 'joingy', 'knotchat', 'subichat',
+      'talkwithstranger', 'talktostranger', 'talktostrangers',
+      'justalk', 'justtalk', 'telegram', 'zangi', 
+      'onlyfans', 'onlyfanscom', 'ofcom'
+    ];
+
+    for (const word of directWords) {
+      if (stripped.includes(word)) {
+        return true;
+      }
+    }
+
+    if (stripped.includes('y99')) return true;
+    if (stripped.includes('chitchat') && (stripped.includes('gg') || stripped.includes('com'))) return true;
+
+    const regexPatterns = [
+      /(^|\W)t\s*(\.|\/|\(|\))\s*me(\W|$)/i,
+      /(^|\W)tg\s*:\s*\/?\/?/i
+    ];
+
+    return regexPatterns.some(rgx => rgx.test(normalized));
+  }
+
+  function checkSpamFlood() {
+    const now = Date.now();
+    messageTimestamps = messageTimestamps.filter(ts => now - ts < FLOOD_WINDOW_MS);
+    messageTimestamps.push(now);
+    return messageTimestamps.length >= FLOOD_MAX_COUNT;
+  }
+
+  function resolveTargetInput(sourceEl) {
+    if (sourceEl && sourceEl.id === 'submitBtn') return document.getElementById('postText');
+    if (sourceEl && sourceEl.id === 'sendBtn') return document.getElementById('msgInput');
+    if (sourceEl && (sourceEl.id === 'postText' || sourceEl.id === 'msgInput')) return sourceEl;
+    return document.getElementById('postText') || document.getElementById('msgInput');
+  }
+
+  function interceptSubmission(e, sourceEl) {
+    const targetInput = resolveTargetInput(sourceEl);
+    if (!targetInput) return true;
+
+    const rawContent = targetInput.value.trim();
+    if (!rawContent) return true;
+
+    if (detectProhibitedPlatforms(rawContent) || checkSpamFlood()) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      targetInput.value = ''; 
+      document.getElementById('talkrushWarningModal').classList.add('active');
+      return false;
+    }
+
+    return true;
+  }
+
+  function initFilterEngine() {
+    window.addEventListener('keydown', (e) => {
+      if (e.target && e.target.id === 'msgInput' && e.key === 'Enter' && !e.shiftKey) {
+        interceptSubmission(e, e.target);
+      }
+    }, true); 
+
+    window.addEventListener('click', (e) => {
+      const sendBtn = e.target.closest('#sendBtn');
+      if (sendBtn) {
+        interceptSubmission(e, sendBtn);
+        return;
+      }
+
+      const submitBtn = e.target.closest('#submitBtn');
+      if (submitBtn) {
+        interceptSubmission(e, submitBtn);
+      }
+    }, true);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initFilterEngine);
+  } else {
+    initFilterEngine();
+  }
+})();
+</script>
