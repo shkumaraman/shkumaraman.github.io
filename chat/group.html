@@ -590,6 +590,7 @@ const msgInput = document.getElementById("msgInput");
 const replyBar = document.getElementById("replyBar");
 const replyBarText = document.getElementById("replyBarText");
 const editBar = document.getElementById("editBar");
+const contextMenu = document.getElementById("contextMenu");
 
 let GIPHY_API_KEY = '';
 
@@ -719,11 +720,17 @@ async function initializeChat() {
       giphyApiKey: GIPHY_API_KEY,
       onSendVoice: async (base64Data, duration) => {
         if (!passwordVerified || isSendingMessage) return;
+
+        if (typeof window.uploadMediaToServer !== 'function') {
+          AlertKit.error("Upload Error", "Upload service is not ready. Please refresh.");
+          return;
+        }
+
         const loadingBubble = showUploadingBubble();
         try {
           const res = await fetch(base64Data);
           const audioBlob = await res.blob();
-          const audioUrl = await window.uploadMediaToServer(audioBlob, "voice.webm");
+          const audioUrl = await window.uploadMediaToServer(audioBlob, "voice.webm", false);
           const message = { type: "audio", timestamp: Date.now(), url: audioUrl, duration: duration, nickname: myNickname };
           if (replyingTo) {
             message.replyTo = {
@@ -956,8 +963,8 @@ pinnedBar.addEventListener('touchstart', e => {
 
 pinnedBar.addEventListener('touchmove', e => {
   if (pinHoldTriggered || !pinHoldTimer) return;
-  const dx = e.touches[0].clientX - startX;
-  const dy = e.touches[0].clientY - startY;
+  const dx = e.touches[0].clientX - pinStartX;
+  const dy = e.touches[0].clientY - pinStartY;
   if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
     clearTimeout(pinHoldTimer);
     pinHoldTimer = null;
@@ -1092,6 +1099,11 @@ function sendMessageToGroup(text) {
 async function sendImageToGroup(file) {
   if (isSendingMessage || !passwordVerified) return;
 
+  if (typeof window.uploadMediaToServer !== 'function') {
+    AlertKit.error("Upload Error", "Upload service is not ready. Please refresh.");
+    return;
+  }
+
   if (typeof window.checkImageSafety === 'function') {
     const isSafe = await window.checkImageSafety(file);
     if (!isSafe) {
@@ -1180,7 +1192,6 @@ function clearEdit() {
 }
 document.getElementById('editBarClose').addEventListener('click', clearEdit);
 
-const contextMenu = document.getElementById('contextMenu');
 function showContextMenu(x, y, msg, isMe) {
   contextTargetMsg = msg;
   contextMenu.style.left = Math.min(x, window.innerWidth - 170) + 'px';
@@ -1258,8 +1269,8 @@ document.getElementById('contextDeleteBtn').addEventListener('click', async () =
     
     if (isConfirmed) {
       remove(ref(db, `group_messages/${groupName}/${msgKey}`));
-      if ((targetMsg.type === 'image' || targetMsg.type === 'audio') && targetMsg.url && window.deleteMediaFromServer) {
-        window.deleteMediaFromServer(targetMsg.url);
+      if ((targetMsg.type === 'image' || targetMsg.type === 'audio') && targetMsg.url && typeof window.deleteMediaFromServer === 'function') {
+        window.deleteMediaFromServer(targetMsg.url).catch(() => {});
       }
     }
   } else {
