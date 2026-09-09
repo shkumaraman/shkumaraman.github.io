@@ -718,6 +718,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     let highlightPostId = null;
     let myFriendsMap = {};
     let selectedImageFile = null;
+    let currentPreviewUrl = null;
 
     let currentNickname = localStorage.getItem("talkrush_nickname");
 
@@ -997,6 +998,18 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       </svg>
     `;
 
+    function clearSelectedImage() {
+      if (currentPreviewUrl) {
+        URL.revokeObjectURL(currentPreviewUrl);
+        currentPreviewUrl = null;
+      }
+      selectedImageFile = null;
+      postImgInput.value = "";
+      imagePreviewBox.style.display = "none";
+      imagePreviewEl.src = "";
+      attachImgBtn.classList.remove("has-file");
+    }
+
     attachImgBtn.addEventListener("click", () => {
       postImgInput.click();
     });
@@ -1011,19 +1024,18 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
         return;
       }
 
+      if (currentPreviewUrl) {
+        URL.revokeObjectURL(currentPreviewUrl);
+      }
+
       selectedImageFile = file;
-      imagePreviewEl.src = URL.createObjectURL(file);
+      currentPreviewUrl = URL.createObjectURL(file);
+      imagePreviewEl.src = currentPreviewUrl;
       imagePreviewBox.style.display = "block";
       attachImgBtn.classList.add("has-file");
     });
 
-    removeImgBtn.addEventListener("click", () => {
-      selectedImageFile = null;
-      postImgInput.value = "";
-      imagePreviewBox.style.display = "none";
-      imagePreviewEl.src = "";
-      attachImgBtn.classList.remove("has-file");
-    });
+    removeImgBtn.addEventListener("click", clearSelectedImage);
 
     window.addFriend = async (targetNickname) => {
       const currentNick = getNickname();
@@ -1168,11 +1180,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
         await set(newPostRef, postData);
 
         document.getElementById("postText").value = "";
-        selectedImageFile = null;
-        postImgInput.value = "";
-        imagePreviewBox.style.display = "none";
-        imagePreviewEl.src = "";
-        attachImgBtn.classList.remove("has-file");
+        clearSelectedImage();
 
         AlertKit.toast("Post published successfully!", "success");
       } catch (error) {
