@@ -226,10 +226,10 @@ description: "Database Cleanup utility for TalkRush"
 
   <div class="manager-section">
     <div class="manager-header">
-      <h3 class="manager-title">Old Media (Photos & Voice)</h3>
+      <h3 class="manager-title">Old Media Files</h3>
       <button class="clean-btn" id="cleanMediaBtn">Clean</button>
     </div>
-    <div class="status-text" id="mediaStatus">Idle (Deletes photos/audio older than 15 days)</div>
+    <div class="status-text" id="mediaStatus">Idle (Deletes media files older than 15 days)</div>
     <div class="log-area" id="mediaLogs"></div>
   </div>
 
@@ -285,16 +285,38 @@ description: "Database Cleanup utility for TalkRush"
         logToUsers("No chats matched the cleanup criteria.");
       } else {
         const updates = {};
+        const chatsToDelete = [];
         let count = 0;
 
         snapshot.forEach((childSnap) => {
           const chatId = childSnap.key;
+          chatsToDelete.push(chatId);
           updates[`friends/${chatId}`] = null;
           updates[`messages/${chatId}`] = null;
           count++;
         });
 
         if (count > 0) {
+          logToUsers("Scanning deleted chats for media files to remove from server...");
+          const mediaPromises = [];
+          
+          for (const chatId of chatsToDelete) {
+            const msgsSnap = await get(ref(dbUsers, `messages/${chatId}`));
+            if (msgsSnap.exists()) {
+              msgsSnap.forEach(msgNode => {
+                const msg = msgNode.val();
+                if (msg.url && typeof window.deleteMediaFromServer === 'function') {
+                  mediaPromises.push(window.deleteMediaFromServer(msg.url).catch(() => {}));
+                }
+              });
+            }
+          }
+
+          await Promise.all(mediaPromises);
+          if (mediaPromises.length > 0) {
+             logToUsers(`Cleaned ${mediaPromises.length} media files from old chats.`);
+          }
+
           usersStatus.textContent = `Deleting ${count} chat records...`;
           await update(ref(dbUsers), updates);
           
@@ -385,6 +407,26 @@ description: "Database Cleanup utility for TalkRush"
           if (replyCleanCount > 0) {
              logToGroups(`Found and marked ${replyCleanCount} orphaned replies/pings for deletion.`);
           }
+        }
+
+        logToGroups("Scanning dead groups for media files to remove from server...");
+        const mediaPromises = [];
+        
+        for (const groupName of deadGroups) {
+          const msgsSnap = await get(ref(dbGroups, `group_messages/${groupName}`));
+          if (msgsSnap.exists()) {
+            msgsSnap.forEach(msgNode => {
+              const msg = msgNode.val();
+              if (msg.url && typeof window.deleteMediaFromServer === 'function') {
+                mediaPromises.push(window.deleteMediaFromServer(msg.url).catch(() => {}));
+              }
+            });
+          }
+        }
+
+        await Promise.all(mediaPromises);
+        if (mediaPromises.length > 0) {
+           logToGroups(`Cleaned ${mediaPromises.length} media files from dead groups.`);
         }
 
         groupsStatus.textContent = `Deleting ${deadGroups.length} dead groups...`;
