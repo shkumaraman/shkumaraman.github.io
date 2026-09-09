@@ -20,10 +20,6 @@ document.addEventListener('contextmenu', function(e) {
 <!-- lottiefiles -->
 <script src="https://unpkg.com/@lottiefiles/dotlottie-wc@latest/dist/dotlottie-wc.js" type="module"></script>
 
-<!-- TensorFlow.js NSFWJS -->
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs/dist/tf.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/nsfwjs/dist/nsfwjs.min.js"></script>
-
 <script>
 (function() {
     const chatContainer = document.querySelector('.chat-container');
@@ -80,98 +76,7 @@ document.addEventListener('contextmenu', function(e) {
 <script>
   window.MEDIA_STORAGE_URL = "https://shkumaraman-backend.hf.space";
 
-  let nsfwModelInstance = null;
-  let isModelLoading = false;
-
-  async function getNSFWModel() {
-    if (nsfwModelInstance) return nsfwModelInstance;
-    if (isModelLoading) {
-      while (isModelLoading) {
-        await new Promise(r => setTimeout(r, 100));
-      }
-      return nsfwModelInstance;
-    }
-    isModelLoading = true;
-    try {
-      nsfwModelInstance = await nsfwjs.load('MobileNetV2');
-    } catch (e) {
-    } finally {
-      isModelLoading = false;
-    }
-    return nsfwModelInstance;
-  }
-
-  window.addEventListener('load', () => {
-    getNSFWModel();
-  });
-
-  window.checkImageSafety = async function(fileOrBlob) {
-    if (!fileOrBlob.type || !fileOrBlob.type.startsWith('image/')) {
-      return true;
-    }
-
-    const model = await getNSFWModel();
-    if (!model) {
-      return true;
-    }
-
-    return new Promise((resolve) => {
-      const img = new Image();
-      const objectUrl = URL.createObjectURL(fileOrBlob);
-      img.src = objectUrl;
-
-      img.onload = async () => {
-        img.width = img.naturalWidth || 400;
-        img.height = img.naturalHeight || 400;
-
-        try {
-          const predictions = await model.classify(img);
-          URL.revokeObjectURL(objectUrl);
-
-          let pornProb = 0, hentaiProb = 0, sexyProb = 0;
-          predictions.forEach(p => {
-            if (p.className === 'Porn') pornProb = p.probability;
-            if (p.className === 'Hentai') hentaiProb = p.probability;
-            if (p.className === 'Sexy') sexyProb = p.probability;
-          });
-
-          const hardcoreScore = pornProb + hentaiProb;
-          const softcoreScore = sexyProb;
-
-          if (hardcoreScore > 0.35 || softcoreScore > 0.60) {
-            return resolve(false);
-          }
-
-          resolve(true);
-        } catch (err) {
-          URL.revokeObjectURL(objectUrl);
-          resolve(true);
-        }
-      };
-
-      img.onerror = () => {
-        URL.revokeObjectURL(objectUrl);
-        resolve(true);
-      };
-    });
-  };
-
-  window.uploadMediaToServer = async function(fileOrBlob, originalName = "file", isPublic = false) {
-    if (isPublic) {
-      const isSafe = await window.checkImageSafety(fileOrBlob);
-      if (!isSafe) {
-        const modal = document.getElementById('talkrushWarningModal');
-        if (modal) {
-          const title = modal.querySelector('.warning-title');
-          const desc = modal.querySelector('.warning-desc');
-          if (title) title.textContent = "Media Blocked";
-          if (desc) desc.textContent = "Sensitive or explicit media cannot be posted publicly.";
-          modal.classList.add('active');
-        }
-        throw new Error("NSFW_BLOCKED");
-      }
-    }
-
+  window.uploadMediaToServer = function(fileOrBlob, originalName = "file") {
     return new Promise((resolve, reject) => {
       const formData = new FormData();
       formData.append("file", fileOrBlob, originalName);
@@ -195,7 +100,7 @@ document.addEventListener('contextmenu', function(e) {
         }
       };
 
-      xhr.onerror = () => {
+      xhr.onerror = (err) => {
         reject(new Error("Network error or CORS policy blocked the upload"));
       };
 
