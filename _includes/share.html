@@ -491,7 +491,7 @@
 
   let cachedFriends = [];
   let selectedChatIds = new Set();
-  let currentShareItem = { type: "text", text: "", url: "", duration: 0 };
+  let currentShareItem = { type: "text", text: "", url: "", postUrl: "", duration: 0 };
 
   function getAvatarLetter(name) {
     if (!name) return "?";
@@ -536,7 +536,7 @@
 
   function parseSharePayload(payload) {
     if (!payload) {
-      return { type: "text", text: window.location.href, url: "", duration: 0 };
+      return { type: "text", text: window.location.href, url: "", postUrl: window.location.href, duration: 0 };
     }
 
     if (typeof payload === "object") {
@@ -553,16 +553,17 @@
         type: type,
         url: mediaUrl,
         text: payload.text || "",
+        postUrl: payload.postUrl || payload.shareUrl || "",
         duration: Number(payload.duration) || 0
       };
     }
 
     const detected = detectMediaType(payload);
     if (detected === "audio" || detected === "image" || detected === "gif") {
-      return { type: detected, url: payload, text: "", duration: 0 };
+      return { type: detected, url: payload, text: "", postUrl: payload, duration: 0 };
     }
 
-    return { type: "text", text: payload, url: "", duration: 0 };
+    return { type: "text", text: payload, url: "", postUrl: payload, duration: 0 };
   }
 
   async function fetchFriendsForShare() {
@@ -678,7 +679,7 @@
   };
 
   window.copyShareContent = function() {
-    const toCopy = currentShareItem.url || currentShareItem.text || window.location.href;
+    const toCopy = currentShareItem.postUrl || currentShareItem.url || currentShareItem.text || window.location.href;
     navigator.clipboard.writeText(toCopy).then(() => {
       showShareToast("Copied to clipboard!");
     }).catch(() => {
@@ -689,7 +690,7 @@
   window.openNativeShare = async function() {
     const shareData = {
       title: document.title,
-      url: currentShareItem.url || currentShareItem.text || window.location.href
+      url: currentShareItem.postUrl || currentShareItem.url || currentShareItem.text || window.location.href
     };
 
     if (navigator.share) {
@@ -730,15 +731,25 @@
           }));
           lastText = "📷 Image";
 
-          if (currentShareItem.text) {
+          const postCaption = (currentShareItem.text || "").trim();
+          const linkStr = currentShareItem.postUrl || "";
+          let combinedPostText = "";
+
+          if (postCaption && linkStr) {
+            combinedPostText = `${postCaption}\n\n${linkStr}`;
+          } else {
+            combinedPostText = postCaption || linkStr;
+          }
+
+          if (combinedPostText) {
             baseTime += 1;
             promises.push(set(push(messagesRef), {
               nickname: myNickname,
               type: "text",
-              text: currentShareItem.text,
+              text: combinedPostText,
               timestamp: baseTime
             }));
-            lastText = currentShareItem.text.substring(0, 30);
+            lastText = combinedPostText.substring(0, 30);
           }
         } else if (currentShareItem.type === "audio" && currentShareItem.url) {
           promises.push(set(push(messagesRef), {
@@ -758,14 +769,23 @@
           }));
           lastText = "🎯 GIF";
         } else {
-          const textContent = currentShareItem.text || currentShareItem.url || window.location.href;
+          const postCaption = (currentShareItem.text || "").trim();
+          const linkStr = currentShareItem.postUrl || currentShareItem.url || window.location.href;
+          let fullText = "";
+
+          if (postCaption && linkStr && postCaption !== linkStr) {
+            fullText = `${postCaption}\n\n${linkStr}`;
+          } else {
+            fullText = postCaption || linkStr;
+          }
+
           promises.push(set(push(messagesRef), {
             nickname: myNickname,
             type: "text",
-            text: textContent,
+            text: fullText,
             timestamp: baseTime
           }));
-          lastText = textContent.substring(0, 30) + (textContent.length > 30 ? '...' : '');
+          lastText = fullText.substring(0, 30) + (fullText.length > 30 ? "..." : "");
         }
 
         if (customText) {
@@ -776,7 +796,7 @@
             timestamp: baseTime,
             type: "text"
           }));
-          lastText = customText.substring(0, 30) + (customText.length > 30 ? '...' : '');
+          lastText = customText.substring(0, 30) + (customText.length > 30 ? "..." : "");
         }
 
         promises.push(update(friendRef, {
