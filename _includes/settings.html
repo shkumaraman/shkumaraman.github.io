@@ -15,6 +15,14 @@
         <div class="input-hint">Max 20 characters</div>
       </div>
       
+      <div class="preference-section">
+        <h3>I am a</h3>
+        <div class="gender-options" id="userGenderOptions">
+          <div class="gender-option" data-value="male" onclick="selectUserGender(this)">Male</div>
+          <div class="gender-option" data-value="female" onclick="selectUserGender(this)">Female</div>
+        </div>
+      </div>
+      
       <div class="preference-section settings-section">
         <h3>Notifications & Sound</h3>
         
@@ -82,7 +90,7 @@
         Preferences saved successfully!
       </div>
       <div class="preference-feedback error" id="preferenceError">
-        Please enter a nickname
+        Please fill required fields
       </div>
       <div class="preference-feedback error" id="preferenceBanned">
         Nickname contains inappropriate content
@@ -201,9 +209,6 @@
 .light-mode .nickname-input:focus { border-color: var(--pref-accent); background-color: rgba(0,0,0,0.06); }
 .nickname-input.highlight-required { border-color: #ff6b6b !important; box-shadow: 0 0 0 2px rgba(255,107,107,0.2); }
 
-.input-hint { font-size: 11px; color: var(--pref-dark-text-muted); margin-top: 6px; text-align: center; }
-.light-mode .input-hint { color: var(--pref-light-text-muted); }
-
 .settings-section {
   background-color: var(--pref-dark-card);
   border: 0.5px solid var(--pref-dark-border2);
@@ -262,6 +267,11 @@ input:checked + .toggle-slider:before { transform: translateX(20px); }
 .light-mode .preference-subsection h4 { color: var(--pref-light-text-muted); }
 
 .gender-options { display: flex; gap: 8px; justify-content: center; margin-bottom: 4px; }
+.gender-options.highlight-required {
+  border-radius: 22px;
+  box-shadow: 0 0 0 2px rgba(255, 107, 107, 0.4);
+  transition: box-shadow 0.2s;
+}
 .gender-option {
   padding: 8px 16px; border-radius: 20px; cursor: pointer; transition: all 0.2s;
   border: 0.5px solid var(--pref-dark-border2); background-color: var(--pref-dark-input);
@@ -299,6 +309,9 @@ input:checked + .toggle-slider:before { transform: translateX(20px); }
 }
 .light-mode .tags-input { color: var(--pref-light-text); }
 
+.input-hint { font-size: 11px; color: var(--pref-dark-text-muted); margin-top: 6px; text-align: center; }
+.light-mode .input-hint { color: var(--pref-light-text-muted); }
+
 .preference-feedback {
   padding: 10px; text-align: center; font-weight: 500; display: none;
   color: #22c55e; font-size: 12px; margin-top: 15px; border-radius: 8px;
@@ -319,6 +332,7 @@ input:checked + .toggle-slider:before { transform: translateX(20px); }
 
 <script>
 let prefsMyNickname = "";
+let prefsUserGender = "";
 let prefsGenderInterest = "everyone";
 let prefsMyTags = [];
 let prefsBannedWords = [];
@@ -329,16 +343,31 @@ let isDragging = false;
 let modalContent = null;
 let modal = null;
 
-function hasNicknameSaved() {
-  return !!localStorage.getItem("talkrush_nickname");
+function hasRequiredFieldsSaved() {
+  return !!localStorage.getItem("talkrush_nickname") && !!localStorage.getItem("talkrush_user_gender");
 }
 
-function highlightNickname() {
+function highlightRequiredFields() {
   const input = document.getElementById('nicknameInput');
-  input.classList.add('highlight-required');
-  setTimeout(() => input.classList.remove('highlight-required'), 1500);
+  const genderContainer = document.getElementById('userGenderOptions');
+  const errorText = document.getElementById('preferenceError');
+  let errorMsg = "Please fill required fields";
+
+  if (!input.value.trim()) {
+    input.classList.add('highlight-required');
+    setTimeout(() => input.classList.remove('highlight-required'), 1500);
+    errorMsg = "Please enter a nickname";
+  }
+
+  if (!prefsUserGender) {
+    genderContainer.classList.add('highlight-required');
+    setTimeout(() => genderContainer.classList.remove('highlight-required'), 1500);
+    if (input.value.trim()) errorMsg = "Please select your gender";
+  }
+
   hideAllFeedback();
-  document.getElementById('preferenceError').style.display = 'block';
+  errorText.textContent = errorMsg;
+  errorText.style.display = 'block';
 }
 
 async function loadPrefsBannedWords() {
@@ -418,8 +447,8 @@ function openPreferencesModal() {
 }
 
 function closePreferencesModal() {
-  if (!hasNicknameSaved()) {
-    highlightNickname();
+  if (!hasRequiredFieldsSaved()) {
+    highlightRequiredFields();
     return;
   }
 
@@ -445,8 +474,8 @@ function closePreferencesModal() {
 
 function handleOutsideClick(e) {
   if (e.target === modal) {
-    if (!hasNicknameSaved()) {
-      highlightNickname();
+    if (!hasRequiredFieldsSaved()) {
+      highlightRequiredFields();
       return;
     }
     closePreferencesModal();
@@ -455,8 +484,8 @@ function handleOutsideClick(e) {
 
 function handleEscKey(e) {
   if (e.key === 'Escape') {
-    if (!hasNicknameSaved()) {
-      highlightNickname();
+    if (!hasRequiredFieldsSaved()) {
+      highlightRequiredFields();
       return;
     }
     closePreferencesModal();
@@ -487,9 +516,9 @@ function handleTouchEnd(e) {
   const deltaY = touchCurrentY - touchStartY;
   modalContent.style.transition = 'transform 0.3s cubic-bezier(0.1, 0.9, 0.2, 1)';
 
-  if (!hasNicknameSaved()) {
+  if (!hasRequiredFieldsSaved()) {
     modalContent.style.transform = 'translateY(0)';
-    highlightNickname();
+    highlightRequiredFields();
     isDragging = false;
     return;
   }
@@ -528,9 +557,9 @@ function handleMouseUp(e) {
   const deltaY = touchCurrentY - touchStartY;
   modalContent.style.transition = 'transform 0.3s cubic-bezier(0.1, 0.9, 0.2, 1)';
 
-  if (!hasNicknameSaved()) {
+  if (!hasRequiredFieldsSaved()) {
     modalContent.style.transform = 'translateY(0)';
-    highlightNickname();
+    highlightRequiredFields();
     isDragging = false;
     document.removeEventListener('mousemove', handleMouseMove);
     document.removeEventListener('mouseup', handleMouseUp);
@@ -574,10 +603,26 @@ function loadSavedPreferences() {
   } else {
     input.value = "";
   }
+  
+  const savedUserGender = localStorage.getItem("talkrush_user_gender");
+  if (savedUserGender) {
+    prefsUserGender = savedUserGender;
+    document.querySelectorAll('#userGenderOptions .gender-option').forEach(option => {
+      if (option.getAttribute('data-value') === savedUserGender) {
+        option.classList.add('selected');
+      } else {
+        option.classList.remove('selected');
+      }
+    });
+  } else {
+    prefsUserGender = "";
+    document.querySelectorAll('#userGenderOptions .gender-option').forEach(option => option.classList.remove('selected'));
+  }
+
   const savedGenderInterest = localStorage.getItem("talkrush_gender_interest");
   if (savedGenderInterest) {
     prefsGenderInterest = savedGenderInterest;
-    document.querySelectorAll('.gender-option').forEach(option => {
+    document.querySelectorAll('.advanced-content .gender-option').forEach(option => {
       if (option.getAttribute('data-value') === savedGenderInterest) {
         option.classList.add('selected');
       } else {
@@ -585,6 +630,7 @@ function loadSavedPreferences() {
       }
     });
   }
+  
   const savedTags = localStorage.getItem("talkrush_tags");
   if (savedTags) {
     prefsMyTags = JSON.parse(savedTags);
@@ -595,8 +641,20 @@ function loadSavedPreferences() {
   hideAllFeedback();
 }
 
+function selectUserGender(element) {
+  const container = element.closest('.gender-options');
+  container.querySelectorAll('.gender-option').forEach(option => {
+    option.classList.remove('selected');
+  });
+  element.classList.add('selected');
+  prefsUserGender = element.getAttribute('data-value');
+  container.classList.remove('highlight-required');
+  hideAllFeedback();
+}
+
 function selectGender(element) {
-  document.querySelectorAll('.gender-option').forEach(option => {
+  const container = element.closest('.gender-options');
+  container.querySelectorAll('.gender-option').forEach(option => {
     option.classList.remove('selected');
   });
   element.classList.add('selected');
@@ -638,18 +696,32 @@ function savePreferences() {
   hideAllFeedback();
   const input = document.getElementById("nicknameInput");
   let newNickname = input.value.trim();
+  
   if (!newNickname) {
+    document.getElementById('preferenceError').textContent = "Please enter a nickname";
     document.getElementById('preferenceError').style.display = 'block';
     input.classList.add('highlight-required');
     setTimeout(() => input.classList.remove('highlight-required'), 1500);
     return;
   }
+
+  if (!prefsUserGender) {
+    const genderContainer = document.getElementById('userGenderOptions');
+    genderContainer.classList.add('highlight-required');
+    setTimeout(() => genderContainer.classList.remove('highlight-required'), 1500);
+    document.getElementById('preferenceError').textContent = "Please select your gender";
+    document.getElementById('preferenceError').style.display = 'block';
+    return;
+  }
+
   if (prefsContainsBannedWords(newNickname)) {
     document.getElementById('preferenceBanned').style.display = 'block';
     return;
   }
+  
   prefsMyNickname = "TR|" + newNickname.substring(0, 20);
   localStorage.setItem("talkrush_nickname", prefsMyNickname);
+  localStorage.setItem("talkrush_user_gender", prefsUserGender);
   localStorage.setItem("talkrush_gender_interest", prefsGenderInterest);
   localStorage.setItem("talkrush_tags", JSON.stringify(prefsMyTags));
   
@@ -661,20 +733,24 @@ function savePreferences() {
   }, 1200);
 }
 
-function checkNicknameExists() {
+function checkRequiredFieldsExist() {
   const savedNickname = localStorage.getItem("talkrush_nickname");
-  if (!savedNickname) {
+  const savedUserGender = localStorage.getItem("talkrush_user_gender");
+  
+  if (!savedNickname || !savedUserGender) {
     setTimeout(() => {
       openPreferencesModal();
     }, 500);
   } else {
     prefsMyNickname = savedNickname;
+    prefsUserGender = savedUserGender;
   }
 }
 
 document.addEventListener("DOMContentLoaded", function() {
   loadPrefsBannedWords();
-  checkNicknameExists();
+  checkRequiredFieldsExist();
+  
   if (!localStorage.getItem("soundMuted")) {
     localStorage.setItem("soundMuted", "false");
   }
@@ -684,14 +760,17 @@ document.addEventListener("DOMContentLoaded", function() {
   if (!localStorage.getItem("notificationOff")) {
     localStorage.setItem("notificationOff", "false");
   }
+  
   const savedGenderInterest = localStorage.getItem("talkrush_gender_interest");
   if (savedGenderInterest) {
     prefsGenderInterest = savedGenderInterest;
   }
+  
   const savedTags = localStorage.getItem("talkrush_tags");
   if (savedTags) {
     prefsMyTags = JSON.parse(savedTags);
   }
+  
   modal = document.getElementById('preferencesModal');
   if (modal) {
     modal.addEventListener('click', handleOutsideClick);
