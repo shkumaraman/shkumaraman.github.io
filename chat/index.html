@@ -491,6 +491,11 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   
   let myCountry = localStorage.getItem("talkrush_country") || "";
 
+  let isBotActive = false;
+  let currentBotMessages = [];
+  let currentBotIndex = 0;
+  let botReplyTimer = null;
+
   const fetchLocation = async () => {
     try {
       const res = await fetch('https://ipapi.co/json/');
@@ -1125,7 +1130,104 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
           }
         });
       }, 3000);
+
+      setTimeout(() => {
+        if (isConnected) return;
+        cleanUpWaitingList();
+        connectToBot();
+      }, 5000);
     });
+  }
+
+  async function connectToBot() {
+    clearSystemMessage();
+    try {
+      const res = await fetch('/bot.json');
+      const bots = await res.json();
+      const botKeys = Object.keys(bots);
+      const randomBotKey = botKeys[Math.floor(Math.random() * botKeys.length)];
+      const botData = bots[randomBotKey];
+      
+      isBotActive = true;
+      currentBotMessages = [botData[0], ...botData.slice(3)];
+      currentBotIndex = 0;
+      isConnected = true;
+      
+      hideNewChatButton();
+      showFriendButton();
+      
+      myConn = {
+        send: function(data) {
+          if (data.type === "chat_msg" || data.type === "image" || data.type === "audio" || data.type === "gif") {
+            if (botReplyTimer) clearTimeout(botReplyTimer);
+            botReplyTimer = setTimeout(triggerBotReply, 500);
+          }
+        },
+        close: function() {
+          isBotActive = false;
+          isConnected = false;
+          if (botReplyTimer) clearTimeout(botReplyTimer);
+        }
+      };
+      
+      let botTags = [];
+      let botCountry = "Unknown";
+      if (botData.length >= 3) {
+         const tagParts = botData[1].split(' '); 
+         if (tagParts.length === 2) {
+             botTags = [tagParts[0] === 'M' ? 'Male' : (tagParts[0] === 'F' ? 'Female' : tagParts[0]), tagParts[1]];
+         } else {
+             botTags = [botData[1]];
+         }
+         botCountry = botData[2];
+      }
+      
+      showStrangerCard(botTags, botCountry);
+      logSystem("Stranger connected!");
+    } catch (e) {
+      logSystem("No stranger found. Click 'Start New Chat' to try again.");
+      showNewChatButton();
+    }
+  }
+
+  function triggerBotReply() {
+    if (!isBotActive) return;
+
+    if (currentBotIndex >= currentBotMessages.length) {
+      if (Math.random() < 0.5) {
+        setTimeout(() => {
+          if (isBotActive) endConnection();
+        }, 1000 + Math.random() * 2000);
+      }
+      return;
+    }
+
+    const replyText = currentBotMessages[currentBotIndex];
+    currentBotIndex++;
+
+    showTypingIndicator();
+    
+    botReplyTimer = setTimeout(() => {
+      if (!isBotActive) return;
+      hideTypingIndicator();
+      
+      const msgKey = 'bot_' + Date.now();
+      appendMessage({ 
+        key: msgKey, 
+        type: 'text', 
+        text: replyText, 
+        timestamp: Date.now(), 
+        nickname: "Stranger" 
+      }, false);
+
+      if (currentBotIndex >= currentBotMessages.length) {
+        if (Math.random() < 0.5) {
+          setTimeout(() => {
+            if (isBotActive) endConnection();
+          }, 3000 + Math.random() * 4000);
+        }
+      }
+    }, 3000);
   }
 
   function connectToPeer(otherId) {
@@ -1182,7 +1284,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     conn.on("error", endConnection);
 
     setTimeout(() => {
-      if (myConn && isConnected) {
+      if (myConn && isConnected && !isBotActive) {
         myConn.send({ type: "tags", tags: myTags, nickname: myNickname, country: myCountry });
       }
     }, 500);
@@ -1231,7 +1333,9 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     try {
       const newChatRef = push(ref(friendDb, 'friends'));
       await set(newChatRef, { nickname1: myNickname, nickname2: currentStrangerNickname, lastMessageText: "Say Hi!", lastTimestamp: Date.now(), lastSender: myNickname });
-      myConn.send({ type: 'friend_added', nickname: myNickname });
+      if (!isBotActive) {
+        myConn.send({ type: 'friend_added', nickname: myNickname });
+      }
       logSystem(`You added ${targetNickname} as a friend.`);
       hideFriendButton();
     } catch (error) {
