@@ -236,8 +236,8 @@ description: "Database Cleanup utility for TalkRush"
 </div>
 
 <script type="module">
-  import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
-  import { getDatabase, ref, query, orderByChild, endAt, get, update } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
+  import { initializeApp } from "firebase/app";
+  import { getDatabase, ref, query, orderByChild, endAt, get, update } from "firebase/database";
 
   const firebaseConfigUsers = {
     databaseURL: "https://talkrush3-default-rtdb.asia-southeast1.firebasedatabase.app"
@@ -260,6 +260,14 @@ description: "Database Cleanup utility for TalkRush"
     entry.className = 'log-entry';
     entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
     usersLogs.prepend(entry);
+  }
+
+  async function deleteMediaInBatches(urls, batchSize = 10) {
+    if (typeof window.deleteMediaFromServer !== 'function' || !Array.isArray(urls)) return;
+    for (let i = 0; i < urls.length; i += batchSize) {
+      const chunk = urls.slice(i, i + batchSize);
+      await Promise.all(chunk.map(url => window.deleteMediaFromServer(url).catch(() => {})));
+    }
   }
 
   cleanUsersBtn.addEventListener('click', async () => {
@@ -298,23 +306,23 @@ description: "Database Cleanup utility for TalkRush"
 
         if (count > 0) {
           logToUsers("Scanning deleted chats for media files to remove from server...");
-          const mediaPromises = [];
+          const mediaUrls = [];
           
           for (const chatId of chatsToDelete) {
             const msgsSnap = await get(ref(dbUsers, `messages/${chatId}`));
             if (msgsSnap.exists()) {
               msgsSnap.forEach(msgNode => {
                 const msg = msgNode.val();
-                if (msg.url && typeof window.deleteMediaFromServer === 'function') {
-                  mediaPromises.push(window.deleteMediaFromServer(msg.url).catch(() => {}));
+                if (msg.url && (msg.type === 'image' || msg.type === 'audio')) {
+                  mediaUrls.push(msg.url);
                 }
               });
             }
           }
 
-          await Promise.all(mediaPromises);
-          if (mediaPromises.length > 0) {
-             logToUsers(`Cleaned ${mediaPromises.length} media files from old chats.`);
+          await deleteMediaInBatches(mediaUrls, 10);
+          if (mediaUrls.length > 0) {
+            logToUsers(`Cleaned ${mediaUrls.length} media files from old chats.`);
           }
 
           usersStatus.textContent = `Deleting ${count} chat records...`;
@@ -405,28 +413,28 @@ description: "Database Cleanup utility for TalkRush"
             });
           });
           if (replyCleanCount > 0) {
-             logToGroups(`Found and marked ${replyCleanCount} orphaned replies/pings for deletion.`);
+            logToGroups(`Found and marked ${replyCleanCount} orphaned replies/pings for deletion.`);
           }
         }
 
         logToGroups("Scanning dead groups for media files to remove from server...");
-        const mediaPromises = [];
+        const mediaUrls = [];
         
         for (const groupName of deadGroups) {
           const msgsSnap = await get(ref(dbGroups, `group_messages/${groupName}`));
           if (msgsSnap.exists()) {
             msgsSnap.forEach(msgNode => {
               const msg = msgNode.val();
-              if (msg.url && typeof window.deleteMediaFromServer === 'function') {
-                mediaPromises.push(window.deleteMediaFromServer(msg.url).catch(() => {}));
+              if (msg.url && (msg.type === 'image' || msg.type === 'audio')) {
+                mediaUrls.push(msg.url);
               }
             });
           }
         }
 
-        await Promise.all(mediaPromises);
-        if (mediaPromises.length > 0) {
-           logToGroups(`Cleaned ${mediaPromises.length} media files from dead groups.`);
+        await deleteMediaInBatches(mediaUrls, 10);
+        if (mediaUrls.length > 0) {
+          logToGroups(`Cleaned ${mediaUrls.length} media files from dead groups.`);
         }
 
         groupsStatus.textContent = `Deleting ${deadGroups.length} dead groups...`;
@@ -472,26 +480,24 @@ description: "Database Cleanup utility for TalkRush"
       logToMedia("Scanning Group Messages for old media...");
       const groupMsgsSnap = await get(ref(dbGroups, 'group_messages'));
       const groupUpdates = {};
+      const groupMediaUrls = [];
 
       if (groupMsgsSnap.exists()) {
-        const promises = [];
-
         groupMsgsSnap.forEach(groupNode => {
           const groupName = groupNode.key;
           groupNode.forEach(msgNode => {
             const msg = msgNode.val();
             if (msg.timestamp < cutoffTime && (msg.type === 'image' || msg.type === 'audio' || msg.type === 'gif')) {
               groupUpdates[`group_messages/${groupName}/${msgNode.key}`] = null;
-              
-              if (msg.url && typeof window.deleteMediaFromServer === 'function') {
-                promises.push(window.deleteMediaFromServer(msg.url));
-                deletedMediaCount++;
+              if (msg.url && (msg.type === 'image' || msg.type === 'audio')) {
+                groupMediaUrls.push(msg.url);
               }
             }
           });
         });
-        
-        await Promise.all(promises);
+
+        await deleteMediaInBatches(groupMediaUrls, 10);
+        deletedMediaCount += groupMediaUrls.length;
       }
 
       if (Object.keys(groupUpdates).length > 0) {
@@ -504,26 +510,24 @@ description: "Database Cleanup utility for TalkRush"
       logToMedia("Scanning Inbox Messages for old media...");
       const inboxMsgsSnap = await get(ref(dbUsers, 'messages'));
       const inboxUpdates = {};
+      const inboxMediaUrls = [];
 
       if (inboxMsgsSnap.exists()) {
-        const promises = [];
-
         inboxMsgsSnap.forEach(chatNode => {
           const chatId = chatNode.key;
           chatNode.forEach(msgNode => {
             const msg = msgNode.val();
             if (msg.timestamp < cutoffTime && (msg.type === 'image' || msg.type === 'audio' || msg.type === 'gif')) {
               inboxUpdates[`messages/${chatId}/${msgNode.key}`] = null;
-              
-              if (msg.url && typeof window.deleteMediaFromServer === 'function') {
-                promises.push(window.deleteMediaFromServer(msg.url));
-                deletedMediaCount++;
+              if (msg.url && (msg.type === 'image' || msg.type === 'audio')) {
+                inboxMediaUrls.push(msg.url);
               }
             }
           });
         });
 
-        await Promise.all(promises);
+        await deleteMediaInBatches(inboxMediaUrls, 10);
+        deletedMediaCount += inboxMediaUrls.length;
       }
 
       if (Object.keys(inboxUpdates).length > 0) {
