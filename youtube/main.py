@@ -163,7 +163,7 @@ def parse_youtube_search(html: str, limit: int = 10) -> list:
 async def root():
     return {
         "name": "Unofficial YouTube API",
-        "version": "2.0",
+        "version": "1.0",
         "status": "online",
         "docs": "/docs",
     }
