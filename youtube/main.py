@@ -3,13 +3,15 @@ import re
 from contextlib import asynccontextmanager
 from urllib.parse import quote_plus
 
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.middleware.cors import CORSMiddleware
 import httpx
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
 
-# -------------------------------------------------------------
-# 🌐 LIFESPAN & HTTP CLIENT (Reusable Connection Pool)
-# -------------------------------------------------------------
+# Rate limiting imports
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
 DEFAULT_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -20,29 +22,31 @@ DEFAULT_HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 }
 
+# Initialize Limiter (IP address ke base par track karega)
+limiter = Limiter(key_func=get_remote_address)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # App start hone par HTTP client initialize hoga
     app.state.client = httpx.AsyncClient(
         headers=DEFAULT_HEADERS,
         timeout=12.0,
         follow_redirects=True,
     )
     yield
-    # App band hone par connection cleanly close hoga
     await app.state.client.aclose()
 
 
-# -------------------------------------------------------------
-# 🚀 FASTAPI APP SETUP
-# -------------------------------------------------------------
 app = FastAPI(
     title="Unofficial YouTube API",
     description="Fast, Non-blocking YouTube Search & Video Details Scraper",
     version="1.0",
     lifespan=lifespan,
 )
+
+# Rate limiter setup in FastAPI
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -53,11 +57,7 @@ app.add_middleware(
 )
 
 
-# -------------------------------------------------------------
-# 🔍 SEARCH PARSER HELPER
-# -------------------------------------------------------------
 def parse_youtube_search(html: str, limit: int = 10) -> list:
-    # ytInitialData extract karne ke multiple regex patterns
     match = re.search(
         r"var\s+ytInitialData\s*=\s*({.+?});\s*<\/script>", html
     ) or re.search(r"ytInitialData\s*=\s*({.+?});", html)
@@ -70,7 +70,6 @@ def parse_youtube_search(html: str, limit: int = 10) -> list:
     except Exception:
         return []
 
-    # Section List dhoondna (Desktop aur Mobile dono cover karta hai)
     sections = []
     try:
         sections = data["contents"]["twoColumnSearchResultsRenderer"][
@@ -95,16 +94,12 @@ def parse_youtube_search(html: str, limit: int = 10) -> list:
             if not vid:
                 continue
 
-            # Title
             title = ""
             if "title" in video and "runs" in video["title"]:
-                title = "".join(
-                    r.get("text", "") for r in video["title"]["runs"]
-                )
+                title = "".join(r.get("text", "") for r in video["title"]["runs"])
             elif "title" in video and "simpleText" in video["title"]:
                 title = video["title"]["simpleText"]
 
-            # Thumbnail
             thumbs = video.get("thumbnail", {}).get("thumbnails", [])
             thumbnail = (
                 thumbs[-1].get("url", "")
@@ -112,11 +107,9 @@ def parse_youtube_search(html: str, limit: int = 10) -> list:
                 else f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg"
             )
 
-            # Channel / Author
             channel_runs = video.get("ownerText", {}).get("runs", [])
             channel = channel_runs[0].get("text", "") if channel_runs else ""
 
-            # Duration
             duration_obj = video.get("lengthText", {})
             duration = duration_obj.get("simpleText") or (
                 duration_obj.get("runs", [{}])[0].get("text")
@@ -124,7 +117,6 @@ def parse_youtube_search(html: str, limit: int = 10) -> list:
                 else None
             )
 
-            # Views
             view_obj = video.get("viewCountText", {})
             views = view_obj.get("simpleText") or (
                 view_obj.get("runs", [{}])[0].get("text")
@@ -132,10 +124,7 @@ def parse_youtube_search(html: str, limit: int = 10) -> list:
                 else None
             )
 
-            # Published Time (e.g., "2 days ago")
-            published_time = video.get("publishedTimeText", {}).get(
-                "simpleText"
-            )
+            published_time = video.get("publishedTimeText", {}).get("simpleText")
 
             results.append(
                 {
@@ -156,11 +145,9 @@ def parse_youtube_search(html: str, limit: int = 10) -> list:
     return results
 
 
-# -------------------------------------------------------------
-# 📌 ROUTES
-# -------------------------------------------------------------
 @app.get("/")
-async def root():
+@limiter.limit("60/minute") # Allow 60 requests per minute for root
+async def root(request: Request):
     return {
         "name": "Unofficial YouTube API",
         "version": "1.0",
@@ -170,7 +157,9 @@ async def root():
 
 
 @app.get("/search/videos")
+@limiter.limit("15/minute") # Strict rate limit for scraping endpoint
 async def search_videos(
+    request: Request,
     query: str = Query(..., description="Search keyword"),
     limit: int = Query(10, ge=1, le=50, description="Max results (1 to 50)"),
 ):
@@ -200,8 +189,8 @@ async def search_videos(
 
 
 @app.get("/video/{video_id}")
-async def video_details(video_id: str):
-    # Clean ID validation (YouTube IDs are typically 11 alphanumeric chars)
+@limiter.limit("30/minute") # Moderate rate limit for video details
+async def video_details(request: Request, video_id: str):
     if not re.match(r"^[a-zA-Z0-9_-]{11}$", video_id):
         raise HTTPException(
             status_code=400, detail="Invalid YouTube Video ID format"
@@ -220,10 +209,7 @@ async def video_details(video_id: str):
 
         html = resp.text
 
-        # 1. Primary: ytInitialPlayerResponse extract karna
-        player_match = re.search(
-            r"ytInitialPlayerResponse\s*=\s*({.+?});", html
-        )
+        player_match = re.search(r"ytInitialPlayerResponse\s*=\s*({.+?});", html)
         if player_match:
             try:
                 player_data = json.loads(player_match.group(1))
@@ -253,16 +239,9 @@ async def video_details(video_id: str):
             except Exception:
                 pass
 
-        # 2. Fallback: Agar player data na mile toh OpenGraph Meta Tags se fetch karein
-        og_title = re.search(
-            r'<meta\s+property="og:title"\s+content="([^"]*)"', html
-        )
-        og_image = re.search(
-            r'<meta\s+property="og:image"\s+content="([^"]*)"', html
-        )
-        og_desc = re.search(
-            r'<meta\s+property="og:description"\s+content="([^"]*)"', html
-        )
+        og_title = re.search(r'<meta\s+property="og:title"\s+content="([^"]*)"', html)
+        og_image = re.search(r'<meta\s+property="og:image"\s+content="([^"]*)"', html)
+        og_desc = re.search(r'<meta\s+property="og:description"\s+content="([^"]*)"', html)
 
         title = og_title.group(1) if og_title else "Unknown"
 
