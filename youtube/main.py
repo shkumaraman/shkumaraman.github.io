@@ -3,14 +3,9 @@ import re
 from contextlib import asynccontextmanager
 from urllib.parse import quote_plus
 
-import httpx
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-
-# Rate limiting imports
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
+import httpx
 
 DEFAULT_HEADERS = {
     "User-Agent": (
@@ -22,10 +17,6 @@ DEFAULT_HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 }
 
-# Initialize Limiter (IP address ke base par track karega)
-limiter = Limiter(key_func=get_remote_address)
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.client = httpx.AsyncClient(
@@ -36,17 +27,12 @@ async def lifespan(app: FastAPI):
     yield
     await app.state.client.aclose()
 
-
 app = FastAPI(
     title="Unofficial YouTube API",
     description="Fast, Non-blocking YouTube Search & Video Details Scraper",
     version="1.0",
     lifespan=lifespan,
 )
-
-# Rate limiter setup in FastAPI
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -55,7 +41,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 def parse_youtube_search(html: str, limit: int = 10) -> list:
     match = re.search(
@@ -72,9 +57,7 @@ def parse_youtube_search(html: str, limit: int = 10) -> list:
 
     sections = []
     try:
-        sections = data["contents"]["twoColumnSearchResultsRenderer"][
-            "primaryContents"
-        ]["sectionListRenderer"]["contents"]
+        sections = data["contents"]["twoColumnSearchResultsRenderer"]["primaryContents"]["sectionListRenderer"]["contents"]
     except KeyError:
         try:
             sections = data["contents"]["sectionListRenderer"]["contents"]
@@ -144,10 +127,8 @@ def parse_youtube_search(html: str, limit: int = 10) -> list:
 
     return results
 
-
 @app.get("/")
-@limiter.limit("60/minute") # Allow 60 requests per minute for root
-async def root(request: Request):
+async def root():
     return {
         "name": "Unofficial YouTube API",
         "version": "1.0",
@@ -155,11 +136,8 @@ async def root(request: Request):
         "docs": "/docs",
     }
 
-
 @app.get("/search/videos")
-@limiter.limit("15/minute") # Strict rate limit for scraping endpoint
 async def search_videos(
-    request: Request,
     query: str = Query(..., description="Search keyword"),
     limit: int = Query(10, ge=1, le=50, description="Max results (1 to 50)"),
 ):
@@ -187,10 +165,8 @@ async def search_videos(
     except Exception as e:
         return {"ok": False, "error": str(e), "results": []}
 
-
 @app.get("/video/{video_id}")
-@limiter.limit("30/minute") # Moderate rate limit for video details
-async def video_details(request: Request, video_id: str):
+async def video_details(video_id: str):
     if not re.match(r"^[a-zA-Z0-9_-]{11}$", video_id):
         raise HTTPException(
             status_code=400, detail="Invalid YouTube Video ID format"
