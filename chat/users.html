@@ -846,7 +846,9 @@ body.light-mode {
     if (!isWithinHours(timestamp)) {
       const staleCard = document.getElementById(`user-card-${safeKey}`);
       if (staleCard) staleCard.remove();
-      remove(ref(dbUsers, `users/${safeKey}`)).catch(() => {});
+      if (!safeKey.startsWith("bot_")) {
+        remove(ref(dbUsers, `users/${safeKey}`)).catch(() => {});
+      }
       updateGridState();
       return;
     }
@@ -939,6 +941,33 @@ body.light-mode {
     }
     return null;
   }
+
+  const loadBotUsers = async () => {
+    try {
+      const res = await fetch('/botusers.json');
+      if (!res.ok) return;
+      const data = await res.json();
+      const list = Array.isArray(data) ? data : Object.values(data);
+      const now = Date.now();
+      const threeHoursInMs = 3 * 60 * 60 * 1000;
+
+      list.forEach((bot, index) => {
+        const botData = {
+          nickname: bot.nickname,
+          gender: bot.gender,
+          country: bot.country,
+          timestamp: now - Math.floor(Math.random() * threeHoursInMs)
+        };
+        const safeKey = `bot_${index}_${bot.nickname.replace(/[^a-zA-Z0-9]/g, '_')}`;
+        upsertUserCard(safeKey, botData);
+      });
+
+      isInitialLoaded = true;
+      updateGridState();
+    } catch (_) {}
+  };
+
+  loadBotUsers();
 
   const usersRef = ref(dbUsers, 'users');
   const friendsRef = ref(db, 'friends');
