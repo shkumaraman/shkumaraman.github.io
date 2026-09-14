@@ -110,48 +110,72 @@
   const FLOOD_MAX_COUNT = 5;
   let messageTimestamps = [];
 
-  function cleanAndNormalize(str) {
-    if (!str) return '';
-    let s = str.toLowerCase();
-    s = s.replace(/[\u200B-\u200D\uFEFF]/g, '');
-    s = s.normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
-    
-    const leetMap = {
-      '@': 'a', '4': 'a', '8': 'b', '3': 'e',
-      '1': 'i', '!': 'i', '|': 'i', '0': 'o',
-      '5': 's', '$': 's', '7': 't', '+': 't', '9': 'g'
-    };
-    s = s.split('').map(c => leetMap[c] || c).join('');
-    return s;
-  }
+  const blockedUrls = [
+    'bit.ly',
+    'tinyurl',
+    'cutt.ly',
+    'linktr.ee',
+    'rebrand.ly',
+    'shorturl',
+    'tiny.cc',
+    'is.gd',
+    't.co',
+    'v.gd',
+    'bio.link',
+    'beacons.ai',
+    'taplink',
+    'heylink',
+    'onrender',
+    'vercel',
+    'github.io'
+  ];
+
+  const blockedApps = [
+    'zangi',
+    'telegram',
+    'chatib',
+    'joingy',
+    'knotchat',
+    'subichat',
+    'justalk',
+    'onlyfans',
+    'chatblink',
+    'chitchatgg',
+    'chitchat',
+    'talkwithstranger',
+    'talktostrangers'
+  ];
 
   function detectProhibitedPlatforms(text) {
     if (!text) return false;
-    const normalized = cleanAndNormalize(text);
-    const stripped = normalized.replace(/[^a-z0-9]/g, ''); 
+    let lower = text.toLowerCase();
 
-    const directWords = [
-      'chatib', 'joingy', 'knotchat', 'subichat',
-      'talkwithstranger', 'talktostranger', 'talktostrangers',
-      'justalk', 'justtalk', 'telegram', 'zangi', 
-      'onlyfans', 'onlyfanscom', 'ofcom'
-    ];
-
-    for (const word of directWords) {
-      if (stripped.includes(word)) {
-        return true;
-      }
+    if (blockedUrls.some(url => lower.includes(url))) {
+      return true;
     }
 
-    if (stripped.includes('y99')) return true;
-    if (stripped.includes('chitchat') && (stripped.includes('gg') || stripped.includes('com'))) return true;
+    if (/(^|\s|\/|https?:\/\/)(t\.me)(\/|\s|$)/i.test(lower)) {
+      return true;
+    }
 
-    const regexPatterns = [
-      /(^|\W)t\s*(\.|\/|\(|\))\s*me(\W|$)/i,
-      /(^|\W)tg\s*:\s*\/?\/?/i
-    ];
+    const alphanum = lower.replace(/[^a-z0-9]/g, '');
+    if (alphanum.includes('y99')) {
+      return true;
+    }
 
-    return regexPatterns.some(rgx => rgx.test(normalized));
+    let normalized = lower
+      .replace(/@/g, 'a')
+      .replace(/0/g, 'o')
+      .replace(/1/g, 'i')
+      .replace(/\$/g, 's')
+      .replace(/3/g, 'e')
+      .replace(/[^a-z]/g, '');
+
+    if (blockedApps.some(app => normalized.includes(app))) {
+      return true;
+    }
+
+    return false;
   }
 
   function checkSpamFlood() {
