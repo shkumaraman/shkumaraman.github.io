@@ -1,0 +1,157 @@
+<style>
+  .adblock-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.88);
+    backdrop-filter: blur(8px);
+    z-index: 999999;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    box-sizing: border-box;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+  .adblock-overlay.active {
+    display: flex;
+    opacity: 1;
+  }
+  .adblock-card {
+    background: var(--dark-surface, #18181b);
+    border-radius: 16px;
+    padding: 28px 22px;
+    max-width: 360px;
+    width: 100%;
+    text-align: center;
+    color: var(--dark-text, #fff);
+    border: 1px solid rgba(255, 107, 74, 0.4);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.7), 0 0 30px rgba(255, 107, 74, 0.2);
+    transform: translateY(20px);
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  }
+  .adblock-overlay.active .adblock-card {
+    transform: translateY(0);
+  }
+  .light-mode .adblock-card {
+    background: var(--light-surface, #ffffff);
+    border-color: rgba(255, 107, 74, 0.4);
+    color: var(--light-text, #18181b);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15), 0 0 25px rgba(255, 107, 74, 0.15);
+  }
+  .adblock-icon-wrap {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 16px;
+    background: rgba(255, 107, 74, 0.15);
+    border: 1px solid rgba(255, 107, 74, 0.3);
+    color: #ff6b4a;
+  }
+  .adblock-title {
+    font-size: 20px;
+    font-weight: 700;
+    margin: 0 0 8px;
+    color: #ff6b4a;
+  }
+  .adblock-desc {
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--dark-text-muted, #a1a1aa);
+    margin: 0 0 22px;
+  }
+  .light-mode .adblock-desc {
+    color: var(--light-text-muted, #71717a);
+  }
+  .adblock-btn {
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    background: #ff6b4a;
+    color: #fff;
+    transition: background 0.2s, transform 0.1s;
+  }
+  .adblock-btn:hover {
+    background: #ff5535;
+  }
+  .adblock-btn:active {
+    transform: scale(0.97);
+  }
+</style>
+
+<div id="adblockWarningModal" class="adblock-overlay">
+  <div class="adblock-card">
+    <div class="adblock-icon-wrap">
+      <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+      </svg>
+    </div>
+    <h3 class="adblock-title">Ad Blocker Detected</h3>
+    <p class="adblock-desc">Hamari website free services provide karne ke liye ads par depend karti hai. Kripya continue karne ke liye apna ad blocker disable karein.</p>
+    <button class="adblock-btn" onclick="window.location.reload()">Maine Disable Kar Diya</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  function triggerAdBlockModal() {
+    const modal = document.getElementById('adblockWarningModal');
+    if (modal && !modal.classList.contains('active')) {
+      modal.classList.add('active');
+      document.body.style.overflow = 'hidden'; 
+    }
+  }
+
+  function detectAdBlockEngine() {
+    const bait = document.createElement('div');
+    bait.className = 'adsbox ad-placement pub_300x250 pub_300x250m pub_728x90 text-ad textAd text_ad text_ads text-ads text-ad-links';
+    bait.style.position = 'absolute';
+    bait.style.left = '-9999px';
+    bait.style.top = '-9999px';
+    bait.style.height = '1px';
+    bait.style.width = '1px';
+    document.body.appendChild(bait);
+
+    setTimeout(() => {
+      const isBaitBlocked = 
+        bait.offsetParent === null || 
+        bait.offsetHeight === 0 || 
+        bait.offsetLeft === 0 || 
+        window.getComputedStyle(bait).display === 'none' ||
+        window.getComputedStyle(bait).visibility === 'hidden';
+
+      bait.remove();
+
+      if (isBaitBlocked) {
+        triggerAdBlockModal();
+        return;
+      }
+
+      fetch('https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js', {
+        method: 'HEAD',
+        mode: 'no-cors',
+        cache: 'no-store'
+      }).catch(() => {
+        triggerAdBlockModal();
+      });
+      
+    }, 150);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => setTimeout(detectAdBlockEngine, 500));
+  } else {
+    setTimeout(detectAdBlockEngine, 500);
+  }
+})();
+</script>
