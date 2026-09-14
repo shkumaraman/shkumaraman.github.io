@@ -8,7 +8,11 @@
     onDisconnect, 
     onValue, 
     serverTimestamp, 
-    remove 
+    remove,
+    query,
+    orderByChild,
+    endAt,
+    get
   } from "firebase/database";
 
   const firebaseConfigUsers = {
@@ -25,6 +29,7 @@
   let currentNickname = localStorage.getItem("talkrush_nickname");
   let unsubscribeConnected = null;
   let userCountry = "";
+  let currentOnDisconnectRef = null; 
 
   const sanitizeKey = (name) => name ? name.replace(/[.#$\[\]\/]/g, '_') : null;
 
@@ -67,7 +72,9 @@
           country: userCountry,
           timestamp: serverTimestamp()
         });
-        await onDisconnect(userRef).update({
+        
+        currentOnDisconnectRef = onDisconnect(userRef);
+        await currentOnDisconnectRef.update({
           timestamp: serverTimestamp()
         });
       }
@@ -85,6 +92,9 @@
     if (currentNickname && newNickname !== currentNickname) {
       const oldSafeKey = sanitizeKey(currentNickname);
       try {
+        if (currentOnDisconnectRef) {
+          await currentOnDisconnectRef.cancel();
+        }
         await remove(ref(dbUsers, `users/${oldSafeKey}`));
       } catch (_) {}
     }
@@ -92,4 +102,22 @@
     currentNickname = newNickname;
     bindPresence(currentNickname);
   });
+
+  setInterval(async () => {
+    try {
+      const threeHoursAgo = Date.now() - (3 * 60 * 60 * 1000);
+      const oldUsersQuery = query(
+        ref(dbUsers, 'users'), 
+        orderByChild('timestamp'), 
+        endAt(threeHoursAgo)
+      );
+      
+      const snapshot = await get(oldUsersQuery);
+      if (snapshot.exists()) {
+        snapshot.forEach((childSnap) => {
+          remove(ref(dbUsers, `users/${childSnap.key}`)).catch(() => {});
+        });
+      }
+    } catch (_) {}
+  }, 5 * 60 * 1000);
 </script>
