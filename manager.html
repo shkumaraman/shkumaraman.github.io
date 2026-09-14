@@ -237,7 +237,7 @@ description: "Database Cleanup utility for TalkRush"
 
 <script type="module">
   import { initializeApp } from "firebase/app";
-  import { getDatabase, ref, query, orderByChild, endAt, get, update } from "firebase/database";
+  import { getDatabase, ref, get, update } from "firebase/database";
 
   const firebaseConfigUsers = {
     databaseURL: "https://talkrush5-3c02d-default-rtdb.asia-southeast1.firebasedatabase.app"
@@ -282,55 +282,39 @@ description: "Database Cleanup utility for TalkRush"
       
       logToUsers(`Cutoff Time: ${new Date(cutoffTime).toLocaleString()}`);
 
-      const friendsRef = ref(dbUsers, 'friends');
-      const oldChatsQuery = query(friendsRef, orderByChild('lastTimestamp'), endAt(cutoffTime));
-      
-      const snapshot = await get(oldChatsQuery);
+      const friendsSnap = await get(ref(dbUsers, 'friends'));
 
-      if (!snapshot.exists()) {
-        usersStatus.textContent = "Database is clean. No old data found.";
+      if (!friendsSnap.exists()) {
+        usersStatus.textContent = "Database is clean. No friends data found.";
         usersStatus.style.color = "#25D366";
         logToUsers("No chats matched the cleanup criteria.");
       } else {
         const updates = {};
-        const chatsToDelete = [];
         let count = 0;
 
-        snapshot.forEach((childSnap) => {
+        friendsSnap.forEach((childSnap) => {
           const chatId = childSnap.key;
-          chatsToDelete.push(chatId);
-          updates[`friends/${chatId}`] = null;
-          updates[`messages/${chatId}`] = null;
-          count++;
+          const data = childSnap.val();
+          const lastTime = data.lastTimestamp || 0;
+
+          if (lastTime < cutoffTime) {
+            updates[`friends/${chatId}`] = null;
+            updates[`messages/${chatId}`] = null;
+            count++;
+          }
         });
 
         if (count > 0) {
-          logToUsers("Scanning deleted chats for media files to remove from server...");
-          const mediaUrls = [];
-          
-          for (const chatId of chatsToDelete) {
-            const msgsSnap = await get(ref(dbUsers, `messages/${chatId}`));
-            if (msgsSnap.exists()) {
-              msgsSnap.forEach(msgNode => {
-                const msg = msgNode.val();
-                if (msg.url && (msg.type === 'image' || msg.type === 'audio')) {
-                  mediaUrls.push(msg.url);
-                }
-              });
-            }
-          }
-
-          await deleteMediaInBatches(mediaUrls, 10);
-          if (mediaUrls.length > 0) {
-            logToUsers(`Cleaned ${mediaUrls.length} media files from old chats.`);
-          }
-
           usersStatus.textContent = `Deleting ${count} chat records...`;
           await update(ref(dbUsers), updates);
           
           usersStatus.textContent = `Successfully deleted ${count} old records.`;
           usersStatus.style.color = "#25D366";
           logToUsers(`Cleaned up ${count} inactive threads from friends and messages.`);
+        } else {
+          usersStatus.textContent = "Database is clean. No old data found.";
+          usersStatus.style.color = "#25D366";
+          logToUsers("No chats matched the cleanup criteria.");
         }
       }
     } catch (error) {
