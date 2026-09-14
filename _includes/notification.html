@@ -242,7 +242,7 @@
 
 <script type="module">
   import { initializeApp, getApps } from "firebase/app";
-  import { getDatabase, ref, onValue, remove, update } from "firebase/database";
+  import { getDatabase, ref, onValue, onChildAdded, onChildChanged, onChildRemoved, remove, update } from "firebase/database";
 
   const configDefault = { databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app" };
   const configGroups = { databaseURL: "https://talkrush2-default-rtdb.asia-southeast1.firebasedatabase.app" };
@@ -281,63 +281,87 @@
   const DM_ICON_PATH = "M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z";
   const REPLY_ICON_PATH = "M10 9V5l-7 7 7 7v-4.1c5 0 8.5 1.6 11 5.1-1-5-4-10-11-11z";
 
+  let userFriendsMap = {};
+  let friendsInitialLoaded = false;
+  let listenersAttached = false;
+
   function getFriendNickname(friend) {
     return friend.nickname1 === myNickname ? friend.nickname2 : friend.nickname2 === myNickname ? friend.nickname1 : null;
   }
 
-  function startListeners() {
-    if (!myNickname) return;
+  function updateFriendsBadge() {
+    let unreadCount = 0;
+    let lastSeenMap = JSON.parse(localStorage.getItem('inbox_last_seen') || '{}');
+    const params = new URLSearchParams(window.location.search);
+    const currentChatId = window.location.pathname.includes('/chat/inbox') ? params.get('chatId') : null;
+    if (currentChatId) lastSeenMap[currentChatId] = Date.now();
 
-    onValue(ref(dbFriends, "friends"), (snap) => {
-      const data = snap.val();
-      let unreadCount = 0;
-      let lastSeenMap = JSON.parse(localStorage.getItem('inbox_last_seen') || '{}');
-      const params = new URLSearchParams(window.location.search);
-      const currentChatId = window.location.pathname.includes('/chat/inbox') ? params.get('chatId') : null;
-      if (currentChatId) lastSeenMap[currentChatId] = Date.now();
-
-      if (!data) {
-        window._lastInboxBadgeCount = 0;
-        window.dispatchEvent(new CustomEvent('updateInboxBadge', { detail: 0 }));
-        return;
+    Object.entries(userFriendsMap).forEach(([chatId, friend]) => {
+      let chatLastSeen = lastSeenMap[chatId] || 0;
+      let lastTimestamp = friend.lastTimestamp || 0;
+      if (friend.lastSender && friend.lastSender !== myNickname && lastTimestamp > chatLastSeen && chatId !== currentChatId) {
+        unreadCount++;
       }
-      
-      Object.entries(data).forEach(([chatId, friend]) => {
-        if (friend.nickname1 === myNickname || friend.nickname2 === myNickname) {
-          let chatLastSeen = lastSeenMap[chatId] || 0;
-          let lastTimestamp = friend.lastTimestamp || 0;
-          if (friend.lastSender && friend.lastSender !== myNickname && lastTimestamp > chatLastSeen && chatId !== currentChatId) {
-            unreadCount++;
-          }
-        }
-        
-        const friendNick = getFriendNickname(friend);
-        if (!friendNick) return;
-        if (!friend.lastMessageText || friend.lastSender === myNickname) return;
-        
-        const key = chatId + "_" + friend.lastTimestamp;
-        if (lastNotifiedMessages[chatId] === key) return;
-        if (notificationOff) return;
-
-        const redirectUrl = `/chat/inbox?chatId=${encodeURIComponent(chatId)}&friend=${encodeURIComponent(friendNick)}`;
-        
-        toastQueue.push({ 
-          chatId: chatId, 
-          senderName: friendNick, 
-          message: friend.lastMessageText, 
-          redirectUrl: redirectUrl, 
-          type: "dm", 
-          timestamp: friend.lastTimestamp 
-        });
-        
-        lastNotifiedMessages[chatId] = key;
-        localStorage.setItem("lastNotifiedMessages", JSON.stringify(lastNotifiedMessages));
-        processToastQueue();
-      });
-
-      window._lastInboxBadgeCount = unreadCount;
-      window.dispatchEvent(new CustomEvent('updateInboxBadge', { detail: unreadCount }));
     });
+
+    window._lastInboxBadgeCount = unreadCount;
+    window.dispatchEvent(new CustomEvent('updateInboxBadge', { detail: unreadCount }));
+  }
+
+  function handleFriendRecord(chatId, friend, allowToast) {
+    if (!friend || (friend.nickname1 !== myNickname && friend.nickname2 !== myNickname)) return;
+
+    userFriendsMap[chatId] = friend;
+    updateFriendsBadge();
+
+    if (!allowToast) return;
+
+    const friendNick = getFriendNickname(friend);
+    if (!friendNick) return;
+    if (!friend.lastMessageText || friend.lastSender === myNickname) return;
+
+    const key = chatId + "_" + friend.lastTimestamp;
+    if (lastNotifiedMessages[chatId] === key) return;
+    if (notificationOff) return;
+
+    const redirectUrl = `/chat/inbox?chatId=${encodeURIComponent(chatId)}&friend=${encodeURIComponent(friendNick)}`;
+
+    toastQueue.push({ 
+      chatId: chatId, 
+      senderName: friendNick, 
+      message: friend.lastMessageText, 
+      redirectUrl: redirectUrl, 
+      type: "dm", 
+      timestamp: friend.lastTimestamp 
+    });
+
+    lastNotifiedMessages[chatId] = key;
+    localStorage.setItem("lastNotifiedMessages", JSON.stringify(lastNotifiedMessages));
+    processToastQueue();
+  }
+
+  function startListeners() {
+    if (!myNickname || listenersAttached) return;
+    listenersAttached = true;
+
+    const friendsRef = ref(dbFriends, "friends");
+
+    onChildAdded(friendsRef, (snap) => {
+      handleFriendRecord(snap.key, snap.val(), friendsInitialLoaded);
+    });
+
+    onChildChanged(friendsRef, (snap) => {
+      handleFriendRecord(snap.key, snap.val(), true);
+    });
+
+    onChildRemoved(friendsRef, (snap) => {
+      delete userFriendsMap[snap.key];
+      updateFriendsBadge();
+    });
+
+    setTimeout(() => {
+      friendsInitialLoaded = true;
+    }, 2000);
 
     const safeKey = myNickname.replace(/[.#$\[\]]/g, '_');
     onValue(ref(dbGroups, `group_reply/${safeKey}`), (snap) => {
@@ -454,6 +478,9 @@
 
   window.addEventListener('nicknameUpdated', (e) => {
     myNickname = e.detail.nickname;
+    listenersAttached = false;
+    userFriendsMap = {};
+    friendsInitialLoaded = false;
     startListeners();
   });
 
