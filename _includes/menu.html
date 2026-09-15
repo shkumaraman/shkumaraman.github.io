@@ -65,19 +65,13 @@
   position: fixed;
   top: 0;
   left: -270px;
-  visibility: hidden;
-  transition: left 0.3s cubic-bezier(.4,0,.2,1), visibility 0.3s;
+  transition: left 0.3s cubic-bezier(.4,0,.2,1);
   overflow: hidden;
   padding: 60px 0 20px 0;
   z-index: 1000;
   display: flex;
   flex-direction: column;
   border-right: 0.5px solid rgba(255,255,255,0.08);
-}
-
-#menu.open {
-  left: 0;
-  visibility: visible;
 }
 
 .light-mode #menu {
@@ -245,10 +239,6 @@
   backdrop-filter: blur(2px);
 }
 
-.menu-overlay.open {
-  display: block;
-}
-
 .light-mode .menu-overlay { 
   background: rgba(0,0,0,0.3); 
 }
@@ -303,14 +293,17 @@ function toggleMenu() {
   const menu = document.getElementById("menu");
   const overlay = document.querySelector('.menu-overlay');
   const menuBtns = document.querySelectorAll('.menu-btn');
-  
-  const isOpen = menu.classList.toggle('open');
-  if (overlay) overlay.classList.toggle('open', isOpen);
+  const isOpen = menu.style.left === "0px";
 
+  menu.style.left = isOpen ? "-270px" : "0px";
+  if (overlay) overlay.style.display = isOpen ? "none" : "block";
   menuBtns.forEach(btn => {
-    const icon = btn.querySelector('.menu-btn-icon');
-    if (icon) {
-      icon.innerHTML = isOpen ? "&#10006;" : "&#9776;";
+    const dot = btn.querySelector('.menu-btn-dot');
+    const hasDotActive = dot && dot.classList.contains('active');
+    btn.innerHTML = isOpen ? "&#9776;" : "&#10006;";
+    if (dot) {
+      btn.appendChild(dot);
+      if (hasDotActive) dot.classList.add('active');
     }
   });
 }
@@ -323,21 +316,14 @@ document.addEventListener('DOMContentLoaded', function () {
     document.body.appendChild(overlay);
   }
 
-  const currentPath = window.location.pathname.replace(/\/+$/, '') || '/';
+  const currentPath = window.location.pathname;
   document.querySelectorAll('.menu-items a').forEach(link => {
-    const linkPath = (link.getAttribute('href') || '').split('?')[0].replace(/\/+$/, '') || '/';
-    if (linkPath === currentPath) {
+    if (link.getAttribute('href') === currentPath) {
       link.classList.add('active');
     }
   });
 
   document.querySelectorAll('.menu-btn').forEach(btn => {
-    if (!btn.querySelector('.menu-btn-icon')) {
-      const icon = document.createElement('span');
-      icon.className = 'menu-btn-icon';
-      icon.innerHTML = '&#9776;';
-      btn.appendChild(icon);
-    }
     if (!btn.querySelector('.menu-btn-dot')) {
       const dot = document.createElement('span');
       dot.className = 'menu-btn-dot';
@@ -355,8 +341,8 @@ document.addEventListener('DOMContentLoaded', function () {
         toggleMenu();
       } else {
         const fullText = "Connect with strangers, chat and talk freely, and explore fun conversations. Try TalkRush now: " + shareUrl;
-        if (navigator.clipboard && window.isSecureContext) {
-          navigator.clipboard.writeText(fullText).catch(() => {});
+        if (navigator.clipboard) {
+          navigator.clipboard.writeText(fullText);
         } else {
           const tmp = document.createElement("input");
           tmp.value = fullText;
