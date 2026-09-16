@@ -151,8 +151,8 @@
     transition: transform 0.42s cubic-bezier(0.34, 1.4, 0.64, 1);
   }
 
-  #sneaker-bar.sb-show { 
-    transform: translateY(0); 
+  #sneaker-bar.sb-show {
+    transform: translateY(0);
   }
 
   .sb-text {
@@ -196,6 +196,12 @@
     white-space: nowrap;
   }
 
+  #sb-install:disabled {
+    background: #4a4a4a;
+    color: #a0a0a0;
+    cursor: default;
+  }
+
   @media (max-width: 640px) {
     .banner-grid-container {
       grid-template-columns: 1fr;
@@ -211,6 +217,7 @@
       <div class="banner-icon-box whatsapp-icon-box">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="#25D366" xmlns="http://www.w3.org/2000/svg">
           <path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0 0 12.04 2z"/>
+          <path d="M17.47 14.38c-.3-.15-1.76-.87-2.03-.97-.27-.1-.47-.15-.67.15-.2.3-.77.97-.94 1.17-.17.2-.35.22-.65.07-.3-.15-1.26-.46-2.4-1.48-.89-.79-1.48-1.77-1.66-2.07-.17-.3-.02-.46.13-.61.14-.14.3-.35.45-.52.15-.17.2-.3.3-.5.1-.2.05-.37-.02-.52-.07-.15-.67-1.6-.91-2.19-.24-.58-.49-.5-.67-.5-.17-.01-.37-.01-.57-.01-.2 0-.52.07-.79.37-.27.3-1.04 1.02-1.04 2.47 0 1.45 1.06 2.86 1.21 3.06.15.2 2.09 3.2 5.08 4.48.71.31 1.26.49 1.69.63.71.23 1.36.19 1.87.12.57-.09 1.76-.72 2.01-1.41.25-.7.25-1.29.17-1.41-.07-.12-.27-.2-.57-.34z" fill="#0e1310"/>
         </svg>
       </div>
       <div class="banner-info">
@@ -254,6 +261,11 @@
 <script>
 window._pwaPrompt = null;
 
+function isAppInstalled() {
+  return window.matchMedia('(display-mode: standalone)').matches ||
+         window.navigator.standalone === true;
+}
+
 window.addEventListener('beforeinstallprompt', function (e) {
   e.preventDefault();
   window._pwaPrompt = e;
@@ -261,21 +273,34 @@ window.addEventListener('beforeinstallprompt', function (e) {
 
 document.addEventListener('DOMContentLoaded', function () {
   var installBtn = document.getElementById('installBtn');
+  var pwaBar = document.getElementById('pwa-install-bar');
+  var sneakerBar = document.getElementById('sneaker-bar');
+
+  if (isAppInstalled()) {
+    localStorage.setItem('pwa_installed', '1');
+    if (pwaBar) pwaBar.style.display = 'none';
+    if (sneakerBar) sneakerBar.style.display = 'none';
+    return;
+  }
 
   installBtn.onclick = function () {
     if (window._pwaPrompt) {
       window._pwaPrompt.prompt();
-      window._pwaPrompt.userChoice.then(function () {
+      window._pwaPrompt.userChoice.then(function (result) {
         window._pwaPrompt = null;
+        if (result.outcome === 'accepted') {
+          localStorage.setItem('pwa_installed', '1');
+        }
       });
     } else {
-      alert('App is ready to install');
+      alert('Go to browser menu and tap "Add to Home Screen".');
     }
   };
 
   window.addEventListener('appinstalled', function () {
     installBtn.textContent = 'Installed';
     installBtn.disabled = true;
+    localStorage.setItem('pwa_installed', '1');
   });
 });
 
@@ -288,13 +313,13 @@ document.addEventListener('DOMContentLoaded', function () {
   var btnDismiss = document.getElementById('sb-dismiss');
   var btnInstall = document.getElementById('sb-install');
 
-  if (localStorage.getItem(KEY_PERM)) return;
+  if (isAppInstalled() || localStorage.getItem(KEY_PERM)) return;
 
   var snoozedAt = localStorage.getItem(KEY_TEMP);
   if (snoozedAt && (Date.now() - parseInt(snoozedAt, 10)) < HOURS_24) return;
 
   setTimeout(function () {
-    if (!localStorage.getItem(KEY_PERM)) bar.classList.add('sb-show');
+    if (!localStorage.getItem(KEY_PERM) && !isAppInstalled()) bar.classList.add('sb-show');
   }, 3000);
 
   btnDismiss.addEventListener('click', function () { snoozeDismiss(); });
@@ -321,6 +346,7 @@ document.addEventListener('DOMContentLoaded', function () {
   }
   function permanentDismiss() {
     hideBar();
+    btnInstall.disabled = true;
     localStorage.setItem(KEY_PERM, '1');
     localStorage.removeItem(KEY_TEMP);
   }
