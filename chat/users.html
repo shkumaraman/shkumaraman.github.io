@@ -270,7 +270,6 @@ body.light-mode {
   gap: 6px;
   width: 100%;
   box-sizing: border-box;
-  min-height: 420px;
 }
 
 @media (max-width: 540px) {
@@ -501,6 +500,78 @@ body.light-mode {
   grid-column: 1 / -1;
 }
 
+.skeleton-card {
+  background: var(--dark-card);
+  border: 0.5px solid var(--dark-border2);
+  border-radius: 12px;
+  padding: 11px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.light-mode .skeleton-card {
+  background: var(--light-surface);
+  border-color: var(--light-border2);
+}
+
+.skeleton-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: linear-gradient(90deg, rgba(255,255,255,0.06) 25%, rgba(255,255,255,0.14) 37%, rgba(255,255,255,0.06) 63%);
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.4s ease infinite;
+}
+
+.light-mode .skeleton-avatar {
+  background: linear-gradient(90deg, rgba(0,0,0,0.05) 25%, rgba(0,0,0,0.1) 37%, rgba(0,0,0,0.05) 63%);
+  background-size: 400% 100%;
+}
+
+.skeleton-lines {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.skeleton-line {
+  height: 10px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, rgba(255,255,255,0.06) 25%, rgba(255,255,255,0.14) 37%, rgba(255,255,255,0.06) 63%);
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.4s ease infinite;
+}
+
+.light-mode .skeleton-line {
+  background: linear-gradient(90deg, rgba(0,0,0,0.05) 25%, rgba(0,0,0,0.1) 37%, rgba(0,0,0,0.05) 63%);
+  background-size: 400% 100%;
+}
+
+.skeleton-line.short { width: 40%; }
+.skeleton-line.long { width: 70%; }
+
+@media (max-width: 540px) {
+  .skeleton-card {
+    padding: 9px 10px;
+    gap: 8px;
+  }
+  .skeleton-avatar {
+    width: 36px;
+    height: 36px;
+  }
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+
 .light-mode .empty-state {
   color: var(--light-text-muted);
 }
@@ -626,9 +697,7 @@ body.light-mode {
     </div>
   </div>
 
-  <div class="users-grid" id="usersGrid">
-    <div class="empty-state" id="emptyStateMsg"><i class="fas fa-ghost" style="font-size:30px; margin-bottom:10px;"></i><br>Loading users...</div>
-  </div>
+  <div class="users-grid" id="usersGrid"></div>
 
   <section class="info-section">
 
@@ -711,6 +780,40 @@ body.light-mode {
   let currentNickname = localStorage.getItem("talkrush_nickname");
   let isInitialLoaded = false;
   let myFriendsMap = {};
+  const SKELETON_COUNT = 10;
+
+  function renderSkeletons(count) {
+    const fragment = document.createDocumentFragment();
+    for (let i = 0; i < count; i++) {
+      const card = document.createElement('div');
+      card.className = 'skeleton-card';
+      card.dataset.skeleton = 'true';
+
+      const avatar = document.createElement('div');
+      avatar.className = 'skeleton-avatar';
+
+      const lines = document.createElement('div');
+      lines.className = 'skeleton-lines';
+
+      const line1 = document.createElement('div');
+      line1.className = 'skeleton-line short';
+      const line2 = document.createElement('div');
+      line2.className = 'skeleton-line long';
+
+      lines.appendChild(line1);
+      lines.appendChild(line2);
+      card.appendChild(avatar);
+      card.appendChild(lines);
+      fragment.appendChild(card);
+    }
+    usersGrid.appendChild(fragment);
+  }
+
+  function clearSkeletons() {
+    usersGrid.querySelectorAll('[data-skeleton="true"]').forEach(el => el.remove());
+  }
+
+  renderSkeletons(SKELETON_COUNT);
 
   const timeAgo = (timestamp) => {
     if (!timestamp) return "Just now";
@@ -782,8 +885,9 @@ body.light-mode {
     const cards = usersGrid.querySelectorAll('.user-card');
     onlineCount.textContent = cards.length;
     const emptyMsg = document.getElementById('emptyStateMsg');
+    const hasSkeletons = usersGrid.querySelector('[data-skeleton="true"]');
 
-    if (cards.length === 0 && isInitialLoaded) {
+    if (cards.length === 0 && isInitialLoaded && !hasSkeletons) {
       if (!emptyMsg) {
         usersGrid.innerHTML = '<div class="empty-state" id="emptyStateMsg"><i class="fas fa-ghost" style="font-size:30px; margin-bottom:10px;"></i><br>No one is online right now.</div>';
       }
@@ -966,13 +1070,16 @@ body.light-mode {
         fragment.appendChild(buildUserCard(key, data));
       });
 
-      const emptyMsg = document.getElementById('emptyStateMsg');
-      if (emptyMsg) emptyMsg.remove();
+      clearSkeletons();
       usersGrid.appendChild(fragment);
 
       isInitialLoaded = true;
       updateGridState();
-    } catch (_) {}
+    } catch (_) {
+      clearSkeletons();
+      isInitialLoaded = true;
+      updateGridState();
+    }
   };
 
   loadBotUsers();
@@ -982,12 +1089,14 @@ body.light-mode {
 
   onValue(usersRef, (snapshot) => {
     isInitialLoaded = true;
+    clearSkeletons();
     updateGridState();
   }, { onlyOnce: true });
 
   onChildAdded(usersRef, (snapshot) => {
     const userData = extractUserData(snapshot.val());
     if (userData) {
+      clearSkeletons();
       upsertUserCard(snapshot.key, userData);
     }
   });
