@@ -18,7 +18,8 @@
   .toast-wrapper {
     position: fixed;
     left: 50%;
-    transform: translateX(-50%);
+    top: 0;
+    transform: translate(-50%, -150px);
     background: var(--tst-bg);
     border: 0.5px solid var(--tst-border);
     box-shadow: 0 12px 30px var(--tst-shadow);
@@ -26,11 +27,15 @@
     -webkit-backdrop-filter: blur(12px);
     z-index: 10001;
     width: 90%;
-    transition: top 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    transition: transform 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    will-change: transform;
+  }
+
+  .show-toast {
+    transform: translate(-50%, 20px) !important;
   }
 
   #messageToast {
-    top: -120px;
     max-width: 500px;
     padding: 14px 18px;
     border-radius: 16px;
@@ -106,7 +111,6 @@
   }
 
   #callToast {
-    top: -150px;
     max-width: 400px;
     padding: 18px;
     border-radius: 20px;
@@ -429,7 +433,8 @@
 
         const callType = callData.type || 'video';
         document.getElementById('callToastType').innerText = `Incoming ${callType.charAt(0).toUpperCase() + callType.slice(1)} Call...`;
-        callToast.style.top = '20px';
+        
+        callToast.classList.add("show-toast");
         
         const ringtoneMuted = localStorage.getItem("ringtoneMuted") === "true";
         if (!ringtoneMuted) {
@@ -439,7 +444,7 @@
         document.getElementById('callToastAcceptBtn').onclick = async () => {
           isRinging = false;
           wasRinging = false;
-          callToast.style.top = '-150px';
+          callToast.classList.remove("show-toast");
           window.callRingtone.pause();
           window.callRingtone.currentTime = 0;
 
@@ -451,7 +456,7 @@
         document.getElementById('callToastRejectBtn').onclick = async () => {
           isRinging = false;
           wasRinging = false;
-          callToast.style.top = '-150px';
+          callToast.classList.remove("show-toast");
           window.callRingtone.pause();
           window.callRingtone.currentTime = 0;
           await update(ref(dbDefault, `calls/${safeCallName}`), { status: 'rejected' });
@@ -462,7 +467,7 @@
         if (wasRinging) {
           isRinging = false;
           wasRinging = false;
-          callToast.style.top = '-150px';
+          callToast.classList.remove("show-toast");
           window.callRingtone.pause();
           window.callRingtone.currentTime = 0;
         }
@@ -505,10 +510,11 @@
     
     toastMessage.textContent = data.message;
     if (!soundMuted) { notifySound.currentTime = 0; notifySound.play().catch(() => {}); }
-    toast.style.top = "20px";
+    
+    toast.classList.add("show-toast");
 
     const handleToastNavigation = () => {
-      toast.style.top = "-120px";
+      toast.classList.remove("show-toast");
       if (data.type === "group_mention") {
           window.location.href = data.redirectUrl;
       } else if (window.location.pathname.includes('/chat/inbox') && typeof window.openChat === 'function' && data.chatId && data.senderName) {
@@ -525,7 +531,7 @@
     };
 
     setTimeout(() => { 
-      toast.style.top = "-120px"; 
+      toast.classList.remove("show-toast");
       setTimeout(() => { 
         toastShowing = false; 
         processToastQueue(); 
@@ -548,7 +554,9 @@
 
   toast.addEventListener('touchmove', (e) => {
     let currentY = e.touches[0].clientY;
-    if (toastStartY - currentY > 40) toast.style.top = "-120px";
+    if (toastStartY - currentY > 40) {
+      toast.classList.remove("show-toast");
+    }
   }, { passive: true });
 
   let callStartY = 0;
@@ -559,7 +567,7 @@
   callToast.addEventListener('touchmove', (e) => {
     let currentY = e.touches[0].clientY;
     if (callStartY - currentY > 40) { 
-      callToast.style.top = "-150px";
+      callToast.classList.remove("show-toast");
       isRinging = false;
       wasRinging = false;
       window.callRingtone.pause(); 
