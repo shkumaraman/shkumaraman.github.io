@@ -85,20 +85,10 @@
           </div>
         </div>
       </div>
-      
-      <div class="preference-feedback" id="preferenceSuccess">
-        Preferences saved successfully!
-      </div>
-      <div class="preference-feedback error" id="preferenceError">
-        Please fill required fields
-      </div>
-      <div class="preference-feedback error" id="preferenceBanned">
-        Nickname contains inappropriate content
-      </div>
     </div>
     
     <div class="modal-footer">
-      <button class="save-preferences-btn" onclick="savePreferences()">Save Settings</button>
+      <button class="save-preferences-btn" id="savePrefsBtn" onclick="savePreferences()">Save Settings</button>
     </div>
   </div>
 </div>
@@ -121,6 +111,8 @@
   --pref-light-text: #111;
   --pref-light-text-muted: rgba(0,0,0,0.4);
   --pref-light-input: rgba(0,0,0,0.04);
+  --pref-success: #22c55e;
+  --pref-error: #ff6b6b;
 }
 
 .preferences-modal {
@@ -312,22 +304,18 @@ input:checked + .toggle-slider:before { transform: translateX(20px); }
 .input-hint { font-size: 11px; color: var(--pref-dark-text-muted); margin-top: 6px; text-align: center; }
 .light-mode .input-hint { color: var(--pref-light-text-muted); }
 
-.preference-feedback {
-  padding: 10px; text-align: center; font-weight: 500; display: none;
-  color: #22c55e; font-size: 12px; margin-top: 15px; border-radius: 8px;
-  background-color: rgba(34,197,94,0.1);
-}
-.preference-feedback.error { color: #ff6b6b; background-color: rgba(255,107,107,0.1); }
-
 .modal-footer { padding: 10px 20px 20px 20px; }
 .save-preferences-btn {
   background: var(--pref-accent);
   color: white; border: none; padding: 12px 0; border-radius: 11px;
   cursor: pointer; font-weight: 700; transition: background 0.15s, transform 0.1s;
   font-size: 14px; width: 100%;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .save-preferences-btn:active { transform: scale(0.98); }
 .save-preferences-btn:hover { background: var(--pref-accent-hover); }
+.save-preferences-btn.btn-error { background: var(--pref-error); }
+.save-preferences-btn.btn-success { background: var(--pref-success); }
 </style>
 
 <script>
@@ -342,32 +330,54 @@ let touchCurrentY = 0;
 let isDragging = false;
 let modalContent = null;
 let modal = null;
+let btnFeedbackTimeout = null;
+
+const SAVE_BTN_DEFAULT_TEXT = "Save Settings";
 
 function hasRequiredFieldsSaved() {
   return !!localStorage.getItem("talkrush_nickname") && !!localStorage.getItem("talkrush_user_gender");
 }
 
+function showButtonFeedback(message, type) {
+  const btn = document.getElementById('savePrefsBtn');
+  if (!btn) return;
+  btn.textContent = message;
+  btn.classList.remove('btn-error', 'btn-success');
+  btn.classList.add(type === 'error' ? 'btn-error' : 'btn-success');
+
+  clearTimeout(btnFeedbackTimeout);
+  btnFeedbackTimeout = setTimeout(() => {
+    btn.textContent = SAVE_BTN_DEFAULT_TEXT;
+    btn.classList.remove('btn-error', 'btn-success');
+  }, 1400);
+}
+
+function resetButtonFeedback() {
+  const btn = document.getElementById('savePrefsBtn');
+  if (!btn) return;
+  clearTimeout(btnFeedbackTimeout);
+  btn.textContent = SAVE_BTN_DEFAULT_TEXT;
+  btn.classList.remove('btn-error', 'btn-success');
+}
+
 function highlightRequiredFields() {
   const input = document.getElementById('nicknameInput');
   const genderContainer = document.getElementById('userGenderOptions');
-  const errorText = document.getElementById('preferenceError');
-  let errorMsg = "Please fill required fields";
+  let errorMsg = "Fill required fields";
 
   if (!input.value.trim()) {
     input.classList.add('highlight-required');
     setTimeout(() => input.classList.remove('highlight-required'), 1500);
-    errorMsg = "Please enter a nickname";
+    errorMsg = "Enter nickname";
   }
 
   if (!prefsUserGender) {
     genderContainer.classList.add('highlight-required');
     setTimeout(() => genderContainer.classList.remove('highlight-required'), 1500);
-    if (input.value.trim()) errorMsg = "Please select your gender";
+    if (input.value.trim()) errorMsg = "Select gender";
   }
 
-  hideAllFeedback();
-  errorText.textContent = errorMsg;
-  errorText.style.display = 'block';
+  showButtonFeedback(errorMsg, "error");
 }
 
 async function loadPrefsBannedWords() {
@@ -469,7 +479,7 @@ function closePreferencesModal() {
     modalContent.style.transform = 'translateY(0)';
   }, 300);
   
-  hideAllFeedback();
+  resetButtonFeedback();
 }
 
 function handleOutsideClick(e) {
@@ -576,12 +586,6 @@ function handleMouseUp(e) {
   document.removeEventListener('mouseup', handleMouseUp);
 }
 
-function hideAllFeedback() {
-  document.getElementById('preferenceSuccess').style.display = 'none';
-  document.getElementById('preferenceError').style.display = 'none';
-  document.getElementById('preferenceBanned').style.display = 'none';
-}
-
 function toggleAdvancedSection() {
   const advancedContent = document.getElementById('advancedContent');
   const advancedArrow = document.querySelector('.advanced-arrow');
@@ -638,7 +642,7 @@ function loadSavedPreferences() {
     prefsMyTags = [];
   }
   renderTags();
-  hideAllFeedback();
+  resetButtonFeedback();
 }
 
 function selectUserGender(element) {
@@ -649,7 +653,7 @@ function selectUserGender(element) {
   element.classList.add('selected');
   prefsUserGender = element.getAttribute('data-value');
   container.classList.remove('highlight-required');
-  hideAllFeedback();
+  resetButtonFeedback();
 }
 
 function selectGender(element) {
@@ -693,15 +697,13 @@ function removeTag(index) {
 }
 
 function savePreferences() {
-  hideAllFeedback();
   const input = document.getElementById("nicknameInput");
   let newNickname = input.value.trim();
   
   if (!newNickname) {
-    document.getElementById('preferenceError').textContent = "Please enter a nickname";
-    document.getElementById('preferenceError').style.display = 'block';
     input.classList.add('highlight-required');
     setTimeout(() => input.classList.remove('highlight-required'), 1500);
+    showButtonFeedback("Enter nickname", "error");
     return;
   }
 
@@ -709,13 +711,12 @@ function savePreferences() {
     const genderContainer = document.getElementById('userGenderOptions');
     genderContainer.classList.add('highlight-required');
     setTimeout(() => genderContainer.classList.remove('highlight-required'), 1500);
-    document.getElementById('preferenceError').textContent = "Please select your gender";
-    document.getElementById('preferenceError').style.display = 'block';
+    showButtonFeedback("Select gender", "error");
     return;
   }
 
   if (prefsContainsBannedWords(newNickname)) {
-    document.getElementById('preferenceBanned').style.display = 'block';
+    showButtonFeedback("Name not allowed", "error");
     return;
   }
   
@@ -727,7 +728,7 @@ function savePreferences() {
   
   window.dispatchEvent(new CustomEvent('nicknameUpdated', { detail: { nickname: prefsMyNickname } }));
   
-  document.getElementById('preferenceSuccess').style.display = 'block';
+  showButtonFeedback("Saved!", "success");
   setTimeout(() => {
     closePreferencesModal();
   }, 1200);
