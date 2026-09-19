@@ -630,16 +630,15 @@ body.light-mode {
   </div>
 
   <section class="info-section">
-
-<div style="width: 300px; height: 250px; margin: 16px auto; display: flex; justify-content: center; align-items: center; overflow: hidden;">
-    <ins class="adsbygoogle"
-         style="display:inline-block;width:300px;height:250px"
-         data-ad-client="ca-pub-7059052735946479"
-         data-ad-slot="8592327962"></ins>
-    <script>
-         (adsbygoogle = window.adsbygoogle || []).push({});
-    </script>
-</div>
+    <div style="width: 300px; height: 250px; margin: 16px auto; display: flex; justify-content: center; align-items: center; overflow: hidden;">
+        <ins class="adsbygoogle"
+             style="display:inline-block;width:300px;height:250px"
+             data-ad-client="ca-pub-7059052735946479"
+             data-ad-slot="8592327962"></ins>
+        <script>
+             (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+    </div>
     
     <h2 style="font-size: 1.4em;">Discover Active Users Online & Connect Instantly</h2>
     <p>Welcome to the live user directory on TalkRush. Explore real-time active users from around the world who are online right now and ready to chat. Whether you want to meet random strangers, find like-minded people, or start spontaneous conversations, our live directory allows you to connect without waiting in long queues.</p>
@@ -681,7 +680,7 @@ body.light-mode {
 
 {% include menu.html %}
 
-  <script type="module">
+<script type="module">
   import { initializeApp, getApps } from "firebase/app";
   import { getDatabase, ref, onValue, set, push, onChildAdded, onChildChanged, onChildRemoved } from "firebase/database";
 
@@ -710,6 +709,8 @@ body.light-mode {
   let currentNickname = localStorage.getItem("talkrush_nickname");
   let isInitialLoaded = false;
   let myFriendsMap = {};
+
+  const cleanNick = (name) => (name || '').replace(/^tr\|/i, '').trim().toLowerCase();
 
   const timeAgo = (timestamp) => {
     if (!timestamp) return "Just now";
@@ -796,7 +797,10 @@ body.light-mode {
   }
 
   function renderActionButtons(card, nickname) {
-    if (!nickname || nickname === currentNickname) {
+    const myClean = cleanNick(currentNickname || localStorage.getItem("talkrush_nickname"));
+    const targetClean = cleanNick(nickname);
+
+    if (!nickname || myClean === targetClean) {
       const ag = card.querySelector('.action-group');
       if (ag) ag.remove();
       return;
@@ -809,7 +813,7 @@ body.light-mode {
       card.appendChild(ag);
     }
 
-    const isFriend = !!myFriendsMap[nickname];
+    const isFriend = !!(myFriendsMap[nickname] || myFriendsMap[targetClean]);
     const cleanName = nickname.startsWith('TR|') ? nickname.substring(3) : nickname;
 
     ag.innerHTML = '';
@@ -830,6 +834,16 @@ body.light-mode {
     ag.appendChild(btn);
   }
 
+  function updateAllFriendButtons() {
+    const cards = usersGrid.querySelectorAll('.user-card');
+    cards.forEach(card => {
+      const nickname = card.dataset.nickname;
+      if (nickname) {
+        renderActionButtons(card, nickname);
+      }
+    });
+  }
+
   function upsertUserCard(safeKey, userData) {
     const nickname = userData.nickname;
     const timestamp = userData.timestamp || Date.now();
@@ -843,7 +857,10 @@ body.light-mode {
       return;
     }
 
-    const isMe = nickname === currentNickname;
+    const myClean = cleanNick(currentNickname || localStorage.getItem("talkrush_nickname"));
+    const userClean = cleanNick(nickname);
+    const isMe = myClean && userClean && (myClean === userClean);
+
     let displayName = nickname.startsWith("TR|") ? nickname.substring(3) : nickname;
     const initial = displayName ? displayName.charAt(0).toUpperCase() : '?';
 
@@ -998,15 +1015,22 @@ body.light-mode {
 
   onValue(friendsRef, (snapshot) => {
     myFriendsMap = {};
-    if (snapshot.exists()) {
+    const myClean = cleanNick(currentNickname || localStorage.getItem("talkrush_nickname"));
+
+    if (snapshot.exists() && myClean) {
       snapshot.forEach(child => {
         const friendData = child.val();
-        if (friendData && currentNickname) {
-          if (friendData.nickname1 === currentNickname) {
-            myFriendsMap[friendData.nickname2] = child.key;
-          } else if (friendData.nickname2 === currentNickname) {
-            myFriendsMap[friendData.nickname1] = child.key;
-          }
+        if (!friendData) return;
+
+        const u1Clean = cleanNick(friendData.nickname1);
+        const u2Clean = cleanNick(friendData.nickname2);
+
+        if (u1Clean === myClean) {
+          myFriendsMap[friendData.nickname2] = child.key;
+          myFriendsMap[u2Clean] = child.key;
+        } else if (u2Clean === myClean) {
+          myFriendsMap[friendData.nickname1] = child.key;
+          myFriendsMap[u1Clean] = child.key;
         }
       });
     }
@@ -1044,9 +1068,10 @@ body.light-mode {
   window.addEventListener('nicknameUpdated', (e) => {
     currentNickname = e.detail?.nickname;
     updateAllFriendButtons();
+    const myClean = cleanNick(currentNickname);
     const allCards = usersGrid.querySelectorAll('.user-card');
     allCards.forEach(card => {
-      const isMe = card.dataset.nickname === currentNickname;
+      const isMe = cleanNick(card.dataset.nickname) === myClean;
       const youBadge = card.querySelector('.you-badge');
       if (isMe && !youBadge) {
         const badge = document.createElement('span');
@@ -1070,7 +1095,8 @@ body.light-mode {
       return;
     }
 
-    if (myFriendsMap[targetNickname]) {
+    const tClean = cleanNick(targetNickname);
+    if (myFriendsMap[targetNickname] || myFriendsMap[tClean]) {
       window.messageUser(targetNickname);
       return;
     }
@@ -1098,6 +1124,16 @@ body.light-mode {
         lastTimestamp: Date.now(),
         lastSender: myNick
       });
+
+      myFriendsMap[targetNickname] = newChatRef.key;
+      myFriendsMap[tClean] = newChatRef.key;
+
+      const targetCard = Array.from(usersGrid.querySelectorAll('.user-card'))
+        .find(c => cleanNick(c.dataset.nickname) === tClean);
+      if (targetCard) {
+        renderActionButtons(targetCard, targetCard.dataset.nickname);
+      }
+
       if (window.AlertKit && window.AlertKit.toast) {
         window.AlertKit.toast(`Added ${targetNickname} as a friend!`, 'success');
       }
@@ -1111,7 +1147,7 @@ body.light-mode {
   };
 
   window.messageUser = (targetNickname) => {
-    const chatId = myFriendsMap[targetNickname];
+    const chatId = myFriendsMap[targetNickname] || myFriendsMap[cleanNick(targetNickname)];
     if (chatId) {
       window.location.href = `inbox.html?chatId=${encodeURIComponent(chatId)}&friend=${encodeURIComponent(targetNickname)}`;
     }
