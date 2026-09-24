@@ -16,16 +16,22 @@ header{display:flex;justify-content:space-between;align-items:center;padding:14p
 .hist{display:flex;gap:6px;padding:0 8px 8px;overflow:hidden;min-height:30px}
 .hist span{padding:4px 10px;border-radius:12px;font-size:13px;font-weight:700;background:#26262a;flex:none}
 .hist .w{color:#3bd23b}.hist .l{color:#ff5a6b}
-.stats{display:flex;gap:8px;margin-bottom:10px}
-.stats div{flex:1;background:var(--card);border-radius:16px;padding:9px 10px;text-align:center;color:var(--mut);font-size:12px}
-.stats b{display:block;font-size:20px;color:var(--tx);margin-top:2px}
+
+/* Updated Stats Layout for 5 boxes */
+.stats { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-bottom: 10px; }
+.stats > div { background: var(--card); border-radius: 12px; padding: 8px 4px; text-align: center; color: var(--mut); font-size: 11px; }
+.stats > div:nth-child(1), .stats > div:nth-child(2), .stats > div:nth-child(3) { grid-column: span 2; }
+.stats > div:nth-child(4), .stats > div:nth-child(5) { grid-column: span 3; }
+.stats b{display:block;font-size:17px;color:var(--tx);margin-top:2px}
 .stats .big b{color:#ff8fc2}
+.stats .warn b{color:#ff5a6b}
+
 .field-wrap{position:relative;background:linear-gradient(#181022,#0c0c0d 70%);border-radius:22px;overflow:hidden;touch-action:none}
 canvas{display:block;width:100%}
 .ov{position:absolute;inset:0;background:#000a;display:grid;place-items:center;text-align:center;opacity:0;pointer-events:none;transition:.25s}
 .ov.on{opacity:1;pointer-events:auto}
 .ov div{transform:scale(.8);transition:.25s}.ov.on div{transform:none}
-.ov h2{margin:0;font-size:34px}.ov p{margin:6px 0 0;font-size:20px;font-weight:700}
+.ov h2{margin:0;font-size:34px}.ov p{margin:6px 0 0;font-size:18px;font-weight:700}
 .ov.win h2{color:#3bd23b}.ov.lose h2{color:#ff4d67}
 .ctl{background:var(--card);border-radius:22px;margin-top:10px;padding:14px}
 .lbl{color:var(--mut);font-size:13px;margin:0 0 6px 4px}
@@ -44,13 +50,11 @@ canvas{display:block;width:100%}
 <header><div class="logo">🌸 Flower<b> Catch</b></div><div><div class="bal"><span id="bal">3,000.00</span> <small>USD</small></div><button id="reset">Reset balance</button></div></header>
 <div class="hist" id="hist"></div>
 <div class="stats">
-  <div class="big">Multiplier<b id="mult">0.00x</b></div>
+  <div class="big">Mult<b id="mult">0.00x</b></div>
   <div>Flowers<b id="cnt">0</b></div>
-  <div>Cash value<b id="val">0.00</b></div>
-</div>
-<div class="stats">
-  <div>Missed Limit<b id="miss">0/3</b></div>
-  <div>Time Left<b id="time">60s</b></div>
+  <div>Value<b id="val">0.00</b></div>
+  <div class="warn">Missed<b id="missed">0/0</b></div>
+  <div>Time Left<b id="time">0s</b></div>
 </div>
 <div class="field-wrap"><canvas id="cv"></canvas>
   <div class="ov" id="ov"><div><h2 id="ovh"></h2><p id="ovp"></p></div></div>
@@ -66,18 +70,21 @@ canvas{display:block;width:100%}
 </div>
 </div>
 <script>
+// ==========================================
+// ADMIN PANEL SETTINGS (Inko backend se set karein)
+const ADMIN_TIME_LIMIT = 60; // Game chalne ka time (seconds me)
+const ADMIN_MAX_MISSED = 3;  // Kitne flower chhutne par game over hoga
+// ==========================================
+
 const $=s=>document.querySelector(s);
 const fmt=n=>n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 
-const maxMissed=3;
-const gameDuration=60;
-
-let balance=3000,bet=1,state='idle',hist=[],items=[],pops=[],total=0,count=0,spawnT=0,startT=0,lastP=null;
-let missedCount=0,timeRemaining=gameDuration;
+let balance=3000, bet=1, state='idle', hist=[], items=[], pops=[], total=0, count=0, spawnT=0, startT=0, lastP=null;
+let missedCount=0, timeLeft=ADMIN_TIME_LIMIT, timerId=null;
 
 const VALS=[0.5,0.5,0.5,0.8,0.8,1,1,1.2,1.5,2,2,3,5];
-const cv=$('#cv'),ctx=cv.getContext('2d');
-let W=0,H=0;
+const cv=$('#cv'), ctx=cv.getContext('2d');
+let W=0, H=0;
 
 function layout(){const r=cv.parentElement.getBoundingClientRect(),d=devicePixelRatio||1;W=r.width;H=Math.min(440,W*1.02);cv.style.height=H+'px';cv.width=W*d;cv.height=H*d;ctx.setTransform(d,0,0,d,0,0)}
 addEventListener('resize',layout);
@@ -87,13 +94,12 @@ function updStats(){
   $('#mult').textContent=total.toFixed(2)+'x';
   $('#cnt').textContent=count;
   $('#val').textContent=fmt(bet*total);
-  $('#miss').textContent=missedCount+'/'+maxMissed;
-  if(state!=='play') $('#time').textContent=gameDuration+'s';
+  $('#missed').textContent = missedCount + '/' + ADMIN_MAX_MISSED;
+  $('#time').textContent = timeLeft + 's';
 }
 function renderHist(){$('#hist').innerHTML=hist.map(h=>h===null?`<span class="l">🔥 BUST</span>`:`<span class="w">${h.toFixed(2)}x</span>`).join('')}
 function readBet(){bet=Math.min(1000,Math.max(.1,+($('#bet').value.replace(',','.'))\vert{}\vert{}1));bet=Math.round(bet*100)/100;$('#bet').value=bet.toFixed(2)}
 function setBet(v){$('#bet').value=v;readBet();updGo();updStats()}
-
 $('#bm').onclick=()=>setBet(bet-.1);$('#bp').onclick=()=>setBet(bet+.1);
 $('#bet').onchange=()=>{readBet();updGo();updStats()};
 document.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{const q=b.dataset.q;setBet(q==='h'?bet/2:q==='d'?bet*2:+q)});
@@ -105,51 +111,71 @@ function updGo(){
   else{g.className='go';g.disabled=false;g.innerHTML=`Bet<small>${fmt(bet)} USD</small>`}
   $('#betrow').classList.toggle('dis',state==='play');
 }
-
-function overlay(win,txt,title){
+function overlay(win,txt){
   const o=$('#ov');
   if(win===null){o.className='ov';return}
   o.className='ov on '+(win?'win':'lose');
-  $('#ovh').textContent=title||(win?'CASHED OUT!':'BUSTED! 🔥');
+  $('#ovh').textContent=win?'CASHED OUT!':'BUSTED!';
   $('#ovp').textContent=txt;
-  setTimeout(()=>o.classList.remove('on'),1600);
+  setTimeout(()=>o.classList.remove('on'), 2000); // 2 second delay tak screen par dikhe
 }
 
 function start(){
   readBet();
   if(balance<bet){flashGo('Insufficient balance');return}
-  balance-=bet;updBal();
-  state='play';total=0;count=0;missedCount=0;timeRemaining=gameDuration;
-  items=[];pops=[];spawnT=0;startT=performance.now();
-  overlay(null);updStats();updGo();
+  balance-=bet; updBal();
+  state='play'; total=0; count=0; missedCount=0; timeLeft=ADMIN_TIME_LIMIT; items=[]; pops=[]; spawnT=0; startT=performance.now();
+  overlay(null); updStats(); updGo();
+  
+  // Start Timer
+  clearInterval(timerId);
+  timerId = setInterval(() => {
+    if(state !== 'play') return clearInterval(timerId);
+    timeLeft--;
+    updStats();
+    if(timeLeft <= 0) {
+      cashOut(true); // Time over hone par automatic cash out
+    }
+  }, 1000);
 }
 
-function bust(r='BUSTED! 🔥'){
-  if(state!=='play')return;
-  state='over';hist.unshift(null);hist.length=Math.min(hist.length,14);renderHist();
-  overlay(false,`You lost ${fmt(bet)} USD`,r);updGo();
-  setTimeout(()=>{state='idle';total=0;count=0;missedCount=0;items=[];updStats();updGo()},400);
+function bust(reasonText){
+  state='over'; hist.unshift(null); hist.length=Math.min(hist.length,14); renderHist();
+  clearInterval(timerId);
+  overlay(false, reasonText || `You lost ${fmt(bet)} USD`); updGo();
+  setTimeout(()=>{state='idle'; updGo()}, 1200); // Delay given so user can read bust reason
 }
 
-function cashOut(title='CASHED OUT!'){
-  if(state!=='play')return;
-  if(!count&&title==='TIME UP!'){bust('TIME UP!');return}
-  if(!count)return;
-  const win=bet*total;balance+=win;hist.unshift(total);hist.length=Math.min(hist.length,14);renderHist();
-  state='over';overlay(true,`${total.toFixed(2)}x  •  +${fmt(win)} USD`,title);updBal();updGo();
-  setTimeout(()=>{state='idle';total=0;count=0;missedCount=0;items=[];updStats();updGo()},400);
+function cashOut(autoTimeUp = false){
+  // Agar time up hua hai aur flower count 0 hai to cash out na kare ya zero balance de
+  if(state !== 'play' || (!count && !autoTimeUp)) return;
+  clearInterval(timerId);
+  
+  const win = bet*total; 
+  balance += win; 
+  hist.unshift(total); 
+  hist.length = Math.min(hist.length,14); 
+  renderHist();
+  
+  state='over';
+  let msg = `${total.toFixed(2)}x  •  +${fmt(win)} USD`;
+  if(autoTimeUp) msg = `Time Up! ${count ? msg : '0x • 0 USD'}`;
+  
+  overlay(true, msg); updBal(); updGo();
+  setTimeout(()=>{state='idle'; total=0; count=0; items=[]; updStats(); updGo()}, 1200);
 }
-
 function flashGo(msg){const g=$('#go');const cur=g.innerHTML;g.innerHTML=msg;setTimeout(updGo,1000)}
 $('#go').onclick=()=>state==='play'?cashOut():start();
 
+/* spawning */
 function spawn(now){
-  const el=(now-startT)/1000,fireChance=Math.min(.55,.18+el*.012),gap=Math.max(230,520-el*8);
+  const el=(now-startT)/1000, fireChance=Math.min(.55,.18+el*.012), gap=Math.max(230,520-el*8);
   if(now-spawnT<gap)return;spawnT=now;
   const isFire=Math.random()<fireChance;
   items.push({x:20+Math.random()*(W-40),y:-24,r:20,vy:1.3+Math.random()*.8+Math.min(2,el*.04),fire:isFire,val:isFire?0:VALS[Math.random()*VALS.length|0],dead:false});
 }
 
+/* collision helpers */
 function segDist(px,py,x1,y1,x2,y2){
   const dx=x2-x1,dy=y2-y1,l2=dx*dx+dy*dy;
   let t=l2?((px-x1)*dx+(py-y1)*dy)/l2:0;t=Math.max(0,Math.min(1,t));
@@ -164,13 +190,12 @@ function checkSwipe(x,y){
     const d=segDist(it.x,it.y,p0.x,p0.y,x,y);
     if(d<it.r+16){
       it.dead=true;
-      if(it.fire)bust('HIT FIRE! 🔥');
-      else{total+=it.val;count++;collectPop(it);updStats();updGo()}
+      if(it.fire) bust('Hit Fire! 🔥');
+      else {total+=it.val; count++; collectPop(it); updStats(); updGo()}
     }
   }
   lastP={x,y};
 }
-
 let pdown=false;
 function toLocal(e){const r=cv.getBoundingClientRect();const t=e.touches?e.touches[0]:e;return{x:t.clientX-r.left,y:t.clientY-r.top}}
 function down(e){pdown=true;const p=toLocal(e);lastP=p;checkSwipe(p.x,p.y);e.preventDefault()}
@@ -198,36 +223,32 @@ function draw(now){
     ctx.globalAlpha=1-t;ctx.fillStyle='#7CFC9A';ctx.fillText('+'+p.val.toFixed(1)+'x',p.x,yy);ctx.globalAlpha=1;
   }
 }
-
 function tick(now){
   if(state==='play'){
-    const elapsed=(now-startT)/1000;
-    timeRemaining=Math.max(0,gameDuration-elapsed);
-    $('#time').textContent=Math.ceil(timeRemaining)+'s';
-    
-    if(timeRemaining<=0){
-      cashOut('TIME UP!');
-    }
-    
     spawn(now);
-    for(const it of items){
-      if(!it.dead){
-        it.y+=it.vy;
-        if(it.y>=H+30){
-          it.dead=true;
-          if(!it.fire){
-            missedCount++;
-            updStats();
-            if(missedCount>=maxMissed&&state==='play')bust('MISSED TOO MANY!');
+    
+    items = items.filter(it => {
+      if(it.dead) return false;
+      it.y += it.vy;
+      
+      // Screen se bahar nikal gaya
+      if(it.y >= H + 30) {
+        if(!it.fire && state === 'play') { 
+          // Flower miss hua
+          missedCount++;
+          updStats();
+          if(missedCount >= ADMIN_MAX_MISSED) {
+            bust('Too many missed! 🌸');
           }
         }
+        return false; // Remove item
       }
-    }
-    items=items.filter(it=>!it.dead);
+      return true; // Keep item
+    });
   }
-  draw(now);requestAnimationFrame(tick);
+  draw(now);
+  requestAnimationFrame(tick);
 }
-
 layout();updBal();updStats();updGo();renderHist();requestAnimationFrame(tick);
 </script>
 </body></html>
