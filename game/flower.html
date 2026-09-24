@@ -48,6 +48,10 @@ canvas{display:block;width:100%}
   <div>Flowers<b id="cnt">0</b></div>
   <div>Cash value<b id="val">0.00</b></div>
 </div>
+<div class="stats">
+  <div>Missed Limit<b id="miss">0/3</b></div>
+  <div>Time Left<b id="time">60s</b></div>
+</div>
 <div class="field-wrap"><canvas id="cv"></canvas>
   <div class="ov" id="ov"><div><h2 id="ovh"></h2><p id="ovp"></p></div></div>
 </div>
@@ -64,18 +68,32 @@ canvas{display:block;width:100%}
 <script>
 const $=s=>document.querySelector(s);
 const fmt=n=>n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+const maxMissed=3;
+const gameDuration=60;
+
 let balance=3000,bet=1,state='idle',hist=[],items=[],pops=[],total=0,count=0,spawnT=0,startT=0,lastP=null;
+let missedCount=0,timeRemaining=gameDuration;
+
 const VALS=[0.5,0.5,0.5,0.8,0.8,1,1,1.2,1.5,2,2,3,5];
 const cv=$('#cv'),ctx=cv.getContext('2d');
 let W=0,H=0;
+
 function layout(){const r=cv.parentElement.getBoundingClientRect(),d=devicePixelRatio||1;W=r.width;H=Math.min(440,W*1.02);cv.style.height=H+'px';cv.width=W*d;cv.height=H*d;ctx.setTransform(d,0,0,d,0,0)}
 addEventListener('resize',layout);
 
 function updBal(){$('#bal').textContent=fmt(balance)}
-function updStats(){$('#mult').textContent=total.toFixed(2)+'x';$('#cnt').textContent=count;$('#val').textContent=fmt(bet*total)}
+function updStats(){
+  $('#mult').textContent=total.toFixed(2)+'x';
+  $('#cnt').textContent=count;
+  $('#val').textContent=fmt(bet*total);
+  $('#miss').textContent=missedCount+'/'+maxMissed;
+  if(state!=='play') $('#time').textContent=gameDuration+'s';
+}
 function renderHist(){$('#hist').innerHTML=hist.map(h=>h===null?`<span class="l">🔥 BUST</span>`:`<span class="w">${h.toFixed(2)}x</span>`).join('')}
-function readBet(){bet=Math.min(1000,Math.max(.1,+($('#bet').value.replace(',','.'))||1));bet=Math.round(bet*100)/100;$('#bet').value=bet.toFixed(2)}
+function readBet(){bet=Math.min(1000,Math.max(.1,+($('#bet').value.replace(',','.'))\vert{}\vert{}1));bet=Math.round(bet*100)/100;$('#bet').value=bet.toFixed(2)}
 function setBet(v){$('#bet').value=v;readBet();updGo();updStats()}
+
 $('#bm').onclick=()=>setBet(bet-.1);$('#bp').onclick=()=>setBet(bet+.1);
 $('#bet').onchange=()=>{readBet();updGo();updStats()};
 document.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{const q=b.dataset.q;setBet(q==='h'?bet/2:q==='d'?bet*2:+q)});
@@ -87,11 +105,12 @@ function updGo(){
   else{g.className='go';g.disabled=false;g.innerHTML=`Bet<small>${fmt(bet)} USD</small>`}
   $('#betrow').classList.toggle('dis',state==='play');
 }
-function overlay(win,txt){
+
+function overlay(win,txt,title){
   const o=$('#ov');
   if(win===null){o.className='ov';return}
   o.className='ov on '+(win?'win':'lose');
-  $('#ovh').textContent=win?'CASHED OUT!':'BUSTED! 🔥';
+  $('#ovh').textContent=title||(win?'CASHED OUT!':'BUSTED! 🔥');
   $('#ovp').textContent=txt;
   setTimeout(()=>o.classList.remove('on'),1600);
 }
@@ -100,32 +119,37 @@ function start(){
   readBet();
   if(balance<bet){flashGo('Insufficient balance');return}
   balance-=bet;updBal();
-  state='play';total=0;count=0;items=[];pops=[];spawnT=0;startT=performance.now();
+  state='play';total=0;count=0;missedCount=0;timeRemaining=gameDuration;
+  items=[];pops=[];spawnT=0;startT=performance.now();
   overlay(null);updStats();updGo();
 }
-function bust(){
+
+function bust(r='BUSTED! 🔥'){
+  if(state!=='play')return;
   state='over';hist.unshift(null);hist.length=Math.min(hist.length,14);renderHist();
-  overlay(false,`You lost ${fmt(bet)} USD`);updGo();
-  setTimeout(()=>{state='idle';updGo()},400);
+  overlay(false,`You lost ${fmt(bet)} USD`,r);updGo();
+  setTimeout(()=>{state='idle';total=0;count=0;missedCount=0;items=[];updStats();updGo()},400);
 }
-function cashOut(){
-  if(state!=='play'||!count)return;
+
+function cashOut(title='CASHED OUT!'){
+  if(state!=='play')return;
+  if(!count&&title==='TIME UP!'){bust('TIME UP!');return}
+  if(!count)return;
   const win=bet*total;balance+=win;hist.unshift(total);hist.length=Math.min(hist.length,14);renderHist();
-  state='over';overlay(true,`${total.toFixed(2)}x  •  +${fmt(win)} USD`);updBal();updGo();
-  setTimeout(()=>{state='idle';total=0;count=0;items=[];updStats();updGo()},400);
+  state='over';overlay(true,`${total.toFixed(2)}x  •  +${fmt(win)} USD`,title);updBal();updGo();
+  setTimeout(()=>{state='idle';total=0;count=0;missedCount=0;items=[];updStats();updGo()},400);
 }
+
 function flashGo(msg){const g=$('#go');const cur=g.innerHTML;g.innerHTML=msg;setTimeout(updGo,1000)}
 $('#go').onclick=()=>state==='play'?cashOut():start();
 
-/* spawning */
 function spawn(now){
-  const el=(now-startT)/1000, fireChance=Math.min(.55,.18+el*.012), gap=Math.max(230,520-el*8);
+  const el=(now-startT)/1000,fireChance=Math.min(.55,.18+el*.012),gap=Math.max(230,520-el*8);
   if(now-spawnT<gap)return;spawnT=now;
   const isFire=Math.random()<fireChance;
   items.push({x:20+Math.random()*(W-40),y:-24,r:20,vy:1.3+Math.random()*.8+Math.min(2,el*.04),fire:isFire,val:isFire?0:VALS[Math.random()*VALS.length|0],dead:false});
 }
 
-/* collision helpers */
 function segDist(px,py,x1,y1,x2,y2){
   const dx=x2-x1,dy=y2-y1,l2=dx*dx+dy*dy;
   let t=l2?((px-x1)*dx+(py-y1)*dy)/l2:0;t=Math.max(0,Math.min(1,t));
@@ -140,12 +164,13 @@ function checkSwipe(x,y){
     const d=segDist(it.x,it.y,p0.x,p0.y,x,y);
     if(d<it.r+16){
       it.dead=true;
-      if(it.fire)bust();
+      if(it.fire)bust('HIT FIRE! 🔥');
       else{total+=it.val;count++;collectPop(it);updStats();updGo()}
     }
   }
   lastP={x,y};
 }
+
 let pdown=false;
 function toLocal(e){const r=cv.getBoundingClientRect();const t=e.touches?e.touches[0]:e;return{x:t.clientX-r.left,y:t.clientY-r.top}}
 function down(e){pdown=true;const p=toLocal(e);lastP=p;checkSwipe(p.x,p.y);e.preventDefault()}
@@ -173,14 +198,36 @@ function draw(now){
     ctx.globalAlpha=1-t;ctx.fillStyle='#7CFC9A';ctx.fillText('+'+p.val.toFixed(1)+'x',p.x,yy);ctx.globalAlpha=1;
   }
 }
+
 function tick(now){
   if(state==='play'){
+    const elapsed=(now-startT)/1000;
+    timeRemaining=Math.max(0,gameDuration-elapsed);
+    $('#time').textContent=Math.ceil(timeRemaining)+'s';
+    
+    if(timeRemaining<=0){
+      cashOut('TIME UP!');
+    }
+    
     spawn(now);
-    for(const it of items){if(!it.dead)it.y+=it.vy}
-    items=items.filter(it=>!it.dead&&it.y<H+30);
+    for(const it of items){
+      if(!it.dead){
+        it.y+=it.vy;
+        if(it.y>=H+30){
+          it.dead=true;
+          if(!it.fire){
+            missedCount++;
+            updStats();
+            if(missedCount>=maxMissed&&state==='play')bust('MISSED TOO MANY!');
+          }
+        }
+      }
+    }
+    items=items.filter(it=>!it.dead);
   }
   draw(now);requestAnimationFrame(tick);
 }
+
 layout();updBal();updStats();updGo();renderHist();requestAnimationFrame(tick);
 </script>
 </body></html>
