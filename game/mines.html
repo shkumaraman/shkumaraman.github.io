@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mines – Fun Game</title>
+<style>
+:root{--bg:#0c0c0d;--card:#1b1b1d;--in:#111112;--tx:#e8e8ea;--mut:#8b8b92;--gr:#28a909;--or:#d27a06;--rd:#d8203f;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*:before,*:after{box-sizing:inherit}
+body{margin:0;background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;-webkit-tap-highlight-color:transparent;user-select:none}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
+.app{max-width:480px;margin:0 auto;padding:0 8px 28px}
+header{display:flex;justify-content:space-between;align-items:center;padding:14px 8px}
+.logo{font-size:30px;font-weight:900;letter-spacing:1px}.logo b{color:#3bd23b}.logo i{font-style:normal}
+.bal{color:#3bd23b;font-weight:700;font-size:20px}.bal small{color:var(--tx);font-weight:500}
+#reset{color:var(--mut);font-size:12px;display:block;margin-left:auto;text-decoration:underline}
+.hist{display:flex;gap:8px;padding:0 8px 10px;overflow:hidden;min-height:34px}
+.hist span{padding:4px 11px;border-radius:14px;font-size:14px;font-weight:700;background:#26262a;flex:none}
+.hist .w{color:#3bd23b}.hist .l{color:#ff4d67}
+.stats{display:flex;gap:8px;margin-bottom:10px}
+.stats div{flex:1;background:var(--card);border-radius:16px;padding:10px 12px;text-align:center;color:var(--mut);font-size:13px}
+.stats b{display:block;font-size:22px;color:var(--tx);margin-top:2px}
+.stats .big b{color:#3bd23b}
+.board-wrap{position:relative;background:var(--card);border-radius:24px;padding:12px}
+.board{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.board.shake{animation:shake .5s}
+@keyframes shake{20%{transform:translate(-6px,3px)}40%{transform:translate(6px,-3px)}60%{transform:translate(-4px,-2px)}80%{transform:translate(4px,2px)}}
+.t{aspect-ratio:1;border-radius:14px;background:linear-gradient(160deg,#34424f,#232d37);box-shadow:inset 0 -4px 0 #0005;font-size:min(9vw,40px);display:grid;place-items:center;transition:transform .12s,filter .12s;perspective:400px}
+.board.on .t:not(.r):hover{transform:translateY(-3px);filter:brightness(1.25)}
+.t:disabled{cursor:default}
+.t.r{animation:flip .35s}
+@keyframes flip{from{transform:rotateY(90deg) scale(.8)}}
+.t.g{background:linear-gradient(160deg,#1c5a25,#0f3a17);box-shadow:0 0 14px #28a90966,inset 0 -4px 0 #0005}
+.t.b{background:linear-gradient(160deg,#7a1022,#4a0813);box-shadow:0 0 18px #ff2a4d99}
+.t.b.hit{animation:boom .6s}
+@keyframes boom{0%{transform:scale(.5)}40%{transform:scale(1.4);filter:brightness(2)}100%{transform:scale(1)}}
+.t.dim{opacity:.4}
+.ov{position:absolute;inset:0;border-radius:24px;background:#000a;display:grid;place-items:center;text-align:center;z-index:4;opacity:0;pointer-events:none;transition:.25s}
+.ov.on{opacity:1;pointer-events:auto}
+.ov div{transform:scale(.8);transition:.25s}.ov.on div{transform:none}
+.ov h2{margin:0;font-size:38px}.ov p{margin:6px 0 0;font-size:22px;font-weight:700}
+.ov.win h2{color:#3bd23b}.ov.lose h2{color:#ff4d67}
+.ctl{background:var(--card);border-radius:24px;margin-top:10px;padding:14px}
+.lbl{color:var(--mut);font-size:13px;margin:0 0 6px 4px}
+.stepper{display:flex;align-items:center;background:var(--in);border-radius:30px;padding:5px}
+.stepper button{width:40px;height:40px;border-radius:50%;background:#2c2c2f;font-size:22px;color:var(--mut);flex:none}
+.stepper input{flex:1;min-width:0;text-align:center;background:none;border:0;color:var(--tx);font:700 22px inherit;outline:0}
+.quick{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:8px 0 12px}
+.quick button{background:var(--in);border-radius:14px;padding:9px 0;color:var(--mut);font-size:15px}
+.stepper.m input{font-size:20px}
+.go{width:100%;margin-top:14px;height:64px;border-radius:16px;font-size:24px;font-weight:800;border:2px solid #ffffff55;box-shadow:0 0 0 3px #0008;background:var(--gr);color:#fff;line-height:1.15}
+.go small{display:block;font-size:.6em;font-weight:600;opacity:.95}
+.go.or{background:var(--or)}.go:disabled{filter:grayscale(.7) brightness(.6);cursor:not-allowed}
+.rand{width:100%;margin-top:8px;padding:11px;border-radius:14px;background:#2a2a2d;color:var(--tx);font-size:15px}
+.rand:disabled{opacity:.4}
+.dis{opacity:.5;pointer-events:none}
+</style>
+</head>
+<body>
+<div class="app">
+<header>
+  <div class="logo"><i>💎</i> Mi<b>n</b>es</div>
+  <div><div class="bal"><span id="bal">3,000.00</span> <small>USD</small></div><button id="reset">Reset balance</button></div>
+</header>
+<div class="hist" id="hist"></div>
+<div class="stats">
+  <div class="big">Multiplier<b id="mult">1.00x</b></div>
+  <div>Next<b id="next">–</b></div>
+  <div>Profit<b id="profit">0.00</b></div>
+</div>
+<div class="board-wrap">
+  <div class="board" id="board"></div>
+  <div class="ov" id="ov"><div><h2 id="ovh"></h2><p id="ovp"></p></div></div>
+</div>
+<div class="ctl">
+  <div id="setup">
+    <p class="lbl">Bet amount (USD)</p>
+    <div class="stepper"><button id="bm">−</button><input id="bet" inputmode="decimal" value="1.00"><button id="bp">+</button></div>
+    <div class="quick"><button data-q="h">½</button><button data-q="d">2×</button><button data-q="1">1</button><button data-q="10">10</button></div>
+  </div>
+  <button class="go" id="go"></button>
+</div>
+</div>
+
+<script>
+const $=s=>document.querySelector(s);
+const fmt=n=>n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const N=25;
+const ADMIN_MINES=3; // set by admin panel later
+let balance=3000,state='idle',bet=1,mines=ADMIN_MINES,bombs=new Set(),safe=0,hist=[];
+const tiles=[];
+
+/* board */
+const board=$('#board');
+for(let i=0;i<N;i++){const b=document.createElement('button');b.className='t';b.onclick=()=>pick(i);board.appendChild(b);tiles.push(b)}
+
+/* dummy backend: multiplier with 3% house edge */
+function mult(k,m){let p=1;for(let i=0;i<k;i++)p*=(N-m-i)/(N-i);return .97/p}
+function genBombs(m){const s=new Set();while(s.size<m)s.add(Math.random()*N|0);return s}
+
+function ui(){
+  const cur=safe?mult(safe,mines):1,nxt=safe<N-mines?mult(safe+1,mines):null;
+  $('#bal').textContent=fmt(balance);
+  $('#mult').textContent=cur.toFixed(2)+'x';
+  $('#next').textContent=state==='play'&&nxt?nxt.toFixed(2)+'x':'–';
+  $('#profit').textContent=state==='play'?fmt(bet*cur-bet):'0.00';
+  const g=$('#go');
+  if(state==='play'){g.className='go or';g.disabled=!safe;g.innerHTML=safe?`Cash Out<small>${fmt(bet*cur)} USD</small>`:`Pick a tile<small>to start collecting</small>`}
+  else{g.className='go';g.disabled=false;g.innerHTML=`Bet<small>${fmt(bet)} USD</small>`}
+  $('#setup').classList.toggle('dis',state==='play');
+  board.classList.toggle('on',state==='play');
+  $('#hist').innerHTML=hist.map(h=>h?`<span class="w">${h.toFixed(2)}x</span>`:`<span class="l">💥</span>`).join('');
+}
+
+function readInputs(){
+  bet=Math.min(1000,Math.max(.1,+($('#bet').value.replace(',','.'))||1));bet=Math.round(bet*100)/100;
+  mines=ADMIN_MINES;
+  $('#bet').value=bet.toFixed(2);
+}
+function setBet(v){$('#bet').value=v;readInputs();ui()}
+$('#bm').onclick=()=>setBet(bet-.1);$('#bp').onclick=()=>setBet(bet+.1);
+$('#bet').onchange=()=>{readInputs();ui()};
+document.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{const q=b.dataset.q;setBet(q==='h'?bet/2:q==='d'?bet*2:+q)});
+$('#reset').onclick=()=>{balance=3000;ui()};
+
+function start(){
+  readInputs();
+  if(balance<bet){flash('Insufficient balance');return}
+  balance-=bet;bombs=genBombs(mines);safe=0;state='play';
+  tiles.forEach(t=>{t.className='t';t.textContent='';t.disabled=false});
+  overlay(null);ui();
+}
+function reveal(i,cls,ico){const t=tiles[i];t.classList.add('r',cls);t.textContent=ico}
+function pick(i){
+  if(state!=='play'||tiles[i].classList.contains('r'))return;
+  if(bombs.has(i)){
+    reveal(i,'b',''),tiles[i].textContent='💣';tiles[i].classList.add('hit');
+    board.classList.remove('shake');void board.offsetWidth;board.classList.add('shake');
+    if(navigator.vibrate)navigator.vibrate(200);
+    end(false);return;
+  }
+  reveal(i,'g','💎');safe++;
+  if(safe===N-mines)cashOut();else ui();
+}
+function reveal_all(){
+  tiles.forEach((t,i)=>{t.disabled=true;if(!t.classList.contains('r')){t.classList.add('r','dim',bombs.has(i)?'b':'g');t.textContent=bombs.has(i)?'💣':'💎'}});
+}
+function cashOut(){
+  if(state!=='play'||!safe)return;
+  const m=mult(safe,mines),w=bet*m;balance+=w;hist.unshift(m);hist.length=Math.min(hist.length,12);
+  state='over';reveal_all();overlay(true,m,w);ui();
+}
+function end(){
+  state='over';hist.unshift(0);hist.length=Math.min(hist.length,12);
+  setTimeout(()=>{reveal_all();overlay(false,0,bet);ui()},700);ui();
+}
+function overlay(win,m,amt){
+  const o=$('#ov');
+  if(win===null){o.className='ov';return}
+  o.className='ov on '+(win?'win':'lose');
+  $('#ovh').textContent=win?'YOU WON!':'BOOM! 💥';
+  $('#ovp').textContent=win?`${m.toFixed(2)}x  •  +${fmt(amt)} USD`:`You lost ${fmt(amt)} USD`;
+  setTimeout(()=>{if(state==='over')o.classList.remove('on')},2200);
+}
+function flash(msg){const g=$('#go');g.innerHTML=msg;setTimeout(ui,1200)}
+$('#go').onclick=()=>state==='play'?cashOut():start();
+$('#ov').onclick=()=>$('#ov').classList.remove('on');
+ui();
+</script>
+</body>
+</html>
