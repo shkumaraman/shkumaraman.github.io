@@ -66,6 +66,8 @@ canvas{display:block;width:100%}
 const GAME_TIME=60;
 const MAX_MISS=3;
 const FIELD_MAX_H=480, FIELD_RATIO=1.15, FIELD_MIN_H=340;
+const SPEED=1.7;
+const ITEM_R=27;
 const $=s=>document.querySelector(s);
 const r2=n=>Math.round(n*100)/100;
 const fmt=n=>n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -128,10 +130,10 @@ function finish(kind){
 $('#go').onclick=()=>state==='play'?finish('cash'):start();
 
 function spawn(now){
-  const el=(now-startT)/1000,fireChance=Math.min(.55,.18+el*.012),gap=Math.max(230,520-el*8);
+  const el=(now-startT)/1000,fireChance=Math.min(.6,.22+el*.014),gap=Math.max(200,440-el*8);
   if(now-spawnT<gap)return;spawnT=now;
   const isFire=Math.random()<fireChance;
-  items.push({x:20+Math.random()*(W-40),y:-24,r:20,vy:1.3+Math.random()*.8+Math.min(2,el*.04),fire:isFire,val:isFire?0:VALS[Math.random()*VALS.length|0],dead:false});
+  items.push({x:ITEM_R+Math.random()*(W-ITEM_R*2),y:-ITEM_R,r:ITEM_R,vy:(1.3+Math.random()*.8+Math.min(2,el*.04))*SPEED,fire:isFire,val:isFire?0:VALS[Math.random()*VALS.length|0],dead:false});
 }
 function segDist(px,py,x1,y1,x2,y2){
   const dx=x2-x1,dy=y2-y1,l2=dx*dx+dy*dy;
@@ -165,9 +167,9 @@ function draw(now){
   ctx.textAlign='center';ctx.textBaseline='middle';
   for(const it of items){
     if(it.dead)continue;
-    ctx.font=it.fire?'32px system-ui':'30px system-ui';ctx.fillStyle='#fff';
+    ctx.font=`${Math.round(ITEM_R*(it.fire?1.6:1.5))}px system-ui`;ctx.fillStyle='#fff';
     ctx.fillText(it.fire?'🔥':'🌸',it.x,it.y);
-    if(!it.fire){ctx.font='700 12px system-ui';ctx.fillStyle='#ffe1f0';ctx.fillText(it.val.toFixed(1)+'x',it.x,it.y+20)}
+    if(!it.fire){ctx.font='700 13px system-ui';ctx.fillStyle='#ffe1f0';ctx.fillText(it.val.toFixed(1)+'x',it.x,it.y+ITEM_R+4)}
   }
   ctx.font='700 15px system-ui';
   pops=pops.filter(p=>now-p.t<650);
@@ -183,7 +185,7 @@ function tick(now){
       for(const it of items){
         if(it.dead)continue;
         it.y+=it.vy*dt;
-        if(it.y>=H+30){it.dead=true;if(!it.fire)missed++}
+        if(it.y>=H+ITEM_R+10){it.dead=true;if(!it.fire)missed++}
       }
       items=items.filter(it=>!it.dead);
       if(missed){miss+=missed;updStats();if(miss>=MAX_MISS)finish('miss')}
