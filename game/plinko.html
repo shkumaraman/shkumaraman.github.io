@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Plinko Drop</title>
+<style>
+:root{--bg:#0c0c0d;--card:#1b1b1d;--in:#111112;--tx:#e8e8ea;--mut:#8b8b92;--gr:#28a909;--or:#d27a06;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:dark}
+*{box-sizing:inherit}body{margin:0;background:var(--bg);color:var(--tx);font-family:system-ui,Arial,sans-serif;-webkit-tap-highlight-color:transparent}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
+.app{max-width:480px;margin:0 auto;padding:0 8px 24px}
+header{display:flex;justify-content:space-between;align-items:center;padding:14px 8px}
+.logo{font-size:28px;font-weight:900}.logo b{color:#e0a02c}
+.bal{color:#3bd23b;font-weight:700;font-size:19px}.bal small{color:var(--tx);font-weight:500}
+#reset{color:var(--mut);font-size:12px;display:block;text-align:right;text-decoration:underline}
+.hist{display:flex;gap:6px;padding:0 8px 8px;overflow:hidden;min-height:30px}
+.hist span{padding:4px 10px;border-radius:12px;font-size:13px;font-weight:700;background:#26262a;flex:none}
+.hist .hi{color:#ffcf3f}.hist .lo{color:#ff5a6b}.hist .mid{color:#8bd0ff}
+.board-wrap{background:var(--card);border-radius:22px;padding:10px}
+canvas{width:100%;display:block;border-radius:14px;background:#141417}
+.tabs{display:flex;width:min(64%,280px);margin:10px auto 0;background:var(--in);border-radius:24px;padding:4px}
+.tabs button{flex:1;padding:8px 0;border-radius:20px;color:var(--mut);font-size:15px}
+.tabs button.on{background:#2e2e31;color:var(--tx)}
+.ctl{background:var(--card);border-radius:22px;margin-top:10px;padding:14px}
+.lbl{color:var(--mut);font-size:13px;margin:0 0 6px 4px}
+.stepper{display:flex;align-items:center;background:var(--in);border-radius:30px;padding:5px}
+.stepper button{width:38px;height:38px;border-radius:50%;background:#2c2c2f;font-size:20px;color:var(--mut);flex:none}
+.stepper input{flex:1;min-width:0;text-align:center;background:none;border:0;color:var(--tx);font:700 20px inherit;outline:0}
+.quick{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:8px 0}
+.quick button{background:var(--in);border-radius:14px;padding:8px 0;color:var(--mut);font-size:14px}
+.risk{display:flex;gap:6px;margin-top:2px}
+.risk button{flex:1;background:var(--in);border-radius:14px;padding:9px 0;color:var(--mut);font-size:14px}
+.risk button.on{background:#2e2e31;color:var(--tx)}
+.go{width:100%;margin-top:12px;height:58px;border-radius:16px;font-size:22px;font-weight:800;border:2px solid #ffffff55;box-shadow:0 0 0 3px #0008;background:var(--gr);color:#fff}
+.go.or{background:var(--or)}.go:disabled{filter:grayscale(.6) brightness(.6);cursor:not-allowed}
+.autoRow{display:none;margin-top:12px;background:var(--in);border-radius:16px;padding:10px 12px}
+.ctl.a .autoRow{display:block}
+.ml{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:10px;color:var(--mut);font-size:13px}
+.ml input{width:82px;background:#1c1c1f;border:1px solid #333;border-radius:10px;color:var(--tx);padding:7px;text-align:center;font-size:14px}
+.chips{display:flex;gap:6px}.chips button{flex:1;background:#1c1c1f;border-radius:12px;padding:8px 0;color:var(--mut);font-size:13px}.chips button.on{background:#1b86e0;color:#fff}
+.stat{display:flex;justify-content:space-between;color:var(--mut);font-size:13px;margin-top:2px}.stat b{color:var(--tx)}
+</style></head>
+<body><div class="app">
+<header><div class="logo">🔻 Pli<b>n</b>ko</div><div><div class="bal"><span id="bal">3,000.00</span> <small>USD</small></div><button id="reset">Reset balance</button></div></header>
+<div class="hist" id="hist"></div>
+<div class="board-wrap"><canvas id="cv"></canvas></div>
+<div class="tabs"><button class="on" data-tab="man">Manual</button><button data-tab="auto">Auto</button></div>
+<div class="ctl" id="ctl">
+  <p class="lbl">Bet amount (USD)</p>
+  <div class="stepper"><button id="bm">−</button><input id="bet" inputmode="decimal" value="1.00"><button id="bp">+</button></div>
+  <div class="quick"><button data-q="h">½</button><button data-q="d">2×</button><button data-q="1">1</button><button data-q="10">10</button></div>
+  <p class="lbl">Risk</p>
+  <div class="risk" id="risk"><button class="on" data-r="low">Low</button><button data-r="med">Medium</button><button data-r="high">High</button></div>
+  <div class="autoRow">
+    <p class="lbl" style="margin:0">Number of drops</p>
+    <div class="chips" id="chips"><button data-n="10" class="on">10</button><button data-n="25">25</button><button data-n="50">50</button><button data-n="100">100</button></div>
+    <label class="ml">Stop if balance decreases by<input id="sDec" inputmode="decimal" placeholder="off"></label>
+    <label class="ml">Stop if balance increases by<input id="sInc" inputmode="decimal" placeholder="off"></label>
+    <div class="stat">Drops left<b id="left">0</b></div>
+  </div>
+  <button class="go" id="go">Bet<small></small></button>
+</div>
+</div>
+<script>
+const $=s=>document.querySelector(s);
+const fmt=n=>n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+let balance=3000,bet=1,mode='man',risk='low',hist=[],auto=null,drops=10;
+const MULT={
+ low:[8.4,3,1.6,1.3,1.1,1,0.5,0.5,1,1.1,1.3,1.6,3,8.4],
+ med:[24,8,3,2,1.4,0.6,0.3,0.3,0.6,1.4,2,3,8,24],
+ high:[120,30,10,5,2,0.6,0.2,0.2,0.6,2,5,10,30,120]
+};
+const BUCKETS=14, ROWS=BUCKETS-3;
+const cv=$('#cv'),ctx=cv.getContext('2d');
+let W=0,H=0,boardTop=30,boardBot=0,pegR=4,ballR=6.5,pegs=[],bucketW=0;
+function layout(){
+  const r=cv.getBoundingClientRect(),d=devicePixelRatio||1;
+  W=r.width;H=Math.min(420,W*0.92);cv.style.height=H+'px';cv.width=W*d;cv.height=H*d;ctx.setTransform(d,0,0,d,0,0);
+  boardBot=H-46;pegs=[];
+  bucketW=W/BUCKETS;
+  const S=bucketW,rowGap=(boardBot-boardTop-16)/(ROWS-1);
+  pegR=Math.min(4.5,S*0.16);
+  for(let i=0;i<ROWS;i++){
+    const cnt=3+i,y=boardTop+i*rowGap,startX=W/2-(cnt-1)*S/2;
+    for(let k=0;k<cnt;k++)pegs.push({x:startX+k*S,y});
+  }
+}
+addEventListener('resize',layout);
+
+let balls=[];
+function dropBall(b){balls.push({x:W/2+(Math.random()-.5)*6,y:6,vx:(Math.random()-.5)*.6,vy:0,bet:b,done:false})}
+const G=0.34,DAMP=0.68;
+function physics(){
+  for(const b of balls){
+    if(b.done)continue;
+    b.vy+=G;b.x+=b.vx;b.y+=b.vy;
+    if(b.x<ballR){b.x=ballR;b.vx*=-.5}
+    if(b.x>W-ballR){b.x=W-ballR;b.vx*=-.5}
+    for(const p of pegs){
+      if(Math.abs(p.y-b.y)>14)continue;
+      const dx=b.x-p.x,dy=b.y-p.y,d=Math.hypot(dx,dy),min=pegR+ballR;
+      if(d<min&&d>0.001){
+        const nx=dx/d,ny=dy/d,overlap=min-d;
+        b.x+=nx*overlap;b.y+=ny*overlap;
+        const dot=b.vx*nx+b.vy*ny;
+        b.vx=(b.vx-2*dot*nx)*DAMP+(Math.random()-.5)*.9;
+        b.vy=(b.vy-2*dot*ny)*DAMP;
+        if(b.vy<0.8)b.vy=0.8;
+      }
+    }
+    if(b.y>=boardBot){
+      b.done=true;
+      let idx=Math.floor(b.x/bucketW);idx=Math.max(0,Math.min(BUCKETS-1,idx));
+      const m=MULT[risk][idx],win=b.bet*m;
+      balance+=win;pushHist(m);flashBucket(idx);
+      updBal();
+    }
+  }
+  balls=balls.filter(b=>!b.done||performance.now()-b.deadAt<1);
+}
+let flashes=[];
+function flashBucket(i){flashes.push({i,t:performance.now()})}
+function pushHist(m){hist.unshift(m);hist.length=Math.min(hist.length,14);renderHist()}
+function renderHist(){$('#hist').innerHTML=hist.map(m=>`<span class="${m>=5?'hi':m<1?'lo':'mid'}">${m.toFixed(2)}x</span>`).join('')}
+
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle='#3a4552';
+  for(const p of pegs){ctx.beginPath();ctx.arc(p.x,p.y,pegR,0,7);ctx.fill()}
+  const now=performance.now();
+  flashes=flashes.filter(f=>now-f.t<500);
+  for(let i=0;i<BUCKETS;i++){
+    const x=i*bucketW,f=flashes.find(f=>f.i===i),a=f?1-(now-f.t)/500:0;
+    const m=MULT[risk][i];
+    ctx.fillStyle=a>0?`rgba(255,205,63,${.15+a*.5})`:(m>=5?'#3a2a12':m<1?'#241417':'#182018');
+    ctx.fillRect(x+1,boardBot,bucketW-2,H-boardBot-2);
+    ctx.fillStyle=m>=5?'#ffcf3f':m<1?'#ff8a95':'#9fe6a0';
+    ctx.font='700 '+Math.max(9,Math.min(13,bucketW*0.24))+'px system-ui';
+    ctx.textAlign='center';ctx.fillText(m.toFixed(m<1?1:0)+'x',x+bucketW/2,H-14);
+  }
+  ctx.fillStyle='#e0a02c';
+  for(const b of balls){ctx.beginPath();ctx.arc(b.x,b.y,ballR,0,7);ctx.shadowColor='#e0a02c88';ctx.shadowBlur=8;ctx.fill();ctx.shadowBlur=0}
+}
+function loop(){physics();draw();requestAnimationFrame(loop)}
+
+/* controls */
+function readBet(){bet=Math.min(1000,Math.max(.1,+($('#bet').value.replace(',','.'))||1));bet=Math.round(bet*100)/100;$('#bet').value=bet.toFixed(2)}
+function setBet(v){$('#bet').value=v;readBet();updGo()}
+$('#bm').onclick=()=>setBet(bet-.1);$('#bp').onclick=()=>setBet(bet+.1);
+$('#bet').onchange=()=>{readBet();updGo()};
+document.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{const q=b.dataset.q;setBet(q==='h'?bet/2:q==='d'?bet*2:+q)});
+document.querySelectorAll('#risk button').forEach(b=>b.onclick=()=>{risk=b.dataset.r;document.querySelectorAll('#risk button').forEach(x=>x.classList.toggle('on',x===b));layoutBuckets()});
+function layoutBuckets(){}
+document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{mode=b.dataset.tab;document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x===b));$('#ctl').classList.toggle('a',mode==='auto');updGo()});
+document.querySelectorAll('#chips button').forEach(b=>b.onclick=()=>{drops=+b.dataset.n;document.querySelectorAll('#chips button').forEach(x=>x.classList.toggle('on',x===b))});
+$('#reset').onclick=()=>{balance=3000;updBal()};
+function updBal(){$('#bal').textContent=fmt(balance)}
+function updGo(){
+  const g=$('#go');
+  if(mode==='auto'&&auto){g.className='go or';g.querySelector('small').textContent=`Stop (${auto.left} left)`;g.firstChild.textContent='';g.innerHTML=`Stop<small>${auto.left} drops left</small>`}
+  else{g.className='go';g.innerHTML=`Bet<small>${fmt(bet)} USD</small>`}
+}
+function doDrop(){
+  if(balance<bet){flashGo('Insufficient balance');return false}
+  balance-=bet;dropBall(bet);updBal();return true;
+}
+function flashGo(msg){const g=$('#go');const old=g.innerHTML;g.innerHTML=msg;setTimeout(()=>updGo(),1000)}
+let autoTimer=null;
+function stopAuto(){auto=null;clearInterval(autoTimer);autoTimer=null;updGo()}
+function startAuto(){
+  readBet();const start=balance,dec=+($('#sDec').value.replace(',','.'))||0,inc=+($('#sInc').value.replace(',','.'))||0;
+  auto={left:drops,start,dec,inc};updGo();
+  autoTimer=setInterval(()=>{
+    if(!auto||auto.left<=0){stopAuto();return}
+    if(!doDrop()){stopAuto();return}
+    auto.left--;
+    const d=balance-auto.start;
+    if((auto.dec&&-d>=auto.dec)||(auto.inc&&d>=auto.inc)){stopAuto();return}
+    updGo();
+    if(auto.left<=0)stopAuto();
+  },260);
+}
+$('#go').onclick=()=>{
+  if(mode==='man')doDrop();
+  else{ if(auto)stopAuto(); else startAuto(); }
+};
+layout();updBal();updGo();renderHist();requestAnimationFrame(loop);
+</script>
+</body></html>
