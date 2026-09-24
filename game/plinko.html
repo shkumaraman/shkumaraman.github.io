@@ -13,6 +13,7 @@ header{display:flex;justify-content:space-between;align-items:center;padding:14p
 .logo{font-size:28px;font-weight:900}.logo b{color:#e0a02c}
 .bal{color:#3bd23b;font-weight:700;font-size:19px}.bal small{color:var(--tx);font-weight:500}
 #reset{color:var(--mut);font-size:12px;display:block;text-align:right;text-decoration:underline}
+#reset:disabled{opacity:.4;pointer-events:none}
 .hist{display:flex;gap:6px;padding:0 8px 8px;overflow:hidden;min-height:30px}
 .hist span{padding:4px 10px;border-radius:12px;font-size:13px;font-weight:700;background:#26262a;flex:none}
 .hist .hi{color:#ffcf3f}.hist .lo{color:#ff5a6b}.hist .mid{color:#8bd0ff}
@@ -25,12 +26,13 @@ canvas{width:100%;display:block;border-radius:14px;background:#141417}
 .lbl{color:var(--mut);font-size:13px;margin:0 0 6px 4px}
 .stepper{display:flex;align-items:center;background:var(--in);border-radius:30px;padding:5px}
 .stepper button{width:38px;height:38px;border-radius:50%;background:#2c2c2f;font-size:20px;color:var(--mut);flex:none}
-.stepper input{flex:1;min-width:0;text-align:center;background:none;border:0;color:var(--tx);font:700 20px inherit;outline:0}
+.stepper input{flex:1;min-width:0;text-align:center;background:none;border:0;color:var(--tx);font:700 20px system-ui;outline:0}
 .quick{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:8px 0}
 .quick button{background:var(--in);border-radius:14px;padding:8px 0;color:var(--mut);font-size:14px}
 .risk{display:flex;gap:6px;margin-top:2px}
 .risk button{flex:1;background:var(--in);border-radius:14px;padding:9px 0;color:var(--mut);font-size:14px}
 .risk button.on{background:#2e2e31;color:var(--tx)}
+.risk button:disabled{opacity:.4;pointer-events:none}
 .go{width:100%;margin-top:12px;height:58px;border-radius:16px;font-size:22px;font-weight:800;border:2px solid #ffffff55;box-shadow:0 0 0 3px #0008;background:var(--gr);color:#fff}
 .go.or{background:var(--or)}.go:disabled{filter:grayscale(.6) brightness(.6);cursor:not-allowed}
 .autoRow{display:none;margin-top:12px;background:var(--in);border-radius:16px;padding:10px 12px}
@@ -38,6 +40,7 @@ canvas{width:100%;display:block;border-radius:14px;background:#141417}
 .ml{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:10px;color:var(--mut);font-size:13px}
 .ml input{width:82px;background:#1c1c1f;border:1px solid #333;border-radius:10px;color:var(--tx);padding:7px;text-align:center;font-size:14px}
 .chips{display:flex;gap:6px}.chips button{flex:1;background:#1c1c1f;border-radius:12px;padding:8px 0;color:var(--mut);font-size:13px}.chips button.on{background:#1b86e0;color:#fff}
+.chips button:disabled{opacity:.4;pointer-events:none}
 .stat{display:flex;justify-content:space-between;color:var(--mut);font-size:13px;margin-top:2px}.stat b{color:var(--tx)}
 </style></head>
 <body><div class="app">
@@ -63,6 +66,7 @@ canvas{width:100%;display:block;border-radius:14px;background:#141417}
 </div>
 <script>
 const $=s=>document.querySelector(s);
+const r2=n=>Math.round(n*100)/100;
 const fmt=n=>n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 let balance=3000,bet=1,mode='man',risk='low',hist=[],auto=null,drops=10;
 const MULT={
@@ -88,7 +92,8 @@ function layout(){
 addEventListener('resize',layout);
 
 let balls=[];
-function dropBall(b){balls.push({x:W/2+(Math.random()-.5)*6,y:6,vx:(Math.random()-.5)*.6,vy:0,bet:b,done:false})}
+function dropBall(b,r){balls.push({x:W/2+(Math.random()-.5)*6,y:6,vx:(Math.random()-.5)*.6,vy:0,bet:b,risk:r,done:false,deadAt:0})}
+function anyBallsInFlight(){return balls.some(b=>!b.done)}
 const G=0.34,DAMP=0.68;
 function physics(){
   for(const b of balls){
@@ -109,14 +114,16 @@ function physics(){
       }
     }
     if(b.y>=boardBot){
-      b.done=true;
+      b.done=true;b.deadAt=performance.now();
       let idx=Math.floor(b.x/bucketW);idx=Math.max(0,Math.min(BUCKETS-1,idx));
-      const m=MULT[risk][idx],win=b.bet*m;
-      balance+=win;pushHist(m);flashBucket(idx);
+      const m=MULT[b.risk][idx],win=r2(b.bet*m);
+      balance=r2(balance+win);pushHist(m);flashBucket(idx);
       updBal();
+      if(auto)autoOnLanded();
     }
   }
-  balls=balls.filter(b=>!b.done||performance.now()-b.deadAt<1);
+  balls=balls.filter(b=>!b.done||performance.now()-b.deadAt<400);
+  updResetState();
 }
 let flashes=[];
 function flashBucket(i){flashes.push({i,t:performance.now()})}
@@ -139,50 +146,73 @@ function draw(){
     ctx.textAlign='center';ctx.fillText(m.toFixed(m<1?1:0)+'x',x+bucketW/2,H-14);
   }
   ctx.fillStyle='#e0a02c';
-  for(const b of balls){ctx.beginPath();ctx.arc(b.x,b.y,ballR,0,7);ctx.shadowColor='#e0a02c88';ctx.shadowBlur=8;ctx.fill();ctx.shadowBlur=0}
+  for(const b of balls){
+    if(b.done)continue;
+    ctx.beginPath();ctx.arc(b.x,b.y,ballR,0,7);ctx.shadowColor='#e0a02c88';ctx.shadowBlur=8;ctx.fill();ctx.shadowBlur=0;
+  }
 }
 function loop(){physics();draw();requestAnimationFrame(loop)}
 
-/* controls */
-function readBet(){bet=Math.min(1000,Math.max(.1,+($('#bet').value.replace(',','.'))||1));bet=Math.round(bet*100)/100;$('#bet').value=bet.toFixed(2)}
-function setBet(v){$('#bet').value=v;readBet();updGo()}
+function readBet(){bet=Math.min(1000,Math.max(.1,+($('#bet').value.replace(',','.'))||1));bet=r2(bet);$('#bet').value=bet.toFixed(2)}
+function setBet(v){if(auto)return;$('#bet').value=v;readBet();updGo()}
 $('#bm').onclick=()=>setBet(bet-.1);$('#bp').onclick=()=>setBet(bet+.1);
 $('#bet').onchange=()=>{readBet();updGo()};
 document.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{const q=b.dataset.q;setBet(q==='h'?bet/2:q==='d'?bet*2:+q)});
-document.querySelectorAll('#risk button').forEach(b=>b.onclick=()=>{risk=b.dataset.r;document.querySelectorAll('#risk button').forEach(x=>x.classList.toggle('on',x===b));layoutBuckets()});
-function layoutBuckets(){}
-document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{mode=b.dataset.tab;document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x===b));$('#ctl').classList.toggle('a',mode==='auto');updGo()});
-document.querySelectorAll('#chips button').forEach(b=>b.onclick=()=>{drops=+b.dataset.n;document.querySelectorAll('#chips button').forEach(x=>x.classList.toggle('on',x===b))});
-$('#reset').onclick=()=>{balance=3000;updBal()};
+document.querySelectorAll('#risk button').forEach(b=>b.onclick=()=>{if(auto)return;risk=b.dataset.r;document.querySelectorAll('#risk button').forEach(x=>x.classList.toggle('on',x===b))});
+document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{
+  if(auto)stopAuto();
+  mode=b.dataset.tab;document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x===b));
+  $('#ctl').classList.toggle('a',mode==='auto');updGo();
+});
+document.querySelectorAll('#chips button').forEach(b=>b.onclick=()=>{if(auto)return;drops=+b.dataset.n;document.querySelectorAll('#chips button').forEach(x=>x.classList.toggle('on',x===b))});
+$('#reset').onclick=()=>{if(auto||anyBallsInFlight())return;balance=3000;updBal()};
 function updBal(){$('#bal').textContent=fmt(balance)}
+function updResetState(){$('#reset').disabled=!!auto||anyBallsInFlight()}
+function setLocksDuringAuto(on){
+  document.querySelectorAll('#risk button,#chips button').forEach(b=>b.disabled=on);
+  $('#bet').disabled=on;$('#bm').disabled=on;$('#bp').disabled=on;
+  document.querySelectorAll('[data-q]').forEach(b=>b.disabled=on);
+  $('#sDec').disabled=on;$('#sInc').disabled=on;
+}
 function updGo(){
   const g=$('#go');
-  if(mode==='auto'&&auto){g.className='go or';g.querySelector('small').textContent=`Stop (${auto.left} left)`;g.firstChild.textContent='';g.innerHTML=`Stop<small>${auto.left} drops left</small>`}
-  else{g.className='go';g.innerHTML=`Bet<small>${fmt(bet)} USD</small>`}
+  if(mode==='auto'&&auto){g.className='go or';g.innerHTML=`Stop<small>${auto.left} drops left</small>`}
+  else{g.className='go';g.disabled=false;g.innerHTML=`Bet<small>${fmt(bet)} USD</small>`}
+  $('#left').textContent=auto?auto.left:0;
+  updResetState();
 }
-function doDrop(){
+function doDrop(r){
   if(balance<bet){flashGo('Insufficient balance');return false}
-  balance-=bet;dropBall(bet);updBal();return true;
+  balance=r2(balance-bet);dropBall(bet,r);updBal();updResetState();return true;
 }
-function flashGo(msg){const g=$('#go');const old=g.innerHTML;g.innerHTML=msg;setTimeout(()=>updGo(),1000)}
+function flashGo(msg){const g=$('#go');g.innerHTML=msg;setTimeout(()=>updGo(),1000)}
+
+function stopAuto(){
+  auto=null;setLocksDuringAuto(false);updGo();
+}
+function autoOnLanded(){
+  if(!auto)return;
+  const d=balance-auto.start;
+  if((auto.dec&&-d>=auto.dec)||(auto.inc&&d>=auto.inc)){stopAuto();return}
+  if(auto.left<=0&&!anyBallsInFlight()){stopAuto();return}
+  updGo();
+}
 let autoTimer=null;
-function stopAuto(){auto=null;clearInterval(autoTimer);autoTimer=null;updGo()}
 function startAuto(){
-  readBet();const start=balance,dec=+($('#sDec').value.replace(',','.'))||0,inc=+($('#sInc').value.replace(',','.'))||0;
-  auto={left:drops,start,dec,inc};updGo();
+  readBet();
+  const start=balance,dec=+($('#sDec').value.replace(',','.'))||0,inc=+($('#sInc').value.replace(',','.'))||0,r=risk;
+  auto={left:drops,start,dec,inc};setLocksDuringAuto(true);updGo();
+  clearInterval(autoTimer);
   autoTimer=setInterval(()=>{
-    if(!auto||auto.left<=0){stopAuto();return}
-    if(!doDrop()){stopAuto();return}
-    auto.left--;
-    const d=balance-auto.start;
-    if((auto.dec&&-d>=auto.dec)||(auto.inc&&d>=auto.inc)){stopAuto();return}
-    updGo();
-    if(auto.left<=0)stopAuto();
+    if(!auto||auto.left<=0){clearInterval(autoTimer);if(auto&&!anyBallsInFlight())stopAuto();return}
+    if(!doDrop(r)){clearInterval(autoTimer);stopAuto();return}
+    auto.left--;updGo();
+    if(auto.left<=0)clearInterval(autoTimer);
   },260);
 }
 $('#go').onclick=()=>{
-  if(mode==='man')doDrop();
-  else{ if(auto)stopAuto(); else startAuto(); }
+  if(mode==='man')doDrop(risk);
+  else{ if(auto){clearInterval(autoTimer);stopAuto();} else startAuto(); }
 };
 layout();updBal();updGo();renderHist();requestAnimationFrame(loop);
 </script>
