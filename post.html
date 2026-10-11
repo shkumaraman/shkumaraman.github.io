@@ -1234,6 +1234,32 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       return encodeURIComponent(str).replace(/[.#$\[\]\/]/g, '_');
     }
 
+    function escapeHtml(text) {
+      if (!text) return '';
+      return String(text)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function normalizeURL(url) {
+      if (!url) return null;
+      if (!url.startsWith('http://') && !url.startsWith('https://')) return 'https://' + url;
+      return url;
+    }
+
+    function makeTextClickable(text) {
+      if (!text) return '';
+      const safeText = escapeHtml(text);
+      const urlRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|([a-zA-Z0-9-]+\.[a-zA-Z]{2,}(\/[^\s]*)?)/g;
+      return safeText.replace(urlRegex, (url) => {
+        const href = normalizeURL(url);
+        return `<a href="${href}" target="_blank" rel="noopener nofollow">${url}</a>`;
+      });
+    }
+
     window.addEventListener('nicknameUpdated', (e) => {
       currentNickname = e.detail.nickname;
       updateAllFriendButtons();
@@ -1277,31 +1303,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
         const pattern = new RegExp(`\\b${escapedWord}\\b`, 'i');
         return pattern.test(message);
       });
-    }
-
-    function escapeHtml(text) {
-      if (!text) return '';
-      return text
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
-    }
-
-    function makeTextClickable(text) {
-      if (!text) return '';
-      const urlRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|([a-zA-Z0-9-]+\.[a-zA-Z]{2,}(\/[^\s]*)?)/g;
-      return text.replace(urlRegex, (url) => {
-        const href = normalizeURL(url);
-        return `<a href="${href}" target="_blank" rel="noopener nofollow">${url}</a>`;
-      });
-    }
-
-    function normalizeURL(url) {
-      if (!url) return null;
-      if (!url.startsWith('http://') && !url.startsWith('https://')) return 'https://' + url;
-      return url;
     }
 
     function shuffleArray(array) {
@@ -1481,12 +1482,12 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     function createCommentItemHtml(comment, isReply, rootParentId = null) {
       const currentNick = getNickname();
       const isMine = currentNick && comment.nickname === currentNick;
-      const initial = (comment.nickname || 'G').charAt(0).toUpperCase();
+      const initial = escapeHtml((comment.nickname || 'G').charAt(0).toUpperCase());
       const parentIdForReply = isReply ? rootParentId : comment.id;
 
       const safeText = comment.text ? (containsBannedWords(comment.text)
         ? '<span style="color:var(--dark-text-dim);font-style:italic;">Hidden due to inappropriate content</span>'
-        : makeTextClickable(escapeHtml(comment.text))) : '';
+        : makeTextClickable(comment.text)) : '';
 
       const mentionHtml = comment.replyToNickname 
         ? `<span class="comment-mention">@${escapeHtml(comment.replyToNickname)}</span>` 
@@ -1797,9 +1798,10 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
           ? "This post was hidden due to inappropriate content"
           : makeTextClickable(post.text)) : '';
 
-        const displayNickname = containsBannedWords(post.nickname)
+        const rawNick = containsBannedWords(post.nickname)
           ? "Guest"
           : (post.nickname || 'Guest');
+        const displayNickname = escapeHtml(rawNick);
 
         const imageHtml = post.imageUrl ? `
           <div class="post-image-wrapper">
@@ -1825,7 +1827,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
               </svg>
               <span id="commentCountBadge-${postId}">0</span>
             </button>
-            <span class="friend-btn-slot" data-nickname="${post.nickname || ''}">
+            <span class="friend-btn-slot" data-nickname="${escapeHtml(post.nickname || '')}">
               ${getFriendButtonHtml(post.nickname)}
             </span>
             <button class="share-btn-post" onclick='sharePost("${postId}", ${JSON.stringify(post).replace(/'/g, "\\'")})'>
@@ -1930,12 +1932,12 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       const isFriend = !!myFriendsMap[targetNickname];
 
       return isFriend ? `
-        <button class="friend-btn" onclick="messageUser('${targetNickname.replace(/'/g, "\\'")}')" title="Message ${displayName}">
+        <button class="friend-btn" onclick="messageUser('${targetNickname.replace(/'/g, "\\'")}')" title="Message ${escapeHtml(displayName)}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
           Message
         </button>
       ` : `
-        <button class="friend-btn" onclick="addFriend('${targetNickname.replace(/'/g, "\\'")}')" title="Add ${displayName}">
+        <button class="friend-btn" onclick="addFriend('${targetNickname.replace(/'/g, "\\'")}')" title="Add ${escapeHtml(displayName)}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
           Add Friend
         </button>
@@ -2224,7 +2226,10 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     });
 
     window.addEventListener('load', () => {
-      if (performance.navigation.type === 0) sessionStorage.removeItem('postsInitialized');
+      const navEntry = performance.getEntriesByType && performance.getEntriesByType('navigation')[0];
+      if ((navEntry && navEntry.type === 'navigate') || (performance.navigation && performance.navigation.type === 0)) {
+        sessionStorage.removeItem('postsInitialized');
+      }
     });
 
     loadBannedWords();
