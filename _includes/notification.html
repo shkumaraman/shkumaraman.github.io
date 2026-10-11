@@ -320,6 +320,24 @@
     return encodeURIComponent(str).replace(/[.#$\[\]\/]/g, '_');
   }
 
+  function saveToLocalHistory(item) {
+    try {
+      let list = JSON.parse(localStorage.getItem("talkrush_notifications_history") || "[]");
+      list.unshift({
+        id: "nt_" + Date.now() + "_" + Math.random().toString(36).substr(2, 4),
+        senderName: item.senderName,
+        message: item.message,
+        redirectUrl: item.redirectUrl,
+        type: item.type,
+        timestamp: item.timestamp || Date.now(),
+        read: false
+      });
+      if (list.length > 50) list = list.slice(0, 50);
+      localStorage.setItem("talkrush_notifications_history", JSON.stringify(list));
+      window.dispatchEvent(new CustomEvent("localNotificationsUpdated"));
+    } catch (e) {}
+  }
+
   function getFriendNickname(friend) {
     return friend.nickname1 === myNickname ? friend.nickname2 : friend.nickname2 === myNickname ? friend.nickname1 : null;
   }
@@ -361,14 +379,17 @@
 
     const redirectUrl = `/chat/inbox?chatId=${encodeURIComponent(chatId)}&friend=${encodeURIComponent(friendNick)}`;
 
-    toastQueue.push({ 
+    const notifItem = { 
       chatId: chatId, 
       senderName: friendNick, 
       message: friend.lastMessageText, 
       redirectUrl: redirectUrl, 
       type: "dm", 
       timestamp: friend.lastTimestamp 
-    });
+    };
+
+    saveToLocalHistory(notifItem);
+    toastQueue.push(notifItem);
 
     lastNotifiedMessages[chatId] = key;
     localStorage.setItem("lastNotifiedMessages", JSON.stringify(lastNotifiedMessages));
@@ -416,13 +437,16 @@
       if (notificationOff) return;
       if (data.senderName === myNickname) return;
 
-      toastQueue.push({
+      const notifItem = {
         senderName: data.senderName,
         message: data.message || '',
         redirectUrl: data.redirectUrl || '/posts',
         type: data.type || 'comment',
         timestamp: data.timestamp || Date.now()
-      });
+      };
+
+      saveToLocalHistory(notifItem);
+      toastQueue.push(notifItem);
 
       processToastQueue();
     }, (err) => console.error("notifications error:", err));
@@ -455,13 +479,17 @@
         const redirectUrl = `/chat/group.html?group=${encodeURIComponent(groupName)}`;
         const replyText = unreadCount === 1 ? '1 new reply' : `${unreadCount} new replies`;
         
-        toastQueue.push({ 
+        const notifItem = { 
           chatId: groupName, 
           groupName: groupName,
+          senderName: groupName,
           message: replyText, 
           redirectUrl: redirectUrl, 
           type: "group_mention"
-        });
+        };
+
+        saveToLocalHistory(notifItem);
+        toastQueue.push(notifItem);
         
         lastNotifiedMessages[groupName] = key;
         localStorage.setItem("lastNotifiedMessages", JSON.stringify(lastNotifiedMessages));
