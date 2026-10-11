@@ -387,6 +387,22 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   border-color: var(--light-border2);
 }
 
+.post-header-top {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.post-header-top .nickname {
+  margin-bottom: 0;
+}
+
+.post-header-top .timestamp {
+  margin-bottom: 0;
+  font-size: 11px;
+}
+
 .nickname {
   font-size: 12px;
   font-weight: 600;
@@ -1196,7 +1212,8 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       orderByChild,
       limitToLast,
       endAt,
-      get
+      get,
+      equalTo
     } from "firebase/database";
 
     const postsFirebaseConfig = {
@@ -1236,6 +1253,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
     let activeModalPostId = null;
     let activeReplyTarget = null;
+    let cleanFriendsListeners = null;
 
     let currentNickname = localStorage.getItem("talkrush_nickname");
 
@@ -1280,28 +1298,63 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       });
     }
 
+    function initFriendsListener() {
+      if (cleanFriendsListeners) {
+        cleanFriendsListeners();
+        cleanFriendsListeners = null;
+      }
+      myFriendsMap = {};
+
+      const nick = getNickname();
+      if (!nick || nick === 'Guest') {
+        updateAllFriendButtons();
+        return;
+      }
+
+      const q1 = query(friendsRef, orderByChild("nickname1"), equalTo(nick));
+      const q2 = query(friendsRef, orderByChild("nickname2"), equalTo(nick));
+
+      const handleAdded = (snap) => {
+        const val = snap.val();
+        if (!val) return;
+        const otherNick = (val.nickname1 === nick) ? val.nickname2 : val.nickname1;
+        if (otherNick) {
+          myFriendsMap[otherNick] = snap.key;
+          updateAllFriendButtons();
+        }
+      };
+
+      const handleRemoved = (snap) => {
+        const val = snap.val();
+        if (!val) return;
+        const otherNick = (val.nickname1 === nick) ? val.nickname2 : val.nickname1;
+        if (otherNick && myFriendsMap[otherNick]) {
+          delete myFriendsMap[otherNick];
+          updateAllFriendButtons();
+        }
+      };
+
+      const unsubAdded1 = onChildAdded(q1, handleAdded, (err) => console.error("friends q1 added error:", err));
+      const unsubRemoved1 = onChildRemoved(q1, handleRemoved, (err) => console.error("friends q1 removed error:", err));
+      const unsubAdded2 = onChildAdded(q2, handleAdded, (err) => console.error("friends q2 added error:", err));
+      const unsubRemoved2 = onChildRemoved(q2, handleRemoved, (err) => console.error("friends q2 removed error:", err));
+
+      cleanFriendsListeners = () => {
+        unsubAdded1();
+        unsubRemoved1();
+        unsubAdded2();
+        unsubRemoved2();
+      };
+    }
+
     window.addEventListener('nicknameUpdated', (e) => {
       currentNickname = e.detail.nickname;
+      initFriendsListener();
       updateAllFriendButtons();
       Object.keys(likesData).forEach(postId => updateCardLikeUI(postId));
     });
 
-    onValue(friendsRef, (snapshot) => {
-      myFriendsMap = {};
-      if (snapshot.exists()) {
-        snapshot.forEach(child => {
-          const friendData = child.val();
-          if (friendData.nickname1 === currentNickname) {
-            myFriendsMap[friendData.nickname2] = child.key;
-          } else if (friendData.nickname2 === currentNickname) {
-            myFriendsMap[friendData.nickname1] = child.key;
-          }
-        });
-      }
-      updateAllFriendButtons();
-    }, (error) => {
-      console.error("friends error:", error);
-    });
+    initFriendsListener();
 
     async function loadBannedWords() {
       try {
@@ -1918,10 +1971,14 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
         }
 
         div.innerHTML = `
-          <div class="nickname"><span class="nickname-clickable" data-action="view-profile" data-nickname="${displayNickname}">${displayNickname}</span></div>
+          <div class="post-header-top">
+            <div class="nickname">
+              <span class="nickname-clickable" data-action="view-profile" data-nickname="${displayNickname}">${displayNickname}</span>
+            </div>
+            <span class="timestamp">• ${timeSince(post.timestamp)}</span>
+          </div>
           ${displayText ? `<div class="post-content">${displayText}</div>` : ''}
           ${imageHtml}
-          <div class="timestamp">${timeSince(post.timestamp)}</div>
           <div class="buttons">
             <button class="like-btn-post" id="likeBtn-${postId}" data-action="toggle-like" data-post-id="${postId}" title="Like">
               <svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1962,7 +2019,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       }
     }
 
-    // Note: Search filters only across the currently loaded 100 posts (plus any loaded shared post)
     function searchPosts(searchTerm) {
       currentSearchTerm = searchTerm.toLowerCase().trim();
       const clearSearchBtn = document.getElementById('clearSearch');
