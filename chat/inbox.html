@@ -1165,7 +1165,23 @@ description: "View your chat history and messages with friends."
 
 <script type="module">
   import { initializeApp, getApps } from "firebase/app";
-  import { getDatabase, ref, onValue, get, set, update, remove, push, onChildAdded, onChildChanged, onChildRemoved, query, orderByChild, limitToLast } from "firebase/database";
+  import {
+    getDatabase,
+    ref,
+    onValue,
+    get,
+    set,
+    update,
+    remove,
+    push,
+    onChildAdded,
+    onChildChanged,
+    onChildRemoved,
+    query,
+    orderByChild,
+    limitToLast,
+    equalTo
+  } from "firebase/database";
 
   const firebaseConfig = {
     databaseURL: "https://talkrush3-default-rtdb.asia-southeast1.firebasedatabase.app"
@@ -1187,13 +1203,16 @@ description: "View your chat history and messages with friends."
   let currentUserId = null;
   let currentChatId = null;
   let currentFriendName = "";
-  let friendListListener = null;
+  let friendUnsubs = [];
   let messagesListener = null;
   let messageChangedListener = null;
   let messageRemovedListener = null;
   let typingListener = null;
   let myNickname = null;
   let myFriendsData = {};
+  let myFriendsMap = {};
+  let initialFriendsLoaded = false;
+  let renderDebounceTimer = null;
   let isPruning = false;
   const renderedMessageKeys = new Set();
   
@@ -1316,7 +1335,9 @@ description: "View your chat history and messages with friends."
     if (lastMsgElement) lastMsgElement.textContent = lastMessage;
     if (timeElement) timeElement.textContent = formatTime(timestamp);
     const friendList = document.getElementById('friendList');
-    friendList.insertBefore(friendItem, friendList.firstChild);
+    if (friendList && friendItem !== friendList.firstChild) {
+      friendList.insertBefore(friendItem, friendList.firstChild);
+    }
   }
 
   window.forwardMessage = function(content) {
@@ -1432,7 +1453,7 @@ description: "View your chat history and messages with friends."
       );
       
       if (isConfirmed) {
-        remove(ref(db, `messages/${chatId}/${msgKey}`));
+        remove(ref(db, `messages/${chatId}/${msgKey}`)).catch((err) => console.error("delete msg error:", err));
         if ((targetMsg.type === 'image' || targetMsg.type === 'audio') && targetMsg.url && window.deleteMediaFromServer) {
           window.deleteMediaFromServer(targetMsg.url);
         }
@@ -1547,6 +1568,11 @@ description: "View your chat history and messages with friends."
     checkUrlNavigation();
   });
 
+  window.addEventListener('nicknameUpdated', (e) => {
+    myNickname = e.detail.nickname;
+    loadFriends();
+  });
+
   function setupEventListeners() {
     msgInput.addEventListener('keypress', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
@@ -1658,85 +1684,88 @@ description: "View your chat history and messages with friends."
     listenForTyping();
   };
 
-  function loadFriends() {
-    const friendsRef = ref(db, "friends");
+  function detachFriendListeners() {
+    friendUnsubs.forEach(u => {
+      try {
+        if (typeof u === 'function') u();
+      } catch (e) {}
+    });
+    friendUnsubs = [];
+  }
 
-    if (friendListListener) { friendListListener(); friendListListener = null; }
+  function scheduleFriendsRender() {
+    clearTimeout(renderDebounceTimer);
+    renderDebounceTimer = setTimeout(() => {
+      renderFriendsUI();
+    }, 40);
+  }
 
-    friendListListener = onValue(friendsRef, async (snap) => {
-      const data = snap.val();
-      const list = document.getElementById("friendList");
-      const loading = document.getElementById("loading");
-      const empty = document.getElementById("emptyState");
+  function renderFriendsUI() {
+    const list = document.getElementById("friendList");
+    const loading = document.getElementById("loading");
+    const empty = document.getElementById("emptyState");
 
-      loading.style.display = "none";
+    loading.style.display = "none";
 
-      if (!data) {
-        empty.style.display = "flex";
-        list.style.display = "none";
-        myFriendsData = {};
-        return;
+    const friendsArray = [];
+    let lastSeenMap = JSON.parse(localStorage.getItem('inbox_last_seen') || '{}');
+
+    if (currentChatId) {
+      lastSeenMap[currentChatId] = Date.now();
+      localStorage.setItem('inbox_last_seen', JSON.stringify(lastSeenMap));
+    }
+
+    Object.entries(myFriendsMap).forEach(([chatId, friend]) => {
+      const friendNickname = friend.nickname2 === myNickname ? friend.nickname1 :
+        friend.nickname1 === myNickname ? friend.nickname2 : null;
+      if (!friendNickname) return;
+
+      let chatLastSeen = lastSeenMap[chatId] || 0;
+      let lastMessage = friend.lastMessageText || "Say Hi!";
+      let lastTimestamp = friend.lastTimestamp || Date.now();
+      let unreadCount = 0;
+
+      if (friend.lastSender !== myNickname && lastTimestamp > chatLastSeen && chatId !== currentChatId) {
+        unreadCount = 1;
       }
 
-      list.innerHTML = "";
-      const friendsArray = [];
-      
-      let lastSeenMap = JSON.parse(localStorage.getItem('inbox_last_seen') || '{}');
-
-      if (currentChatId) {
-        lastSeenMap[currentChatId] = Date.now();
-        localStorage.setItem('inbox_last_seen', JSON.stringify(lastSeenMap));
-      }
-
-      Object.entries(data).forEach(([chatId, friend]) => {
-        const friendNickname = friend.nickname2 === myNickname ? friend.nickname1 :
-          friend.nickname1 === myNickname ? friend.nickname2 : null;
-        if (!friendNickname) return;
-
-        let chatLastSeen = lastSeenMap[chatId] || 0;
-        let lastMessage = friend.lastMessageText || "Say Hi!";
-        let lastTimestamp = friend.lastTimestamp || Date.now();
-        let unreadCount = 0;
-
-        if (friend.lastSender !== myNickname && lastTimestamp > chatLastSeen && chatId !== currentChatId) {
-          unreadCount = 1;
-        }
-
-        friendsArray.push({
-          chatId,
-          displayName: friendNickname,
-          avatarLetter: getAvatarLetter(friendNickname),
-          displayMsg: lastMessage,
-          timestamp: lastTimestamp,
-          unreadCount: unreadCount,
-          friendData: friend
-        });
-
-        myFriendsData[chatId] = {
-          displayName: friendNickname,
-          isUserNickname1: myNickname === friend.nickname1,
-          isUserNickname2: myNickname === friend.nickname2
-        };
+      friendsArray.push({
+        chatId,
+        displayName: friendNickname,
+        avatarLetter: getAvatarLetter(friendNickname),
+        displayMsg: lastMessage,
+        timestamp: lastTimestamp,
+        unreadCount: unreadCount,
+        friendData: friend
       });
 
-      friendsArray.sort((a, b) => b.timestamp - a.timestamp);
+      myFriendsData[chatId] = {
+        displayName: friendNickname,
+        isUserNickname1: myNickname === friend.nickname1,
+        isUserNickname2: myNickname === friend.nickname2
+      };
+    });
 
-      if (friendsArray.length === 0) {
+    if (friendsArray.length === 0) {
+      if (initialFriendsLoaded) {
         empty.style.display = "flex";
         list.style.display = "none";
-        myFriendsData = {};
-        return;
       }
+      return;
+    }
 
-      friendsArray.forEach(friend => {
-        const div = document.createElement("div");
-        div.className = "friend-item";
-        
-        const badgeHtml = friend.unreadCount > 0 
-          ? `<span class="unread-badge">!</span>` 
-          : '';
+    friendsArray.sort((a, b) => b.timestamp - a.timestamp);
 
-        div.innerHTML = `
+    list.innerHTML = "";
+    friendsArray.forEach(friend => {
+      const div = document.createElement("div");
+      div.className = "friend-item";
+      
+      const badgeHtml = friend.unreadCount > 0 
+        ? `<span class="unread-badge">!</span>` 
+        : '';
+
+      div.innerHTML = `
         <div class="friend-avatar">${friend.avatarLetter}</div>
         <div class="friend-info">
           <p class="friend-name">${escapeHtml(friend.displayName)}</p>
@@ -1754,17 +1783,70 @@ description: "View your chat history and messages with friends."
           </svg>
         </button>
       `;
-        div.setAttribute('data-chat-id', friend.chatId);
-        div.onclick = () => openChat(friend.chatId, friend.displayName);
-        list.appendChild(div);
-      });
-
-      empty.style.display = "none";
-      list.style.display = "flex";
-    }, () => {
-      document.getElementById("loading").style.display = "none";
-      document.getElementById("emptyState").style.display = "flex";
+      div.setAttribute('data-chat-id', friend.chatId);
+      div.onclick = () => openChat(friend.chatId, friend.displayName);
+      list.appendChild(div);
     });
+
+    empty.style.display = "none";
+    list.style.display = "flex";
+  }
+
+  function loadFriends() {
+    detachFriendListeners();
+    myFriendsMap = {};
+    myFriendsData = {};
+    initialFriendsLoaded = false;
+
+    const list = document.getElementById("friendList");
+    const loading = document.getElementById("loading");
+    const empty = document.getElementById("emptyState");
+
+    if (!myNickname || myNickname === 'Guest') {
+      loading.style.display = "none";
+      empty.style.display = "flex";
+      list.style.display = "none";
+      return;
+    }
+
+    loading.style.display = "flex";
+    empty.style.display = "none";
+    list.style.display = "none";
+
+    const friendsRef = ref(db, "friends");
+
+    ["nickname1", "nickname2"].forEach((field) => {
+      const q = query(friendsRef, orderByChild(field), equalTo(myNickname));
+
+      const unsubAdded = onChildAdded(q, (snap) => {
+        const val = snap.val();
+        if (val) {
+          myFriendsMap[snap.key] = val;
+          scheduleFriendsRender();
+        }
+      }, (err) => console.error(`inbox friends ${field} add error:`, err));
+
+      const unsubChanged = onChildChanged(q, (snap) => {
+        const val = snap.val();
+        if (val) {
+          myFriendsMap[snap.key] = val;
+          scheduleFriendsRender();
+        }
+      }, (err) => console.error(`inbox friends ${field} change error:`, err));
+
+      const unsubRemoved = onChildRemoved(q, (snap) => {
+        delete myFriendsMap[snap.key];
+        delete myFriendsData[snap.key];
+        scheduleFriendsRender();
+      }, (err) => console.error(`inbox friends ${field} remove error:`, err));
+
+      friendUnsubs.push(unsubAdded, unsubChanged, unsubRemoved);
+    });
+
+    setTimeout(() => {
+      initialFriendsLoaded = true;
+      scheduleFriendsRender();
+    }, 1200);
   }
 
   function listenForMessages() {
@@ -1795,18 +1877,18 @@ description: "View your chat history and messages with friends."
       }
 
       updateFriendListOrder(currentChatId, displayMsg, msg.timestamp);
-    });
+    }, (err) => console.error("inbox messages error:", err));
 
     messageChangedListener = onChildChanged(messagesRef, (snapshot) => {
       const msg = snapshot.val();
       msg.key = snapshot.key;
       updateMessageInDOM(msg);
-    });
+    }, (err) => console.error("inbox message change error:", err));
 
     messageRemovedListener = onChildRemoved(messagesRef, (snapshot) => {
       renderedMessageKeys.delete(snapshot.key);
       removeMessageFromDOM(snapshot.key);
-    });
+    }, (err) => console.error("inbox message remove error:", err));
   }
 
   function updateMessageInDOM(msg) {
@@ -1867,7 +1949,7 @@ description: "View your chat history and messages with friends."
       const typingUsers = Object.keys(data).filter(id => id !== currentUserId);
       if (typingUsers.length > 0) showTypingIndicator();
       else hideTypingIndicator();
-    });
+    }, (err) => console.error("inbox typing error:", err));
   }
 
   async function maintainMessageLimit() {
