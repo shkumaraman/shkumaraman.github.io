@@ -1298,6 +1298,22 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       });
     }
 
+    async function sendNotification(targetNickname, notifData) {
+      const currentNick = getNickname();
+      if (!targetNickname || targetNickname === 'Guest' || targetNickname === currentNick) return;
+      try {
+        const targetKey = safeKey(targetNickname);
+        const notifRef = push(ref(db, `notifications/${targetKey}`));
+        await set(notifRef, {
+          ...notifData,
+          senderName: currentNick,
+          timestamp: Date.now()
+        });
+      } catch (err) {
+        console.error("send notif error:", err);
+      }
+    }
+
     function initFriendsListener() {
       if (cleanFriendsListeners) {
         cleanFriendsListeners();
@@ -1478,6 +1494,15 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
           await remove(likeRef);
         } else {
           await set(likeRef, true);
+          const postEntry = allPosts.find(([id]) => id === postId);
+          if (postEntry && postEntry[1]) {
+            sendNotification(postEntry[1].nickname, {
+              type: 'like',
+              postId: postId,
+              message: postEntry[1].text ? (postEntry[1].text.slice(0, 50) + (postEntry[1].text.length > 50 ? '...' : '')) : 'liked your post',
+              redirectUrl: window.location.pathname + '?postId=' + postId
+            });
+          }
         }
       } catch (err) {
         updateCardLikeUI(postId);
@@ -1792,9 +1817,25 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
           timestamp: Date.now()
         };
 
+        const postEntry = allPosts.find(([id]) => id === activeModalPostId);
+
         if (activeReplyTarget) {
           payload.parentId = activeReplyTarget.parentId;
           payload.replyToNickname = activeReplyTarget.targetNickname;
+
+          sendNotification(activeReplyTarget.targetNickname, {
+            type: 'reply',
+            postId: activeModalPostId,
+            message: text,
+            redirectUrl: window.location.pathname + '?postId=' + activeModalPostId
+          });
+        } else if (postEntry && postEntry[1]) {
+          sendNotification(postEntry[1].nickname, {
+            type: 'comment',
+            postId: activeModalPostId,
+            message: text,
+            redirectUrl: window.location.pathname + '?postId=' + activeModalPostId
+          });
         }
 
         await set(newCommentRef, payload);
