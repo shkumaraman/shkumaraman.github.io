@@ -246,7 +246,19 @@
 
 <script type="module">
   import { initializeApp, getApps } from "firebase/app";
-  import { getDatabase, ref, onValue, onChildAdded, onChildChanged, onChildRemoved, remove, update } from "firebase/database";
+  import {
+    getDatabase,
+    ref,
+    onValue,
+    onChildAdded,
+    onChildChanged,
+    onChildRemoved,
+    remove,
+    update,
+    query,
+    orderByChild,
+    equalTo
+  } from "firebase/database";
 
   const configDefault = { databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app" };
   const configGroups = { databaseURL: "https://talkrush2-default-rtdb.asia-southeast1.firebasedatabase.app" };
@@ -284,10 +296,29 @@
   let toastShowing = false;
   const DM_ICON_PATH = "M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z";
   const REPLY_ICON_PATH = "M10 9V5l-7 7 7 7v-4.1c5 0 8.5 1.6 11 5.1-1-5-4-10-11-11z";
+  const HEART_ICON_PATH = "M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z";
 
   let userFriendsMap = {};
   let friendsInitialLoaded = false;
   let listenersAttached = false;
+  let unsubs = [];
+
+  function detachListeners() {
+    unsubs.forEach(u => {
+      try {
+        if (typeof u === 'function') u();
+      } catch (e) {
+        console.error("detach listener error:", e);
+      }
+    });
+    unsubs = [];
+    listenersAttached = false;
+  }
+
+  function safeKey(str) {
+    if (!str) return 'guest';
+    return encodeURIComponent(str).replace(/[.#$\[\]\/]/g, '_');
+  }
 
   function getFriendNickname(friend) {
     return friend.nickname1 === myNickname ? friend.nickname2 : friend.nickname2 === myNickname ? friend.nickname1 : null;
@@ -345,30 +376,61 @@
   }
 
   function startListeners() {
-    if (!myNickname || listenersAttached) return;
+    detachListeners();
+    if (!myNickname || myNickname === 'Guest') return;
     listenersAttached = true;
 
     const friendsRef = ref(dbFriends, "friends");
 
-    onChildAdded(friendsRef, (snap) => {
-      handleFriendRecord(snap.key, snap.val(), friendsInitialLoaded);
-    });
+    ["nickname1", "nickname2"].forEach((field) => {
+      const q = query(friendsRef, orderByChild(field), equalTo(myNickname));
 
-    onChildChanged(friendsRef, (snap) => {
-      handleFriendRecord(snap.key, snap.val(), true);
-    });
+      const unsubAdded = onChildAdded(q, (snap) => {
+        handleFriendRecord(snap.key, snap.val(), friendsInitialLoaded);
+      }, (err) => console.error(`friends add (${field}) error:`, err));
 
-    onChildRemoved(friendsRef, (snap) => {
-      delete userFriendsMap[snap.key];
-      updateFriendsBadge();
+      const unsubChanged = onChildChanged(q, (snap) => {
+        handleFriendRecord(snap.key, snap.val(), true);
+      }, (err) => console.error(`friends change (${field}) error:`, err));
+
+      const unsubRemoved = onChildRemoved(q, (snap) => {
+        delete userFriendsMap[snap.key];
+        updateFriendsBadge();
+      }, (err) => console.error(`friends remove (${field}) error:`, err));
+
+      unsubs.push(unsubAdded, unsubChanged, unsubRemoved);
     });
 
     setTimeout(() => {
       friendsInitialLoaded = true;
     }, 2000);
 
-    const safeKey = myNickname.replace(/[.#$\[\]]/g, '_');
-    onValue(ref(dbGroups, `group_reply/${safeKey}`), (snap) => {
+    const safeNickKey = safeKey(myNickname);
+    const postNotifRef = ref(dbDefault, `notifications/${safeNickKey}`);
+    const unsubPostNotif = onChildAdded(postNotifRef, (snap) => {
+      const data = snap.val();
+      if (!data) return;
+
+      remove(ref(dbDefault, `notifications/${safeNickKey}/${snap.key}`)).catch(() => {});
+
+      if (notificationOff) return;
+      if (data.senderName === myNickname) return;
+
+      toastQueue.push({
+        senderName: data.senderName,
+        message: data.message || '',
+        redirectUrl: data.redirectUrl || '/posts',
+        type: data.type || 'comment',
+        timestamp: data.timestamp || Date.now()
+      });
+
+      processToastQueue();
+    }, (err) => console.error("notifications error:", err));
+
+    unsubs.push(unsubPostNotif);
+
+    const groupReplyRef = ref(dbGroups, `group_reply/${safeNickKey}`);
+    const unsubGroupReply = onValue(groupReplyRef, (snap) => {
       const data = snap.val();
       let count = 0;
       const currentPath = window.location.pathname;
@@ -408,12 +470,14 @@
 
       window._lastRoomBadgeCount = count;
       window.dispatchEvent(new CustomEvent('updateRoomBadge', { detail: count }));
-    });
+    }, (err) => console.error("group_reply error:", err));
 
-    const safeCallName = myNickname.replace(/[.#$\[\]]/g, '_');
+    unsubs.push(unsubGroupReply);
+
+    const safeCallName = safeKey(myNickname);
     const myCallRef = ref(dbDefault, 'calls/' + safeCallName);
 
-    onValue(myCallRef, (snapshot) => {
+    const unsubCall = onValue(myCallRef, (snapshot) => {
       const callData = snapshot.val();
       if (callData && callData.status === 'calling' && callData.receiver === myNickname) {
         if (isRinging) return;
@@ -478,12 +542,13 @@
           remove(ref(dbDefault, 'calls/' + safeCallName));
         }
       }
-    });
+    }, (err) => console.error("calls error:", err));
+
+    unsubs.push(unsubCall);
   }
 
   window.addEventListener('nicknameUpdated', (e) => {
     myNickname = e.detail.nickname;
-    listenersAttached = false;
     userFriendsMap = {};
     friendsInitialLoaded = false;
     startListeners();
@@ -502,6 +567,14 @@
       toastIconWrapper.style.background = "#5b9bd5"; 
       toastIcon.querySelector("path").setAttribute("d", REPLY_ICON_PATH); 
       toastName.textContent = data.senderName + " replied to you"; 
+    } else if (data.type === "like") {
+      toastIconWrapper.style.background = "#ff3366";
+      toastIcon.querySelector("path").setAttribute("d", HEART_ICON_PATH);
+      toastName.textContent = data.senderName + " liked your post";
+    } else if (data.type === "comment") {
+      toastIconWrapper.style.background = "#ff6b4a";
+      toastIcon.querySelector("path").setAttribute("d", DM_ICON_PATH);
+      toastName.textContent = data.senderName + " commented on your post";
     } else { 
       toastIconWrapper.style.background = "#25D366"; 
       toastIcon.querySelector("path").setAttribute("d", DM_ICON_PATH); 
@@ -515,7 +588,7 @@
 
     const handleToastNavigation = () => {
       toast.classList.remove("show-toast");
-      if (data.type === "group_mention") {
+      if (data.type === "group_mention" || data.type === "like" || data.type === "comment" || data.type === "reply") {
           window.location.href = data.redirectUrl;
       } else if (window.location.pathname.includes('/chat/inbox') && typeof window.openChat === 'function' && data.chatId && data.senderName) {
           window.openChat(data.chatId, data.senderName);
@@ -573,7 +646,7 @@
       window.callRingtone.pause(); 
       window.callRingtone.currentTime = 0;
       if (myNickname) {
-        const safeCallName = myNickname.replace(/[.#$\[\]]/g, '_');
+        const safeCallName = safeKey(myNickname);
         update(ref(dbDefault, `calls/${safeCallName}`), { status: 'rejected' });
       }
     }
