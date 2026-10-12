@@ -320,6 +320,10 @@
     return encodeURIComponent(str).replace(/[.#$\[\]\/]/g, '_');
   }
 
+  function plainKey(str) {
+    return String(str || 'guest').replace(/[.#$\[\]]/g, '_');
+  }
+
   function saveToLocalHistory(item) {
     try {
       let list = JSON.parse(localStorage.getItem("talkrush_notifications_history") || "[]");
@@ -453,12 +457,25 @@
 
     unsubs.push(unsubPostNotif);
 
-    const groupReplyRef = ref(dbGroups, `group_reply/${safeNickKey}`);
+    const groupReplyRef = ref(dbGroups, `group_reply/${plainKey(myNickname)}`);
     const unsubGroupReply = onValue(groupReplyRef, (snap) => {
       const data = snap.val();
       let count = 0;
       const currentPath = window.location.pathname;
       const currentGroupParams = new URLSearchParams(window.location.search).get('group');
+
+      let changed = false;
+      Object.keys(lastNotifiedMessages).forEach((g) => {
+        if (!data || !data[g] || !(data[g].unreadCount > 0)) {
+          if (String(lastNotifiedMessages[g]).startsWith("group_reply_")) {
+            delete lastNotifiedMessages[g];
+            changed = true;
+          }
+        }
+      });
+      if (changed) {
+        localStorage.setItem("lastNotifiedMessages", JSON.stringify(lastNotifiedMessages));
+      }
 
       if (!data) {
         window._lastRoomBadgeCount = 0;
@@ -502,7 +519,7 @@
 
     unsubs.push(unsubGroupReply);
 
-    const safeCallName = safeKey(myNickname);
+    const safeCallName = plainKey(myNickname);
     const myCallRef = ref(dbDefault, 'calls/' + safeCallName);
 
     const unsubCall = onValue(myCallRef, (snapshot) => {
@@ -674,7 +691,7 @@
       window.callRingtone.pause(); 
       window.callRingtone.currentTime = 0;
       if (myNickname) {
-        const safeCallName = safeKey(myNickname);
+        const safeCallName = plainKey(myNickname);
         update(ref(dbDefault, `calls/${safeCallName}`), { status: 'rejected' });
       }
     }
