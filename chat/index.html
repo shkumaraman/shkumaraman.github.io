@@ -160,11 +160,62 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   flex: 1; padding: 12px 10px; overflow-y: auto;
   display: flex; flex-direction: column; gap: 4px;
   min-height: 0; background: transparent; scroll-behavior: smooth;
+  position: relative;
 }
 
 #chatLog::-webkit-scrollbar { width: 3px; }
 #chatLog::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 3px; }
 .light-mode #chatLog::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.1); }
+
+.rooms-suggest-box {
+  display: none;
+  margin: auto;
+  text-align: center;
+  padding: 20px 22px;
+  background: var(--dark-card);
+  border: 1px solid var(--dark-border2);
+  border-radius: 16px;
+  max-width: 320px;
+  width: 90%;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.35);
+  box-sizing: border-box;
+}
+.light-mode .rooms-suggest-box {
+  background: var(--light-surface);
+  border-color: var(--light-border2);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+}
+.rooms-suggest-title {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--dark-text);
+}
+.light-mode .rooms-suggest-title { color: var(--light-text); }
+.rooms-suggest-desc {
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: var(--dark-text-muted);
+  line-height: 1.45;
+}
+.light-mode .rooms-suggest-desc { color: var(--light-text-muted); }
+.rooms-suggest-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 24px;
+  background: var(--accent);
+  color: #ffffff !important;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 700;
+  border-radius: 10%;
+  transition: background 0.2s, transform 0.1s;
+  box-shadow: 0 3px 12px rgba(255,107,74,0.3);
+}
+.rooms-suggest-btn:hover { background: var(--accent-hover); }
+.rooms-suggest-btn:active { transform: scale(0.97); }
 
 .msg-row { display: flex; align-items: center; width: 100%; }
 .msg-row.me { justify-content: flex-end; }
@@ -361,7 +412,13 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     </div>
   </div>
 
-  <div id="chatLog"></div>
+  <div id="chatLog">
+    <div id="roomsSuggestBox" class="rooms-suggest-box">
+      <h3 class="rooms-suggest-title">Taking too long?</h3>
+      <p class="rooms-suggest-desc">Skip the wait and join a group room.</p>
+      <a href="/chat/rooms.html" class="rooms-suggest-btn">Join Rooms</a>
+    </div>
+  </div>
   <div id="typingIndicator">Stranger is typing...</div>
 
   <button id="newChatBtn" class="new-chat-btn hidden">
@@ -507,6 +564,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   let currentBotMessages = [];
   let currentBotIndex = 0;
   let botReplyTimer = null;
+  let roomsSuggestTimer = null;
 
   const fetchLocation = async () => {
     try {
@@ -558,6 +616,24 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   const replyBarText = document.getElementById("replyBarText");
   const editBar = document.getElementById("editBar");
   const contextMenu = document.getElementById("contextMenu");
+  const roomsSuggestBox = document.getElementById("roomsSuggestBox");
+
+  function showRoomsSuggestBox() {
+    if (!isConnected && roomsSuggestBox) {
+      roomsSuggestBox.style.display = "block";
+      scrollToBottom();
+    }
+  }
+
+  function hideRoomsSuggestBox() {
+    if (roomsSuggestTimer) {
+      clearTimeout(roomsSuggestTimer);
+      roomsSuggestTimer = null;
+    }
+    if (roomsSuggestBox) {
+      roomsSuggestBox.style.display = "none";
+    }
+  }
 
   function escapeHtml(text) {
     const div = document.createElement('div');
@@ -1002,10 +1078,12 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       currentStrangerNickname = "Stranger";
       hideFriendButton();
       hideStrangerCard();
+      hideRoomsSuggestBox();
       clearReply();
       clearEdit();
       hideContextMenu();
       chatLog.innerHTML = "";
+      if (roomsSuggestBox) chatLog.appendChild(roomsSuggestBox);
       hideNewChatButton();
       startPeer();
     }
@@ -1020,9 +1098,12 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
   function startPeer() {
     clearSystemMessage();
+    hideRoomsSuggestBox();
     isConnected = false;
     currentStrangerNickname = "Stranger";
     logSystem("Looking for a stranger...");
+
+    roomsSuggestTimer = setTimeout(showRoomsSuggestBox, 4000);
 
     if (peer && peer.id && !peer.destroyed && !peer.disconnected) {
       cleanUpStaleConnections();
@@ -1037,6 +1118,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     try {
       peer = new Peer(peerOptions);
     } catch {
+      hideRoomsSuggestBox();
       logSystem("Failed to start. Click 'Start New Chat' to try again.");
       showNewChatButton();
       return;
@@ -1061,6 +1143,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
         return;
       }
       if (!isConnected) {
+        hideRoomsSuggestBox();
         showNewChatButton();
         logSystem("Connection error. Click 'Start New Chat' to try again.");
       }
@@ -1165,6 +1248,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       currentBotIndex = 0;
       isConnected = true;
       
+      hideRoomsSuggestBox();
       hideNewChatButton();
       showFriendButton();
       
@@ -1197,6 +1281,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       showStrangerCard(botTags, botCountry);
       logSystem("Stranger connected!");
     } catch (e) {
+      showRoomsSuggestBox();
       logSystem("No stranger found. Click 'Start New Chat' to try again.");
       showNewChatButton();
     }
@@ -1250,6 +1335,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     conn.on('open', () => handleNewConnection(conn, []));
     conn.on("error", () => {
       if (!isConnected) {
+        showRoomsSuggestBox();
         showNewChatButton();
         logSystem("Failed to connect. Click 'Start New Chat' to try again.");
       }
@@ -1269,6 +1355,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     myConn = conn;
     window.gameWebRTCConn = conn;
     isConnected = true;
+    hideRoomsSuggestBox();
     hideNewChatButton();
     showFriendButton();
 
@@ -1312,6 +1399,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     showNewChatButton();
     hideFriendButton();
     hideStrangerCard();
+    hideRoomsSuggestBox();
     cleanUpWaitingList();
     clearReply();
     clearEdit();
@@ -1416,6 +1504,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     currentStrangerNickname = "Stranger";
     hideFriendButton();
     hideStrangerCard();
+    hideRoomsSuggestBox();
     clearReply();
     clearEdit();
     hideContextMenu();
@@ -1425,9 +1514,11 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
   document.getElementById("newChatBtn").onclick = () => {
     chatLog.innerHTML = "";
+    if (roomsSuggestBox) chatLog.appendChild(roomsSuggestBox);
     hideFriendButton();
     hideNewChatButton();
     hideStrangerCard();
+    hideRoomsSuggestBox();
     clearReply();
     clearEdit();
     hideContextMenu();
