@@ -424,6 +424,7 @@
   let unsubAdded = null;
   let unsubRemoved = null;
   let savedScrollY = 0;
+  let isModalOpen = false;
 
   function lockBodyScroll() {
     savedScrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop;
@@ -618,6 +619,20 @@
     window.visualViewport.addEventListener('scroll', syncViewport);
   }
 
+  function cleanupModalUI() {
+    if (!isModalOpen) return;
+    isModalOpen = false;
+    inputEl.blur();
+    backdropEl.classList.remove('open');
+    unlockBodyScroll();
+    detachListeners();
+    activePostId = null;
+    activeOwner = null;
+    comments = {};
+    cancelReply();
+    resetViewport();
+  }
+
   window.openCommentModal = (postId, ownerNickname) => {
     db = getDatabase(getApp());
     activePostId = postId;
@@ -630,19 +645,31 @@
     backdropEl.classList.add('open');
     attachListeners(postId);
     syncViewport();
+
+    isModalOpen = true;
+    history.pushState({ commentModalOpen: true }, '');
   };
 
   window.closeCommentModal = () => {
-    inputEl.blur();
-    backdropEl.classList.remove('open');
-    unlockBodyScroll();
-    detachListeners();
-    activePostId = null;
-    activeOwner = null;
-    comments = {};
-    cancelReply();
-    resetViewport();
+    if (!isModalOpen) return;
+    if (history.state && history.state.commentModalOpen) {
+      history.back();
+    } else {
+      cleanupModalUI();
+    }
   };
+
+  window.addEventListener('popstate', () => {
+    if (isModalOpen) {
+      cleanupModalUI();
+    }
+  });
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && isModalOpen) {
+      window.closeCommentModal();
+    }
+  });
 
   async function submitComment() {
     const d = deps();
