@@ -5,6 +5,7 @@
   right: 0;
   top: 0;
   height: 100%;
+  height: 100dvh;
   background: rgba(0, 0, 0, 0.72);
   backdrop-filter: blur(4px);
   z-index: 20000;
@@ -14,6 +15,7 @@
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.25s ease;
+  overscroll-behavior: contain;
 }
 .comment-modal-backdrop.open {
   opacity: 1;
@@ -421,6 +423,27 @@
   let comments = {};
   let unsubAdded = null;
   let unsubRemoved = null;
+  let savedScrollY = 0;
+
+  function lockBodyScroll() {
+    savedScrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop;
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${savedScrollY}px`;
+    document.body.style.left = '0';
+    document.body.style.right = '0';
+    document.body.style.width = '100%';
+    document.body.style.overflow = 'hidden';
+  }
+
+  function unlockBodyScroll() {
+    document.body.style.position = '';
+    document.body.style.top = '';
+    document.body.style.left = '';
+    document.body.style.right = '';
+    document.body.style.width = '';
+    document.body.style.overflow = '';
+    window.scrollTo(0, savedScrollY);
+  }
 
   function deps() {
     return window.TRCommentDeps;
@@ -572,7 +595,7 @@
     replyTarget = { parentId, targetNickname };
     replyNameEl.textContent = `@${targetNickname}`;
     replyBarEl.style.display = 'flex';
-    inputEl.focus();
+    inputEl.focus({ preventScroll: true });
   }
 
   function syncViewport() {
@@ -603,7 +626,7 @@
     inputEl.value = '';
     inputEl.blur();
 
-    document.body.style.overflow = 'hidden';
+    lockBodyScroll();
     backdropEl.classList.add('open');
     attachListeners(postId);
     syncViewport();
@@ -612,7 +635,7 @@
   window.closeCommentModal = () => {
     inputEl.blur();
     backdropEl.classList.remove('open');
-    document.body.style.overflow = '';
+    unlockBodyScroll();
     detachListeners();
     activePostId = null;
     activeOwner = null;
