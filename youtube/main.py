@@ -189,7 +189,7 @@ def og_value(page: str, prop: str) -> Optional[str]:
     return html_lib.unescape(m.group(1)) if m else None
 
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 async def root():
     return {
         "name": "Unofficial YouTube API",
