@@ -177,6 +177,25 @@ video { width: 100%; height: 100%; object-fit: cover; }
     flex: 1; overflow-y: auto; padding: 10px 12px;
     display: flex; flex-direction: column; gap: 5px; min-height: 0;
 }
+
+.vd-search-area {
+    display: none;
+    flex-shrink: 0;
+    width: 100%;
+    text-align: center;
+    margin: auto;
+}
+.vd-search-ad-wrap {
+    width: 300px;
+    max-width: 100%;
+    height: 250px;
+    margin: 4px auto;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+}
+
 .vd-chat-message { max-width: 80%; padding: 7px 11px; border-radius: 12px; font-size: 13px; line-height: 1.4; word-break: break-word; }
 .vd-message-them { background: var(--dark-msg-them); color: rgba(255,255,255,0.85); align-self: flex-start; border-bottom-left-radius: 4px; }
 .light-mode .vd-message-them { background: var(--light-msg-them); color: #333; }
@@ -299,7 +318,8 @@ video { width: 100%; height: 100%; object-fit: cover; }
 
 <header class="app-header">
   <div class="header-left">
-    <button class="menu-btn header-toggle" onclick="toggleMenu()">&#9776;</button>    <img src="logo.png" alt="TalkRush Logo" class="logo">
+    <button class="menu-btn header-toggle" onclick="toggleMenu()">&#9776;</button>
+    <img src="logo.png" alt="TalkRush Logo" class="logo">
     <h1 class="app-title">Video Talk</h1>
   </div>
   <div class="header-right">
@@ -335,8 +355,8 @@ video { width: 100%; height: 100%; object-fit: cover; }
       <i class="fas fa-comment-dots"></i> Live Chat
     </div>
     <div class="vd-chat-messages" id="vd-chatMessages">
-      <div id="vd-searchArea" style="display:none; margin:auto; width:100%; text-align:center;">
-        <div id="vd-searchAdWrap" style="width:300px; margin:8px auto; display:flex; justify-content:center; align-items:center; overflow:hidden;"></div>
+      <div class="vd-search-area" id="vd-searchArea">
+        <div class="vd-search-ad-wrap" id="vd-searchAdWrap"></div>
       </div>
     </div>
     <div class="vd-chat-input-container">
@@ -360,19 +380,18 @@ video { width: 100%; height: 100%; object-fit: cover; }
   </div>
 </div>
 
+<ins class="adsbygoogle"
+     style="display:block"
+     data-ad-client="ca-pub-7059052735946479"
+     data-ad-slot="8592327962"
+     data-ad-format="auto"
+     data-full-width-responsive="true"></ins>
+<script>
+     (adsbygoogle = window.adsbygoogle || []).push({});
+</script>
+
 <main class="info-section" style="padding: 20px; max-width: 600px; margin: 0 auto;">
- 
-<div style="width: 300px; height: 250px; margin: 16px auto; display: flex; justify-content: center; align-items: center; overflow: hidden;">
-    <ins class="adsbygoogle"
-         style="display:inline-block;width:300px;height:250px"
-         data-ad-client="ca-pub-7059052735946479"
-         data-ad-slot="8592327962"></ins>
-    <script>
-         (adsbygoogle = window.adsbygoogle || []).push({});
-    </script>
- </div> 
-    
-<h2>Video Talk with Strangers Instantly</h2>
+  <h2>Video Talk with Strangers Instantly</h2>
   <p>Welcome to <strong>TalkRush</strong> – a platform for <strong>live video conversations</strong> with people across the globe. Our service offers:</p>
   <ul>
     <li><strong>Always free</strong> to use anytime</li>
@@ -446,7 +465,7 @@ video { width: 100%; height: 100%; object-fit: cover; }
 
 <script type="module">
 import { initializeApp, getApps } from "firebase/app";
-import { getDatabase, ref, get, set, update, remove, push } from "firebase/database";
+import { getDatabase, ref, get, set, update, remove, push, onDisconnect } from "firebase/database";
 
 const firebaseConfig = {
   databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app"
@@ -464,47 +483,24 @@ const existingFriendApp = apps.find(a => a.name === friendAppName);
 const friendApp = existingFriendApp ? existingFriendApp : initializeApp(friendFirebaseConfig, friendAppName);
 const friendDb = getDatabase(friendApp);
 
-const MAX_MSG_LENGTH = 500;
-const MAX_NICK_LENGTH = 30;
-const CONNECT_TIMEOUT_MS = 15000;
-const MAX_PEER_RETRIES = 3;
-const MAX_MATCH_ATTEMPTS = 5;
-const AD_MIN_HEIGHT = 760;
+const CONNECT_TIMEOUT = 10000;
 const STALE_ENTRY_MS = 30000;
+const MAX_MESSAGE_LENGTH = 500;
 
-const PEER_OPTIONS = {
-  config: {
-    iceServers: [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' },
-      { urls: 'stun:stun2.l.google.com:19302' },
-      { urls: 'stun:stun3.l.google.com:19302' },
-      { urls: 'stun:stun4.l.google.com:19302' }
-    ]
-  }
-};
-
-let peer = null;
-let myConn = null;
-let myId = null;
-let waitingRef = null;
-let waitingEntryRef = null;
-let isConnected = false;
-let localStream = null;
-let remoteStream = null;
-let dataChannel = null;
-let heartbeatInterval = null;
-let matchTimer = null;
-let connectTimer = null;
-let connectionMessageTimer = null;
+let peer, myConn, myId, waitingRef, waitingEntryRef;
+let state = 'idle';
+let localStream, remoteStream;
 let escPressedOnce = false;
 let escTimer = null;
+let dataChannel;
+let heartbeatInterval;
 let cameraAvailable = true;
 let micMuted = false;
-let sessionId = 0;
-let matchAttempts = 0;
-let starting = false;
-let strangerNickKnown = false;
+let matchTimer = null;
+let connectTimer = null;
+let retryTimer = null;
+let connectionMessageTimer = null;
+let pendingTarget = null;
 let searchAdPushed = false;
 
 const getFallbackName = () => "Guest" + Math.floor(1000 + Math.random() * 9000);
@@ -520,97 +516,21 @@ const localPlaceholder = document.getElementById('vd-localPlaceholder');
 const systemMsg = document.getElementById('vd-systemMsg');
 const newChatBtn = document.getElementById('vd-newChatBtn');
 const friendBtn = document.getElementById('vd-friendBtn');
-const skipBtn = document.getElementById('vd-skipBtn');
+
 const chatMessages = document.getElementById('vd-chatMessages');
 const chatInput = document.getElementById('vd-chatInput');
 const chatSendBtn = document.getElementById('vd-chatSendBtn');
 const searchArea = document.getElementById('vd-searchArea');
+const searchAdWrap = document.getElementById('vd-searchAdWrap');
 
-function hasLiveStream() {
-  return !!localStream && localStream.getTracks().some(t => t.readyState === 'live');
-}
+document.addEventListener('visibilitychange', handleVisibilityChange);
 
-function checkDataChannel() {
-  return !!dataChannel && dataChannel.open === true;
-}
-
-function applyMicState() {
-  if (localStream) {
-    localStream.getAudioTracks().forEach(t => { t.enabled = !micMuted; });
-  }
-}
-
-function showSystemMessage(msg) { systemMsg.textContent = msg; systemMsg.style.display = 'block'; }
-function hideSystemMessage() { systemMsg.style.display = 'none'; }
-function showNewChatButton() { newChatBtn.style.display = 'flex'; }
-function hideNewChatButton() { newChatBtn.style.display = 'none'; }
-function showFriendButton() { friendBtn.style.display = 'flex'; friendBtn.disabled = false; }
-function hideFriendButton() { friendBtn.style.display = 'none'; friendBtn.disabled = false; }
-
-function showSearchingAnimation() {
-  remotePlaceholder.innerHTML = `
-    <div class="vd-searching-dots"><div class="vd-dot"></div><div class="vd-dot"></div><div class="vd-dot"></div></div>
-    <div class="vd-searching-text">Searching...</div>
-  `;
-  remotePlaceholder.style.display = 'flex';
-}
-
-function hideSearchingAnimation() { remotePlaceholder.innerHTML = ''; }
-
-function showSearchAd() {
-  if (!searchArea) return;
-  searchArea.style.display = "block";
-  if (!searchAdPushed) {
-    const wrap = document.getElementById("vd-searchAdWrap");
-    if (wrap) {
-      searchAdPushed = true;
-      const h = window.innerHeight < AD_MIN_HEIGHT ? 100 : 250;
-      wrap.style.height = h + "px";
-      const ins = document.createElement("ins");
-      ins.className = "adsbygoogle";
-      ins.style.cssText = "display:inline-block;width:300px;height:" + h + "px";
-      ins.setAttribute("data-ad-client", "ca-pub-7059052735946479");
-      ins.setAttribute("data-ad-slot", "8592327962");
-      wrap.appendChild(ins);
-      try {
-        window.adsbygoogle = window.adsbygoogle || [];
-        window.adsbygoogle.push({});
-      } catch (e) {}
-    }
-  }
-  chatMessages.scrollTop = chatMessages.scrollHeight;
-}
-
-function hideSearchAd() {
-  if (searchArea) searchArea.style.display = "none";
-}
-
-function addMessage(text, sender) {
-  const messageDiv = document.createElement('div');
-  messageDiv.classList.add('vd-chat-message', sender === 'me' ? 'vd-message-me' : sender === 'system' ? 'vd-message-system' : 'vd-message-them');
-  messageDiv.textContent = text;
-  chatMessages.appendChild(messageDiv);
-  chatMessages.scrollTop = chatMessages.scrollHeight;
-}
-
-function clearChat() {
-  Array.from(chatMessages.children).forEach(el => {
-    if (el !== searchArea) el.remove();
-  });
-}
-
-function updateAudioIndicator(show) {
-  let ind = document.getElementById('vd-audio-indicator');
-  if (show && !ind) {
-    ind = document.createElement('div');
-    ind.id = 'vd-audio-indicator';
-    ind.innerHTML = '<i class="fas fa-microphone"></i> Audio Only';
-    ind.style.cssText = 'position:absolute;bottom:30px;left:8px;background:rgba(0,0,0,0.7);padding:5px 10px;border-radius:4px;font-size:11px;color:white;z-index:2;';
-    document.querySelector('.vd-local-video-container').appendChild(ind);
-  } else if (!show && ind) {
-    ind.remove();
-  }
-}
+window.addEventListener('load', function() {
+  checkCameraAvailability();
+  showNewChatButton();
+  showSystemMessage("Click 'Start New Talk' to begin!");
+  setupChatEvents();
+});
 
 window.toggleMic = function() {
   micMuted = !micMuted;
@@ -622,449 +542,132 @@ window.toggleMic = function() {
     : '<i class="fas fa-microphone"></i>';
 };
 
-function handleVisibilityChange() {
-  if (!localStream) return;
-  const visible = !document.hidden;
-  localStream.getVideoTracks().forEach(track => { track.enabled = visible; });
-  if (visible && checkDataChannel()) {
-    try { dataChannel.send(JSON.stringify({ type: 'heartbeat', timestamp: Date.now() })); } catch (e) {}
+function applyMicState() {
+  if (localStream) {
+    localStream.getAudioTracks().forEach(t => { t.enabled = !micMuted; });
   }
+}
+
+function handleVisibilityChange() {
+  if (document.hidden) {
+    if (localStream) {
+      localStream.getVideoTracks().forEach(track => { track.enabled = false; });
+    }
+  } else {
+    if (localStream) {
+      localStream.getVideoTracks().forEach(track => { track.enabled = true; });
+    }
+    if (dataChannel && checkDataChannel()) {
+      try { dataChannel.send(JSON.stringify({ type: 'heartbeat', timestamp: Date.now() })); } catch (e) {}
+    }
+  }
+}
+
+function checkDataChannel() {
+  if (!dataChannel) return false;
+  return dataChannel.open === true;
 }
 
 async function checkCameraAvailability() {
   try {
     const devices = await navigator.mediaDevices.enumerateDevices();
-    cameraAvailable = devices.some(device => device.kind === 'videoinput');
-    if (!cameraAvailable) localPlaceholder.textContent = "No camera - audio only";
+    const videoDevices = devices.filter(device => device.kind === 'videoinput');
+    cameraAvailable = videoDevices.length > 0;
+    if (!cameraAvailable) {
+      localPlaceholder.textContent = "No camera - audio only";
+    }
   } catch (error) {
     cameraAvailable = false;
     localPlaceholder.textContent = "Camera error - audio only";
   }
 }
 
-async function ensureLocalStream() {
-  if (hasLiveStream()) return;
-  localStream = null;
-  try {
-    localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-  } catch (error) {
-    localStream = null;
+window.addEventListener('beforeunload', function(e) {
+  if (state === 'connected') {
+    e.preventDefault();
+    e.returnValue = 'Are you sure you want to leave? Your video talk will be disconnected.';
+    return e.returnValue;
   }
-  if (!localStream) {
-    localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  }
-  const hasVideo = localStream.getVideoTracks().length > 0;
-  cameraAvailable = hasVideo;
-  applyMicState();
-  localVideo.srcObject = localStream;
-  localVideo.style.display = hasVideo ? '' : 'none';
-  localPlaceholder.style.display = 'none';
-  updateAudioIndicator(!hasVideo);
-  if (document.hidden) handleVisibilityChange();
-}
+  cleanUpAllResources();
+});
 
-function cleanUpWaitingList() {
-  if (waitingEntryRef) {
-    remove(waitingEntryRef).catch(() => {});
-    waitingEntryRef = null;
-  }
-  if (heartbeatInterval) {
-    clearInterval(heartbeatInterval);
-    heartbeatInterval = null;
-  }
-}
-
-function teardownSession() {
-  sessionId++;
-  cleanUpWaitingList();
-  if (matchTimer) { clearTimeout(matchTimer); matchTimer = null; }
-  if (connectTimer) { clearTimeout(connectTimer); connectTimer = null; }
-  if (connectionMessageTimer) { clearTimeout(connectionMessageTimer); connectionMessageTimer = null; }
-  const call = myConn;
-  const channel = dataChannel;
-  const oldPeer = peer;
-  myConn = null;
-  dataChannel = null;
-  peer = null;
-  myId = null;
-  isConnected = false;
-  strangerNickKnown = false;
-  currentStrangerNickname = getFallbackName();
-  if (channel) { try { channel.close(); } catch (e) {} }
-  if (call) { try { call.close(); } catch (e) {} }
-  if (oldPeer) { try { oldPeer.destroy(); } catch (e) {} }
-  remoteVideo.srcObject = null;
-  remoteStream = null;
-}
+window.addEventListener('pagehide', function() { cleanUpAllResources(); });
 
 function cleanUpAllResources() {
-  teardownSession();
-  if (localStream) {
-    localStream.getTracks().forEach(track => track.stop());
-    localStream = null;
-  }
-}
-
-function failSession(message) {
-  teardownSession();
-  hideSearchingAnimation();
-  hideSearchAd();
-  hideFriendButton();
-  remotePlaceholder.textContent = "Stranger";
-  remotePlaceholder.style.display = 'flex';
-  showSystemMessage(message);
-  showNewChatButton();
-}
-
-function endConnection() {
-  if (!myConn && !isConnected) return;
-  teardownSession();
-  hideSearchingAnimation();
-  hideSearchAd();
-  hideFriendButton();
-  hideSystemMessage();
-  remotePlaceholder.textContent = "Stranger disconnected 💔";
-  remotePlaceholder.style.display = 'flex';
-  showNewChatButton();
-  addMessage("Connection ended", 'system');
-}
-
-function dropPendingCall() {
-  if (connectTimer) { clearTimeout(connectTimer); connectTimer = null; }
-  if (myConn && !isConnected) {
-    const call = myConn;
-    myConn = null;
-    try { call.close(); } catch (e) {}
-  }
-}
-
-function resumeSearch(sid) {
-  if (sid !== sessionId || isConnected) return;
-  dropPendingCall();
-  matchAttempts++;
-  if (matchAttempts > MAX_MATCH_ATTEMPTS) {
-    failSession("No stranger found. Click 'Start New Talk' to try again.");
-    return;
-  }
-  hideSystemMessage();
-  showSearchingAnimation();
-  showSearchAd();
-  tryToFindMatch(sid);
-}
-
-function isGenderCompatible(myGender, otherGender) {
-  if (myGender === 'everyone' && otherGender === 'everyone') return true;
-  if (myGender === 'male' && otherGender === 'female') return true;
-  if (myGender === 'female' && otherGender === 'male') return true;
-  return false;
-}
-
-function cleanUpStaleConnections() {
-  get(ref(db, "videoWaiting")).then((snapshot) => {
-    if (!snapshot.exists()) return;
-    snapshot.forEach((child) => {
-      const entry = child.val();
-      const isOld = entry && entry.timestamp && (Date.now() - entry.timestamp) > 60000;
-      if (isOld) remove(child.ref).catch(() => {});
-    });
-  }).catch(() => {});
-}
-
-function tryToFindMatch(sid) {
-  if (sid !== sessionId || myConn || !myId) return;
+  clearTimers();
   cleanUpWaitingList();
-  if (matchTimer) { clearTimeout(matchTimer); matchTimer = null; }
-  waitingRef = ref(db, "videoWaiting");
-
-  get(waitingRef).then((snapshot) => {
-    if (sid !== sessionId || myConn) return;
-    const list = snapshot.val();
-    let bestMatch = null;
-    if (list) {
-      for (const [key, entry] of Object.entries(list)) {
-        if (!entry) continue;
-        if (entry.timestamp && (Date.now() - entry.timestamp) > STALE_ENTRY_MS) {
-          remove(ref(db, "videoWaiting/" + key)).catch(() => {});
-          continue;
-        }
-        if (entry.id === myId) continue;
-        if (isGenderCompatible(myGenderInterest, entry.interest)) {
-          bestMatch = { key, otherId: entry.id };
-          break;
-        }
-      }
-    }
-
-    if (bestMatch) {
-      remove(ref(db, "videoWaiting/" + bestMatch.key)).catch(() => {});
-      connectToPeer(bestMatch.otherId, sid);
-      return;
-    }
-
-    const newRef = push(waitingRef);
-    waitingEntryRef = newRef;
-    set(newRef, { id: myId, interest: myGenderInterest, nickname: myNickname, timestamp: Date.now(), hasCamera: cameraAvailable }).catch(() => {});
-    heartbeatInterval = setInterval(() => {
-      if (waitingEntryRef && !myConn) update(waitingEntryRef, { timestamp: Date.now() }).catch(() => {});
-    }, 10000);
-
-    matchTimer = setTimeout(() => {
-      matchTimer = null;
-      if (sid !== sessionId || myConn) return;
-      get(waitingRef).then((snap) => {
-        if (sid !== sessionId || myConn) return;
-        let chosen = null;
-        snap.forEach(child => {
-          if (chosen) return;
-          const entry = child.val();
-          if (!entry || entry.id === myId) return;
-          if (entry.timestamp && (Date.now() - entry.timestamp) > STALE_ENTRY_MS) return;
-          if (isGenderCompatible(myGenderInterest, entry.interest)) {
-            chosen = { key: child.key, otherId: entry.id };
-          } else if (myGenderInterest !== 'everyone' && entry.interest === 'everyone') {
-            chosen = { key: child.key, otherId: entry.id };
-          }
-        });
-        if (chosen) {
-          remove(ref(db, "videoWaiting/" + chosen.key)).catch(() => {});
-          connectToPeer(chosen.otherId, sid);
-        }
-      }).catch(() => {});
-    }, 5000);
-  }).catch(() => {
-    if (sid === sessionId && !myConn) {
-      failSession("Connection error. Click 'Start New Talk' to try again.");
-    }
-  });
+  if (connectionMessageTimer) clearTimeout(connectionMessageTimer);
+  try { if (myConn) myConn.close(); } catch (e) {}
+  try { if (peer) peer.destroy(); } catch (e) {}
+  if (localStream) localStream.getTracks().forEach(track => track.stop());
 }
 
-function connectToPeer(otherId, sid) {
-  if (sid !== sessionId || myConn || !peer || !hasLiveStream()) return;
-  let call = null;
-  try {
-    call = peer.call(otherId, localStream);
-  } catch (e) {
-    call = null;
-  }
-  if (!call) {
-    resumeSearch(sid);
-    return;
-  }
-  setupCall(call, true, sid);
-}
-
-function setupCall(call, isCaller, sid) {
-  myConn = call;
-  cleanUpWaitingList();
-  if (matchTimer) { clearTimeout(matchTimer); matchTimer = null; }
-  hideNewChatButton();
-  hideSearchAd();
-  hideSearchingAnimation();
-  showSystemMessage("Connecting...");
-
+function clearTimers() {
+  if (matchTimer) clearTimeout(matchTimer);
   if (connectTimer) clearTimeout(connectTimer);
-  connectTimer = setTimeout(() => {
-    connectTimer = null;
-    if (sid !== sessionId || isConnected || myConn !== call) return;
-    resumeSearch(sid);
-  }, CONNECT_TIMEOUT_MS);
-
-  call.on("stream", (stream) => {
-    if (call !== myConn || sid !== sessionId) return;
-    const first = !isConnected;
-    isConnected = true;
-    if (connectTimer) { clearTimeout(connectTimer); connectTimer = null; }
-    remoteStream = stream;
-    remoteVideo.srcObject = stream;
-    const playPromise = remoteVideo.play();
-    if (playPromise && playPromise.catch) playPromise.catch(() => {});
-    remotePlaceholder.style.display = 'none';
-    if (first) {
-      hideSystemMessage();
-      showFriendButton();
-      showSystemMessage("Say Hi 👋");
-      if (connectionMessageTimer) clearTimeout(connectionMessageTimer);
-      connectionMessageTimer = setTimeout(() => { hideSystemMessage(); }, 3000);
-    }
-  });
-
-  call.on("close", () => {
-    if (call !== myConn) return;
-    if (isConnected) endConnection();
-    else resumeSearch(sid);
-  });
-
-  call.on("error", () => {
-    if (call !== myConn) return;
-    if (isConnected) endConnection();
-    else resumeSearch(sid);
-  });
-
-  if (isCaller) {
-    setTimeout(() => {
-      if (call !== myConn || sid !== sessionId || dataChannel || !peer) return;
-      try {
-        setupDataConnection(peer.connect(call.peer));
-      } catch (e) {}
-    }, 800);
-  }
+  if (retryTimer) clearTimeout(retryTimer);
+  matchTimer = null;
+  connectTimer = null;
+  retryTimer = null;
 }
 
-function setupDataConnection(conn) {
-  if (dataChannel && dataChannel !== conn) {
-    const old = dataChannel;
-    dataChannel = null;
-    try { old.close(); } catch (e) {}
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape' || state === 'idle') return;
+  if (!escPressedOnce) {
+    escPressedOnce = true;
+    showSystemMessage("Press Esc again to skip");
+    escTimer = setTimeout(() => { escPressedOnce = false; hideSystemMessage(); }, 3000);
+  } else {
+    clearTimeout(escTimer);
+    escPressedOnce = false;
+    restartSearch();
   }
-  dataChannel = conn;
+});
 
-  conn.on("open", () => {
-    if (conn !== dataChannel) return;
-    addMessage("Chat connected", 'system');
-    try {
-      conn.send(JSON.stringify({ type: 'info', nickname: myNickname }));
-    } catch (e) {}
-  });
-
-  conn.on("data", (data) => {
-    if (conn !== dataChannel) return;
-    let parsed = null;
-    try {
-      parsed = typeof data === 'string' ? JSON.parse(data) : data;
-    } catch (e) {
-      return;
-    }
-    if (!parsed || typeof parsed !== 'object') return;
-    if (parsed.type === 'message' && typeof parsed.text === 'string') {
-      const text = parsed.text.trim().slice(0, MAX_MSG_LENGTH);
-      if (text) addMessage(text, 'them');
-    } else if (parsed.type === 'info' && typeof parsed.nickname === 'string') {
-      const nick = parsed.nickname.trim().slice(0, MAX_NICK_LENGTH);
-      if (nick && nick !== 'Guest') {
-        currentStrangerNickname = nick;
-        strangerNickKnown = true;
-      }
-    } else if (parsed.type === 'friend_added') {
-      handleFriendAdded(parsed);
-    }
-  });
-
-  conn.on("close", () => {
-    if (conn !== dataChannel) return;
-    dataChannel = null;
-    if (myConn) addMessage("Chat disconnected", 'system');
-  });
-
-  conn.on("error", () => {
-    if (conn === dataChannel) dataChannel = null;
-  });
+function setupChatEvents() {
+  chatSendBtn.addEventListener('click', sendMessage);
+  chatInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMessage(); });
 }
+
+friendBtn.onclick = async () => {
+  if (state !== 'connected' || !checkDataChannel()) {
+    addMessage("Chat not ready for friend request", 'system');
+    return;
+  }
+
+  friendBtn.disabled = true;
+  try {
+    const newChatRef = push(ref(friendDb, 'friends'));
+    await set(newChatRef, {
+      nickname1: myNickname,
+      nickname2: currentStrangerNickname,
+      lastMessageText: "Say Hi!",
+      lastTimestamp: Date.now(),
+      lastSender: myNickname
+    });
+
+    if (checkDataChannel()) {
+      dataChannel.send(JSON.stringify({ type: 'friend_added', nickname: myNickname }));
+    }
+    addMessage("You added " + currentStrangerNickname + " as a friend.", 'system');
+    hideFriendButton();
+  } catch (error) {
+    addMessage("Failed to add friend. Please try again.", 'system');
+    friendBtn.disabled = false;
+  }
+};
 
 function handleFriendAdded(data) {
   hideFriendButton();
-  const name = typeof data.nickname === 'string' && data.nickname ? data.nickname.slice(0, MAX_NICK_LENGTH) : "Stranger";
+  const name = String(data.nickname || currentStrangerNickname).slice(0, 30);
   addMessage(name + " added you as friend.", 'system');
 }
 
-function startPeer(retries = 0) {
-  teardownSession();
-  const sid = sessionId;
-  matchAttempts = 0;
-
-  hideSystemMessage();
-  hideFriendButton();
-  hideNewChatButton();
-  showSearchingAnimation();
-  showSearchAd();
-
-  let p;
-  try {
-    p = new Peer(PEER_OPTIONS);
-  } catch (e) {
-    failSession("Failed to start. Click 'Start New Talk' to try again.");
-    return;
-  }
-  peer = p;
-
-  p.on('open', (id) => {
-    if (p !== peer || sid !== sessionId) return;
-    myId = id;
-    cleanUpStaleConnections();
-    tryToFindMatch(sid);
-  });
-
-  p.on('error', (err) => {
-    if (p !== peer || sid !== sessionId) return;
-    const type = err && err.type;
-    if (type === 'peer-unavailable') {
-      if (!isConnected) resumeSearch(sid);
-      return;
-    }
-    if (isConnected) return;
-    const retryable = type === 'unavailable-id' || type === 'socket-error' || type === 'socket-closed' || type === 'network' || type === 'server-error';
-    if (retryable && retries < MAX_PEER_RETRIES) {
-      setTimeout(() => {
-        if (sid === sessionId && !isConnected) startPeer(retries + 1);
-      }, 1000);
-      return;
-    }
-    failSession("Connection error. Click 'Start New Talk' to try again.");
-  });
-
-  p.on('disconnected', () => {
-    setTimeout(() => {
-      if (p === peer && p.disconnected && !p.destroyed) {
-        try { p.reconnect(); } catch (e) {}
-      }
-    }, 1000);
-  });
-
-  p.on('connection', (conn) => {
-    if (p !== peer || !myConn || conn.peer !== myConn.peer) {
-      try { conn.close(); } catch (e) {}
-      return;
-    }
-    setupDataConnection(conn);
-  });
-
-  p.on('call', (call) => {
-    if (p !== peer || sid !== sessionId || !hasLiveStream()) {
-      try { call.close(); } catch (e) {}
-      return;
-    }
-    if (myConn) {
-      const canYield = !isConnected && myId && call.peer < myId;
-      if (!canYield) {
-        try { call.close(); } catch (e) {}
-        return;
-      }
-      dropPendingCall();
-    }
-    call.answer(localStream);
-    setupCall(call, false, sid);
-  });
-}
-
-async function initVideoChat() {
-  if (starting) return;
-  starting = true;
-  hideNewChatButton();
-  showSystemMessage("Setting up camera...");
-  try {
-    await ensureLocalStream();
-    startPeer();
-  } catch (error) {
-    showSystemMessage("Mic access denied. Check permissions.");
-    localPlaceholder.textContent = "Mic denied";
-    localPlaceholder.style.display = 'flex';
-    showNewChatButton();
-  } finally {
-    starting = false;
-  }
-}
+function showFriendButton() { if (friendBtn) { friendBtn.style.display = 'flex'; friendBtn.disabled = false; } }
+function hideFriendButton() { if (friendBtn) { friendBtn.style.display = 'none'; friendBtn.disabled = false; } }
 
 function sendMessage() {
-  const message = chatInput.value.trim().slice(0, MAX_MSG_LENGTH);
+  const message = chatInput.value.trim().slice(0, MAX_MESSAGE_LENGTH);
   if (!message) return;
   if (checkDataChannel()) {
     try {
@@ -1079,98 +682,524 @@ function sendMessage() {
   }
 }
 
-friendBtn.onclick = async () => {
-  if (!myConn || !isConnected || !checkDataChannel()) {
-    addMessage("Chat not ready for friend request", 'system');
-    return;
-  }
-  if (!myNickname || myNickname === 'Guest') {
-    addMessage("Set your nickname first using the pencil button.", 'system');
-    return;
-  }
-  if (!strangerNickKnown) {
-    addMessage("This stranger has not set a nickname yet.", 'system');
-    return;
-  }
+function addMessage(text, sender) {
+  const messageDiv = document.createElement('div');
+  messageDiv.classList.add('vd-chat-message', sender === 'me' ? 'vd-message-me' : sender === 'system' ? 'vd-message-system' : 'vd-message-them');
+  messageDiv.textContent = text;
+  chatMessages.appendChild(messageDiv);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
 
-  friendBtn.disabled = true;
-  const targetNickname = currentStrangerNickname;
+function clearChat() {
+  Array.from(chatMessages.children).forEach((el) => {
+    if (el !== searchArea) el.remove();
+  });
+}
+
+function showSearchArea() {
+  searchArea.style.display = 'block';
+  if (!searchAdPushed) {
+    searchAdPushed = true;
+    const ins = document.createElement('ins');
+    ins.className = 'adsbygoogle';
+    ins.style.cssText = 'display:inline-block;width:300px;height:250px';
+    ins.setAttribute('data-ad-client', 'ca-pub-7059052735946479');
+    ins.setAttribute('data-ad-slot', '8592327962');
+    searchAdWrap.appendChild(ins);
+    try {
+      (window.adsbygoogle = window.adsbygoogle || []).push({});
+    } catch (e) {}
+  }
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function hideSearchArea() {
+  searchArea.style.display = 'none';
+}
+
+async function acquireStream() {
+  if (localStream) localStream.getTracks().forEach(t => t.stop());
   try {
-    const newChatRef = push(ref(friendDb, 'friends'));
-    await set(newChatRef, {
-      nickname1: myNickname,
-      nickname2: targetNickname,
-      lastMessageText: "Say Hi!",
-      lastTimestamp: Date.now(),
-      lastSender: myNickname
-    });
-    if (checkDataChannel()) {
-      try { dataChannel.send(JSON.stringify({ type: 'friend_added', nickname: myNickname })); } catch (e) {}
-    }
-    addMessage("You added " + targetNickname + " as a friend.", 'system');
-    hideFriendButton();
+    localStream = await navigator.mediaDevices.getUserMedia({ video: cameraAvailable, audio: true });
   } catch (error) {
-    addMessage("Failed to add friend. Please try again.", 'system');
-    friendBtn.disabled = false;
+    localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    cameraAvailable = false;
   }
-};
+  applyMicState();
+  localVideo.srcObject = localStream;
+  localPlaceholder.style.display = 'none';
 
-skipBtn.onclick = () => {
-  if (!hasLiveStream() && !peer && !myConn) return;
-  teardownSession();
+  const existingInd = document.getElementById('vd-audio-indicator');
+  if (!cameraAvailable || localStream.getVideoTracks().length === 0) {
+    localVideo.style.display = 'none';
+    if (!existingInd) {
+      const ind = document.createElement('div');
+      ind.id = 'vd-audio-indicator';
+      ind.innerHTML = '<i class="fas fa-microphone"></i> Audio Only';
+      ind.style.cssText = 'position:absolute;bottom:30px;left:8px;background:rgba(0,0,0,0.7);padding:5px 10px;border-radius:4px;font-size:11px;color:white;z-index:2;';
+      document.querySelector('.vd-local-video-container').appendChild(ind);
+    }
+  } else {
+    localVideo.style.display = '';
+    if (existingInd) existingInd.remove();
+  }
+}
+
+function hasLiveStream() {
+  return !!localStream && localStream.getTracks().length > 0 && localStream.getTracks().every(t => t.readyState === 'live');
+}
+
+async function initVideoChat() {
+  if (state !== 'idle') return;
+  hideNewChatButton();
+  showSystemMessage("Setting up camera...");
+  try {
+    if (!hasLiveStream()) await acquireStream();
+  } catch (error) {
+    showSystemMessage("Mic access denied. Check permissions.");
+    localPlaceholder.style.display = 'flex';
+    localPlaceholder.textContent = "Mic denied";
+    showNewChatButton();
+    return;
+  }
+  startSearch();
+}
+
+function startSearch() {
+  if (!hasLiveStream()) {
+    endSession("Camera or mic stopped. Click 'Start New Talk'.");
+    return;
+  }
+  state = 'searching';
+  hideSystemMessage();
+  currentStrangerNickname = getFallbackName();
+  remoteVideo.srcObject = null;
+  showSearchingAnimation();
+  showSearchArea();
+  ensurePeer();
+}
+
+function restartSearch() {
+  clearTimers();
+  cleanUpWaitingList();
+  dropConnections();
+  hideFriendButton();
+  clearChat();
+  hideSystemMessage();
+  startSearch();
+}
+
+function endSession(message) {
+  clearTimers();
+  cleanUpWaitingList();
+  dropConnections();
+  state = 'idle';
   hideSearchingAnimation();
-  hideSearchAd();
+  hideSearchArea();
   hideFriendButton();
   remotePlaceholder.textContent = "Stranger";
   remotePlaceholder.style.display = 'flex';
-  showSystemMessage("Talk ended. Click 'Start New Talk'.");
+  showSystemMessage(message);
   showNewChatButton();
+}
+
+function dropConnections() {
+  const call = myConn;
+  const data = dataChannel;
+  myConn = null;
+  dataChannel = null;
+  pendingTarget = null;
+  if (call) { try { call.close(); } catch (e) {} }
+  if (data) { try { data.close(); } catch (e) {} }
+  remoteVideo.srcObject = null;
+  remoteStream = null;
+}
+
+function ensurePeer() {
+  if (peer && !peer.destroyed && peer.open) { onPeerReady(); return; }
+  if (peer && !peer.destroyed && !peer.disconnected) return;
+  createPeer();
+}
+
+function createPeer() {
+  if (peer) { try { peer.destroy(); } catch (e) {} peer = null; }
+  myId = null;
+
+  let p;
+  try {
+    p = new Peer({
+      config: {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' },
+          { urls: 'stun:stun3.l.google.com:19302' },
+          { urls: 'stun:stun4.l.google.com:19302' }
+        ]
+      }
+    });
+  } catch (e) {
+    endSession("Failed to start. Click 'Start New Talk' to try again.");
+    return;
+  }
+  peer = p;
+
+  p.on('open', (id) => {
+    if (p !== peer) return;
+    myId = id;
+    onPeerReady();
+  });
+
+  p.on('error', (err) => {
+    if (p !== peer) return;
+    if (err.type === 'unavailable-id') {
+      setTimeout(() => { if (p === peer && state === 'searching') createPeer(); }, 1000);
+      return;
+    }
+    if (err.type === 'peer-unavailable') {
+      if (state === 'connecting') callFailed();
+      return;
+    }
+    if (state === 'searching' || state === 'connecting') {
+      endSession("Connection error. Click 'Start New Talk' to try again.");
+    }
+  });
+
+  p.on('disconnected', () => {
+    setTimeout(() => {
+      if (p === peer && !p.destroyed && p.disconnected) {
+        try { p.reconnect(); } catch (e) {}
+      }
+    }, 1000);
+  });
+
+  p.on('connection', (conn) => {
+    if (p !== peer) return;
+    if (myConn && conn.peer === myConn.peer) setupDataConnection(conn);
+    else conn.close();
+  });
+
+  p.on('call', (call) => {
+    if (p !== peer) return;
+    if (!hasLiveStream()) { try { call.close(); } catch (e) {} return; }
+    if (state === 'searching') {
+      acceptCall(call);
+    } else if (state === 'connecting' && pendingTarget === call.peer && myId && myId > call.peer) {
+      const outgoing = myConn;
+      myConn = null;
+      if (outgoing) { try { outgoing.close(); } catch (e) {} }
+      acceptCall(call);
+    } else {
+      try { call.close(); } catch (e) {}
+    }
+  });
+}
+
+async function onPeerReady() {
+  if (state !== 'searching') return;
+  await cleanUpStaleConnections();
+  if (state !== 'searching') return;
+  tryToFindMatch();
+}
+
+function showSearchingAnimation() {
+  remotePlaceholder.innerHTML = `
+    <div class="vd-searching-dots"><div class="vd-dot"></div><div class="vd-dot"></div><div class="vd-dot"></div></div>
+    <div class="vd-searching-text">Searching...</div>
+  `;
+  remotePlaceholder.style.display = 'flex';
+}
+function hideSearchingAnimation() { remotePlaceholder.innerHTML = ''; }
+
+function openDataConnection(remoteId, attempt = 0) {
+  if (!peer || !myConn || myConn.peer !== remoteId) return;
+  const conn = peer.connect(remoteId, { reliable: true });
+  setupDataConnection(conn);
+  setTimeout(() => {
+    if (myConn && myConn.peer === remoteId && !(dataChannel === conn && conn.open) && attempt < 2) {
+      try { conn.close(); } catch (e) {}
+      openDataConnection(remoteId, attempt + 1);
+    }
+  }, 4000);
+}
+
+function setupDataConnection(conn) {
+  if (dataChannel && dataChannel !== conn) {
+    const old = dataChannel;
+    dataChannel = null;
+    try { old.close(); } catch (e) {}
+  }
+  dataChannel = conn;
+  let wasOpen = false;
+
+  conn.on("open", () => {
+    if (dataChannel !== conn) return;
+    wasOpen = true;
+    addMessage("Chat connected", 'system');
+    try {
+      conn.send(JSON.stringify({ type: 'info', nickname: myNickname }));
+    } catch (e) {}
+  });
+
+  conn.on("data", (data) => {
+    if (dataChannel !== conn) return;
+    try {
+      const parsed = JSON.parse(data);
+      if (parsed.type === "message" && typeof parsed.text === "string") {
+        addMessage(parsed.text.slice(0, MAX_MESSAGE_LENGTH), "them");
+      } else if (parsed.type === "info") {
+        currentStrangerNickname = String(parsed.nickname || "").slice(0, 30) || getFallbackName();
+      } else if (parsed.type === 'friend_added') {
+        handleFriendAdded(parsed);
+      }
+    } catch (e) {}
+  });
+
+  conn.on("close", () => {
+    if (dataChannel !== conn) return;
+    dataChannel = null;
+    if (wasOpen && state === 'connected') endConnection();
+  });
+
+  conn.on("error", () => {
+    if (dataChannel === conn) dataChannel = null;
+  });
+}
+
+async function cleanUpStaleConnections() {
+  try {
+    const snapshot = await get(ref(db, "videoWaiting"));
+    const tasks = [];
+    snapshot.forEach((child) => {
+      const entry = child.val() || {};
+      const isOld = !entry.timestamp || (Date.now() - entry.timestamp) > 60000;
+      if ((myId && entry.id === myId) || isOld) tasks.push(remove(child.ref));
+    });
+    await Promise.all(tasks);
+  } catch (e) {}
+}
+
+function isGenderCompatible(myGender, otherGender) {
+  if (myGender === 'everyone' && otherGender === 'everyone') return true;
+  if (myGender === 'male' && otherGender === 'female') return true;
+  if (myGender === 'female' && otherGender === 'male') return true;
+  return false;
+}
+
+function registerWaiting() {
+  if (waitingEntryRef) {
+    const oldRef = waitingEntryRef;
+    waitingEntryRef = null;
+    remove(oldRef).catch(() => {});
+  }
+  const newRef = push(waitingRef);
+  waitingEntryRef = newRef;
+  set(newRef, { id: myId, interest: myGenderInterest, nickname: myNickname, timestamp: Date.now(), hasCamera: cameraAvailable })
+    .then(() => { try { onDisconnect(newRef).remove(); } catch (e) {} })
+    .catch(() => {});
+
+  if (heartbeatInterval) clearInterval(heartbeatInterval);
+  heartbeatInterval = setInterval(() => {
+    if (waitingEntryRef && state === 'searching') {
+      update(waitingEntryRef, { timestamp: Date.now() }).catch(() => {});
+    }
+  }, 10000);
+}
+
+function tryToFindMatch() {
+  if (state !== 'searching' || !myId) return;
+  waitingRef = ref(db, "videoWaiting");
+  get(waitingRef).then((snapshot) => {
+    if (state !== 'searching') return;
+    const list = snapshot.val();
+    let bestMatch = null;
+    if (list) {
+      for (const [key, entry] of Object.entries(list)) {
+        if (!entry) continue;
+        if (entry.timestamp && (Date.now() - entry.timestamp) > STALE_ENTRY_MS) {
+          remove(ref(db, "videoWaiting/" + key)).catch(() => {});
+          continue;
+        }
+        if (!entry.id || entry.id === myId) continue;
+        if (isGenderCompatible(myGenderInterest, entry.interest)) {
+          bestMatch = { key, otherId: entry.id };
+          break;
+        }
+      }
+    }
+
+    if (bestMatch) {
+      remove(ref(db, "videoWaiting/" + bestMatch.key)).catch(() => {});
+      connectToPeer(bestMatch.otherId);
+      return;
+    }
+
+    registerWaiting();
+    if (matchTimer) clearTimeout(matchTimer);
+    matchTimer = setTimeout(fallbackMatch, 5000);
+  }).catch(() => {
+    if (state === 'searching') {
+      endSession("Connection error. Click 'Start New Talk' to try again.");
+    }
+  });
+}
+
+function fallbackMatch() {
+  matchTimer = null;
+  if (state !== 'searching') return;
+  get(waitingRef).then((snap) => {
+    if (state !== 'searching') return;
+    let compatible = null;
+    let loose = null;
+    snap.forEach((child) => {
+      const entry = child.val();
+      if (!entry || !entry.id || entry.id === myId) return;
+      if (entry.timestamp && (Date.now() - entry.timestamp) > STALE_ENTRY_MS) return;
+      if (isGenderCompatible(myGenderInterest, entry.interest)) {
+        if (!compatible) compatible = { key: child.key, otherId: entry.id };
+      } else if (!loose && myGenderInterest !== 'everyone' && entry.interest === 'everyone') {
+        loose = { key: child.key, otherId: entry.id };
+      }
+    });
+    const chosen = compatible || loose;
+    if (chosen) {
+      remove(ref(db, "videoWaiting/" + chosen.key)).catch(() => {});
+      connectToPeer(chosen.otherId);
+    }
+  }).catch(() => {});
+}
+
+function connectToPeer(otherId) {
+  if (state !== 'searching' || !hasLiveStream() || !peer) return;
+  clearTimers();
+  cleanUpWaitingList();
+  state = 'connecting';
+  pendingTarget = otherId;
+  showSystemMessage("Connecting...");
+  let call;
+  try {
+    call = peer.call(otherId, localStream);
+  } catch (e) {
+    callFailed();
+    return;
+  }
+  if (!call) { callFailed(); return; }
+  setupCall(call, true);
+}
+
+function acceptCall(call) {
+  clearTimers();
+  cleanUpWaitingList();
+  state = 'connecting';
+  pendingTarget = call.peer;
+  showSystemMessage("Connecting...");
+  call.answer(localStream);
+  setupCall(call, false);
+}
+
+function setupCall(call, isCaller) {
+  myConn = call;
+  if (connectTimer) clearTimeout(connectTimer);
+  connectTimer = setTimeout(() => {
+    connectTimer = null;
+    if (myConn === call && state === 'connecting') callFailed();
+  }, CONNECT_TIMEOUT);
+
+  call.on("stream", (stream) => {
+    if (myConn !== call) return;
+    const firstStream = state !== 'connected';
+    if (connectTimer) { clearTimeout(connectTimer); connectTimer = null; }
+    state = 'connected';
+    remoteStream = stream;
+    remoteVideo.srcObject = stream;
+    const playPromise = remoteVideo.play();
+    if (playPromise && playPromise.catch) playPromise.catch(() => {});
+    remotePlaceholder.style.display = 'none';
+    if (!firstStream) return;
+    hideSearchArea();
+    showFriendButton();
+    showSystemMessage("Say Hi 👋");
+    connectionMessageTimer = setTimeout(() => { hideSystemMessage(); }, 3000);
+    if (isCaller) openDataConnection(call.peer);
+  });
+
+  call.on("close", () => {
+    if (myConn !== call) return;
+    if (state === 'connected') endConnection();
+    else if (state === 'connecting') callFailed();
+  });
+
+  call.on("error", () => {
+    if (myConn !== call) return;
+    if (state === 'connected') endConnection();
+    else if (state === 'connecting') callFailed();
+  });
+}
+
+function callFailed() {
+  if (state === 'idle') return;
+  clearTimers();
+  dropConnections();
+  hideFriendButton();
+  state = 'searching';
+  showSearchingAnimation();
+  showSearchArea();
+  showSystemMessage("Couldn't connect. Searching again...");
+  retryTimer = setTimeout(() => {
+    retryTimer = null;
+    if (state !== 'searching') return;
+    hideSystemMessage();
+    ensurePeer();
+  }, 1500);
+}
+
+function endConnection() {
+  clearTimers();
+  cleanUpWaitingList();
+  dropConnections();
+  state = 'idle';
+  hideSearchArea();
+  hideSearchingAnimation();
+  hideSystemMessage();
+  remotePlaceholder.style.display = 'flex';
+  remotePlaceholder.textContent = "Stranger disconnected 💔";
+  currentStrangerNickname = getFallbackName();
+  showNewChatButton();
+  hideFriendButton();
+  addMessage("Connection ended", 'system');
+}
+
+function cleanUpWaitingList() {
+  if (waitingEntryRef) {
+    const entryRef = waitingEntryRef;
+    waitingEntryRef = null;
+    remove(entryRef).catch(() => {});
+  }
+  if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
+}
+
+function showSystemMessage(msg) {
+  if (connectionMessageTimer) { clearTimeout(connectionMessageTimer); connectionMessageTimer = null; }
+  systemMsg.textContent = msg;
+  systemMsg.style.display = 'block';
+}
+function hideSystemMessage() { systemMsg.style.display = 'none'; }
+function showNewChatButton() { newChatBtn.style.display = 'flex'; }
+function hideNewChatButton() { newChatBtn.style.display = 'none'; }
+
+document.getElementById("vd-skipBtn").onclick = () => {
+  if (state === 'idle') return;
+  endSession("Talk ended. Click 'Start New Talk'.");
 };
 
-newChatBtn.onclick = () => {
-  if (starting) return;
+document.getElementById("vd-newChatBtn").onclick = () => {
+  if (state !== 'idle') return;
   clearChat();
   initVideoChat();
 };
 
-chatSendBtn.addEventListener('click', sendMessage);
-chatInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMessage(); });
-
-document.addEventListener('visibilitychange', handleVisibilityChange);
-
-document.addEventListener('keydown', (e) => {
-  if (e.key !== 'Escape' || starting || !hasLiveStream()) return;
-  if (!escPressedOnce) {
-    escPressedOnce = true;
-    showSystemMessage("Press Esc again to skip");
-    escTimer = setTimeout(() => { escPressedOnce = false; hideSystemMessage(); }, 3000);
-  } else {
-    clearTimeout(escTimer);
-    escPressedOnce = false;
-    hideSystemMessage();
-    clearChat();
-    startPeer();
-  }
-});
-
-window.addEventListener('beforeunload', function(e) {
-  if (isConnected) {
-    e.preventDefault();
-    e.returnValue = 'Are you sure you want to leave? Your video talk will be disconnected.';
-    return e.returnValue;
-  }
-});
-
-window.addEventListener('pagehide', cleanUpAllResources);
-
 window.addEventListener('nicknameUpdated', function(e) {
-  myNickname = (e.detail && e.detail.nickname) || myNickname;
+  myNickname = e.detail.nickname;
   myGenderInterest = localStorage.getItem("talkrush_gender_interest") || "everyone";
-});
-
-window.addEventListener('load', function() {
-  checkCameraAvailability();
-  showNewChatButton();
-  showSystemMessage("Click 'Start New Talk' to begin!");
 });
 </script>
