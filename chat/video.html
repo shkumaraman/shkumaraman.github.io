@@ -334,7 +334,16 @@ video { width: 100%; height: 100%; object-fit: cover; }
     <div class="vd-chat-section-header">
       <i class="fas fa-comment-dots"></i> Live Chat
     </div>
-    <div class="vd-chat-messages" id="vd-chatMessages"></div>
+    <div class="vd-chat-messages" id="vd-chatMessages">
+      <div id="vd-searchArea" style="display:none; margin:auto; width:100%; text-align:center;">
+        <div id="vd-searchAdWrap" style="width:300px; height:250px; margin:8px auto; display:flex; justify-content:center; align-items:center; overflow:hidden;">
+          <ins class="adsbygoogle"
+               style="display:inline-block;width:300px;height:250px"
+               data-ad-client="ca-pub-7059052735946479"
+               data-ad-slot="8592327962"></ins>
+        </div>
+      </div>
+    </div>
     <div class="vd-chat-input-container">
       <input type="text" class="vd-chat-input" id="vd-chatInput" placeholder="Type a message...">
       <button class="vd-chat-send-btn" id="vd-chatSendBtn" aria-label="Send">
@@ -487,6 +496,8 @@ const friendBtn = document.getElementById('vd-friendBtn');
 const chatMessages = document.getElementById('vd-chatMessages');
 const chatInput = document.getElementById('vd-chatInput');
 const chatSendBtn = document.getElementById('vd-chatSendBtn');
+const searchArea = document.getElementById("vd-searchArea");
+let searchAdPushed = false;
 
 let connectionMessageTimer = null;
 
@@ -498,6 +509,23 @@ window.addEventListener('load', function() {
   showSystemMessage("Click 'Start New Talk' to begin!");
   setupChatEvents();
 });
+
+function showSearchAd() {
+  if (searchArea) {
+    searchArea.style.display = "block";
+    if (!searchAdPushed) {
+      searchAdPushed = true;
+      try {
+        (adsbygoogle = window.adsbygoogle || []).push({});
+      } catch (e) {}
+    }
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+}
+
+function hideSearchAd() {
+  if (searchArea) searchArea.style.display = "none";
+}
 
 window.toggleMic = function() {
   micMuted = !micMuted;
@@ -580,6 +608,7 @@ document.addEventListener('keydown', (e) => {
       hideNewChatButton();
       clearChat();
       hideSearchingAnimation();
+      hideSearchAd();
       startPeer(false);
     }
   }
@@ -648,7 +677,10 @@ function addMessage(text, sender) {
   chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
-function clearChat() { chatMessages.innerHTML = ''; }
+function clearChat() {
+  chatMessages.innerHTML = '';
+  if (searchArea) chatMessages.appendChild(searchArea);
+}
 
 async function initVideoChat() {
   try {
@@ -684,6 +716,7 @@ async function initVideoChat() {
 
 function startPeer(isNewSession = false) {
   hideSystemMessage();
+  hideSearchAd();
   isConnected = false;
   currentStrangerNickname = getFallbackName();
   remoteVideo.srcObject = null;
@@ -692,6 +725,7 @@ function startPeer(isNewSession = false) {
   
   if (peer && isNewSession) { try { peer.destroy(); peer = null; } catch (e) {} }
   showSearchingAnimation();
+  showSearchAd();
 
   const peerOptions = {
     config: {
@@ -713,7 +747,7 @@ function startPeer(isNewSession = false) {
       showSystemMessage("Stranger disconnected. Searching...");
       setTimeout(() => tryToFindMatch(), 1500); return;
     }
-    if (!isConnected) { hideSearchingAnimation(); showNewChatButton(); }
+    if (!isConnected) { hideSearchingAnimation(); hideSearchAd(); showNewChatButton(); }
   });
   peer.on('disconnected', () => { setTimeout(() => { if (peer && peer.disconnected) peer.reconnect(); }, 1000); });
   peer.on('connection', (conn) => { if (isConnected) setupDataConnection(conn); else conn.close(); });
@@ -825,7 +859,7 @@ function connectToPeer(otherId) {
 
 function setupCall(call) {
   if (myConn) { myConn.close(); remoteVideo.srcObject = null; }
-  myConn = call; isConnected = true; hideNewChatButton();
+  myConn = call; isConnected = true; hideNewChatButton(); hideSearchAd();
   setTimeout(() => {
     if (!dataChannel && myId && call.peer) { const conn = peer.connect(call.peer); setupDataConnection(conn); }
   }, 1000);
@@ -841,6 +875,7 @@ function setupCall(call) {
 
 function endConnection() {
   hideSearchingAnimation();
+  hideSearchAd();
   remoteVideo.srcObject = null; remotePlaceholder.style.display = 'flex';
   remotePlaceholder.textContent = "Stranger disconnected 💔";
   if (myConn) { myConn.close(); myConn = null; }
@@ -861,6 +896,7 @@ function hideNewChatButton() { newChatBtn.style.display = 'none'; }
 
 document.getElementById("vd-skipBtn").onclick = () => {
   hideSearchingAnimation();
+  hideSearchAd();
   if (myConn) myConn.close();
   cleanUpWaitingList(); isConnected = false; currentStrangerNickname = getFallbackName();
   showSystemMessage("Talk ended. Click 'Start New Talk'.");
