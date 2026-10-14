@@ -1,11 +1,14 @@
+import html as html_lib
 import json
 import re
+import time
 from contextlib import asynccontextmanager
+from typing import Annotated, Any, Optional
 from urllib.parse import quote_plus
 
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.middleware.cors import CORSMiddleware
 import httpx
+from fastapi import FastAPI, HTTPException, Path, Query
+from fastapi.middleware.cors import CORSMiddleware
 
 DEFAULT_HEADERS = {
     "User-Agent": (
@@ -15,7 +18,42 @@ DEFAULT_HEADERS = {
     ),
     "Accept-Language": "en-US,en;q=0.9",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Cookie": "CONSENT=YES+1",
 }
+
+SEARCH_TTL = 300
+VIDEO_TTL = 600
+CACHE_MAX = 500
+
+
+class TTLCache:
+    def __init__(self, maxsize: int):
+        self.maxsize = maxsize
+        self.store: dict[str, tuple[float, Any]] = {}
+
+    def get(self, key: str):
+        item = self.store.get(key)
+        if not item:
+            return None
+        expires, value = item
+        if expires < time.monotonic():
+            self.store.pop(key, None)
+            return None
+        return value
+
+    def set(self, key: str, value: Any, ttl: int):
+        if len(self.store) >= self.maxsize:
+            now = time.monotonic()
+            for k in [k for k, (exp, _) in self.store.items() if exp < now]:
+                self.store.pop(k, None)
+            if len(self.store) >= self.maxsize:
+                oldest = min(self.store, key=lambda k: self.store[k][0])
+                self.store.pop(oldest, None)
+        self.store[key] = (time.monotonic() + ttl, value)
+
+
+cache = TTLCache(CACHE_MAX)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -27,42 +65,59 @@ async def lifespan(app: FastAPI):
     yield
     await app.state.client.aclose()
 
+
 app = FastAPI(
     title="Unofficial YouTube API",
     description="Fast, Non-blocking YouTube Search & Video Details Scraper",
-    version="1.0",
+    version="1.1",
     lifespan=lifespan,
 )
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-def parse_youtube_search(html: str, limit: int = 10) -> list:
-    match = re.search(
-        r"var\s+ytInitialData\s*=\s*({.+?});\s*<\/script>", html
-    ) or re.search(r"ytInitialData\s*=\s*({.+?});", html)
 
-    if not match:
-        return []
-
-    try:
-        data = json.loads(match.group(1))
-    except Exception:
-        return []
-
-    sections = []
-    try:
-        sections = data["contents"]["twoColumnSearchResultsRenderer"]["primaryContents"]["sectionListRenderer"]["contents"]
-    except KeyError:
+def extract_json(page: str, marker: str) -> Optional[dict]:
+    for m in re.finditer(rf"{re.escape(marker)}\s*=\s*", page):
         try:
-            sections = data["contents"]["sectionListRenderer"]["contents"]
-        except KeyError:
-            return []
+            obj, _ = json.JSONDecoder().raw_decode(page, m.end())
+        except json.JSONDecodeError:
+            continue
+        if isinstance(obj, dict):
+            return obj
+    return None
+
+
+def text_of(obj: Optional[dict]) -> Optional[str]:
+    if not obj:
+        return None
+    if "simpleText" in obj:
+        return obj["simpleText"]
+    runs = obj.get("runs")
+    if runs:
+        return "".join(r.get("text", "") for r in runs)
+    return None
+
+
+def parse_youtube_search(page: str, limit: int = 10) -> list:
+    data = extract_json(page, "ytInitialData")
+    if not data:
+        return []
+
+    contents = data.get("contents", {})
+    sections = (
+        contents.get("twoColumnSearchResultsRenderer", {})
+        .get("primaryContents", {})
+        .get("sectionListRenderer", {})
+        .get("contents")
+        or contents.get("sectionListRenderer", {}).get("contents")
+        or []
+    )
 
     results = []
 
@@ -77,12 +132,6 @@ def parse_youtube_search(html: str, limit: int = 10) -> list:
             if not vid:
                 continue
 
-            title = ""
-            if "title" in video and "runs" in video["title"]:
-                title = "".join(r.get("text", "") for r in video["title"]["runs"])
-            elif "title" in video and "simpleText" in video["title"]:
-                title = video["title"]["simpleText"]
-
             thumbs = video.get("thumbnail", {}).get("thumbnails", [])
             thumbnail = (
                 thumbs[-1].get("url", "")
@@ -93,32 +142,16 @@ def parse_youtube_search(html: str, limit: int = 10) -> list:
             channel_runs = video.get("ownerText", {}).get("runs", [])
             channel = channel_runs[0].get("text", "") if channel_runs else ""
 
-            duration_obj = video.get("lengthText", {})
-            duration = duration_obj.get("simpleText") or (
-                duration_obj.get("runs", [{}])[0].get("text")
-                if "runs" in duration_obj
-                else None
-            )
-
-            view_obj = video.get("viewCountText", {})
-            views = view_obj.get("simpleText") or (
-                view_obj.get("runs", [{}])[0].get("text")
-                if "runs" in view_obj
-                else None
-            )
-
-            published_time = video.get("publishedTimeText", {}).get("simpleText")
-
             results.append(
                 {
                     "videoId": vid,
-                    "title": title,
+                    "title": text_of(video.get("title")) or "",
                     "url": f"https://www.youtube.com/watch?v={vid}",
                     "thumbnail": thumbnail,
                     "channel": channel,
-                    "views": views,
-                    "duration": duration,
-                    "publishedTime": published_time,
+                    "views": text_of(video.get("viewCountText")),
+                    "duration": text_of(video.get("lengthText")),
+                    "publishedTime": text_of(video.get("publishedTimeText")),
                 }
             )
 
@@ -127,118 +160,144 @@ def parse_youtube_search(html: str, limit: int = 10) -> list:
 
     return results
 
+
+async def fetch_page(url: str) -> str:
+    client: httpx.AsyncClient = app.state.client
+    try:
+        resp = await client.get(url)
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"Upstream error: {e}")
+
+    if resp.status_code != 200:
+        raise HTTPException(
+            status_code=resp.status_code if resp.status_code >= 400 else 502,
+            detail="YouTube returned an error",
+        )
+
+    if "consent.youtube.com" in str(resp.url):
+        raise HTTPException(
+            status_code=502, detail="YouTube consent page blocked the request"
+        )
+
+    return resp.text
+
+
+def og_value(page: str, prop: str) -> Optional[str]:
+    m = re.search(
+        rf'<meta\s+property="{re.escape(prop)}"\s+content="([^"]*)"', page
+    )
+    return html_lib.unescape(m.group(1)) if m else None
+
+
 @app.get("/")
 async def root():
     return {
         "name": "Unofficial YouTube API",
-        "version": "1.0",
+        "version": "1.1",
         "status": "online",
         "docs": "/docs",
     }
 
+
 @app.get("/search/videos")
 async def search_videos(
-    query: str = Query(..., description="Search keyword"),
-    limit: int = Query(10, ge=1, le=50, description="Max results (1 to 50)"),
+    query: Annotated[str, Query(min_length=1, description="Search keyword")],
+    limit: Annotated[int, Query(ge=1, le=20, description="Max results (1 to 20)")] = 10,
 ):
-    encoded_query = quote_plus(query)
-    url = f"https://www.youtube.com/results?search_query={encoded_query}"
+    cache_key = f"search:{query.strip().lower()}"
+    cached = cache.get(cache_key)
 
-    try:
-        client: httpx.AsyncClient = app.state.client
-        resp = await client.get(url)
-        if resp.status_code != 200:
-            raise HTTPException(
-                status_code=resp.status_code,
-                detail="YouTube returned an error",
-            )
+    if cached is None:
+        url = f"https://www.youtube.com/results?search_query={quote_plus(query)}"
+        page = await fetch_page(url)
+        cached = parse_youtube_search(page, limit=20)
+        if cached:
+            cache.set(cache_key, cached, SEARCH_TTL)
 
-        data = parse_youtube_search(resp.text, limit=limit)
-        return {
-            "ok": True,
-            "query": query,
-            "count": len(data),
-            "results": data,
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        return {"ok": False, "error": str(e), "results": []}
+    data = cached[:limit]
+    return {
+        "ok": True,
+        "query": query,
+        "count": len(data),
+        "results": data,
+    }
+
 
 @app.get("/video/{video_id}")
-async def video_details(video_id: str):
-    if not re.match(r"^[a-zA-Z0-9_-]{11}$", video_id):
+async def video_details(
+    video_id: Annotated[str, Path(description="11 character YouTube video ID")],
+):
+    if not re.fullmatch(r"[a-zA-Z0-9_-]{11}", video_id):
         raise HTTPException(
             status_code=400, detail="Invalid YouTube Video ID format"
         )
 
-    url = f"https://www.youtube.com/watch?v={video_id}"
+    cache_key = f"video:{video_id}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
 
-    try:
-        client: httpx.AsyncClient = app.state.client
-        resp = await client.get(url)
-        if resp.status_code != 200:
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    page = await fetch_page(url)
+
+    player_data = extract_json(page, "ytInitialPlayerResponse")
+
+    if player_data:
+        playability = player_data.get("playabilityStatus", {})
+        status = playability.get("status")
+        if status and status != "OK":
+            reason = playability.get("reason") or status
             raise HTTPException(
-                status_code=resp.status_code,
-                detail="Failed to load YouTube watch page",
+                status_code=404, detail=f"Video unavailable: {reason}"
             )
 
-        html = resp.text
+        details = player_data.get("videoDetails")
+        if details:
+            thumbs = details.get("thumbnail", {}).get("thumbnails", [])
+            thumbnail_url = (
+                thumbs[-1].get("url")
+                if thumbs
+                else f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
+            )
 
-        player_match = re.search(r"ytInitialPlayerResponse\s*=\s*({.+?});", html)
-        if player_match:
-            try:
-                player_data = json.loads(player_match.group(1))
-                details = player_data.get("videoDetails", {})
-                thumbs = details.get("thumbnail", {}).get("thumbnails", [])
-                thumbnail_url = (
-                    thumbs[-1].get("url")
-                    if thumbs
-                    else f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
-                )
+            length = details.get("lengthSeconds")
+            result = {
+                "ok": True,
+                "videoId": video_id,
+                "title": details.get("title"),
+                "channel": details.get("author"),
+                "channelId": details.get("channelId"),
+                "durationSeconds": int(length) if length and length.isdigit() else None,
+                "views": details.get("viewCount"),
+                "isLive": bool(details.get("isLive", False)),
+                "wasLive": bool(details.get("isLiveContent", False)),
+                "description": details.get("shortDescription", ""),
+                "thumbnail": thumbnail_url,
+                "url": url,
+            }
+            cache.set(cache_key, result, VIDEO_TTL)
+            return result
 
-                return {
-                    "ok": True,
-                    "videoId": video_id,
-                    "title": details.get("title"),
-                    "channel": details.get("author"),
-                    "channelId": details.get("channelId"),
-                    "durationSeconds": int(details.get("lengthSeconds", 0))
-                    if details.get("lengthSeconds")
-                    else None,
-                    "views": details.get("viewCount"),
-                    "isLive": details.get("isLiveContent", False),
-                    "description": details.get("shortDescription", ""),
-                    "thumbnail": thumbnail_url,
-                    "url": f"https://www.youtube.com/watch?v={video_id}",
-                }
-            except Exception:
-                pass
-
-        og_title = re.search(r'<meta\s+property="og:title"\s+content="([^"]*)"', html)
-        og_image = re.search(r'<meta\s+property="og:image"\s+content="([^"]*)"', html)
-        og_desc = re.search(r'<meta\s+property="og:description"\s+content="([^"]*)"', html)
-
-        title = og_title.group(1) if og_title else "Unknown"
-
-        return {
-            "ok": True,
-            "videoId": video_id,
-            "title": title,
-            "channel": None,
-            "views": None,
-            "durationSeconds": None,
-            "isLive": False,
-            "description": og_desc.group(1) if og_desc else "",
-            "thumbnail": og_image.group(1)
-            if og_image
-            else f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg",
-            "url": f"https://www.youtube.com/watch?v={video_id}",
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
+    title = og_value(page, "og:title")
+    if not title:
         raise HTTPException(
-            status_code=500, detail=f"Internal Server Error: {str(e)}"
+            status_code=404, detail="Video not found or page could not be parsed"
         )
+
+    result = {
+        "ok": True,
+        "videoId": video_id,
+        "title": title,
+        "channel": None,
+        "channelId": None,
+        "durationSeconds": None,
+        "views": None,
+        "isLive": False,
+        "wasLive": False,
+        "description": og_value(page, "og:description") or "",
+        "thumbnail": og_value(page, "og:image")
+        or f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg",
+        "url": url,
+    }
+    cache.set(cache_key, result, VIDEO_TTL)
+    return result
