@@ -69,7 +69,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Unofficial YouTube API",
     description="Fast, Non-blocking YouTube Search & Video Details Scraper",
-    version="1.1",
+    version="1.0",
     lifespan=lifespan,
 )
 
@@ -193,7 +193,7 @@ def og_value(page: str, prop: str) -> Optional[str]:
 async def root():
     return {
         "name": "Unofficial YouTube API",
-        "version": "1.1",
+        "version": "1.0",
         "status": "online",
         "docs": "/docs",
     }
