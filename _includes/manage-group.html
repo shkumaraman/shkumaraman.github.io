@@ -235,200 +235,189 @@ body.light-mode .transfer-input {
 </div>
 
 <script type="module">
-import { initializeApp, getApps } from "firebase/app";
+import { getApp } from "firebase/app";
 import { getDatabase, ref, onValue, set, remove } from "firebase/database";
 
-const firebaseConfig = {
-  databaseURL: "https://talkrush2-default-rtdb.asia-southeast1.firebasedatabase.app"
-};
+window.addEventListener('load', () => {
+  const app = getApp("TalkRushGroupApp");
+  const db = getDatabase(app);
 
-let app;
-const apps = getApps();
-const targetAppName = "TalkRushGroupApp";
-const existingApp = apps.find(a => a.name === targetAppName);
+  const currentGroup = new URLSearchParams(window.location.search).get('group');
+  let myNickname = localStorage.getItem('talkrush_nickname') || 'Guest';
+  let isCurrentUserAdmin = false;
 
-if (existingApp) {
-  app = existingApp;
-} else {
-  app = initializeApp(firebaseConfig, targetAppName);
-}
+  const manageBtn = document.getElementById('manageGroupBtn');
+  const modalOverlay = document.getElementById('manageModalOverlay');
+  const closeBtn = document.getElementById('closeManageModal');
+  const bannedListContainer = document.getElementById('bannedListContainer');
+  const bannedSearchInput = document.getElementById('bannedSearchInput');
+  const newAdminInput = document.getElementById('newAdminNickname');
+  const transferBtn = document.getElementById('transferAdminBtn');
 
-const db = getDatabase(app);
-const currentGroup = new URLSearchParams(window.location.search).get('group');
-let myNickname = localStorage.getItem('talkrush_nickname') || 'Guest';
-let isCurrentUserAdmin = false;
+  window.addEventListener('nicknameUpdated', (e) => {
+    myNickname = e.detail.nickname;
+    checkAdminStatus();
+  });
 
-const manageBtn = document.getElementById('manageGroupBtn');
-const modalOverlay = document.getElementById('manageModalOverlay');
-const closeBtn = document.getElementById('closeManageModal');
-const bannedListContainer = document.getElementById('bannedListContainer');
-const bannedSearchInput = document.getElementById('bannedSearchInput');
-const newAdminInput = document.getElementById('newAdminNickname');
-const transferBtn = document.getElementById('transferAdminBtn');
-
-window.addEventListener('nicknameUpdated', (e) => {
-  myNickname = e.detail.nickname;
-  checkAdminStatus();
-});
-
-function checkAdminStatus() {
-  if (!currentGroup || myNickname === 'Guest') {
-    manageBtn.style.display = 'none';
-    return;
-  }
-  
-  const adminRef = ref(db, `groups/${currentGroup}/admin`);
-  onValue(adminRef, (snapshot) => {
-    const adminNickname = snapshot.val();
-    if (adminNickname && adminNickname === myNickname) {
-      isCurrentUserAdmin = true;
-      manageBtn.style.display = 'flex';
-    } else {
-      isCurrentUserAdmin = false;
+  function checkAdminStatus() {
+    if (!currentGroup || myNickname === 'Guest') {
       manageBtn.style.display = 'none';
-      closeManageModal();
+      return;
     }
-  });
-}
-
-checkAdminStatus();
-
-function openManageModal() {
-  if (!isCurrentUserAdmin) return;
-  bannedSearchInput.value = '';
-  modalOverlay.classList.add('active');
-  loadBannedUsers();
-}
-
-function closeManageModal() {
-  modalOverlay.classList.remove('active');
-}
-
-manageBtn.addEventListener('click', openManageModal);
-closeBtn.addEventListener('click', closeManageModal);
-modalOverlay.addEventListener('click', (e) => {
-  if (e.target === modalOverlay) closeManageModal();
-});
-
-bannedSearchInput.addEventListener('input', (e) => {
-  const query = e.target.value.toLowerCase();
-  const items = bannedListContainer.querySelectorAll('.banned-item');
-  let visibleCount = 0;
-  
-  items.forEach(item => {
-    const name = item.querySelector('span').textContent.toLowerCase();
-    if (name.includes(query)) {
-      item.style.display = 'flex';
-      visibleCount++;
-    } else {
-      item.style.display = 'none';
-    }
-  });
-  
-  let emptyMsg = bannedListContainer.querySelector('.empty-search-msg');
-  if (visibleCount === 0 && items.length > 0) {
-    if (!emptyMsg) {
-      emptyMsg = document.createElement('div');
-      emptyMsg.className = 'empty-banned empty-search-msg';
-      emptyMsg.textContent = 'No matching users found.';
-      bannedListContainer.appendChild(emptyMsg);
-    } else {
-      emptyMsg.style.display = 'block';
-    }
-  } else if (emptyMsg) {
-    emptyMsg.style.display = 'none';
-  }
-});
-
-function loadBannedUsers() {
-  const bannedRef = ref(db, `groups/${currentGroup}/banned`);
-  onValue(bannedRef, (snapshot) => {
-    if (!modalOverlay.classList.contains('active')) return;
-    bannedListContainer.innerHTML = '';
-    const data = snapshot.val();
     
-    if (!data) {
-      bannedListContainer.innerHTML = '<div class="empty-banned">No banned users.</div>';
+    const adminRef = ref(db, `groups/${currentGroup}/admin`);
+    onValue(adminRef, (snapshot) => {
+      const adminNickname = snapshot.val();
+      if (adminNickname && adminNickname === myNickname) {
+        isCurrentUserAdmin = true;
+        manageBtn.style.display = 'flex';
+      } else {
+        isCurrentUserAdmin = false;
+        manageBtn.style.display = 'none';
+        closeManageModal();
+      }
+    });
+  }
+
+  checkAdminStatus();
+
+  function openManageModal() {
+    if (!isCurrentUserAdmin) return;
+    bannedSearchInput.value = '';
+    modalOverlay.classList.add('active');
+    loadBannedUsers();
+  }
+
+  function closeManageModal() {
+    modalOverlay.classList.remove('active');
+  }
+
+  manageBtn.addEventListener('click', openManageModal);
+  closeBtn.addEventListener('click', closeManageModal);
+  modalOverlay.addEventListener('click', (e) => {
+    if (e.target === modalOverlay) closeManageModal();
+  });
+
+  bannedSearchInput.addEventListener('input', (e) => {
+    const query = e.target.value.toLowerCase();
+    const items = bannedListContainer.querySelectorAll('.banned-item');
+    let visibleCount = 0;
+    
+    items.forEach(item => {
+      const name = item.querySelector('span').textContent.toLowerCase();
+      if (name.includes(query)) {
+        item.style.display = 'flex';
+        visibleCount++;
+      } else {
+        item.style.display = 'none';
+      }
+    });
+    
+    let emptyMsg = bannedListContainer.querySelector('.empty-search-msg');
+    if (visibleCount === 0 && items.length > 0) {
+      if (!emptyMsg) {
+        emptyMsg = document.createElement('div');
+        emptyMsg.className = 'empty-banned empty-search-msg';
+        emptyMsg.textContent = 'No matching users found.';
+        bannedListContainer.appendChild(emptyMsg);
+      } else {
+        emptyMsg.style.display = 'block';
+      }
+    } else if (emptyMsg) {
+      emptyMsg.style.display = 'none';
+    }
+  });
+
+  function loadBannedUsers() {
+    const bannedRef = ref(db, `groups/${currentGroup}/banned`);
+    onValue(bannedRef, (snapshot) => {
+      if (!modalOverlay.classList.contains('active')) return;
+      bannedListContainer.innerHTML = '';
+      const data = snapshot.val();
+      
+      if (!data) {
+        bannedListContainer.innerHTML = '<div class="empty-banned">No banned users.</div>';
+        return;
+      }
+
+      Object.keys(data).forEach(safeKey => {
+        const displayKey = safeKey.replace(/_/g, '.'); 
+        const item = document.createElement('div');
+        item.className = 'banned-item';
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = displayKey;
+        const unbanBtn = document.createElement('button');
+        unbanBtn.className = 'unban-btn';
+        unbanBtn.textContent = 'Unban';
+        unbanBtn.onclick = () => unbanUser(safeKey, displayKey);
+        
+        item.appendChild(nameSpan);
+        item.appendChild(unbanBtn);
+        bannedListContainer.appendChild(item);
+      });
+      
+      bannedSearchInput.dispatchEvent(new Event('input'));
+    });
+  }
+
+  async function unbanUser(safeKey, displayName) {
+    const confirm = await AlertKit.confirm(
+      'Unban User', 
+      `Are you sure you want to unban ${displayName}?`, 
+      'Yes, Unban', 
+      'Cancel'
+    );
+    
+    if (confirm) {
+      try {
+        await remove(ref(db, `groups/${currentGroup}/banned/${safeKey}`));
+        AlertKit.toast(`${displayName} has been unbanned.`, 'success');
+      } catch (error) {
+        AlertKit.error('Error', 'Could not unban user. Please try again.');
+      }
+    }
+  }
+
+  transferBtn.addEventListener('click', async () => {
+    let newAdmin = newAdminInput.value.trim();
+    
+    if (!newAdmin) {
+      AlertKit.warning('Missing Input', 'Please enter the nickname of the new admin.');
+      return;
+    }
+    
+    if (!newAdmin.startsWith('TR|')) {
+      newAdmin = 'TR|' + newAdmin;
+    }
+    
+    if (newAdmin === myNickname) {
+      AlertKit.info('Invalid Action', 'You are already the admin of this group.');
       return;
     }
 
-    Object.keys(data).forEach(safeKey => {
-      const displayKey = safeKey.replace(/_/g, '.'); 
-      const item = document.createElement('div');
-      item.className = 'banned-item';
-      const nameSpan = document.createElement('span');
-      nameSpan.textContent = displayKey;
-      const unbanBtn = document.createElement('button');
-      unbanBtn.className = 'unban-btn';
-      unbanBtn.textContent = 'Unban';
-      unbanBtn.onclick = () => unbanUser(safeKey, displayKey);
+    const confirm = await AlertKit.confirm(
+      'Transfer Ownership?', 
+      `Are you sure you want to make "${newAdmin}" the new admin? You will lose all your admin privileges immediately.`, 
+      'Transfer', 
+      'Cancel'
+    );
+
+    if (confirm) {
+      transferBtn.disabled = true;
+      transferBtn.textContent = 'Transferring...';
       
-      item.appendChild(nameSpan);
-      item.appendChild(unbanBtn);
-      bannedListContainer.appendChild(item);
-    });
-    
-    bannedSearchInput.dispatchEvent(new Event('input'));
+      try {
+        await set(ref(db, `groups/${currentGroup}/admin`), newAdmin);
+        AlertKit.success('Success', `Ownership has been transferred to ${newAdmin}.`);
+        closeManageModal();
+        newAdminInput.value = '';
+      } catch (error) {
+        AlertKit.error('Error', 'Failed to transfer ownership.');
+      } finally {
+        transferBtn.disabled = false;
+        transferBtn.textContent = 'Transfer';
+      }
+    }
   });
-}
-
-async function unbanUser(safeKey, displayName) {
-  const confirm = await AlertKit.confirm(
-    'Unban User', 
-    `Are you sure you want to unban ${displayName}?`, 
-    'Yes, Unban', 
-    'Cancel'
-  );
-  
-  if (confirm) {
-    try {
-      await remove(ref(db, `groups/${currentGroup}/banned/${safeKey}`));
-      AlertKit.toast(`${displayName} has been unbanned.`, 'success');
-    } catch (error) {
-      AlertKit.error('Error', 'Could not unban user. Please try again.');
-    }
-  }
-}
-
-transferBtn.addEventListener('click', async () => {
-  let newAdmin = newAdminInput.value.trim();
-  
-  if (!newAdmin) {
-    AlertKit.warning('Missing Input', 'Please enter the nickname of the new admin.');
-    return;
-  }
-  
-  if (!newAdmin.startsWith('TR|')) {
-    newAdmin = 'TR|' + newAdmin;
-  }
-  
-  if (newAdmin === myNickname) {
-    AlertKit.info('Invalid Action', 'You are already the admin of this group.');
-    return;
-  }
-
-  const confirm = await AlertKit.confirm(
-    'Transfer Ownership?', 
-    `Are you sure you want to make "${newAdmin}" the new admin? You will lose all your admin privileges immediately.`, 
-    'Transfer', 
-    'Cancel'
-  );
-
-  if (confirm) {
-    transferBtn.disabled = true;
-    transferBtn.textContent = 'Transferring...';
-    
-    try {
-      await set(ref(db, `groups/${currentGroup}/admin`), newAdmin);
-      AlertKit.success('Success', `Ownership has been transferred to ${newAdmin}.`);
-      closeManageModal();
-      newAdminInput.value = '';
-    } catch (error) {
-      AlertKit.error('Error', 'Failed to transfer ownership.');
-    } finally {
-      transferBtn.disabled = false;
-      transferBtn.textContent = 'Transfer';
-    }
-  }
 });
 </script>
