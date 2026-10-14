@@ -427,7 +427,10 @@
   let isModalOpen = false;
 
   function lockBodyScroll() {
-    savedScrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop;
+    savedScrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
+    if ('scrollRestoration' in history) {
+      history.scrollRestoration = 'manual';
+    }
     document.body.style.position = 'fixed';
     document.body.style.top = `-${savedScrollY}px`;
     document.body.style.left = '0';
@@ -437,13 +440,26 @@
   }
 
   function unlockBodyScroll() {
+    const htmlEl = document.documentElement;
+    const prevScrollBehavior = htmlEl.style.scrollBehavior;
+    htmlEl.style.scrollBehavior = 'auto';
+
     document.body.style.position = '';
     document.body.style.top = '';
     document.body.style.left = '';
     document.body.style.right = '';
     document.body.style.width = '';
     document.body.style.overflow = '';
+
     window.scrollTo(0, savedScrollY);
+
+    requestAnimationFrame(() => {
+      window.scrollTo(0, savedScrollY);
+      htmlEl.style.scrollBehavior = prevScrollBehavior;
+      if ('scrollRestoration' in history) {
+        history.scrollRestoration = 'auto';
+      }
+    });
   }
 
   function deps() {
@@ -641,13 +657,13 @@
     inputEl.value = '';
     inputEl.blur();
 
+    isModalOpen = true;
+    history.pushState({ commentModalOpen: true }, '');
+
     lockBodyScroll();
     backdropEl.classList.add('open');
     attachListeners(postId);
     syncViewport();
-
-    isModalOpen = true;
-    history.pushState({ commentModalOpen: true }, '');
   };
 
   window.closeCommentModal = () => {
