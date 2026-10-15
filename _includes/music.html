@@ -356,6 +356,16 @@
     }
 
     const TRACK_COLOR = 'rgba(255,255,255,.18)';
+    const CLIENT_ID = Math.random().toString(36).slice(2, 10);
+    let serverOffset = 0;
+
+    onValue(ref(database, '.info/serverTimeOffset'), (snap) => {
+        serverOffset = snap.val() || 0;
+    });
+
+    function serverNow() {
+        return Date.now() + serverOffset;
+    }
 
     const urlParams = new URLSearchParams(window.location.search);
     const GROUP_NAME = (urlParams.get('group') || 'default').replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -377,6 +387,15 @@
         isBackgroundPaused: false,
         isRemoteUpdate: false,
         isSeeking: false,
+        isHost: false,
+
+        computeTime: function(data) {
+            let t = data.timestamp || 0;
+            if (data.status === 'playing' && data.lastUpdate) {
+                t += Math.floor((serverNow() - data.lastUpdate) / 1000);
+            }
+            return t < 0 ? 0 : t;
+        },
 
         init: function() {
             if (document.readyState === 'loading') {
@@ -401,7 +420,8 @@
                             get(this.getFirebaseRef()).then((snapshot) => {
                                 const data = snapshot.val();
                                 if (data) {
-                                    const { status, timestamp } = data;
+                                    const { status } = data;
+                                    const timestamp = this.computeTime(data);
 
                                     if (timestamp) {
                                         this.isRemoteUpdate = true;
@@ -446,7 +466,7 @@
         cleanupEmptyGroups: function() {
             if (!this.firebaseInitialized()) return;
 
-            const sixHoursAgo = Date.now() - (6 * 60 * 60 * 1000);
+            const sixHoursAgo = serverNow() - (6 * 60 * 60 * 1000);
             const dbRef = ref(database, 'music');
 
             get(dbRef).then((snapshot) => {
@@ -552,20 +572,17 @@
                 const data = snapshot.val();
                 if (!data || !this.ytReady) return;
 
-                const { currentSong, status, timestamp, lastUpdate, loop } = data;
+                const { currentSong, status, loop, by } = data;
                 if (!currentSong) return;
+
+                if (by && by !== CLIENT_ID) this.isHost = false;
 
                 this.isLooping = !!loop;
                 this.updateLoopIcon();
 
                 const vid = currentSong;
 
-                let actualTime = timestamp || 0;
-                if (lastUpdate) {
-                    const timeDiff = Math.floor((Date.now() - lastUpdate) / 1000);
-                    actualTime = timestamp + timeDiff;
-                    if (actualTime < 0) actualTime = 0;
-                }
+                const actualTime = this.computeTime(data);
 
                 const currentVid = (this.player && typeof this.player.getVideoData === 'function') ? this.player.getVideoData().video_id : '';
 
@@ -692,12 +709,7 @@
                     this.isLooping = !!loop;
                     this.updateLoopIcon();
 
-                    let effectiveTime = timestamp || 0;
-                    if (lastUpdate) {
-                        const timeDiff = Math.floor((Date.now() - lastUpdate) / 1000);
-                        effectiveTime = timestamp + timeDiff;
-                        if (effectiveTime < 0) effectiveTime = 0;
-                    }
+                    const effectiveTime = this.computeTime(data);
 
                     this.isRemoteUpdate = true;
                     this.processNewSong(currentSong, status, effectiveTime);
@@ -749,9 +761,10 @@
             if (this.hasUserLeft || this.isRemoteUpdate) return;
             if (!this.firebaseInitialized() || !this.currentSongUrl) return;
 
-            const now = Date.now();
+            const now = serverNow();
             if (!force && (now - this.lastAutoUpdate < 2000)) return;
             this.lastAutoUpdate = now;
+            this.isHost = true;
 
             const currentTime = (this.player && typeof this.player.getCurrentTime === 'function') ? Math.floor(this.player.getCurrentTime()) : 0;
 
@@ -760,6 +773,7 @@
                 status: status,
                 timestamp: currentTime,
                 lastUpdate: now,
+                by: CLIENT_ID,
                 loop: this.isLooping
             };
 
@@ -847,14 +861,16 @@
             const vid = video.videoId;
             if (!vid) return;
 
-            const now = Date.now();
+            const now = serverNow();
             this.lastAutoUpdate = now;
+            this.isHost = true;
             const stateRef = this.getFirebaseRef();
             set(stateRef, {
                 currentSong: vid,
                 status: 'playing',
                 timestamp: 0,
                 lastUpdate: now,
+                by: CLIENT_ID,
                 loop: this.isLooping
             }).catch((error) => {
                 console.error("Immediate song save error:", error);
@@ -962,8 +978,8 @@
             const progress = d > 0 ? (t / d) * 100 : 0;
             seekBar.style.background = `linear-gradient(to right, #ff5252 ${progress}%, ${TRACK_COLOR} ${progress}%)`;
 
-            if (this.isPlaying && this.firebaseInitialized() && this.currentSongUrl && !this.hasUserLeft && !this.isRemoteUpdate) {
-                const now = Date.now();
+            if (this.isPlaying && this.isHost && this.firebaseInitialized() && this.currentSongUrl && !this.hasUserLeft && !this.isRemoteUpdate) {
+                const now = serverNow();
                 if (!this.lastAutoUpdate || (now - this.lastAutoUpdate) > 5000) {
                     this.lastAutoUpdate = now;
 
