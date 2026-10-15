@@ -461,7 +461,7 @@
 <div id="voiceAudioElementsContainer" style="display: none;"></div>
 
 <script type="module">
-import { getDatabase, ref, set, get, onValue, remove, push, onDisconnect } from "firebase/database";
+import { getDatabase, ref, set, get, onChildAdded, onChildChanged, onChildRemoved, remove, push, onDisconnect } from "firebase/database";
 import { getApps } from "firebase/app";
 
 let voiceDb = null;
@@ -474,6 +474,7 @@ let savedScrollY = 0;
 let membersData = {};
 let mutedList = {};
 let pendingRender = false;
+let renderQueued = false;
 
 let myPeer = null;
 let myPeerId = null;
@@ -542,6 +543,15 @@ function unlockScroll() {
   document.body.style.width = '';
   document.body.style.overflow = '';
   window.scrollTo(0, savedScrollY);
+}
+
+function scheduleRender() {
+  if (renderQueued) return;
+  renderQueued = true;
+  requestAnimationFrame(() => {
+    renderQueued = false;
+    renderMembersList();
+  });
 }
 
 function initVoiceRoom() {
@@ -617,10 +627,15 @@ function bindStreams() {
   const membersRef = ref(voiceDb, `voice_rooms/${currentRoom}`);
   const mutedRef = ref(voiceDb, `groups/${currentRoom}/muted`);
 
-  onValue(mutedRef, (snap) => {
-    mutedList = snap.val() || {};
+  const handleMuteChange = (key, isMutedVal) => {
+    if (isMutedVal === true) {
+      mutedList[key] = true;
+    } else {
+      delete mutedList[key];
+    }
+
     const myKey = getSafeKey(currentNick);
-    if (isJoined && mutedList[myKey] === true && !isMuted) {
+    if (isJoined && key === myKey && mutedList[myKey] === true && !isMuted) {
       isMuted = true;
       if (localStream) {
         localStream.getAudioTracks().forEach(track => track.enabled = false);
@@ -629,35 +644,62 @@ function bindStreams() {
       updateMicBtnUI();
       if (window.AlertKit) AlertKit.info("Muted", "Admin muted your microphone.");
     }
-    renderMembersList();
-  });
+    scheduleRender();
+  };
 
-  onValue(membersRef, (snap) => {
-    const newMembers = snap.val() || {};
+  onChildAdded(mutedRef, (snap) => handleMuteChange(snap.key, snap.val()));
+  onChildChanged(mutedRef, (snap) => handleMuteChange(snap.key, snap.val()));
+  onChildRemoved(mutedRef, (snap) => handleMuteChange(snap.key, false));
+
+  onChildAdded(membersRef, (snap) => {
+    const key = snap.key;
+    const member = snap.val();
+    if (!member || typeof member !== 'object') return;
+
+    membersData[key] = member;
     const myKey = getSafeKey(currentNick);
 
-    const livePeerIds = new Set(Object.values(newMembers).map(m => m && m.peerId).filter(Boolean));
-    Object.keys(activeCalls).forEach(pid => {
-      if (!livePeerIds.has(pid)) {
-        try { activeCalls[pid].close(); } catch (e) {}
-        removeAudioElement(pid);
-      }
-    });
+    if (isJoined && myPeer && myPeerId && key !== myKey && member.peerId && !activeCalls[member.peerId]) {
+      callPeer(member.peerId);
+    }
+    scheduleRender();
+  });
 
-    if (isJoined && myPeer && myPeerId) {
-      Object.entries(newMembers).forEach(([key, member]) => {
-        if (key !== myKey && member && member.peerId && !activeCalls[member.peerId]) {
-          callPeer(member.peerId);
-        }
-      });
+  onChildChanged(membersRef, (snap) => {
+    const key = snap.key;
+    const member = snap.val();
+    if (!member || typeof member !== 'object') return;
+
+    const prevMember = membersData[key];
+    if (prevMember && prevMember.peerId && prevMember.peerId !== member.peerId) {
+      try { activeCalls[prevMember.peerId]?.close(); } catch (e) {}
+      removeAudioElement(prevMember.peerId);
     }
 
-    if (isJoined && myPeerId && !newMembers[myKey]) {
+    membersData[key] = member;
+    const myKey = getSafeKey(currentNick);
+
+    if (isJoined && myPeer && myPeerId && key !== myKey && member.peerId && !activeCalls[member.peerId]) {
+      callPeer(member.peerId);
+    }
+    scheduleRender();
+  });
+
+  onChildRemoved(membersRef, (snap) => {
+    const key = snap.key;
+    const removedMember = membersData[key] || snap.val();
+    delete membersData[key];
+
+    if (removedMember && removedMember.peerId) {
+      try { activeCalls[removedMember.peerId]?.close(); } catch (e) {}
+      removeAudioElement(removedMember.peerId);
+    }
+
+    const myKey = getSafeKey(currentNick);
+    if (isJoined && myPeerId && key === myKey) {
       leaveVoiceRoom(true);
     }
-
-    membersData = newMembers;
-    renderMembersList();
+    scheduleRender();
   });
 }
 
