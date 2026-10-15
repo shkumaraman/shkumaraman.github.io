@@ -894,6 +894,23 @@ function getNickname() {
   return localStorage.getItem("talkrush_nickname") || null;
 }
 
+function normalizeNick(str) {
+  if (!str || typeof str !== 'string') return '';
+  return str
+    .replace(/[\u00A0\u200B-\u200D\uFEFF]/g, ' ')
+    .replace(/^(?:tr\|)+/i, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function isSameNickname(nickA, nickB) {
+  const a = normalizeNick(nickA);
+  const b = normalizeNick(nickB);
+  if (!a || !b || a === 'guest' || b === 'guest') return false;
+  return a === b;
+}
+
 function safeKey(str) {
   if (!str) return 'guest';
   return encodeURIComponent(str).replace(/[.#$\[\]\/]/g, '_');
@@ -1190,9 +1207,9 @@ if (userPostsContainer) {
 
 function matchesUser(postNickname, userObj) {
   if (!postNickname || !userObj) return false;
-  return postNickname === userObj.fullId ||
-         postNickname === userObj.raw ||
-         postNickname === userObj.displayName;
+  return isSameNickname(postNickname, userObj.fullId) ||
+         isSameNickname(postNickname, userObj.displayName) ||
+         isSameNickname(postNickname, userObj.raw);
 }
 
 window.sharePost = function(postId, post) {
@@ -1218,7 +1235,7 @@ window.deleteUserPost = async function(postId, postNickname, postImageUrl) {
     AlertKit.error("Wait!", "Please set your nickname first!");
     return;
   }
-  if (postNickname !== currentNick) {
+  if (!isSameNickname(postNickname, currentNick)) {
     AlertKit.error("Hold on", "You can only delete your own posts!");
     return;
   }
@@ -1248,7 +1265,7 @@ window.deleteUserPost = async function(postId, postNickname, postImageUrl) {
 
 function renderPostCard(postId, post) {
   const currentNick = getNickname();
-  const isMyPost = currentNick && post.nickname === currentNick;
+  const isMyPost = isSameNickname(currentNick, post.nickname);
 
   const displayText = post.text ? (containsBannedWords(post.text)
     ? "This post was hidden due to inappropriate content"
@@ -1341,20 +1358,15 @@ async function loadUserPosts(userObj) {
 
 function parseUserIdentifiers(input) {
   if (!input) return null;
-  const raw = input.trim();
+  const raw = String(input)
+    .replace(/[\u00A0\u200B-\u200D\uFEFF]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   if (!raw) return null;
 
-  let clean = raw;
-  let fullId = raw;
-
-  if (raw.startsWith('TR|')) {
-    clean = raw.substring(3);
-    fullId = raw;
-  } else {
-    fullId = 'TR|' + raw;
-    clean = raw;
-  }
-
+  let clean = raw.replace(/^(\s*TR\|)+/i, '').trim();
+  if (!clean) clean = 'Guest';
+  const fullId = 'TR|' + clean;
   const initial = clean.charAt(0).toUpperCase() || '?';
 
   return {
@@ -1373,7 +1385,6 @@ async function checkFriendStatus(targetFullId, targetClean) {
     return;
   }
 
-  const myClean = currentNick.startsWith('TR|') ? currentNick.substring(3) : currentNick;
   const friendsTableRef = ref(db, 'friends');
 
   try {
@@ -1389,11 +1400,11 @@ async function checkFriendStatus(targetFullId, targetClean) {
       if (!snap.exists()) return false;
       const data = snap.val();
       for (const [chatId, friend] of Object.entries(data)) {
-        const other = (friend.nickname1 === currentNick || friend.nickname1 === myClean) 
+        const other = isSameNickname(friend.nickname1, currentNick)
           ? friend.nickname2 
           : friend.nickname1;
 
-        if (other === targetFullId || other === targetClean) {
+        if (isSameNickname(other, targetFullId)) {
           isFriend = true;
           existingChatId = chatId;
           return true;
@@ -1428,11 +1439,12 @@ async function renderProfile(userObj) {
   currentActiveUser = userObj;
   
   const currentNick = getNickname();
-  const isOwnProfile = (currentNick === userObj.fullId) || (currentNick === userObj.displayName);
+  const isOwnProfile = isSameNickname(currentNick, userObj.fullId);
   await checkFriendStatus(userObj.fullId, userObj.displayName);
 
   let buttonHtml = '';
   let statusHtml = '';
+  const safeFullId = escapeHtml(userObj.fullId).replace(/'/g, "\\'");
 
   if (isOwnProfile) {
     buttonHtml = '<button class="add-friend-btn" disabled><i class="fas fa-user"></i> This is You</button>';
@@ -1442,13 +1454,13 @@ async function renderProfile(userObj) {
       <button class="remove-btn" onclick="removeFriendConfirmation()">
         <i class="fas fa-user-minus"></i> Unfriend
       </button>
-      <button class="chat-btn" onclick="openTargetChat('${userObj.fullId}')">
+      <button class="chat-btn" onclick="openTargetChat('${safeFullId}')">
         <i class="fas fa-comment-dots"></i> Message
       </button>
     `;
   } else {
     buttonHtml = `
-      <button class="add-friend-btn" onclick="sendFriendRequest('${userObj.fullId}')">
+      <button class="add-friend-btn" onclick="sendFriendRequest('${safeFullId}')">
         <i class="fas fa-user-plus"></i> Add Friend
       </button>
     `;
