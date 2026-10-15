@@ -453,7 +453,7 @@ import { getApps } from "firebase/app";
 
 let voiceDb = null;
 let currentRoom = null;
-let currentNick = 'Guest';
+let currentNick = null;
 let isJoined = false;
 let isMuted = false;
 let isModalOpen = false;
@@ -470,6 +470,27 @@ let speechAudioContext = null;
 function getSafeKey(str) {
   if (!str) return 'guest';
   return str.replace(/[.#$\[\]\/]/g, '_');
+}
+
+function getGuestName() {
+  try {
+    let g = sessionStorage.getItem('voice_guest_name');
+    if (!g) {
+      g = 'Guest' + Math.floor(1000 + Math.random() * 9000);
+      sessionStorage.setItem('voice_guest_name', g);
+    }
+    return g;
+  } catch (e) {
+    if (!getGuestName._fallback) getGuestName._fallback = 'Guest' + Math.floor(1000 + Math.random() * 9000);
+    return getGuestName._fallback;
+  }
+}
+
+function resolveNickname() {
+  let nick = null;
+  try { nick = localStorage.getItem('talkrush_nickname'); } catch (e) {}
+  nick = (nick || '').trim();
+  return nick || getGuestName();
 }
 
 function lockScroll() {
@@ -499,15 +520,18 @@ function initVoiceRoom() {
   currentRoom = urlParams.get('group');
   if (!currentRoom) return;
 
-  currentNick = localStorage.getItem('talkrush_nickname') || 'Guest';
+  currentNick = resolveNickname();
   window.addEventListener('nicknameUpdated', (e) => {
-    currentNick = e.detail.nickname || 'Guest';
+    if (isJoined) return;
+    const n = e && e.detail && e.detail.nickname;
+    currentNick = (n && n.trim()) ? n.trim() : getGuestName();
   });
 
   triggerBtn.addEventListener('click', () => {
     isModalOpen = true;
     lockScroll();
     backdrop.classList.add('open');
+    renderMembersList();
   });
 
   const closeModal = () => {
@@ -523,7 +547,10 @@ function initVoiceRoom() {
   });
 
   joinBtn.addEventListener('click', async () => {
-    if (!voiceDb) return;
+    if (!voiceDb) {
+      if (window.AlertKit) AlertKit.warning("Please wait", "Connecting to server, try again in a moment.");
+      return;
+    }
     if (!isJoined) {
       await joinVoiceRoom();
     } else {
@@ -533,15 +560,17 @@ function initVoiceRoom() {
 
   micBtn.addEventListener('click', toggleLocalMic);
 
-  setTimeout(setupFirebaseConnection, 600);
+  setupFirebaseConnection();
 }
 
-function setupFirebaseConnection() {
+function setupFirebaseConnection(tries = 0) {
   const apps = getApps();
-  const app = apps.find(a => a.name === "TalkRushGroupApp") || apps[0];
+  const app = apps.find(a => a.name === "TalkRushGroupApp");
   if (app) {
     voiceDb = getDatabase(app);
     bindStreams();
+  } else if (tries < 40) {
+    setTimeout(() => setupFirebaseConnection(tries + 1), 300);
   }
 }
 
@@ -560,20 +589,35 @@ function bindStreams() {
         localStream.getAudioTracks().forEach(track => track.enabled = false);
       }
       set(ref(voiceDb, `voice_rooms/${currentRoom}/members/${myKey}/isMuted`), true);
+      set(ref(voiceDb, `voice_rooms/${currentRoom}/members/${myKey}/isSpeaking`), false);
       updateMicBtnUI();
       if (window.AlertKit) AlertKit.info("Muted", "Admin muted your microphone.");
     }
+    renderMembersList();
   });
 
   onValue(membersRef, (snap) => {
     const newMembers = snap.val() || {};
-    
-    if (isJoined && myPeer) {
+    const myKey = getSafeKey(currentNick);
+
+    const livePeerIds = new Set(Object.values(newMembers).map(m => m && m.peerId).filter(Boolean));
+    Object.keys(activeCalls).forEach(pid => {
+      if (!livePeerIds.has(pid)) {
+        try { activeCalls[pid].close(); } catch (e) {}
+        removeAudioElement(pid);
+      }
+    });
+
+    if (isJoined && myPeer && myPeerId) {
       Object.entries(newMembers).forEach(([key, member]) => {
-        if (key !== getSafeKey(currentNick) && member.peerId && !activeCalls[member.peerId]) {
+        if (key !== myKey && member && member.peerId && !activeCalls[member.peerId]) {
           callPeer(member.peerId);
         }
       });
+    }
+
+    if (isJoined && myPeerId && !newMembers[myKey]) {
+      leaveVoiceRoom(true);
     }
 
     membersData = newMembers;
@@ -582,17 +626,21 @@ function bindStreams() {
 }
 
 async function joinVoiceRoom() {
-  if (currentNick === 'Guest') {
-    if (window.AlertKit) AlertKit.warning("Nickname Required", "Please set your nickname before joining audio room.");
+  if (!window.Peer) {
+    if (window.AlertKit) AlertKit.error("Voice Unavailable", "Voice library not loaded. Please refresh.");
     return;
   }
 
+  currentNick = resolveNickname();
   const myKey = getSafeKey(currentNick);
-  const banSnap = await get(ref(voiceDb, `groups/${currentRoom}/banned/${myKey}`));
-  if (banSnap.exists() && banSnap.val() === true) {
-    if (window.AlertKit) AlertKit.error("Banned", "You are banned from this room.");
-    return;
-  }
+
+  try {
+    const banSnap = await get(ref(voiceDb, `groups/${currentRoom}/banned/${myKey}`));
+    if (banSnap.exists() && banSnap.val() === true) {
+      if (window.AlertKit) AlertKit.error("Banned", "You are banned from this room.");
+      return;
+    }
+  } catch (e) {}
 
   try {
     localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
@@ -603,8 +651,13 @@ async function joinVoiceRoom() {
 
   isJoined = true;
   isMuted = false;
-  setupAudioLevelDetection(localStream, myKey);
 
+  if (mutedList[myKey] === true) {
+    isMuted = true;
+    localStream.getAudioTracks().forEach(t => t.enabled = false);
+  }
+
+  setupAudioLevelDetection(localStream, myKey);
   initPeerJS(myKey);
 
   document.getElementById('voiceMicToggleBtn').style.display = 'flex';
@@ -623,13 +676,13 @@ function initPeerJS(myKey) {
       nickname: currentNick,
       peerId: id,
       joinedAt: Date.now(),
-      isMuted: false,
+      isMuted: isMuted,
       isSpeaking: false
     });
     onDisconnect(memberRef).remove();
 
     Object.entries(membersData).forEach(([k, member]) => {
-      if (k !== myKey && member.peerId) {
+      if (k !== myKey && member && member.peerId) {
         callPeer(member.peerId);
       }
     });
@@ -659,6 +712,7 @@ function callPeer(remotePeerId) {
     playRemoteStream(remotePeerId, remoteStream);
   });
   call.on('close', () => removeAudioElement(remotePeerId));
+  call.on('error', () => removeAudioElement(remotePeerId));
   activeCalls[remotePeerId] = call;
 }
 
@@ -672,6 +726,8 @@ function playRemoteStream(peerId, stream) {
     document.getElementById('voiceAudioElementsContainer').appendChild(audioEl);
   }
   audioEl.srcObject = stream;
+  const p = audioEl.play();
+  if (p && p.catch) p.catch(() => {});
 }
 
 function removeAudioElement(peerId) {
@@ -682,10 +738,11 @@ function removeAudioElement(peerId) {
   }
 }
 
-async function leaveVoiceRoom() {
+async function leaveVoiceRoom(alreadyRemoved = false) {
   const myKey = getSafeKey(currentNick);
   isJoined = false;
   isMuted = false;
+  myPeerId = null;
 
   if (localStream) {
     localStream.getTracks().forEach(track => track.stop());
@@ -697,7 +754,7 @@ async function leaveVoiceRoom() {
     speechAudioContext = null;
   }
 
-  Object.values(activeCalls).forEach(call => call.close());
+  Object.values(activeCalls).forEach(call => { try { call.close(); } catch (e) {} });
   for (let k in activeCalls) delete activeCalls[k];
 
   if (myPeer) {
@@ -706,7 +763,9 @@ async function leaveVoiceRoom() {
   }
 
   document.getElementById('voiceAudioElementsContainer').innerHTML = '';
-  await remove(ref(voiceDb, `voice_rooms/${currentRoom}/members/${myKey}`));
+  if (!alreadyRemoved) {
+    try { await remove(ref(voiceDb, `voice_rooms/${currentRoom}/members/${myKey}`)); } catch (e) {}
+  }
 
   document.getElementById('voiceMicToggleBtn').style.display = 'none';
   document.getElementById('voiceJoinBtnText').textContent = 'Join Audio Room';
@@ -728,6 +787,7 @@ function toggleLocalMic() {
   });
 
   set(ref(voiceDb, `voice_rooms/${currentRoom}/members/${myKey}/isMuted`), isMuted);
+  if (isMuted) set(ref(voiceDb, `voice_rooms/${currentRoom}/members/${myKey}/isSpeaking`), false);
   updateMicBtnUI();
 }
 
@@ -793,6 +853,7 @@ function renderMembersList() {
   const emptyState = document.getElementById('voiceEmptyState');
   const countTag = document.getElementById('voiceCountTag');
   const triggerBtn = document.getElementById('voiceRoomTriggerBtn');
+  if (!grid) return;
 
   grid.innerHTML = '';
   const entries = Object.entries(membersData);
@@ -808,7 +869,7 @@ function renderMembersList() {
   emptyState.style.display = 'none';
 
   const groupAdminNick = window.groupAdminNickname || null;
-  const isAdmin = currentNick === groupAdminNick;
+  const isAdmin = !!groupAdminNick && currentNick === groupAdminNick;
 
   entries.forEach(([key, member]) => {
     const card = document.createElement('div');
@@ -825,15 +886,15 @@ function renderMembersList() {
           <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
         </button>
         <div class="voice-card-menu">
-          <button type="button" class="voice-card-menu-item" data-action="voice-mute" data-user="${member.nickname}">
+          <button type="button" class="voice-card-menu-item" data-action="voice-mute" data-user="${escapeAttr(member.nickname)}">
             <svg viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><line x1="2" y1="2" x2="22" y2="22"/></svg>
             <span>${mutedList[key] ? 'Unmute Mic' : 'Mute Mic'}</span>
           </button>
-          <button type="button" class="voice-card-menu-item danger" data-action="voice-kick" data-user="${member.nickname}">
+          <button type="button" class="voice-card-menu-item danger" data-action="voice-kick" data-user="${escapeAttr(member.nickname)}">
             <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="18" y1="8" x2="23" y2="13"/><line x1="23" y1="8" x2="18" y2="13"/></svg>
             <span>Kick User</span>
           </button>
-          <button type="button" class="voice-card-menu-item danger" data-action="voice-ban" data-user="${member.nickname}">
+          <button type="button" class="voice-card-menu-item danger" data-action="voice-ban" data-user="${escapeAttr(member.nickname)}">
             <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
             <span>Ban User</span>
           </button>
@@ -844,7 +905,7 @@ function renderMembersList() {
     card.innerHTML = `
       ${menuHtml}
       <div class="voice-avatar-wrap">
-        <div class="voice-avatar-circle">${initial}</div>
+        <div class="voice-avatar-circle">${escapeHtml(initial)}</div>
         <div class="voice-status-icon ${isMemberMuted ? 'muted' : (member.isSpeaking ? 'speaking' : '')}">
           ${isMemberMuted ? `
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="2" y1="2" x2="22" y2="22"/><path d="M18.89 13.23A7.12 7.12 0 0 0 19 12v-2"/></svg>
@@ -853,7 +914,7 @@ function renderMembersList() {
           `}
         </div>
       </div>
-      <div class="voice-user-name" title="${member.nickname}">${member.nickname}</div>
+      <div class="voice-user-name" title="${escapeAttr(member.nickname)}">${escapeHtml(member.nickname)}</div>
       ${isMemberAdmin ? '<div class="voice-user-badge">Owner</div>' : ''}
     `;
 
@@ -861,12 +922,17 @@ function renderMembersList() {
   });
 }
 
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function escapeAttr(s) { return escapeHtml(s); }
+
 function closeAllCardMenus() {
   document.querySelectorAll('.voice-card-menu.open').forEach(menu => menu.classList.remove('open'));
 }
 
 document.addEventListener('click', async (e) => {
-  const btn = e.target.closest('[data-action]');
+  const btn = e.target.closest('.voice-member-card [data-action]');
 
   if (!btn) {
     if (!e.target.closest('.voice-card-menu')) closeAllCardMenus();
@@ -906,7 +972,7 @@ document.addEventListener('click', async (e) => {
     }
   } 
   else if (action === 'voice-ban') {
-    const isConfirm = window.AlertKit ? await AlertKit.confirm("Permanently Ban?", `Ban ${targetUser} from this room?`, "Yes, Ban", "Cancel");
+    const isConfirm = window.AlertKit ? await AlertKit.confirm("Permanently Ban?", `Ban ${targetUser} from this room?`, "Yes, Ban", "Cancel") : confirm(`Ban ${targetUser}?`);
     if (isConfirm) {
       await set(ref(voiceDb, `groups/${currentRoom}/banned/${targetKey}`), true);
       await remove(ref(voiceDb, `voice_rooms/${currentRoom}/members/${targetKey}`));
@@ -924,5 +990,9 @@ window.addEventListener('beforeunload', () => {
   }
 });
 
-window.addEventListener('load', initVoiceRoom);
+if (document.readyState === 'complete' || document.readyState === 'interactive') {
+  initVoiceRoom();
+} else {
+  document.addEventListener('DOMContentLoaded', initVoiceRoom);
+}
 </script>
