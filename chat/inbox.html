@@ -1,7 +1,7 @@
 ---
 layout: default
 title: "Your Messages - Chat With Strangers"
-description: "View your chat history and messages with friends."
+description: "View your chat history and messages with stranger friends and stay connected."
 ---
 
 <style>
@@ -1635,6 +1635,22 @@ description: "View your chat history and messages with friends."
     lastSeenMap[chatId] = Date.now();
     localStorage.setItem('inbox_last_seen', JSON.stringify(lastSeenMap));
 
+    try {
+      let notifList = JSON.parse(localStorage.getItem("talkrush_notifications_history") || "[]");
+      let notifChanged = false;
+      notifList = notifList.map(n => {
+        if (n.type === 'dm' && !n.read && (n.chatId === chatId || n.senderName === friendName)) {
+          notifChanged = true;
+          return { ...n, read: true };
+        }
+        return n;
+      });
+      if (notifChanged) {
+        localStorage.setItem("talkrush_notifications_history", JSON.stringify(notifList));
+        window.dispatchEvent(new CustomEvent("localNotificationsUpdated"));
+      }
+    } catch (e) {}
+
     if (currentChatId) remove(ref(db, `typing/${currentChatId}/${currentUserId}`));
 
     if (messagesListener) { messagesListener(); messagesListener = null; }
@@ -1649,6 +1665,7 @@ description: "View your chat history and messages with friends."
     clearEdit();
 
     currentChatId = chatId;
+    window.currentInboxChatId = chatId;
     currentFriendName = friendName;
 
     document.getElementById('chatAvatar').textContent = getAvatarLetter(friendName);
@@ -2085,6 +2102,7 @@ description: "View your chat history and messages with friends."
     document.getElementById('chatLog').innerHTML = '';
     renderedMessageKeys.clear();
     currentChatId = null;
+    window.currentInboxChatId = null;
     currentFriendName = "";
     document.getElementById('friendsContainer').style.display = 'flex';
     document.getElementById('chatContainer').style.display = 'none';
