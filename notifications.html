@@ -421,9 +421,52 @@ body.light-mode {
       .replace(/'/g, "&#039;");
   }
 
+  function deduplicateNotifications(rawList) {
+    if (!Array.isArray(rawList)) return [];
+    const seenDmFriends = new Set();
+    const result = [];
+
+    for (const item of rawList) {
+      if (!item) continue;
+      if (item.type === 'dm') {
+        let friendKey = item.chatId;
+        if (!friendKey && item.senderName) {
+          friendKey = 'name_' + item.senderName;
+        }
+        if (!friendKey && item.redirectUrl) {
+          try {
+            const urlObj = new URL(item.redirectUrl, window.location.origin);
+            friendKey = urlObj.searchParams.get('chatId') || ('name_' + urlObj.searchParams.get('friend'));
+          } catch (e) {
+            friendKey = item.redirectUrl;
+          }
+        }
+        if (friendKey) {
+          if (seenDmFriends.has(friendKey)) {
+            continue;
+          }
+          seenDmFriends.add(friendKey);
+        }
+      }
+      result.push(item);
+    }
+    return result;
+  }
+
+  let isDeduplicating = false;
+
   function renderNotifications() {
     const container = document.getElementById("notificationsContainer");
-    const list = JSON.parse(localStorage.getItem("talkrush_notifications_history") || "[]");
+    const rawList = JSON.parse(localStorage.getItem("talkrush_notifications_history") || "[]");
+    const list = deduplicateNotifications(rawList);
+
+    if (!isDeduplicating && list.length !== rawList.length) {
+      isDeduplicating = true;
+      localStorage.setItem("talkrush_notifications_history", JSON.stringify(list));
+      window.dispatchEvent(new CustomEvent("localNotificationsUpdated"));
+      isDeduplicating = false;
+      return;
+    }
 
     if (!list || list.length === 0) {
       container.innerHTML = `
