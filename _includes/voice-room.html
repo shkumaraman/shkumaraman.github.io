@@ -16,7 +16,6 @@
   --v-btn-bg: rgba(255,255,255,0.09);
   --v-btn-bg-hover: rgba(255,255,255,0.15);
   --v-menu-bg: #26262c;
-  --v-ring-gap: #1a1a1e;
 }
 .light-mode .voice-modal-backdrop {
   --v-bg: #ffffff;
@@ -28,7 +27,6 @@
   --v-btn-bg: rgba(0,0,0,0.07);
   --v-btn-bg-hover: rgba(0,0,0,0.12);
   --v-menu-bg: #ffffff;
-  --v-ring-gap: #ffffff;
 }
 
 #voiceRoomTriggerBtn {
@@ -224,15 +222,11 @@
   text-transform: uppercase;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
   box-sizing: border-box;
-  transition: box-shadow 0.2s, border-color 0.2s;
 }
 .light-mode .voice-avatar {
   background: #ffffff;
   border-color: var(--accent-border, rgba(255, 107, 74, 0.25));
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-}
-.voice-member-row.is-speaking .voice-avatar {
-  box-shadow: 0 0 0 2px var(--v-ring-gap), 0 0 0 4px var(--voice-accent);
 }
 
 .voice-member-info { flex: 1; min-width: 0; }
@@ -270,7 +264,6 @@
   margin-top: 2px;
   color: var(--v-text-dim);
 }
-.voice-member-sub.speaking { color: var(--voice-accent); font-weight: 600; }
 .voice-member-sub.muted { color: #ef4444; }
 
 .voice-member-status {
@@ -282,7 +275,6 @@
   flex-shrink: 0;
   color: var(--v-text-dim);
 }
-.voice-member-status.speaking { color: var(--voice-accent); }
 .voice-member-status.muted { color: #ef4444; }
 
 .voice-modal-backdrop svg.vi {
@@ -487,7 +479,6 @@ let myPeer = null;
 let myPeerId = null;
 let localStream = null;
 const activeCalls = {};
-let speechAudioContext = null;
 
 const ICON_MIC = `
   <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
@@ -623,8 +614,8 @@ function setupFirebaseConnection(tries = 0) {
 function bindStreams() {
   if (!voiceDb || !currentRoom) return;
 
-  const membersRef = ref(voiceDb, `voice_rooms/${currentRoom}/members`);
-  const mutedRef = ref(voiceDb, `voice_rooms/${currentRoom}/muted`);
+  const membersRef = ref(voiceDb, `voice_rooms/${currentRoom}`);
+  const mutedRef = ref(voiceDb, `groups/${currentRoom}/muted`);
 
   onValue(mutedRef, (snap) => {
     mutedList = snap.val() || {};
@@ -634,8 +625,7 @@ function bindStreams() {
       if (localStream) {
         localStream.getAudioTracks().forEach(track => track.enabled = false);
       }
-      set(ref(voiceDb, `voice_rooms/${currentRoom}/members/${myKey}/isMuted`), true);
-      set(ref(voiceDb, `voice_rooms/${currentRoom}/members/${myKey}/isSpeaking`), false);
+      set(ref(voiceDb, `voice_rooms/${currentRoom}/${myKey}/isMuted`), true);
       updateMicBtnUI();
       if (window.AlertKit) AlertKit.info("Muted", "Admin muted your microphone.");
     }
@@ -703,7 +693,6 @@ async function joinVoiceRoom() {
     localStream.getAudioTracks().forEach(t => t.enabled = false);
   }
 
-  setupAudioLevelDetection(localStream, myKey);
   initPeerJS(myKey);
 
   document.getElementById('voiceMicToggleBtn').style.display = 'flex';
@@ -717,13 +706,12 @@ function initPeerJS(myKey) {
 
   myPeer.on('open', async (id) => {
     myPeerId = id;
-    const memberRef = ref(voiceDb, `voice_rooms/${currentRoom}/members/${myKey}`);
+    const memberRef = ref(voiceDb, `voice_rooms/${currentRoom}/${myKey}`);
     await set(memberRef, {
       nickname: currentNick,
       peerId: id,
       joinedAt: Date.now(),
-      isMuted: isMuted,
-      isSpeaking: false
+      isMuted: isMuted
     });
     onDisconnect(memberRef).remove();
 
@@ -795,11 +783,6 @@ async function leaveVoiceRoom(alreadyRemoved = false) {
     localStream = null;
   }
 
-  if (speechAudioContext) {
-    speechAudioContext.close().catch(() => {});
-    speechAudioContext = null;
-  }
-
   Object.values(activeCalls).forEach(call => { try { call.close(); } catch (e) {} });
   for (let k in activeCalls) delete activeCalls[k];
 
@@ -810,7 +793,7 @@ async function leaveVoiceRoom(alreadyRemoved = false) {
 
   document.getElementById('voiceAudioElementsContainer').innerHTML = '';
   if (!alreadyRemoved) {
-    try { await remove(ref(voiceDb, `voice_rooms/${currentRoom}/members/${myKey}`)); } catch (e) {}
+    try { await remove(ref(voiceDb, `voice_rooms/${currentRoom}/${myKey}`)); } catch (e) {}
   }
 
   document.getElementById('voiceMicToggleBtn').style.display = 'none';
@@ -832,8 +815,7 @@ function toggleLocalMic() {
     track.enabled = !isMuted;
   });
 
-  set(ref(voiceDb, `voice_rooms/${currentRoom}/members/${myKey}/isMuted`), isMuted);
-  if (isMuted) set(ref(voiceDb, `voice_rooms/${currentRoom}/members/${myKey}/isSpeaking`), false);
+  set(ref(voiceDb, `voice_rooms/${currentRoom}/${myKey}/isMuted`), isMuted);
   updateMicBtnUI();
 }
 
@@ -846,38 +828,6 @@ function updateMicBtnUI() {
   micSvg.innerHTML = isMuted ? ICON_MIC_OFF : ICON_MIC;
 }
 
-function setupAudioLevelDetection(stream, myKey) {
-  try {
-    speechAudioContext = new (window.AudioContext || window.webkitAudioContext)();
-    const analyser = speechAudioContext.createAnalyser();
-    const microphone = speechAudioContext.createMediaStreamSource(stream);
-    const javascriptNode = speechAudioContext.createScriptProcessor(2048, 1, 1);
-
-    analyser.smoothingTimeConstant = 0.8;
-    analyser.fftSize = 1024;
-
-    microphone.connect(analyser);
-    analyser.connect(javascriptNode);
-    javascriptNode.connect(speechAudioContext.destination);
-
-    let lastSpeaking = false;
-    javascriptNode.onaudioprocess = () => {
-      if (!isJoined || isMuted) return;
-      const array = new Uint8Array(analyser.frequencyBinCount);
-      analyser.getByteFrequencyData(array);
-      let values = 0;
-      for (let i = 0; i < array.length; i++) values += array[i];
-      const average = values / array.length;
-      const isSpeaking = average > 25;
-
-      if (isSpeaking !== lastSpeaking) {
-        lastSpeaking = isSpeaking;
-        set(ref(voiceDb, `voice_rooms/${currentRoom}/members/${myKey}/isSpeaking`), isSpeaking);
-      }
-    };
-  } catch (e) {}
-}
-
 function renderMembersList() {
   const list = document.getElementById('voiceMembersList');
   const emptyState = document.getElementById('voiceEmptyState');
@@ -886,7 +836,8 @@ function renderMembersList() {
   if (!list) return;
 
   const entries = Object.entries(membersData)
-    .sort((a, b) => ((a[1] && a[1].joinedAt) || 0) - ((b[1] && b[1].joinedAt) || 0));
+    .filter(([, m]) => m && typeof m === 'object' && m.nickname)
+    .sort((a, b) => (a[1].joinedAt || 0) - (b[1].joinedAt || 0));
   const count = entries.length;
 
   countTag.textContent = `${count} online`;
@@ -910,22 +861,20 @@ function renderMembersList() {
   const isAdmin = !!groupAdminNick && currentNick === groupAdminNick;
 
   entries.forEach(([key, member]) => {
-    if (!member) return;
     const name = member.nickname || 'Guest';
     const cleanName = name.startsWith('TR|') ? name.substring(3) : name;
     const initial = (cleanName.charAt(0) || '?').toUpperCase();
     const isMe = name === currentNick;
     const isAdminMuted = mutedList[key] === true;
     const isMemberMuted = !!member.isMuted || isAdminMuted;
-    const isSpeaking = !!member.isSpeaking && !isMemberMuted;
     const isMemberAdmin = !!groupAdminNick && name === groupAdminNick;
 
-    const state = isMemberMuted ? 'muted' : (isSpeaking ? 'speaking' : 'idle');
-    const subText = isMemberMuted ? (isAdminMuted ? 'Muted by admin' : 'Muted') : (isSpeaking ? 'Speaking…' : 'Listening');
+    const state = isMemberMuted ? 'muted' : 'idle';
+    const subText = isMemberMuted ? (isAdminMuted ? 'Muted by admin' : 'Muted') : 'Listening';
     const statusIcon = isMemberMuted ? ICON_MIC_OFF : ICON_MIC;
 
     const row = document.createElement('div');
-    row.className = `voice-member-row ${isSpeaking ? 'is-speaking' : ''}`;
+    row.className = 'voice-member-row';
 
     let menuHtml = '';
     if (isAdmin && !isMe) {
@@ -1015,7 +964,7 @@ document.addEventListener('click', async (e) => {
 
   if (action === 'voice-mute') {
     const isCurrentlyMuted = mutedList[targetKey] === true;
-    await set(ref(voiceDb, `voice_rooms/${currentRoom}/muted/${targetKey}`), !isCurrentlyMuted);
+    await set(ref(voiceDb, `groups/${currentRoom}/muted/${targetKey}`), !isCurrentlyMuted);
     if (window.AlertKit) AlertKit.toast(`${targetUser} ${!isCurrentlyMuted ? 'muted' : 'unmuted'}`, "info");
   } 
   else if (action === 'voice-kick') {
@@ -1024,7 +973,7 @@ document.addEventListener('click', async (e) => {
       const cmdRef = push(ref(voiceDb, `groups/${currentRoom}/commands`));
       await set(cmdRef, { type: 'kick', target: targetUser, timestamp: Date.now() });
       setTimeout(() => remove(cmdRef), 5000);
-      await remove(ref(voiceDb, `voice_rooms/${currentRoom}/members/${targetKey}`));
+      await remove(ref(voiceDb, `voice_rooms/${currentRoom}/${targetKey}`));
       if (window.AlertKit) AlertKit.toast(`Kicked ${targetUser}`, "warning");
     }
   } 
@@ -1032,7 +981,7 @@ document.addEventListener('click', async (e) => {
     const isConfirm = window.AlertKit ? await AlertKit.confirm("Permanently Ban?", `Ban ${targetUser} from this room?`, "Yes, Ban", "Cancel") : confirm(`Ban ${targetUser}?`);
     if (isConfirm) {
       await set(ref(voiceDb, `groups/${currentRoom}/banned/${targetKey}`), true);
-      await remove(ref(voiceDb, `voice_rooms/${currentRoom}/members/${targetKey}`));
+      await remove(ref(voiceDb, `voice_rooms/${currentRoom}/${targetKey}`));
       if (window.AlertKit) AlertKit.toast(`Permanently banned ${targetUser}`, "error");
     }
   }
@@ -1041,7 +990,7 @@ document.addEventListener('click', async (e) => {
 window.addEventListener('beforeunload', () => {
   if (isJoined && voiceDb && currentRoom) {
     const myKey = getSafeKey(currentNick);
-    remove(ref(voiceDb, `voice_rooms/${currentRoom}/members/${myKey}`));
+    remove(ref(voiceDb, `voice_rooms/${currentRoom}/${myKey}`));
     if (localStream) localStream.getTracks().forEach(t => t.stop());
     if (myPeer) myPeer.destroy();
   }
