@@ -700,17 +700,48 @@ function removeTag(index) {
   renderTags();
 }
 
+function validateNicknameInput(raw) {
+  if (!raw || typeof raw !== 'string') {
+    return { valid: false, error: "Enter nickname" };
+  }
+  let clean = stripTRPrefix(raw)
+    .replace(/[\u00A0\u200B-\u200D\uFEFF]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!clean || clean.length < 2) {
+    return { valid: false, error: "Min 2 characters" };
+  }
+  if (clean.length > 20) {
+    return { valid: false, error: "Max 20 characters" };
+  }
+
+  const lower = clean.toLowerCase();
+  const reserved = ['guest', 'admin', 'administrator', 'talkrush', 'system', 'moderator', 'official'];
+  if (reserved.includes(lower)) {
+    return { valid: false, error: "Name reserved" };
+  }
+
+  if (/[<>"'`\\\/\[\]{}\$#\.]/.test(clean)) {
+    return { valid: false, error: "Special chars not allowed" };
+  }
+
+  return { valid: true, clean };
+}
+
 function savePreferences() {
   const input = document.getElementById("nicknameInput");
-  let newNickname = stripTRPrefix(input.value).trim();
-  input.value = newNickname;
+  const validation = validateNicknameInput(input.value);
   
-  if (!newNickname) {
+  if (!validation.valid) {
     input.classList.add('highlight-required');
     setTimeout(() => input.classList.remove('highlight-required'), 1500);
-    showButtonFeedback("Enter nickname", "error");
+    showButtonFeedback(validation.error, "error");
     return;
   }
+
+  const newNickname = validation.clean;
+  input.value = newNickname;
 
   if (!prefsUserGender) {
     const genderContainer = document.getElementById('userGenderOptions');
@@ -725,7 +756,7 @@ function savePreferences() {
     return;
   }
   
-  prefsMyNickname = "TR|" + newNickname.substring(0, 20);
+  prefsMyNickname = "TR|" + newNickname;
   localStorage.setItem("talkrush_nickname", prefsMyNickname);
   localStorage.setItem("talkrush_user_gender", prefsUserGender);
   localStorage.setItem("talkrush_gender_interest", prefsGenderInterest);
