@@ -213,6 +213,34 @@ main {
   padding: 2px 8px; border-radius: 20px;
   font-size: 10px; font-weight: 700;
   border: 0.5px solid var(--accent-border);
+  flex-shrink: 0;
+}
+
+.reply-notify-badge {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #ff4757;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 20px;
+  flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(255, 71, 87, 0.35);
+}
+
+.reply-notify-badge svg {
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.svg-spin {
+  animation: spin 0.8s linear infinite;
 }
 
 .room-meta {
@@ -763,6 +791,9 @@ let bannedWords = [];
 let bannedWordsLoaded = false;
 let myNickname = 'Guest';
 let cloudinaryConfig = { cloud_name: '', upload_preset: '' };
+let currentRoomsData = null;
+let currentRepliesData = null;
+let replyListenerUnsubscribe = null;
 
 async function loadCloudinaryConfig() {
   try {
@@ -958,6 +989,25 @@ document.addEventListener('DOMContentLoaded', async function() {
         </span>
       `;
     }
+
+    let unreadCount = 0;
+    if (currentRepliesData && currentRepliesData[roomName]) {
+      unreadCount = currentRepliesData[roomName].unreadCount || 0;
+    }
+
+    let replyBadge = '';
+    if (unreadCount > 0) {
+      const displayCount = unreadCount > 9 ? '9+' : unreadCount;
+      replyBadge = `
+        <span class="reply-notify-badge" title="${unreadCount} unread ${unreadCount === 1 ? 'reply' : 'replies'}">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+            <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+          </svg>
+          <span>${displayCount}</span>
+        </span>
+      `;
+    }
     
     let adminControls = '';
     if (showDelete && isAdmin) {
@@ -988,6 +1038,7 @@ document.addEventListener('DOMContentLoaded', async function() {
           <h2 class="room-title" title="${roomName}">
             <span class="room-title-text">${displayRoomName}</span>
             ${adminBadge}
+            ${replyBadge}
           </h2>
           <div class="room-meta">
             ${roomData.password ? '<span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -1px; margin-right: 3px;"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg> Password protected</span>' : ''}
@@ -1008,81 +1059,112 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     return roomCard;
   }
-  
-  function loadRooms() {
-    const groupsRef = ref(db, 'groups');
-    onValue(groupsRef, (snapshot) => {
-      const rooms = snapshot.val();
-      
-      const allRooms = [];
-      const myRooms = [];
-      
-      if (rooms) {
-        Object.keys(rooms).forEach((roomName) => {
-          const room = rooms[roomName];
-          if (room && typeof room === 'object') {
-            let lastActivity = room.lastActivity || room.createdAt || 0;
 
-            allRooms.push({
+  function renderRooms() {
+    const rooms = currentRoomsData;
+    const allRooms = [];
+    const myRooms = [];
+    
+    if (rooms) {
+      Object.keys(rooms).forEach((roomName) => {
+        const room = rooms[roomName];
+        if (room && typeof room === 'object') {
+          let lastActivity = room.lastActivity || room.createdAt || 0;
+
+          allRooms.push({
+            name: roomName,
+            data: room,
+            lastActivity: lastActivity
+          });
+          
+          if (room.admin === myNickname) {
+            myRooms.push({
               name: roomName,
               data: room,
               lastActivity: lastActivity
             });
-            
-            if (room.admin === myNickname) {
-              myRooms.push({
-                name: roomName,
-                data: room,
-                lastActivity: lastActivity
-              });
-            }
           }
-        });
-      }
-      
-      const sortedRooms = [...allRooms].sort((a, b) => b.lastActivity - a.lastActivity);
-      const sortedMyRooms = [...myRooms].sort((a, b) => b.lastActivity - a.lastActivity);
-      
-      roomsGrid.innerHTML = '';
-      if (sortedRooms.length === 0) {
-        roomsGrid.innerHTML = `
-          <div class="empty-state">
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-            <h3>No Rooms Yet</h3>
-            <p>Create the first chat room to get started!</p>
-          </div>
-        `;
-      } else {
-        let roomCount = 0;
-        sortedRooms.forEach((room) => {
-          const roomCard = createRoomCard(room.name, room.data);
-          roomsGrid.appendChild(roomCard);
+        }
+      });
+    }
+    
+    const sortedRooms = [...allRooms].sort((a, b) => b.lastActivity - a.lastActivity);
+    const sortedMyRooms = [...myRooms].sort((a, b) => b.lastActivity - a.lastActivity);
+    
+    roomsGrid.innerHTML = '';
+    if (sortedRooms.length === 0) {
+      roomsGrid.innerHTML = `
+        <div class="empty-state">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <h3>No Rooms Yet</h3>
+          <p>Create the first chat room to get started!</p>
+        </div>
+      `;
+    } else {
+      let roomCount = 0;
+      sortedRooms.forEach((room) => {
+        const roomCard = createRoomCard(room.name, room.data);
+        roomsGrid.appendChild(roomCard);
 
-          roomCount++;
-          if (roomCount % 10 === 0) {
-            const adWrap = document.createElement("div");
-            adWrap.style.cssText = "grid-column: 1 / -1; width: 320px; height: 100px; margin: 16px auto; display: block; overflow: hidden;";
-            adWrap.innerHTML = `<ins class="adsbygoogle" style="display:inline-block;width:320px;height:100px" data-ad-client="ca-pub-7059052735946479" data-ad-slot="8592327962"></ins>`;
-            roomsGrid.appendChild(adWrap);
-            try {
-              (adsbygoogle = window.adsbygoogle || []).push({});
-            } catch (e) {}
-          }
-        });
-      }
-      
-      myRoomsGrid.innerHTML = '';
-      if (sortedMyRooms.length > 0) {
-        myRoomsSection.style.display = 'block';
-        sortedMyRooms.forEach((room) => {
-          const roomCard = createRoomCard(room.name, room.data, true);
-          myRoomsGrid.appendChild(roomCard);
-        });
-      } else {
-        myRoomsSection.style.display = 'none';
-      }
-    });
+        roomCount++;
+        if (roomCount % 10 === 0) {
+          const adWrap = document.createElement("div");
+          adWrap.style.cssText = "grid-column: 1 / -1; width: 320px; height: 100px; margin: 16px auto; display: block; overflow: hidden;";
+          adWrap.innerHTML = `<ins class="adsbygoogle" style="display:inline-block;width:320px;height:100px" data-ad-client="ca-pub-7059052735946479" data-ad-slot="8592327962"></ins>`;
+          roomsGrid.appendChild(adWrap);
+          try {
+            (adsbygoogle = window.adsbygoogle || []).push({});
+          } catch (e) {}
+        }
+      });
+    }
+    
+    myRoomsGrid.innerHTML = '';
+    if (sortedMyRooms.length > 0) {
+      myRoomsSection.style.display = 'block';
+      sortedMyRooms.forEach((room) => {
+        const roomCard = createRoomCard(room.name, room.data, true);
+        myRoomsGrid.appendChild(roomCard);
+      });
+    } else {
+      myRoomsSection.style.display = 'none';
+    }
   }
+
+  function initReplyListener() {
+    if (replyListenerUnsubscribe) {
+      replyListenerUnsubscribe();
+      replyListenerUnsubscribe = null;
+    }
+
+    if (myNickname && myNickname !== 'Guest') {
+      const safeKey = myNickname.replace(/[.#$\[\]]/g, '_');
+      const replyRef = ref(db, `group_reply/${safeKey}`);
+      replyListenerUnsubscribe = onValue(replyRef, (snapshot) => {
+        currentRepliesData = snapshot.val();
+        renderRooms();
+      });
+    } else {
+      currentRepliesData = null;
+      renderRooms();
+    }
+  }
+  
+  function loadRooms() {
+    const groupsRef = ref(db, 'groups');
+    onValue(groupsRef, (snapshot) => {
+      currentRoomsData = snapshot.val();
+      renderRooms();
+    });
+    initReplyListener();
+  }
+
+  window.addEventListener('nicknameUpdated', (e) => {
+    if (e.detail && e.detail.nickname) {
+      myNickname = e.detail.nickname;
+      initReplyListener();
+    }
+  });
   
   async function createRoom() {
     const roomName = roomNameInput.value.trim();
@@ -1135,7 +1217,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
 
     createRoomBtn.disabled = true;
-    createRoomBtn.innerHTML = '<svg class="fa-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Uploading & Creating...';
+    createRoomBtn.innerHTML = '<svg class="svg-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Uploading & Creating...';
 
     try {
       const roomRef = ref(db, 'groups/' + roomName);
@@ -1240,7 +1322,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     const btn = document.getElementById('saveEditRoomBtn');
     btn.disabled = true;
-    btn.innerHTML = '<svg class="fa-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Saving...';
+    btn.innerHTML = '<svg class="svg-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Saving...';
     
     try {
       const oldRoomRef = ref(db, 'groups/' + oldRoomName);
