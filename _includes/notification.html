@@ -327,8 +327,23 @@
   function saveToLocalHistory(item) {
     try {
       let list = JSON.parse(localStorage.getItem("talkrush_notifications_history") || "[]");
+
+      if (item.type === 'dm') {
+        const matchChatId = item.chatId;
+        const matchSender = item.senderName;
+        list = list.filter(n => {
+          if (n.type !== 'dm') return true;
+          if (matchChatId && n.chatId && n.chatId === matchChatId) return false;
+          if (matchSender && n.senderName && n.senderName === matchSender) return false;
+          if (matchChatId && n.redirectUrl && n.redirectUrl.includes('chatId=' + encodeURIComponent(matchChatId))) return false;
+          if (matchSender && n.redirectUrl && n.redirectUrl.includes('friend=' + encodeURIComponent(matchSender))) return false;
+          return true;
+        });
+      }
+
       list.unshift({
         id: "nt_" + Date.now() + "_" + Math.random().toString(36).substr(2, 4),
+        chatId: item.chatId || null,
         senderName: item.senderName,
         message: item.message,
         redirectUrl: item.redirectUrl,
@@ -340,6 +355,26 @@
       localStorage.setItem("talkrush_notifications_history", JSON.stringify(list));
       window.dispatchEvent(new CustomEvent("localNotificationsUpdated"));
     } catch (e) {}
+  }
+
+  function isChatCurrentlyActive(chatId) {
+    if (!chatId) return false;
+    if (document.hidden) return false;
+
+    const chatContainer = document.getElementById('chatContainer');
+    const isVisible = chatContainer ? (chatContainer.style.display !== 'none') : false;
+
+    if (window.currentInboxChatId && window.currentInboxChatId === chatId) {
+      if (isVisible) return true;
+    }
+
+    if (window.location.pathname.includes('/chat/inbox')) {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('chatId') === chatId && isVisible) {
+        return true;
+      }
+    }
+    return false;
   }
 
   function getFriendNickname(friend) {
@@ -380,6 +415,17 @@
     const key = chatId + "_" + friend.lastTimestamp;
     if (lastNotifiedMessages[chatId] === key) return;
     if (notificationOff) return;
+
+    if (isChatCurrentlyActive(chatId)) {
+      lastNotifiedMessages[chatId] = key;
+      localStorage.setItem("lastNotifiedMessages", JSON.stringify(lastNotifiedMessages));
+      try {
+        let lastSeenMap = JSON.parse(localStorage.getItem('inbox_last_seen') || '{}');
+        lastSeenMap[chatId] = Date.now();
+        localStorage.setItem('inbox_last_seen', JSON.stringify(lastSeenMap));
+      } catch (e) {}
+      return;
+    }
 
     const redirectUrl = `/chat/inbox?chatId=${encodeURIComponent(chatId)}&friend=${encodeURIComponent(friendNick)}`;
 
