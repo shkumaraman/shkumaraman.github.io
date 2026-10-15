@@ -866,6 +866,23 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       return localStorage.getItem("talkrush_nickname") || null;
     }
 
+    function normalizeNick(str) {
+      if (!str || typeof str !== 'string') return '';
+      return str
+        .replace(/[\u00A0\u200B-\u200D\uFEFF]/g, ' ')
+        .replace(/^(?:tr\|)+/i, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toLowerCase();
+    }
+
+    function isSameNickname(nickA, nickB) {
+      const a = normalizeNick(nickA);
+      const b = normalizeNick(nickB);
+      if (!a || !b || a === 'guest' || b === 'guest') return false;
+      return a === b;
+    }
+
     function safeKey(str) {
       if (!str) return 'guest';
       return encodeURIComponent(str).replace(/[.#$\[\]\/]/g, '_');
@@ -905,7 +922,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
     async function sendNotification(targetNickname, notifData) {
       const currentNick = getNickname();
-      if (!targetNickname || targetNickname === 'Guest' || targetNickname === currentNick) return;
+      if (!targetNickname || targetNickname === 'Guest' || isSameNickname(targetNickname, currentNick)) return;
       try {
         const targetKey = safeKey(targetNickname);
         const notifRef = push(ref(db, `notifications/${targetKey}`));
@@ -980,7 +997,11 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     window.addEventListener('nicknameUpdated', (e) => {
       currentNickname = e.detail.nickname;
       initFriendsListener();
-      updateAllFriendButtons();
+      if (currentSearchTerm) {
+        searchPosts(currentSearchTerm);
+      } else {
+        displayPosts();
+      }
       Object.keys(likesData).forEach(postId => updateCardLikeUI(postId));
     });
 
@@ -1261,7 +1282,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
         const div = document.createElement("div");
         const currentNick = getNickname();
-        const isMyPost = currentNick && post.nickname === currentNick;
+        const isMyPost = isSameNickname(currentNick, post.nickname);
 
         div.className = "post";
         div.setAttribute("data-post-id", postId);
@@ -1353,7 +1374,12 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     }
 
     function searchPosts(searchTerm) {
-      currentSearchTerm = searchTerm.toLowerCase().trim();
+      currentSearchTerm = (searchTerm || '')
+        .replace(/[\u00A0\u200B-\u200D\uFEFF]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toLowerCase();
+
       const clearSearchBtn = document.getElementById('clearSearch');
       
       if (clearSearchBtn) {
@@ -1366,11 +1392,29 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
         displayPosts();
         return;
       }
+
+      const cleanQuery = normalizeNick(currentSearchTerm);
+      const queryTokens = cleanQuery.split(' ').filter(Boolean);
+
       displayedPosts = allPosts.filter(([postId, post]) => {
-        const nickname = post.nickname || '';
-        const text = post.text || '';
-        return nickname.toLowerCase().includes(currentSearchTerm) ||
-               text.toLowerCase().includes(currentSearchTerm);
+        const rawNick = (post.nickname || '')
+          .replace(/[\u00A0\u200B-\u200D\uFEFF]/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .toLowerCase();
+        const normNick = normalizeNick(post.nickname || '');
+        const normText = (post.text || '')
+          .replace(/[\u00A0\u200B-\u200D\uFEFF]/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .toLowerCase();
+
+        const combined = `${rawNick} ${normNick} ${normText}`;
+
+        if (combined.includes(currentSearchTerm) || (cleanQuery && combined.includes(cleanQuery))) {
+          return true;
+        }
+        return queryTokens.length > 0 && queryTokens.every(token => combined.includes(token));
       });
       displayPosts();
     }
@@ -1410,7 +1454,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
     function getFriendButtonHtml(targetNickname) {
       const nick = getNickname();
-      if (!targetNickname || targetNickname === 'Guest' || targetNickname === nick) {
+      if (!targetNickname || targetNickname === 'Guest' || isSameNickname(targetNickname, nick)) {
         return '';
       }
 
@@ -1563,7 +1607,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
         AlertKit.error("Wait!", "Please set your nickname first!"); 
         return; 
       }
-      if (postNickname !== currentNick) { 
+      if (!isSameNickname(postNickname, currentNick)) { 
         AlertKit.error("Hold on", "You can only delete your own posts!"); 
         return; 
       }
