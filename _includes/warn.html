@@ -87,6 +87,26 @@
   .warning-btn:active {
     transform: scale(0.97);
   }
+  .warning-actions {
+    display: flex;
+    gap: 10px;
+    width: 100%;
+  }
+  .warning-actions .warning-btn {
+    flex: 1;
+    width: auto;
+    text-align: center;
+    text-decoration: none;
+    box-sizing: border-box;
+  }
+  .warning-btn.secondary {
+    background: transparent;
+    color: #ff6b4a;
+    border: 1px solid rgba(255, 107, 74, 0.5);
+  }
+  .warning-btn.secondary:hover {
+    background: rgba(255, 107, 74, 0.12);
+  }
 </style>
 
 <div id="talkrushWarningModal" class="warning-overlay">
@@ -98,9 +118,12 @@
         <line x1="12" y1="17" x2="12.01" y2="17"></line>
       </svg>
     </div>
-    <h3 class="warning-title">Promotion Warning</h3>
-    <p class="warning-desc">Promoting any other platforms or websites is strictly prohibited.</p>
-    <button class="warning-btn" onclick="document.getElementById('talkrushWarningModal').classList.remove('active')">Got it, Close</button>
+    <h3 class="warning-title" id="talkrushWarningTitle">Message Blocked</h3>
+    <p class="warning-desc" id="talkrushWarningDesc">Your message violates our chat rules. Promotion of other platforms and spamming are not allowed.</p>
+    <div class="warning-actions">
+      <a href="/rules.html" class="warning-btn secondary" target="_blank" rel="noopener">Rules</a>
+      <button class="warning-btn" id="talkrushWarningClose" type="button">Got it, Close</button>
+    </div>
   </div>
 </div>
 
@@ -109,26 +132,11 @@
   const FLOOD_WINDOW_MS = 4000;
   const FLOOD_MAX_COUNT = 5;
   let messageTimestamps = [];
+  let lastTargetInput = null;
 
-  const blockedUrls = [
-    'bit.ly',
-    'tinyurl',
-    'cutt.ly',
-    'linktr.ee',
-    'rebrand.ly',
-    'shorturl',
-    'tiny.cc',
-    'is.gd',
-    't.co',
-    'v.gd',
-    'bio.link',
-    'beacons.ai',
-    'taplink',
-    'heylink',
-    'onrender',
-    'vercel',
-    'github.io'
-  ];
+  const blockedUrlRegex = /(^|[^a-z0-9.-])(bit\.ly|tinyurl|cutt\.ly|linktr\.ee|rebrand\.ly|shorturl|tiny\.cc|is\.gd|t\.co|v\.gd|bio\.link|beacons\.ai|taplink|heylink|onrender|vercel|github\.io|t\.me)(?![a-z0-9-])/i;
+
+  const y99Regex = /(^|[^a-z0-9])y99([^a-z0-9]|$)/i;
 
   const blockedApps = [
     'chatzyo',
@@ -147,43 +155,53 @@
     'talktostrangers'
   ];
 
+  const modal = document.getElementById('talkrushWarningModal');
+  const modalTitle = document.getElementById('talkrushWarningTitle');
+  const modalDesc = document.getElementById('talkrushWarningDesc');
+  const modalClose = document.getElementById('talkrushWarningClose');
+
+  function showWarning(title, desc) {
+    modalTitle.textContent = title;
+    modalDesc.textContent = desc;
+    modal.classList.add('active');
+  }
+
+  function closeWarning() {
+    modal.classList.remove('active');
+    if (lastTargetInput) {
+      lastTargetInput.focus();
+    }
+  }
+
   function detectProhibitedPlatforms(text) {
     if (!text) return false;
-    let lower = text.toLowerCase();
+    const lower = text.toLowerCase();
 
-    if (blockedUrls.some(url => lower.includes(url))) {
-      return true;
-    }
+    if (blockedUrlRegex.test(lower)) return true;
+    if (y99Regex.test(lower)) return true;
 
-    if (/(^|\s|\/|https?:\/\/)(t\.me)(\/|\s|$)/i.test(lower)) {
-      return true;
-    }
-
-    const alphanum = lower.replace(/[^a-z0-9]/g, '');
-    if (alphanum.includes('y99')) {
-      return true;
-    }
-
-    let normalized = lower
+    const normalized = lower
       .replace(/@/g, 'a')
+      .replace(/4/g, 'a')
       .replace(/0/g, 'o')
       .replace(/1/g, 'i')
       .replace(/\$/g, 's')
+      .replace(/5/g, 's')
       .replace(/3/g, 'e')
+      .replace(/7/g, 't')
       .replace(/[^a-z]/g, '');
 
-    if (blockedApps.some(app => normalized.includes(app))) {
-      return true;
-    }
-
-    return false;
+    return blockedApps.some(app => normalized.includes(app));
   }
 
-  function checkSpamFlood() {
+  function isFlooding() {
     const now = Date.now();
     messageTimestamps = messageTimestamps.filter(ts => now - ts < FLOOD_WINDOW_MS);
-    messageTimestamps.push(now);
     return messageTimestamps.length >= FLOOD_MAX_COUNT;
+  }
+
+  function recordMessage() {
+    messageTimestamps.push(Date.now());
   }
 
   function resolveTargetInput(sourceEl) {
@@ -193,6 +211,11 @@
     return document.getElementById('postText') || document.getElementById('msgInput');
   }
 
+  function blockEvent(e) {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  }
+
   function interceptSubmission(e, sourceEl) {
     const targetInput = resolveTargetInput(sourceEl);
     if (!targetInput) return true;
@@ -200,23 +223,28 @@
     const rawContent = targetInput.value.trim();
     if (!rawContent) return true;
 
-    if (detectProhibitedPlatforms(rawContent) || checkSpamFlood()) {
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      targetInput.value = ''; 
-      document.getElementById('talkrushWarningModal').classList.add('active');
+    lastTargetInput = targetInput;
+
+    if (detectProhibitedPlatforms(rawContent) || isFlooding()) {
+      blockEvent(e);
+      showWarning('Message Blocked', 'Your message violates our chat rules. Promotion of other platforms and spamming are not allowed.');
       return false;
     }
 
+    recordMessage();
     return true;
   }
 
   function initFilterEngine() {
     window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && modal.classList.contains('active')) {
+        closeWarning();
+        return;
+      }
       if (e.target && e.target.id === 'msgInput' && e.key === 'Enter' && !e.shiftKey) {
         interceptSubmission(e, e.target);
       }
-    }, true); 
+    }, true);
 
     window.addEventListener('click', (e) => {
       const sendBtn = e.target.closest('#sendBtn');
@@ -230,6 +258,12 @@
         interceptSubmission(e, submitBtn);
       }
     }, true);
+
+    modalClose.addEventListener('click', closeWarning);
+
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) closeWarning();
+    });
   }
 
   if (document.readyState === 'loading') {
