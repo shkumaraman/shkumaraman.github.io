@@ -1211,10 +1211,14 @@ description: "View your chat history and messages with stranger friends and stay
   let initialFriendsLoaded = false;
   let renderDebounceTimer = null;
   let isPruning = false;
+  let serverOffset = 0;
+  let isTyping = false;
+  let typingTimeout = null;
   const renderedMessageKeys = new Set();
 
   let replyingTo = null;
   let editingMsgKey = null;
+  let editingMsgTs = null;
   let contextTargetMsg = null;
 
   let app;
@@ -1230,18 +1234,28 @@ description: "View your chat history and messages with stranger friends and stay
 
   const db = getDatabase(app);
 
+  onValue(ref(db, ".info/serverTimeOffset"), (snap) => {
+    serverOffset = snap.val() || 0;
+  });
+
+  const now = () => Date.now() + serverOffset;
+
   const replyBar = document.getElementById("replyBar");
   const replyBarText = document.getElementById("replyBarText");
   const editBar = document.getElementById("editBar");
   const msgInput = document.getElementById('msgInput');
   const contextMenu = document.getElementById('contextMenu');
 
+  function markSeen(chatId) {
+    if (!chatId) return;
+    let lastSeenMap = {};
+    try { lastSeenMap = JSON.parse(localStorage.getItem('inbox_last_seen') || '{}'); } catch (e) {}
+    lastSeenMap[chatId] = now();
+    localStorage.setItem('inbox_last_seen', JSON.stringify(lastSeenMap));
+  }
+
   setInterval(() => {
-    if (currentChatId) {
-      let lastSeenMap = JSON.parse(localStorage.getItem('inbox_last_seen') || '{}');
-      lastSeenMap[currentChatId] = Date.now();
-      localStorage.setItem('inbox_last_seen', JSON.stringify(lastSeenMap));
-    }
+    if (currentChatId) markSeen(currentChatId);
   }, 3000);
 
   function getAvatarLetter(name) {
@@ -1290,9 +1304,9 @@ description: "View your chat history and messages with stranger friends and stay
   function formatTime(timestamp) {
     if (!timestamp) return "";
     const date = new Date(timestamp);
-    const now = new Date();
-    const diff = now - date;
-    if (diff < 86400000 && date.getDate() === now.getDate()) {
+    const current = new Date(now());
+    const diff = current - date;
+    if (diff < 86400000 && date.getDate() === current.getDate()) {
       return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     } else if (diff < 172800000) {
       return 'Yesterday';
@@ -1306,6 +1320,15 @@ description: "View your chat history and messages with stranger friends and stay
   function formatMessageTime(timestamp) {
     if (!timestamp) return "";
     return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function previewText(msg) {
+    if (!msg) return "Say Hi!";
+    if (msg.type === 'image') return '📷 Image';
+    if (msg.type === 'gif') return '🎯 GIF';
+    if (msg.type === 'audio') return '🎤 Voice note';
+    const text = msg.text || '';
+    return text.length > 30 ? text.substring(0, 30) + '...' : text;
   }
 
   function scrollToBottom() {
@@ -1323,18 +1346,40 @@ description: "View your chat history and messages with stranger friends and stay
     if (indicator) indicator.style.display = "none";
   }
 
-  function updateFriendListOrder(chatId, lastMessage, timestamp) {
-    if (!myFriendsData[chatId]) return;
-    const friendItem = document.querySelector(`.friend-item[data-chat-id="${chatId}"]`);
-    if (!friendItem) return;
-    const lastMsgElement = friendItem.querySelector('.last-message');
-    const timeElement = friendItem.querySelector('.message-time');
-    if (lastMsgElement) lastMsgElement.textContent = lastMessage;
-    if (timeElement) timeElement.textContent = formatTime(timestamp);
-    const friendList = document.getElementById('friendList');
-    if (friendList && friendItem !== friendList.firstChild) {
-      friendList.insertBefore(friendItem, friendList.firstChild);
+  function stopTyping() {
+    clearTimeout(typingTimeout);
+    typingTimeout = null;
+    isTyping = false;
+    if (currentChatId && currentUserId) {
+      remove(ref(db, `typing/${currentChatId}/${currentUserId}`)).catch(() => {});
     }
+  }
+
+  function touchFriend(chatId, text, timestamp) {
+    if (!chatId || !myFriendsMap[chatId]) return Promise.resolve();
+    return update(ref(db, `friends/${chatId}`), {
+      lastMessageText: text,
+      lastTimestamp: timestamp,
+      lastSender: myNickname
+    }).catch((err) => console.error("friend update error:", err));
+  }
+
+  async function refreshLastPreview(chatId) {
+    if (!chatId || !myFriendsMap[chatId]) return;
+    try {
+      const snap = await get(query(ref(db, `messages/${chatId}`), orderByChild("timestamp"), limitToLast(1)));
+      let last = null;
+      snap.forEach((child) => { last = child.val(); });
+      if (!myFriendsMap[chatId]) return;
+      await update(ref(db, `friends/${chatId}`), { lastMessageText: previewText(last) });
+    } catch (e) {}
+  }
+
+  function safeDeleteMedia(url) {
+    if (!url || typeof window.deleteMediaFromServer !== 'function') return;
+    try {
+      Promise.resolve(window.deleteMediaFromServer(url)).catch(() => {});
+    } catch (e) {}
   }
 
   window.forwardMessage = function(content) {
@@ -1384,6 +1429,7 @@ description: "View your chat history and messages with stranger friends and stay
 
   function clearEdit() {
     editingMsgKey = null;
+    editingMsgTs = null;
     editBar.classList.remove('active');
     msgInput.value = '';
   }
@@ -1427,6 +1473,7 @@ description: "View your chat history and messages with stranger friends and stay
     if (contextTargetMsg && contextTargetMsg.type === 'text') {
       clearReply();
       editingMsgKey = contextTargetMsg.key;
+      editingMsgTs = contextTargetMsg.timestamp;
       msgInput.value = contextTargetMsg.text;
       editBar.classList.add('active');
       msgInput.focus();
@@ -1450,10 +1497,15 @@ description: "View your chat history and messages with stranger friends and stay
       );
 
       if (isConfirmed) {
-        remove(ref(db, `messages/${chatId}/${msgKey}`)).catch((err) => console.error("delete msg error:", err));
-        if ((targetMsg.type === 'image' || targetMsg.type === 'audio') && targetMsg.url && window.deleteMediaFromServer) {
-          window.deleteMediaFromServer(targetMsg.url);
+        try {
+          await remove(ref(db, `messages/${chatId}/${msgKey}`));
+        } catch (err) {
+          console.error("delete msg error:", err);
+          return;
         }
+        if (targetMsg.type === 'image' || targetMsg.type === 'audio') safeDeleteMedia(targetMsg.url);
+        const friend = myFriendsMap[chatId];
+        if (friend && friend.lastTimestamp === targetMsg.timestamp) refreshLastPreview(chatId);
       }
     } else {
       hideContextMenu();
@@ -1520,6 +1572,15 @@ description: "View your chat history and messages with stranger friends and stay
     });
   }
 
+  async function pushChatMessage(message) {
+    const chatId = currentChatId;
+    if (!chatId) return;
+    const newMsgRef = push(ref(db, `messages/${chatId}`));
+    await set(newMsgRef, message);
+    maintainMessageLimit(chatId);
+    touchFriend(chatId, previewText(message), message.timestamp);
+  }
+
   document.addEventListener("DOMContentLoaded", async () => {
     myNickname = localStorage.getItem("talkrush_nickname") || "Guest";
     currentUserId = 'user_' + Math.random().toString(36).substr(2, 9);
@@ -1535,19 +1596,12 @@ description: "View your chat history and messages with stranger friends and stay
             const res = await fetch(base64Data);
             const audioBlob = await res.blob();
             const audioUrl = await window.uploadMediaToServer(audioBlob, "voice.webm");
-            const message = { nickname: myNickname, type: "audio", timestamp: Date.now(), url: audioUrl, duration: duration };
+            const message = { nickname: myNickname, type: "audio", timestamp: now(), url: audioUrl, duration: duration };
             if (replyingTo) {
               message.replyTo = getReplyPayload();
               clearReply();
             }
-            const newMsgRef = push(ref(db, `messages/${currentChatId}`));
-            await set(newMsgRef, message);
-            maintainMessageLimit();
-            update(ref(db, `friends/${currentChatId}`), {
-              lastMessageText: '🎤 Voice note',
-              lastTimestamp: message.timestamp,
-              lastSender: myNickname
-            });
+            await pushChatMessage(message);
           } catch (err) {
             AlertKit.error("Failed", "Failed to upload voice note.");
           } finally {
@@ -1578,24 +1632,20 @@ description: "View your chat history and messages with stranger friends and stay
       }
     });
 
-    let typingTimeout;
-    let isTyping = false;
     msgInput.addEventListener('input', () => {
       if (!currentChatId) return;
       if (!isTyping) {
         isTyping = true;
-        set(ref(db, `typing/${currentChatId}/${currentUserId}`), true);
+        set(ref(db, `typing/${currentChatId}/${currentUserId}`), true).catch(() => {});
       }
       if (typingTimeout) clearTimeout(typingTimeout);
       typingTimeout = setTimeout(() => {
-        isTyping = false;
-        remove(ref(db, `typing/${currentChatId}/${currentUserId}`));
+        stopTyping();
       }, 2000);
     });
 
     msgInput.addEventListener('blur', () => {
-      if (!currentChatId) return;
-      remove(ref(db, `typing/${currentChatId}/${currentUserId}`));
+      stopTyping();
     });
 
     document.getElementById('imgBtn').onclick = () => {
@@ -1627,9 +1677,8 @@ description: "View your chat history and messages with stranger friends and stay
     });
 
     window.addEventListener('popstate', () => {
-      if (currentChatId) {
-        closeChat();
-        history.pushState(null, '', location.pathname);
+      if (currentChatId && !(history.state && history.state.chat)) {
+        closeChat(true);
       }
     });
   }
@@ -1647,9 +1696,7 @@ description: "View your chat history and messages with stranger friends and stay
       }
     }
 
-    let lastSeenMap = JSON.parse(localStorage.getItem('inbox_last_seen') || '{}');
-    lastSeenMap[chatId] = Date.now();
-    localStorage.setItem('inbox_last_seen', JSON.stringify(lastSeenMap));
+    markSeen(chatId);
 
     try {
       let notifList = JSON.parse(localStorage.getItem("talkrush_notifications_history") || "[]");
@@ -1667,7 +1714,7 @@ description: "View your chat history and messages with stranger friends and stay
       }
     } catch (e) {}
 
-    if (currentChatId) remove(ref(db, `typing/${currentChatId}/${currentUserId}`));
+    stopTyping();
 
     if (messagesListener) { messagesListener(); messagesListener = null; }
     if (messageChangedListener) { messageChangedListener(); messageChangedListener = null; }
@@ -1692,7 +1739,12 @@ description: "View your chat history and messages with stranger friends and stay
     document.getElementById('chatContainer').style.display = 'flex';
 
     const newUrl = `${location.pathname}?chatId=${encodeURIComponent(chatId)}&friend=${encodeURIComponent(friendName)}`;
-    history.pushState({ chat: chatId }, '', newUrl);
+    const alreadyInUrl = new URLSearchParams(location.search).get('chatId') === chatId;
+    if (alreadyInUrl) {
+      history.replaceState({ chat: chatId, direct: true }, '', newUrl);
+    } else {
+      history.pushState({ chat: chatId }, '', newUrl);
+    }
 
     listenForMessages();
     listenForTyping();
@@ -1722,10 +1774,11 @@ description: "View your chat history and messages with stranger friends and stay
     loading.style.display = "none";
 
     const friendsArray = [];
-    let lastSeenMap = JSON.parse(localStorage.getItem('inbox_last_seen') || '{}');
+    let lastSeenMap = {};
+    try { lastSeenMap = JSON.parse(localStorage.getItem('inbox_last_seen') || '{}'); } catch (e) {}
 
     if (currentChatId) {
-      lastSeenMap[currentChatId] = Date.now();
+      lastSeenMap[currentChatId] = now();
       localStorage.setItem('inbox_last_seen', JSON.stringify(lastSeenMap));
     }
 
@@ -1736,10 +1789,10 @@ description: "View your chat history and messages with stranger friends and stay
 
       let chatLastSeen = lastSeenMap[chatId] || 0;
       let lastMessage = friend.lastMessageText || "Say Hi!";
-      let lastTimestamp = friend.lastTimestamp || Date.now();
+      let lastTimestamp = friend.lastTimestamp || 0;
       let unreadCount = 0;
 
-      if (friend.lastSender !== myNickname && lastTimestamp > chatLastSeen && chatId !== currentChatId) {
+      if (friend.lastSender && friend.lastSender !== myNickname && lastTimestamp > chatLastSeen && chatId !== currentChatId) {
         unreadCount = 1;
       }
 
@@ -1764,6 +1817,7 @@ description: "View your chat history and messages with stranger friends and stay
       if (initialFriendsLoaded) {
         empty.style.display = "flex";
         list.style.display = "none";
+        list.innerHTML = "";
       }
       return;
     }
@@ -1780,7 +1834,7 @@ description: "View your chat history and messages with stranger friends and stay
         : '';
 
       div.innerHTML = `
-        <div class="friend-avatar">${friend.avatarLetter}</div>
+        <div class="friend-avatar">${escapeHtml(friend.avatarLetter)}</div>
         <div class="friend-info">
           <p class="friend-name">${escapeHtml(friend.displayName)}</p>
           <p class="last-message">${escapeHtml(friend.displayMsg)}</p>
@@ -1866,10 +1920,13 @@ description: "View your chat history and messages with stranger friends and stay
   function listenForMessages() {
     if (!currentChatId) return;
 
-    const messagesRef = ref(db, `messages/${currentChatId}`);
+    const listenedChatId = currentChatId;
+    const messagesRef = ref(db, `messages/${listenedChatId}`);
     const messagesQuery = query(messagesRef, orderByChild("timestamp"), limitToLast(MESSAGE_LIMIT));
 
     messagesListener = onChildAdded(messagesQuery, (snapshot) => {
+      if (currentChatId !== listenedChatId) return;
+
       const key = snapshot.key;
       if (renderedMessageKeys.has(key)) return;
       renderedMessageKeys.add(key);
@@ -1877,29 +1934,19 @@ description: "View your chat history and messages with stranger friends and stay
       const msg = snapshot.val();
       msg.key = key;
 
-      if (!currentChatId || snapshot.ref.parent.key !== currentChatId) return;
-
       appendMessageToChat(msg, msg.nickname === myNickname);
       scrollToBottom();
-
-      let displayMsg = '';
-      if (msg.type === 'image') displayMsg = '📷 Image';
-      else if (msg.type === 'gif') displayMsg = '🎯 GIF';
-      else if (msg.type === 'audio') displayMsg = '🎤 Voice note';
-      else if (msg.type === 'text') {
-        displayMsg = msg.text.length > 30 ? msg.text.substring(0, 30) + '...' : msg.text;
-      }
-
-      updateFriendListOrder(currentChatId, displayMsg, msg.timestamp);
     }, (err) => console.error("inbox messages error:", err));
 
     messageChangedListener = onChildChanged(messagesRef, (snapshot) => {
+      if (currentChatId !== listenedChatId) return;
       const msg = snapshot.val();
       msg.key = snapshot.key;
       updateMessageInDOM(msg);
     }, (err) => console.error("inbox message change error:", err));
 
     messageRemovedListener = onChildRemoved(messagesRef, (snapshot) => {
+      if (currentChatId !== listenedChatId) return;
       renderedMessageKeys.delete(snapshot.key);
       removeMessageFromDOM(snapshot.key);
     }, (err) => console.error("inbox message remove error:", err));
@@ -1966,13 +2013,13 @@ description: "View your chat history and messages with stranger friends and stay
     }, (err) => console.error("inbox typing error:", err));
   }
 
-  async function maintainMessageLimit() {
-    if (!currentChatId || isPruning) return;
+  async function maintainMessageLimit(chatId = currentChatId) {
+    if (!chatId || isPruning) return;
     isPruning = true;
 
     try {
       const pruneQuery = query(
-        ref(db, `messages/${currentChatId}`),
+        ref(db, `messages/${chatId}`),
         orderByChild("timestamp"),
         limitToLast(MESSAGE_LIMIT + 10)
       );
@@ -1990,10 +2037,8 @@ description: "View your chat history and messages with stranger friends and stay
         const toDelete = messages.slice(0, messages.length - MESSAGE_LIMIT);
         const updates = {};
         for (const msg of toDelete) {
-          updates[`/messages/${currentChatId}/${msg.key}`] = null;
-          if (msg.val && (msg.val.type === 'image' || msg.val.type === 'audio') && msg.val.url && typeof window.deleteMediaFromServer === 'function') {
-            window.deleteMediaFromServer(msg.val.url).catch(() => {});
-          }
+          updates[`/messages/${chatId}/${msg.key}`] = null;
+          if (msg.val && (msg.val.type === 'image' || msg.val.type === 'audio')) safeDeleteMedia(msg.val.url);
         }
         await update(ref(db), updates);
       }
@@ -2008,29 +2053,30 @@ description: "View your chat history and messages with stranger friends and stay
     const content = input.value.trim();
     if (!content || !currentChatId) return;
 
+    const chatId = currentChatId;
+
     if (editingMsgKey) {
-      update(ref(db, `messages/${currentChatId}/${editingMsgKey}`), { text: content, edited: true });
+      const key = editingMsgKey;
+      const ts = editingMsgTs;
+      update(ref(db, `messages/${chatId}/${key}`), { text: content, edited: true }).then(() => {
+        const friend = myFriendsMap[chatId];
+        if (friend && friend.lastTimestamp === ts) {
+          update(ref(db, `friends/${chatId}`), { lastMessageText: content.substring(0, 30) + (content.length > 30 ? '...' : '') }).catch(() => {});
+        }
+      }).catch((err) => console.error("edit error:", err));
       clearEdit();
     } else {
-      const message = { nickname: myNickname, text: content, timestamp: Date.now(), type: "text" };
+      const message = { nickname: myNickname, text: content, timestamp: now(), type: "text" };
 
       if (replyingTo) {
         message.replyTo = getReplyPayload();
         clearReply();
       }
 
-      const newMsgRef = push(ref(db, `messages/${currentChatId}`));
-      set(newMsgRef, message).then(() => {
-        maintainMessageLimit();
-        update(ref(db, `friends/${currentChatId}`), {
-          lastMessageText: content.substring(0, 30) + (content.length > 30 ? '...' : ''),
-          lastTimestamp: message.timestamp,
-          lastSender: myNickname
-        });
-      });
+      pushChatMessage(message).catch((err) => console.error("send error:", err));
     }
 
-    remove(ref(db, `typing/${currentChatId}/${currentUserId}`));
+    stopTyping();
     input.value = '';
   }
 
@@ -2048,27 +2094,19 @@ description: "View your chat history and messages with stranger friends and stay
 
     try {
       const imageUrl = await window.uploadMediaToServer(file, file.name);
-      loadingBubble.remove();
 
-      const message = { nickname: myNickname, url: imageUrl, timestamp: Date.now(), type: "image" };
+      const message = { nickname: myNickname, url: imageUrl, timestamp: now(), type: "image" };
 
       if (replyingTo) {
         message.replyTo = getReplyPayload();
         clearReply();
       }
 
-      const newMsgRef = push(ref(db, `messages/${currentChatId}`));
-      set(newMsgRef, message).then(() => {
-        maintainMessageLimit();
-        update(ref(db, `friends/${currentChatId}`), {
-          lastMessageText: '📷 Image',
-          lastTimestamp: message.timestamp,
-          lastSender: myNickname
-        });
-      });
+      await pushChatMessage(message);
     } catch (err) {
-      loadingBubble.remove();
       AlertKit.error('Upload Failed', 'Failed to upload image. Please try again.');
+    } finally {
+      loadingBubble.remove();
     }
 
     e.target.value = '';
@@ -2076,22 +2114,14 @@ description: "View your chat history and messages with stranger friends and stay
 
   function sendGifToChat(url) {
     if (!currentChatId) return;
-    const message = { nickname: myNickname, url: url, timestamp: Date.now(), type: "gif" };
+    const message = { nickname: myNickname, url: url, timestamp: now(), type: "gif" };
 
     if (replyingTo) {
       message.replyTo = getReplyPayload();
       clearReply();
     }
 
-    const newMsgRef = push(ref(db, `messages/${currentChatId}`));
-    set(newMsgRef, message).then(() => {
-      maintainMessageLimit();
-      update(ref(db, `friends/${currentChatId}`), {
-        lastMessageText: '🎯 GIF',
-        lastTimestamp: message.timestamp,
-        lastSender: myNickname
-      });
-    });
+    pushChatMessage(message).catch((err) => console.error("gif send error:", err));
   }
 
   function showUploadingBubble() {
@@ -2104,14 +2134,18 @@ description: "View your chat history and messages with stranger friends and stay
     return row;
   }
 
-  window.closeChat = function () {
+  window.closeChat = function (fromPopstate = false) {
+    if (fromPopstate !== true && history.state && history.state.chat && !history.state.direct) {
+      history.back();
+      return;
+    }
+
     if (messagesListener) { messagesListener(); messagesListener = null; }
     if (messageChangedListener) { messageChangedListener(); messageChangedListener = null; }
     if (messageRemovedListener) { messageRemovedListener(); messageRemovedListener = null; }
     if (typingListener) { typingListener(); typingListener = null; }
 
-    if (currentChatId) remove(ref(db, `typing/${currentChatId}/${currentUserId}`));
-
+    stopTyping();
     hideTypingIndicator();
     clearReply();
     clearEdit();
@@ -2123,7 +2157,8 @@ description: "View your chat history and messages with stranger friends and stay
     document.getElementById('friendsContainer').style.display = 'flex';
     document.getElementById('chatContainer').style.display = 'none';
     document.getElementById('pageTitle').textContent = 'Messages';
-    history.pushState(null, '', location.pathname);
+    if (fromPopstate !== true) history.replaceState(null, '', location.pathname);
+    scheduleFriendsRender();
   };
 
   function appendMessageToChat(msg, isMe) {
@@ -2230,9 +2265,11 @@ description: "View your chat history and messages with stranger friends and stay
 
     if (isConfirmed) {
       if (currentChatId === chatId) window.closeChat();
+      delete myFriendsMap[chatId];
       remove(ref(db, "friends/" + chatId));
       remove(ref(db, "messages/" + chatId));
       remove(ref(db, "typing/" + chatId));
+      scheduleFriendsRender();
     }
   };
 </script>
