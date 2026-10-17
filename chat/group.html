@@ -586,12 +586,49 @@ if (existingApp) {
 
 const db = getDatabase(app);
 
+let serverOffset = 0;
+onValue(ref(db, ".info/serverTimeOffset"), (snap) => {
+  serverOffset = snap.val() || 0;
+});
+const now = () => Date.now() + serverOffset;
+
 const chatLog = document.getElementById("chatLog");
 const msgInput = document.getElementById("msgInput");
 const replyBar = document.getElementById("replyBar");
 const replyBarText = document.getElementById("replyBarText");
 const editBar = document.getElementById("editBar");
 const contextMenu = document.getElementById("contextMenu");
+
+function safeMediaUrl(url) {
+  if (typeof url !== 'string' || !url) return null;
+  try {
+    const u = new URL(url, window.location.href);
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
+    return u.href;
+  } catch (e) {
+    return null;
+  }
+}
+
+function getGuestName() {
+  try {
+    let name = sessionStorage.getItem('talkrush_guest_name');
+    if (!name) {
+      name = 'Guest' + Math.floor(1000 + Math.random() * 9000);
+      sessionStorage.setItem('talkrush_guest_name', name);
+    }
+    return name;
+  } catch (e) {
+    return 'Guest' + Math.floor(1000 + Math.random() * 9000);
+  }
+}
+
+function safeDeleteMedia(url) {
+  if (!url || typeof window.deleteMediaFromServer !== 'function') return;
+  try {
+    Promise.resolve(window.deleteMediaFromServer(url)).catch(() => {});
+  } catch (e) {}
+}
 
 let GIPHY_API_KEY = '';
 
@@ -641,8 +678,8 @@ window.forwardMessage = function(content) {
 let myNickname = 'Guest';
 let currentGroup = null;
 const MESSAGE_LIMIT = 25;
-let isSendingMessage = false;
 let isPruning = false;
+let isSending = false;
 const renderedMessageKeys = new Set();
 let groupPasswordRequired = false;
 let groupAdminNickname = null;
@@ -661,7 +698,7 @@ async function loadBannedWords() {
     const words = text.split('\n').map(w => w.trim().toLowerCase()).filter(w => w.length > 0);
     bannedRegexes = words.map(word => {
       const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      return new RegExp(`\\b${escapedWord}\\b`, 'i');
+      return new RegExp(`(^|[^\\p{L}\\p{N}_])${escapedWord}(?![\\p{L}\\p{N}_])`, 'iu');
     });
   } catch (err) {
     bannedRegexes = [];
@@ -680,10 +717,22 @@ function getGroupFromURL() {
 }
 
 function clearMyRepliesForCurrentGroup() {
-  if (myNickname !== 'Guest' && currentGroup) {
+  if (myNickname && currentGroup) {
     const safeKey = myNickname.replace(/[.#$\[\]]/g, '_');
     remove(ref(db, `group_reply/${safeKey}/${currentGroup}`));
   }
+}
+
+function replyPreviewOf(msg) {
+  return msg.type === "text" ? msg.text : (msg.type === "audio" ? "🎤 Voice note" : `📷 ${msg.type}`);
+}
+
+function buildReplyPayload() {
+  return {
+    nickname: replyingTo.nickname,
+    preview: replyPreviewOf(replyingTo),
+    originalId: replyingTo.timestamp
+  };
 }
 
 async function initializeChat() {
@@ -706,21 +755,24 @@ async function initializeChat() {
   }
 
   const updateLastSeen = () => {
-    let lastSeenMap = JSON.parse(localStorage.getItem('groups_last_seen') || '{}');
-    lastSeenMap[currentGroup] = Date.now();
+    let lastSeenMap = {};
+    try { lastSeenMap = JSON.parse(localStorage.getItem('groups_last_seen') || '{}'); } catch (e) {}
+    lastSeenMap[currentGroup] = now();
     localStorage.setItem('groups_last_seen', JSON.stringify(lastSeenMap));
   };
   updateLastSeen();
   setInterval(updateLastSeen, 3000);
 
   await Promise.all([loadKeys(), loadBannedWords()]);
-  myNickname = localStorage.getItem('talkrush_nickname') || 'Guest';
+  myNickname = localStorage.getItem('talkrush_nickname') || getGuestName();
+
+  initDrawerListener();
 
   if (window.MediaHub) {
     MediaHub.init({
       giphyApiKey: GIPHY_API_KEY,
       onSendVoice: async (base64Data, duration) => {
-        if (!passwordVerified || isSendingMessage) return;
+        if (!passwordVerified) return;
 
         if (typeof window.uploadMediaToServer !== 'function') {
           AlertKit.error("Upload Error", "Upload service is not ready. Please refresh.");
@@ -732,13 +784,9 @@ async function initializeChat() {
           const res = await fetch(base64Data);
           const audioBlob = await res.blob();
           const audioUrl = await window.uploadMediaToServer(audioBlob, "voice.webm", false);
-          const message = { type: "audio", timestamp: Date.now(), url: audioUrl, duration: duration, nickname: myNickname };
+          const message = { type: "audio", timestamp: now(), url: audioUrl, duration: duration, nickname: myNickname };
           if (replyingTo) {
-            message.replyTo = {
-              nickname: replyingTo.nickname,
-              preview: replyingTo.type === "text" ? replyingTo.text : (replyingTo.type === "audio" ? "🎤 Voice note" : `📷 ${replyingTo.type}`),
-              originalId: replyingTo.timestamp
-            };
+            message.replyTo = buildReplyPayload();
             clearReply();
           }
           await pushMessageToDB(message);
@@ -787,8 +835,9 @@ async function checkGroupPassword() {
       joinGroupChat();
     }
   } catch (error) {
-    passwordVerified = true;
-    joinGroupChat();
+    passwordVerified = false;
+    AlertKit.error('Connection Error', 'Could not verify this room. Please try again.')
+      .then(() => window.location.href = '/chat/rooms.html');
   }
 }
 
@@ -820,22 +869,21 @@ document.getElementById('submitPassword').addEventListener('click', async () => 
 document.getElementById('cancelPassword').addEventListener('click', () => window.location.href = '/chat/rooms.html');
 
 function joinGroupChat() {
-  if (!passwordVerified && groupPasswordRequired) return;
+  if (!passwordVerified) return;
 
   clearMyRepliesForCurrentGroup();
 
   const messagesRef = ref(db, `group_messages/${currentGroup}`);
   const messagesRefQuery = query(messagesRef, orderByChild("timestamp"), limitToLast(MESSAGE_LIMIT));
 
-  onChildAdded(messagesRefQuery, (snapshot) => {
+  onChildAdded(messagesRefQuery, (snapshot, prevKey) => {
     const key = snapshot.key;
     if (renderedMessageKeys.has(key)) return;
     renderedMessageKeys.add(key);
 
     const msg = snapshot.val();
     msg.key = key;
-    displayMessage(msg);
-    scrollToBottom();
+    displayMessage(msg, prevKey);
     
     if (msg.replyTo && msg.replyTo.nickname === myNickname) {
       clearMyRepliesForCurrentGroup();
@@ -865,7 +913,7 @@ function joinGroupChat() {
 
   onChildAdded(query(ref(db, `groups/${currentGroup}/commands`), limitToLast(1)), (snapshot) => {
     const cmd = snapshot.val();
-    if (Date.now() - cmd.timestamp < 10000 && cmd.target === myNickname && cmd.type === 'kick') {
+    if (cmd && now() - cmd.timestamp < 10000 && cmd.target === myNickname && cmd.type === 'kick') {
       AlertKit.warning('Kicked!', 'The admin kicked you from the room.')
         .then(() => window.location.href = '/chat/rooms.html');
     }
@@ -881,7 +929,12 @@ function updateMessageInDOM(msg) {
   const textDiv = bubble.querySelector('.text-content');
   if (textDiv && msg.type === 'text') {
       textDiv.innerHTML = '';
-      if (isSingleEmoji(msg.text)) {
+      if (containsBannedWords(msg.text)) {
+          bubble.classList.remove('msg-single-emoji');
+          textDiv.textContent = "This message was blocked due to inappropriate content";
+          textDiv.style.cssText = "color: #ff6b6b; font-style: italic;";
+      } else if (isSingleEmoji(msg.text)) {
+          textDiv.style.cssText = "";
           bubble.classList.add('msg-single-emoji');
           const emojiText = msg.text.trim();
           const codePointStr = getEmojiCodePoint(emojiText);
@@ -895,6 +948,7 @@ function updateMessageInDOM(msg) {
           };
           textDiv.appendChild(img);
       } else {
+          textDiv.style.cssText = "";
           bubble.classList.remove('msg-single-emoji');
           textDiv.textContent = msg.text;
       }
@@ -994,14 +1048,19 @@ pinnedBar.addEventListener('click', () => {
   body.innerHTML = '';
   
   if (data.type === 'text') {
-    body.textContent = data.text;
-  } else if (data.type === 'audio' && window.MediaHub) {
-    body.appendChild(MediaHub.createAudioBubble(data.url, data.duration));
+    body.textContent = containsBannedWords(data.text) ? "This message was blocked due to inappropriate content" : data.text;
   } else {
-    const img = document.createElement('img');
-    img.src = data.url;
-    img.alt = `Pinned ${data.type}`;
-    body.appendChild(img);
+    const url = safeMediaUrl(data.url);
+    if (!url) {
+      body.textContent = "Media unavailable";
+    } else if (data.type === 'audio' && window.MediaHub) {
+      body.appendChild(MediaHub.createAudioBubble(url, data.duration));
+    } else {
+      const img = document.createElement('img');
+      img.src = url;
+      img.alt = `Pinned ${data.type}`;
+      body.appendChild(img);
+    }
   }
   document.getElementById('pinnedModalOverlay').classList.add('active');
 });
@@ -1044,9 +1103,7 @@ async function maintainMessageLimit() {
       const updates = {};
       for (const msg of toDelete) {
         updates[`/group_messages/${currentGroup}/${msg.key}`] = null;
-        if (msg.url && (msg.type === 'image' || msg.type === 'audio') && typeof window.deleteMediaFromServer === 'function') {
-          window.deleteMediaFromServer(msg.url).catch(() => {});
-        }
+        if (msg.url && (msg.type === 'image' || msg.type === 'audio')) safeDeleteMedia(msg.url);
       }
       
       await update(ref(db), updates);
@@ -1058,49 +1115,45 @@ async function maintainMessageLimit() {
 }
 
 async function pushMessageToDB(message) {
-  isSendingMessage = true;
-  try {
-    const newMessageKey = push(ref(db, `group_messages/${currentGroup}`)).key;
-    const updates = {};
-    updates[`/group_messages/${currentGroup}/${newMessageKey}`] = message;
-    updates[`/groups/${currentGroup}/lastActivity`] = message.timestamp;
-    
-    if (message.replyTo && message.replyTo.nickname !== myNickname) {
-      const targetSafeKey = message.replyTo.nickname.replace(/[.#$\[\]]/g, '_');
-      updates[`/group_reply/${targetSafeKey}/${currentGroup}/unreadCount`] = increment(1);
-    }
-    
-    await update(ref(db), updates);
-    maintainMessageLimit();
-  } finally {
-    isSendingMessage = false;
+  const newMessageKey = push(ref(db, `group_messages/${currentGroup}`)).key;
+  const updates = {};
+  updates[`/group_messages/${currentGroup}/${newMessageKey}`] = message;
+  updates[`/groups/${currentGroup}/lastActivity`] = message.timestamp;
+  
+  if (message.replyTo && message.replyTo.nickname && message.replyTo.nickname !== myNickname) {
+    const targetSafeKey = message.replyTo.nickname.replace(/[.#$\[\]]/g, '_');
+    updates[`/group_reply/${targetSafeKey}/${currentGroup}/unreadCount`] = increment(1);
   }
+  
+  await update(ref(db), updates);
+  maintainMessageLimit();
 }
 
 function sendMessageToGroup(text) {
-  if (!text.trim() || isSendingMessage || !passwordVerified) return;
-  if (containsBannedWords(text)) return logSystem("Your message contains inappropriate content.");
+  if (!text.trim() || !passwordVerified) return false;
+  if (containsBannedWords(text)) {
+    logSystem("Your message contains inappropriate content.");
+    return true;
+  }
 
   if (editingMsgKey) {
-    update(ref(db, `group_messages/${currentGroup}/${editingMsgKey}`), { text: text, edited: true });
+    update(ref(db, `group_messages/${currentGroup}/${editingMsgKey}`), { text: text, edited: true })
+      .catch(() => AlertKit.error("Failed", "Could not edit the message."));
     clearEdit();
   } else {
-    const message = { text, timestamp: Date.now(), nickname: myNickname, type: "text" };
+    const message = { text, timestamp: now(), nickname: myNickname, type: "text" };
     
     if (replyingTo) {
-      message.replyTo = {
-        nickname: replyingTo.nickname,
-        preview: replyingTo.type === "text" ? replyingTo.text : (replyingTo.type === "audio" ? "🎤 Voice note" : `📷 ${replyingTo.type}`),
-        originalId: replyingTo.timestamp
-      };
+      message.replyTo = buildReplyPayload();
       clearReply();
     }
-    pushMessageToDB(message);
+    pushMessageToDB(message).catch(() => AlertKit.error("Failed", "Could not send the message."));
   }
+  return true;
 }
 
 async function sendImageToGroup(file) {
-  if (isSendingMessage || !passwordVerified) return;
+  if (!passwordVerified) return;
 
   if (typeof window.uploadMediaToServer !== 'function') {
     AlertKit.error("Upload Error", "Upload service is not ready. Please refresh.");
@@ -1118,18 +1171,14 @@ async function sendImageToGroup(file) {
   const loadingBubble = showUploadingBubble();
   try {
     const imageUrl = await window.uploadMediaToServer(file, file.name, true);
-    const message = { type: "image", timestamp: Date.now(), url: imageUrl, nickname: myNickname };
+    const message = { type: "image", timestamp: now(), url: imageUrl, nickname: myNickname };
     if (replyingTo) {
-      message.replyTo = {
-        nickname: replyingTo.nickname,
-        preview: replyingTo.type === "text" ? replyingTo.text : (replyingTo.type === "audio" ? "🎤 Voice note" : `📷 ${replyingTo.type}`),
-        originalId: replyingTo.timestamp
-      };
+      message.replyTo = buildReplyPayload();
       clearReply();
     }
     await pushMessageToDB(message);
   } catch (err) {
-    if (err.message === "NSFW_BLOCKED") {
+    if (err && err.message === "NSFW_BLOCKED") {
       AlertKit.warning("Image Blocked", "Nudity or explicit content is not allowed in public rooms.");
     } else {
       AlertKit.error("Failed", "Failed to upload image. Please try again.");
@@ -1149,23 +1198,18 @@ function showUploadingBubble() {
 }
 
 function sendGifToGroup(url) {
-  if (!isSendingMessage && passwordVerified) {
-    const message = { type: "gif", timestamp: Date.now(), url: url, nickname: myNickname };
-    if (replyingTo) {
-      message.replyTo = {
-        nickname: replyingTo.nickname,
-        preview: replyingTo.type === "text" ? replyingTo.text : (replyingTo.type === "audio" ? "🎤 Voice note" : `📷 ${replyingTo.type}`),
-        originalId: replyingTo.timestamp
-      };
-      clearReply();
-    }
-    pushMessageToDB(message);
+  if (!passwordVerified) return;
+  const message = { type: "gif", timestamp: now(), url: url, nickname: myNickname };
+  if (replyingTo) {
+    message.replyTo = buildReplyPayload();
+    clearReply();
   }
+  pushMessageToDB(message).catch(() => AlertKit.error("Failed", "Could not send the GIF."));
 }
 
 async function pinMessage(msg) {
   const pinData = { nickname: msg.nickname, timestamp: msg.timestamp, type: msg.type };
-  pinData.preview = msg.type === "text" ? msg.text : (msg.type === "audio" ? "🎤 Voice note" : `📷 ${msg.type}`);
+  pinData.preview = replyPreviewOf(msg);
   if (msg.type === "text") pinData.text = msg.text;
   else if (msg.type === "audio") { pinData.url = msg.url; pinData.duration = msg.duration; }
   else pinData.url = msg.url;
@@ -1175,8 +1219,7 @@ async function pinMessage(msg) {
 function setReply(msg) {
   if (editingMsgKey) clearEdit();
   replyingTo = msg;
-  const preview = msg.type === "text" ? msg.text : (msg.type === "audio" ? "🎤 Voice note" : `📷 ${msg.type}`);
-  replyBarText.textContent = `${msg.nickname}: ${preview}`;
+  replyBarText.textContent = `${msg.nickname}: ${replyPreviewOf(msg)}`;
   replyBar.classList.add('active');
   msgInput.focus();
 }
@@ -1271,9 +1314,9 @@ document.getElementById('contextDeleteBtn').addEventListener('click', async () =
     );
     
     if (isConfirmed) {
-      remove(ref(db, `group_messages/${groupName}/${msgKey}`));
-      if ((targetMsg.type === 'image' || targetMsg.type === 'audio') && targetMsg.url && typeof window.deleteMediaFromServer === 'function') {
-        window.deleteMediaFromServer(targetMsg.url).catch(() => {});
+      remove(ref(db, `group_messages/${groupName}/${msgKey}`)).catch(() => {});
+      if ((targetMsg.type === 'image' || targetMsg.type === 'audio') && targetMsg.url) {
+        safeDeleteMedia(targetMsg.url);
       }
     }
   } else {
@@ -1290,19 +1333,21 @@ document.getElementById('contextForwardBtn').addEventListener('click', () => {
 
 document.getElementById('contextKickBtn').addEventListener('click', async () => {
   if (contextTargetMsg && myNickname === groupAdminNickname) {
+    const target = contextTargetMsg.nickname;
     const cmdRef = push(ref(db, `groups/${currentGroup}/commands`));
-    await set(cmdRef, { type: 'kick', target: contextTargetMsg.nickname, timestamp: Date.now() });
+    await set(cmdRef, { type: 'kick', target: target, timestamp: now() });
     setTimeout(() => remove(cmdRef), 5000);
-    logSystem(`Admin kicked ${contextTargetMsg.nickname}.`);
+    logSystem(`Admin kicked ${target}.`);
   }
   hideContextMenu();
 });
 
 document.getElementById('contextBanBtn').addEventListener('click', async () => {
   if (contextTargetMsg && myNickname === groupAdminNickname) {
-    const safeKey = contextTargetMsg.nickname.replace(/[.#$\[\]]/g, '_');
+    const target = contextTargetMsg.nickname;
+    const safeKey = target.replace(/[.#$\[\]]/g, '_');
     await set(ref(db, `groups/${currentGroup}/banned/${safeKey}`), true);
-    logSystem(`Admin permanently banned ${contextTargetMsg.nickname}.`);
+    logSystem(`Admin permanently banned ${target}.`);
   }
   hideContextMenu();
 });
@@ -1360,7 +1405,24 @@ function addMessageInteractions(div, msg, isMe) {
   });
 }
 
-function displayMessage(msg) {
+function placeRow(row, prevKey) {
+  if (prevKey) {
+    const prev = chatLog.querySelector(`.msg-row[data-key="${CSS.escape(prevKey)}"]`);
+    if (prev) {
+      chatLog.insertBefore(row, prev.nextSibling);
+      return;
+    }
+  } else {
+    const first = chatLog.querySelector('.msg-row[data-key]');
+    if (first) {
+      chatLog.insertBefore(row, first);
+      return;
+    }
+  }
+  chatLog.appendChild(row);
+}
+
+function displayMessage(msg, prevKey) {
   if (document.querySelector(`.msg-row[data-key="${msg.key}"]`)) return;
   const isMe = msg.nickname === myNickname;
 
@@ -1387,7 +1449,7 @@ function displayMessage(msg) {
   nicknameSpan.onclick = (e) => { e.stopPropagation(); window.location.href = `/profile.html?id=${encodeURIComponent(msg.nickname || 'Guest')}`; };
   nicknameEl.appendChild(nicknameSpan);
 
-  if (msg.nickname === groupAdminNickname) {
+  if (msg.nickname && msg.nickname === groupAdminNickname) {
     const verifyImg = document.createElement("img");
     verifyImg.src = "/assets/verify.png";
     verifyImg.className = "verify-badge";
@@ -1403,7 +1465,7 @@ function displayMessage(msg) {
     if (msg.replyTo.originalId) {
       replyDiv.title = "Click to jump to original message";
       replyDiv.addEventListener("click", () => {
-        const target = document.querySelector(`[data-id="${msg.replyTo.originalId}"]`);
+        const target = document.querySelector(`[data-id="${CSS.escape(String(msg.replyTo.originalId))}"]`);
         if (target) {
           target.scrollIntoView({ behavior: "smooth", block: "center" });
           const oldBg = target.style.backgroundColor;
@@ -1415,28 +1477,38 @@ function displayMessage(msg) {
     bubble.appendChild(replyDiv);
   }
 
-  if (msg.type === "audio" && window.MediaHub) {
-    const audioBubble = MediaHub.createAudioBubble(msg.url, msg.duration);
-    bubble.appendChild(audioBubble);
-  } else if (msg.type === "image" || msg.type === "gif") {
-    const img = document.createElement("img");
-    img.src = msg.url;
-    img.loading = "lazy";
-    
-    if (msg.type === "image") {
-      img.classList.add("blur-media");
-      img.title = "Tap to view image";
-      img.addEventListener("click", function(e) {
-        e.stopPropagation();
-        this.classList.remove("blur-media");
-        this.title = "";
-      }, { once: true });
+  if (msg.type === "audio" || msg.type === "image" || msg.type === "gif") {
+    const url = safeMediaUrl(msg.url);
+    if (!url) {
+      const unavailable = document.createElement("div");
+      unavailable.textContent = "Media unavailable";
+      unavailable.style.cssText = "font-style: italic; opacity: 0.7;";
+      bubble.appendChild(unavailable);
+    } else if (msg.type === "audio") {
+      if (window.MediaHub) {
+        bubble.appendChild(MediaHub.createAudioBubble(url, msg.duration));
+      }
+    } else {
+      const img = document.createElement("img");
+      img.src = url;
+      img.loading = "lazy";
+      
+      if (msg.type === "image") {
+        img.classList.add("blur-media");
+        img.title = "Tap to view image";
+        img.addEventListener("click", function(e) {
+          e.stopPropagation();
+          this.classList.remove("blur-media");
+          this.title = "";
+        }, { once: true });
+      }
+      
+      bubble.appendChild(img);
     }
-    
-    bubble.appendChild(img);
   } else {
     if (containsBannedWords(msg.text)) {
       const filtered = document.createElement("div");
+      filtered.className = "text-content";
       filtered.textContent = "This message was blocked due to inappropriate content";
       filtered.style.cssText = "color: #ff6b6b; font-style: italic;";
       bubble.appendChild(filtered);
@@ -1486,8 +1558,11 @@ function displayMessage(msg) {
     row.appendChild(forwardBtn);
   }
 
-  chatLog.appendChild(row);
-  scrollToBottom();
+  placeRow(row, prevKey);
+
+  let later = row.nextElementSibling;
+  while (later && !later.hasAttribute('data-key')) later = later.nextElementSibling;
+  if (!later) scrollToBottom();
 }
 
 function scrollToBottom() { chatLog.scrollTop = chatLog.scrollHeight; }
@@ -1500,17 +1575,31 @@ function logSystem(msg) {
 msgInput.addEventListener("keypress", e => { if (e.key === "Enter") sendMessage(); });
 document.getElementById("sendBtn").onclick = sendMessage;
 
-function sendMessage() {
-  if (!passwordVerified) return;
+async function sendMessage() {
+  if (!passwordVerified || isSending) return;
   const text = msgInput.value.trim();
-  if (text) {
-    if (containsBannedWords(text)) logSystem("Your message contains inappropriate content.");
-    else sendMessageToGroup(text);
-    msgInput.value = "";
+  if (!text) return;
+  
+  isSending = true;
+  const sendBtn = document.getElementById("sendBtn");
+  if (sendBtn) sendBtn.disabled = true;
+
+  try {
+    if (sendMessageToGroup(text)) {
+      msgInput.value = "";
+    }
+  } finally {
+    setTimeout(() => {
+      isSending = false;
+      if (sendBtn) sendBtn.disabled = false;
+    }, 300);
   }
 }
 
-document.getElementById("imgBtn").onclick = () => { if(passwordVerified) document.getElementById("imgInput").click(); };
+document.getElementById("imgBtn").onclick = () => {
+  if (!passwordVerified) return;
+  document.getElementById("imgInput").click();
+};
 document.getElementById("imgInput").onchange = async e => {
   if (!passwordVerified || !e.target.files[0]) return;
   if (e.target.files[0].size > 10 * 1024 * 1024) {
@@ -1520,8 +1609,6 @@ document.getElementById("imgInput").onchange = async e => {
   }
   e.target.value = "";
 };
-
-window.addEventListener('nicknameUpdated', e => myNickname = e.detail.nickname);
 
 const drawerToggleSub = document.getElementById('drawerToggleSub'), groupsDrawer = document.getElementById('groupsDrawer'), drawerOverlay = document.getElementById('drawerOverlay');
 const toggleDrawer = () => { groupsDrawer.classList.toggle('open'); drawerOverlay.classList.toggle('open'); };
@@ -1533,6 +1620,8 @@ if(drawerOverlay) drawerOverlay.onclick = closeDrawer;
 
 let currentGroupsData = null;
 let currentRepliesData = null;
+let drawerStarted = false;
+let replyUnsub = null;
 
 function renderDrawer() {
   if (!currentGroupsData) return;
@@ -1540,7 +1629,7 @@ function renderDrawer() {
   drawerList.innerHTML = '';
   let totalUnread = 0;
 
-  Object.entries(currentGroupsData).sort((a, b) => (b[1].lastActivity || 0) - (a[1].lastActivity || 0)).forEach(([groupName, groupData]) => {
+  Object.entries(currentGroupsData).sort((a, b) => ((b[1] && b[1].lastActivity) || 0) - ((a[1] && a[1].lastActivity) || 0)).forEach(([groupName, groupData]) => {
     const item = document.createElement('a');
     item.href = `/chat/group.html?group=${encodeURIComponent(groupName)}`;
     item.className = `drawer-group-item ${groupName === currentGroup ? 'active' : ''}`;
@@ -1551,11 +1640,29 @@ function renderDrawer() {
       totalUnread += unreadCount;
     }
 
-    const badgeHtml = unreadCount > 0 
-      ? `<span class="unread-badge">${unreadCount > 9 ? '9+' : unreadCount}</span>` 
-      : '';
+    const nameWrap = document.createElement('div');
+    nameWrap.className = 'drawer-group-name';
 
-    item.innerHTML = `<div class="drawer-group-name"><span>${groupName}</span>${groupData.password ? '<i class="fas fa-lock" style="color:#E8873A; font-size: 0.8em; margin-left:5px;"></i>' : ''}</div>${badgeHtml}`;
+    const nameSpan = document.createElement('span');
+    nameSpan.textContent = groupName;
+    nameWrap.appendChild(nameSpan);
+
+    if (groupData && groupData.password) {
+      const lock = document.createElement('i');
+      lock.className = 'fas fa-lock';
+      lock.style.cssText = 'color:#E8873A; font-size: 0.8em; margin-left:5px;';
+      nameWrap.appendChild(lock);
+    }
+
+    item.appendChild(nameWrap);
+
+    if (unreadCount > 0) {
+      const badge = document.createElement('span');
+      badge.className = 'unread-badge';
+      badge.textContent = unreadCount > 9 ? '9+' : String(unreadCount);
+      item.appendChild(badge);
+    }
+
     drawerList.appendChild(item);
   });
 
@@ -1565,20 +1672,41 @@ function renderDrawer() {
   }
 }
 
+function bindReplyListener() {
+  if (replyUnsub) {
+    replyUnsub();
+    replyUnsub = null;
+  }
+  currentRepliesData = null;
+
+  if (!myNickname) {
+    renderDrawer();
+    return;
+  }
+
+  const safeKey = myNickname.replace(/[.#$\[\]]/g, '_');
+  replyUnsub = onValue(ref(db, `group_reply/${safeKey}`), (snapshot) => {
+    currentRepliesData = snapshot.val();
+    renderDrawer();
+  });
+}
+
 function initDrawerListener() {
+  if (drawerStarted) return;
+  drawerStarted = true;
+
   onValue(ref(db, 'groups'), (snapshot) => {
     currentGroupsData = snapshot.val();
     renderDrawer();
   });
 
-  if (myNickname && myNickname !== 'Guest') {
-    const safeKey = myNickname.replace(/[.#$\[\]]/g, '_');
-    onValue(ref(db, `group_reply/${safeKey}`), (snapshot) => {
-      currentRepliesData = snapshot.val();
-      renderDrawer();
-    });
-  }
+  bindReplyListener();
 }
+
+window.addEventListener('nicknameUpdated', e => {
+  myNickname = e.detail.nickname;
+  if (drawerStarted) bindReplyListener();
+});
 
 document.getElementById('shareRoomHeaderBtn').addEventListener('click', () => {
   const shareUrl = window.location.href;
@@ -1591,5 +1719,5 @@ document.getElementById('shareRoomHeaderBtn').addEventListener('click', () => {
   }
 });
 
-window.addEventListener('load', () => { initializeChat(); setTimeout(initDrawerListener, 1000); });
+window.addEventListener('load', () => { initializeChat(); });
 </script>
