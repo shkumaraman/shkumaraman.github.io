@@ -379,7 +379,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 .light-mode .clear-search-btn { color: var(--light-icon-color); }
 .light-mode .clear-search-btn:hover { background: var(--light-icon-hover-bg); }
 
-.post {
+article.post {
   background: var(--dark-card);
   margin: 6px 0;
   padding: 14px;
@@ -390,7 +390,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   transition: border-color 0.2s;
   box-sizing: border-box;
 }
-.light-mode .post {
+.light-mode article.post {
   background: var(--light-surface);
   border-color: var(--light-border2);
 }
@@ -461,13 +461,13 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   display: block;
 }
 
-.timestamp {
+time.timestamp {
   display: inline-block;
   font-size: 10px;
   color: var(--dark-text-dim);
   margin-bottom: 10px;
 }
-.light-mode .timestamp { color: var(--light-text-dim); }
+.light-mode time.timestamp { color: var(--light-text-dim); }
 
 .buttons { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 
@@ -690,11 +690,11 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   color: var(--light-text-muted);
 }
 
-.info-section p { font-size: 14px; line-height: 1.6; margin-bottom: 12px; color: var(--dark-text); }
-.light-mode .info-section p { color: var(--light-text); }
-.info-section ul { padding-left: 20px; font-size: 14px; line-height: 1.6; color: var(--dark-text); }
-.light-mode .info-section ul { color: var(--light-text); }
-.info-section li { margin-bottom: 8px; }
+article.info-section p { font-size: 14px; line-height: 1.6; margin-bottom: 12px; color: var(--dark-text); }
+.light-mode article.info-section p { color: var(--light-text); }
+article.info-section ul { padding-left: 20px; font-size: 14px; line-height: 1.6; color: var(--dark-text); }
+.light-mode article.info-section ul { color: var(--light-text); }
+article.info-section li { margin-bottom: 8px; }
 
 @media (max-width: 600px) {
   .main-wrapper { padding: 10px 8px; }
@@ -711,10 +711,10 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     <h1 class="app-title">Anonymous Posts</h1>
   </div>
   <div class="header-right">
-    <button class="header-toggle" onclick="openPreferencesModal()" title="Edit Interest">
+    <button type="button" class="header-toggle" onclick="openPreferencesModal()" title="Edit Interest">
       <i class="fas fa-pencil-alt"></i>
     </button>
-    <button class="header-toggle" id="themeToggle" title="Toggle Dark/Light Mode">
+    <button type="button" class="header-toggle" id="themeToggle" title="Toggle Dark/Light Mode">
       <i class="fas fa-moon"></i>
     </button>
   </div>
@@ -752,7 +752,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
   <search class="search-container">
     <form class="search-box" role="search" onsubmit="return false;">
-      <input type="search" id="searchInput" class="search-input" placeholder="Search posts by nickname or content..." autocomplete="off" enterkeyhint="search">
+      <input type="search" id="searchInput" class="search-input" placeholder="Search posts by nickname or content..." autocomplete="off">
       <button type="button" id="clearSearch" class="clear-search-btn" title="Clear search" aria-label="Clear search">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -829,7 +829,8 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       limitToLast,
       endAt,
       get,
-      equalTo
+      equalTo,
+      serverTimestamp
     } from "firebase/database";
 
     const postsFirebaseConfig = {
@@ -840,8 +841,28 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       databaseURL: "https://talkrush3-default-rtdb.asia-southeast1.firebasedatabase.app"
     };
 
+    const apps = getApps();
+    const app = apps.find(a => a.name === "TalkRushPostsApp") || initializeApp(postsFirebaseConfig, "TalkRushPostsApp");
+    const db = getDatabase(app, postsFirebaseConfig.databaseURL);
+    const postsRef = ref(db, "posts");
+
+    const friendApp = apps.find(a => a.name === "TalkRushFriendApp") || initializeApp(friendsFirebaseConfig, "TalkRushFriendApp");
+    const friendsDb = getDatabase(friendApp, friendsFirebaseConfig.databaseURL);
+    const friendsRef = ref(friendsDb, "friends");
+
     const POST_EXPIRY_DAYS = 30;
     const MILLISECONDS_IN_DAY = 24 * 60 * 60 * 1000;
+
+    let serverTimeOffset = 0;
+    const offsetRef = ref(db, ".info/serverTimeOffset");
+    onValue(offsetRef, (snap) => {
+      const val = snap.val();
+      serverTimeOffset = typeof val === "number" ? val : 0;
+    });
+
+    function getServerTime() {
+      return Date.now() + serverTimeOffset;
+    }
 
     let bannedWords = [];
     let bannedWordsLoaded = false;
@@ -929,11 +950,9 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
         await set(notifRef, {
           ...notifData,
           senderName: currentNick,
-          timestamp: Date.now()
+          timestamp: serverTimestamp()
         });
-      } catch (err) {
-        console.error("send notif error:", err);
-      }
+      } catch (err) {}
     }
 
     window.TRCommentDeps = {
@@ -981,10 +1000,10 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
         }
       };
 
-      const unsubAdded1 = onChildAdded(q1, handleAdded, (err) => console.error("friends q1 added error:", err));
-      const unsubRemoved1 = onChildRemoved(q1, handleRemoved, (err) => console.error("friends q1 removed error:", err));
-      const unsubAdded2 = onChildAdded(q2, handleAdded, (err) => console.error("friends q2 added error:", err));
-      const unsubRemoved2 = onChildRemoved(q2, handleRemoved, (err) => console.error("friends q2 removed error:", err));
+      const unsubAdded1 = onChildAdded(q1, handleAdded, () => {});
+      const unsubRemoved1 = onChildRemoved(q1, handleRemoved, () => {});
+      const unsubAdded2 = onChildAdded(q2, handleAdded, () => {});
+      const unsubRemoved2 = onChildRemoved(q2, handleRemoved, () => {});
 
       cleanFriendsListeners = () => {
         unsubAdded1();
@@ -1031,16 +1050,12 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       });
     }
 
-    function shuffleArray(array) {
-      for (let i = array.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [array[i], array[j]] = [array[j], array[i]];
-      }
-      return array;
-    }
-
     function timeSince(ts) {
-      const seconds = Math.floor((Date.now() - ts) / 1000);
+      if (!ts) return "now";
+      const time = typeof ts === 'number' ? ts : Number(ts);
+      if (isNaN(time) || time <= 0) return "now";
+      const seconds = Math.floor((getServerTime() - time) / 1000);
+      if (seconds < 5) return "now";
       const intervals = [
         [31536000, 'y'], [2592000, 'mo'], [86400, 'd'],
         [3600, 'h'], [60, 'm'], [1, 's']
@@ -1066,18 +1081,14 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
         if (!likesData[postId]) likesData[postId] = new Set();
         likesData[postId].add(snapshot.key);
         updateCardLikeUI(postId);
-      }, (error) => {
-        console.error("likes error:", error);
-      });
+      }, () => {});
 
       onChildRemoved(postLikesRef, (snapshot) => {
         if (likesData[postId]) {
           likesData[postId].delete(snapshot.key);
         }
         updateCardLikeUI(postId);
-      }, (error) => {
-        console.error("likes error:", error);
-      });
+      }, () => {});
     }
 
     function updateCardLikeUI(postId) {
@@ -1160,9 +1171,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
         if (!commentsData[postId]) commentsData[postId] = {};
         commentsData[postId][commentId] = { id: commentId, ...commentVal };
         updateCardCommentUI(postId);
-      }, (error) => {
-        console.error("comments error:", error);
-      });
+      }, () => {});
 
       onChildRemoved(postCommentsRef, (snapshot) => {
         const commentId = snapshot.key;
@@ -1170,9 +1179,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
           delete commentsData[postId][commentId];
         }
         updateCardCommentUI(postId);
-      }, (error) => {
-        console.error("comments error:", error);
-      });
+      }, () => {});
     }
 
     function updateCardCommentUI(postId) {
@@ -1181,7 +1188,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       if (!badgeEl || !compactWrapEl) return;
 
       const commentsMap = commentsData[postId] || {};
-      const list = Object.values(commentsMap).sort((a, b) => a.timestamp - b.timestamp);
+      const list = Object.values(commentsMap).sort((a, b) => (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0));
       const count = list.length;
 
       badgeEl.textContent = count > 99 ? '99+' : count;
@@ -1278,7 +1285,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       let shownCount = 0;
 
       displayedPosts.forEach(([postId, post]) => {
-        if (isPostExpired(post.timestamp)) return;
+        if (!post || isPostExpired(post.timestamp)) return;
 
         const article = document.createElement("article");
         const currentNick = getNickname();
@@ -1313,12 +1320,19 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
           `;
         }
 
+        let isoDateStr = '';
+        if (post.timestamp && !isNaN(Number(post.timestamp))) {
+          try {
+            isoDateStr = new Date(Number(post.timestamp)).toISOString();
+          } catch (e) {}
+        }
+
         article.innerHTML = `
           <div class="post-header-top">
             <div class="nickname">
               <span class="nickname-clickable" data-action="view-profile" data-nickname="${displayNickname}">${displayNickname}</span>
             </div>
-            <time class="timestamp" datetime="${new Date(post.timestamp).toISOString()}">• ${timeSince(post.timestamp)}</time>
+            <time class="timestamp"${isoDateStr ? ` datetime="${isoDateStr}"` : ''}>• ${timeSince(post.timestamp)}</time>
           </div>
           ${displayText ? `<div class="post-content">${displayText}</div>` : ''}
           ${imageHtml}
@@ -1397,6 +1411,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       const queryTokens = cleanQuery.split(' ').filter(Boolean);
 
       displayedPosts = allPosts.filter(([postId, post]) => {
+        if (!post) return false;
         const rawNick = (post.nickname || '')
           .replace(/[\u00A0\u200B-\u200D\uFEFF]/g, ' ')
           .replace(/\s+/g, ' ')
@@ -1430,26 +1445,27 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     }
 
     function isPostExpired(timestamp) {
-      return (Date.now() - timestamp) / MILLISECONDS_IN_DAY > POST_EXPIRY_DAYS;
+      if (!timestamp) return false;
+      const ts = typeof timestamp === 'number' ? timestamp : Number(timestamp);
+      if (isNaN(ts) || ts <= 0) return false;
+      return (getServerTime() - ts) / MILLISECONDS_IN_DAY > POST_EXPIRY_DAYS;
     }
 
     function deleteExpiredPosts() {
-      const expiryThreshold = Date.now() - (POST_EXPIRY_DAYS * MILLISECONDS_IN_DAY);
+      const expiryThreshold = getServerTime() - (POST_EXPIRY_DAYS * MILLISECONDS_IN_DAY);
       const expiredQuery = query(postsRef, orderByChild("timestamp"), endAt(expiryThreshold));
-      onValue(expiredQuery, (snapshot) => {
+      get(expiredQuery).then((snapshot) => {
         const posts = snapshot.val();
         if (!posts) return;
         Object.entries(posts).forEach(([id, post]) => {
           if (post && post.imageUrl && typeof window.deleteMediaFromServer === 'function') {
             window.deleteMediaFromServer(post.imageUrl).catch(() => {});
           }
-          remove(ref(db, `posts/${id}`)).catch((err) => console.error("remove post error:", err));
+          remove(ref(db, `posts/${id}`)).catch(() => {});
           remove(ref(db, `comments/${id}`)).catch(() => {});
           remove(ref(db, `likes/${id}`)).catch(() => {});
         });
-      }, (error) => {
-        console.error("delete expired posts error:", error);
-      }, { onlyOnce: true });
+      }).catch(() => {});
     }
 
     function getFriendButtonHtml(targetNickname) {
@@ -1567,7 +1583,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
           nickname1: currentNick,
           nickname2: targetNickname,
           lastMessageText: "Say Hi!",
-          lastTimestamp: Date.now(),
+          lastTimestamp: serverTimestamp(),
           lastSender: currentNick
         });
         AlertKit.toast(`Added ${displayName} as a friend!`, 'success');
@@ -1683,7 +1699,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
         const newPostRef = push(postsRef);
         const postData = {
           nickname,
-          timestamp: Date.now()
+          timestamp: serverTimestamp()
         };
 
         if (text) postData.text = text;
@@ -1756,17 +1772,14 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
       if (posts) {
         const postsArray = Object.entries(posts).filter(([id, post]) => post && !isPostExpired(post.timestamp));
-        sortedPosts = postsArray.sort((a, b) => (b[1].timestamp || 0) - (a[1].timestamp || 0));
+        sortedPosts = postsArray.sort((a, b) => {
+          const tA = typeof a[1].timestamp === 'number' ? a[1].timestamp : 0;
+          const tB = typeof b[1].timestamp === 'number' ? b[1].timestamp : 0;
+          return tB - tA;
+        });
       }
 
-      const isPageReload = !sessionStorage.getItem('postsInitialized');
-
-      if (isPageReload) {
-        allPosts = shuffleArray([...sortedPosts]);
-        sessionStorage.setItem('postsInitialized', 'true');
-      } else {
-        allPosts = [...sortedPosts];
-      }
+      allPosts = [...sortedPosts];
 
       if (highlightPostId) {
         const sharedPostIndex = allPosts.findIndex(([id]) => id === highlightPostId);
@@ -1784,9 +1797,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
                 }
               }
             }
-          } catch (err) {
-            console.error("fetch shared post error:", err);
-          }
+          } catch (err) {}
         }
       }
 
@@ -1794,16 +1805,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
       if (currentSearchTerm) searchPosts(currentSearchTerm);
       else displayPosts();
-    }, (error) => {
-      console.error("posts error:", error);
-    });
-
-    window.addEventListener('load', () => {
-      const navEntry = performance.getEntriesByType && performance.getEntriesByType('navigation')[0];
-      if ((navEntry && navEntry.type === 'navigate') || (performance.navigation && performance.navigation.type === 0)) {
-        sessionStorage.removeItem('postsInitialized');
-      }
-    });
+    }, () => {});
 
     loadBannedWords();
     deleteExpiredPosts();
