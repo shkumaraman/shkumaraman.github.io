@@ -121,6 +121,109 @@ main {
 .light-mode .tab-btn { color: var(--light-text-muted); }
 .light-mode .tab-btn.active { color: var(--light-text); background: var(--light-card); box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
 
+.search-section {
+  display: block;
+  width: 100%;
+  max-width: 600px;
+  margin: 0 auto 20px;
+}
+
+.search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  margin: 0;
+}
+
+.search-input {
+  width: 100%;
+  padding: 14px 45px 14px 20px;
+  border-radius: 25px;
+  border: 1px solid var(--dark-border2);
+  background: var(--dark-surface);
+  color: var(--dark-text);
+  font-size: 15px;
+  outline: none;
+  transition: border-color 0.3s, box-shadow 0.3s;
+  box-sizing: border-box;
+}
+
+.search-input:focus { 
+  border-color: var(--accent); 
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+
+.light-mode .search-input {
+  background: var(--light-surface);
+  border-color: var(--light-border2);
+  color: var(--light-text);
+}
+
+.search-icon-btn {
+  position: absolute;
+  right: 12px;
+  background: none;
+  border: none;
+  padding: 8px;
+  color: var(--dark-text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: color 0.2s, background 0.2s, transform 0.1s;
+}
+
+.search-icon-btn:hover {
+  color: var(--accent);
+  background: var(--dark-icon-hover-bg);
+}
+
+.search-icon-btn:active {
+  transform: scale(0.9);
+}
+
+.light-mode .search-icon-btn {
+  color: var(--light-text-muted);
+}
+
+.light-mode .search-icon-btn:hover {
+  color: var(--accent);
+  background: var(--light-icon-hover-bg);
+}
+
+.clear-search-btn {
+  position: absolute;
+  right: 45px;
+  background: none;
+  border: none;
+  color: var(--dark-icon-color);
+  cursor: pointer;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+  display: none;
+}
+
+.clear-search-btn.visible {
+  display: flex;
+}
+
+.clear-search-btn svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+}
+
+.clear-search-btn:hover { background: var(--dark-icon-hover-bg); }
+.light-mode .clear-search-btn { color: var(--light-icon-color); }
+.light-mode .clear-search-btn:hover { background: var(--light-icon-hover-bg); }
+
 .content-section { display: block; margin-top: 0; }
 .content-section.hidden { display: none; }
 
@@ -562,6 +665,24 @@ main {
     </div>
   </div>
     
+  <search class="search-section">
+    <form class="search-box" role="search" onsubmit="return false;">
+      <input type="search" id="roomSearchInput" class="search-input" placeholder="Search chat rooms..." autocomplete="off" enterkeyhint="search">
+      <button type="button" id="clearRoomSearch" class="clear-search-btn" title="Clear search" aria-label="Clear search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+      <button type="submit" id="searchRoomBtn" class="search-icon-btn" aria-label="Search">
+        <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+      </button>
+    </form>
+  </search>
+
     <div id="roomsGrid" class="rooms-grid">
       <div class="empty-state">
         <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
@@ -815,6 +936,7 @@ let cloudinaryConfig = { cloud_name: '', upload_preset: '' };
 let currentRoomsData = null;
 let currentRepliesData = null;
 let replyListenerUnsubscribe = null;
+let currentSearchTerm = '';
 
 async function loadCloudinaryConfig() {
   try {
@@ -893,6 +1015,10 @@ document.addEventListener('DOMContentLoaded', async function() {
   const createRoomBtn = document.getElementById('createRoomBtn');
   const editRoomModal = document.getElementById('editRoomModal');
   
+  const roomSearchInput = document.getElementById('roomSearchInput');
+  const clearRoomSearch = document.getElementById('clearRoomSearch');
+  const searchRoomBtn = document.getElementById('searchRoomBtn');
+
   const passwordCheckbox = document.getElementById('passwordCheckbox');
   const passwordField = document.getElementById('passwordField');
   
@@ -917,6 +1043,38 @@ document.addEventListener('DOMContentLoaded', async function() {
     roomsSection.classList.add('hidden');
   });
   
+  function handleRoomSearch(term) {
+    currentSearchTerm = (term || '').trim().toLowerCase();
+    if (clearRoomSearch) {
+      if (currentSearchTerm) clearRoomSearch.classList.add('visible');
+      else clearRoomSearch.classList.remove('visible');
+    }
+    renderRooms();
+  }
+
+  if (roomSearchInput) {
+    roomSearchInput.addEventListener('input', (e) => handleRoomSearch(e.target.value));
+    roomSearchInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleRoomSearch(e.target.value);
+      }
+    });
+  }
+
+  if (searchRoomBtn) {
+    searchRoomBtn.addEventListener('click', () => {
+      if (roomSearchInput) handleRoomSearch(roomSearchInput.value);
+    });
+  }
+
+  if (clearRoomSearch) {
+    clearRoomSearch.addEventListener('click', () => {
+      if (roomSearchInput) roomSearchInput.value = '';
+      handleRoomSearch('');
+    });
+  }
+
   passwordCheckbox.addEventListener('change', function() {
     if (this.checked) {
       passwordField.classList.add('visible');
@@ -1124,17 +1282,23 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
       });
     }
+
+    const filteredRooms = currentSearchTerm ? allRooms.filter(r => {
+      const name = (r.name || '').toLowerCase();
+      const desc = (r.data && r.data.description ? r.data.description : '').toLowerCase();
+      return name.includes(currentSearchTerm) || desc.includes(currentSearchTerm);
+    }) : allRooms;
     
-    const sortedRooms = [...allRooms].sort((a, b) => b.lastActivity - a.lastActivity);
+    const sortedRooms = [...filteredRooms].sort((a, b) => b.lastActivity - a.lastActivity);
     const sortedMyRooms = [...myRooms].sort((a, b) => b.lastActivity - a.lastActivity);
     
     roomsGrid.innerHTML = '';
     if (sortedRooms.length === 0) {
       roomsGrid.innerHTML = `
         <div class="empty-state">
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-          <h3>No Rooms Yet</h3>
-          <p>Create the first chat room to get started!</p>
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <h3>${currentSearchTerm ? 'No Matching Rooms' : 'No Rooms Yet'}</h3>
+          <p>${currentSearchTerm ? 'Try searching with a different keyword.' : 'Create the first chat room to get started!'}</p>
         </div>
       `;
     } else {
