@@ -1595,6 +1595,11 @@ article.info-section li { margin-bottom: 8px; }
           await remove(ref(db, `posts/${postId}`));
           await remove(ref(db, `comments/${postId}`)).catch(() => {});
           await remove(ref(db, `likes/${postId}`)).catch(() => {});
+
+          allPosts = allPosts.filter(([id]) => id !== postId);
+          displayedPosts = displayedPosts.filter(([id]) => id !== postId);
+          displayPosts();
+
           AlertKit.toast("Post deleted successfully", "success");
         } catch (error) {
           AlertKit.toast("Failed to delete post", "error");
@@ -1658,6 +1663,14 @@ article.info-section li { margin-bottom: 8px; }
 
         await set(newPostRef, postData);
 
+        allPosts.unshift([newPostRef.key, { ...postData, timestamp: getServerTime() }]);
+        if (currentSearchTerm) {
+          searchPosts(currentSearchTerm);
+        } else {
+          displayedPosts = [...allPosts];
+          displayPosts();
+        }
+
         document.getElementById("postText").value = "";
         clearSelectedImage();
 
@@ -1716,20 +1729,25 @@ article.info-section li { margin-bottom: 8px; }
 
     const postsQuery = query(postsRef, orderByChild("timestamp"), limitToLast(100));
 
-    onValue(postsQuery, async (snapshot) => {
-      const posts = snapshot.val();
-      let sortedPosts = [];
+    async function loadPostsOnce() {
+      let postsArray = [];
 
-      if (posts) {
-        const postsArray = Object.entries(posts).filter(([id, post]) => post && !isPostExpired(post.timestamp));
-        sortedPosts = postsArray.sort((a, b) => {
-          const tA = typeof a[1].timestamp === 'number' ? a[1].timestamp : 0;
-          const tB = typeof b[1].timestamp === 'number' ? b[1].timestamp : 0;
-          return tB - tA;
-        });
-      }
+      try {
+        const snapshot = await get(postsQuery);
+        const posts = snapshot.val();
 
-      allPosts = [...sortedPosts];
+        if (posts) {
+          postsArray = Object.entries(posts)
+            .filter(([id, post]) => post && !isPostExpired(post.timestamp));
+
+          for (let i = postsArray.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [postsArray[i], postsArray[j]] = [postsArray[j], postsArray[i]];
+          }
+        }
+      } catch (err) {}
+
+      allPosts = postsArray;
 
       if (highlightPostId) {
         const sharedPostIndex = allPosts.findIndex(([id]) => id === highlightPostId);
@@ -1742,9 +1760,7 @@ article.info-section li { margin-bottom: 8px; }
             if (sharedSnap.exists()) {
               const sharedPostData = sharedSnap.val();
               if (sharedPostData && !isPostExpired(sharedPostData.timestamp)) {
-                if (!allPosts.some(([id]) => id === highlightPostId)) {
-                  allPosts.unshift([highlightPostId, sharedPostData]);
-                }
+                allPosts.unshift([highlightPostId, sharedPostData]);
               }
             }
           } catch (err) {}
@@ -1755,9 +1771,10 @@ article.info-section li { margin-bottom: 8px; }
 
       if (currentSearchTerm) searchPosts(currentSearchTerm);
       else displayPosts();
-    }, () => {});
+    }
 
     loadBannedWords();
+    loadPostsOnce();
     deleteExpiredPosts();
     setInterval(deleteExpiredPosts, 60 * 60 * 1000);
 
