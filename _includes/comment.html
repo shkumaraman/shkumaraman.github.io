@@ -404,7 +404,7 @@
     ref,
     push,
     set,
-    remove,
+    update,
     onChildAdded,
     onChildRemoved
   } from "firebase/database";
@@ -521,7 +521,8 @@
 
     if (document.getElementById(`comment-${commentId}`)) return;
 
-    const isReply = !!(comment.parentId && comments[comment.parentId]);
+    const isNearBottom = (bodyEl.scrollHeight - bodyEl.scrollTop - bodyEl.clientHeight) < 90;
+    const isReply = !!comment.parentId;
 
     if (isReply) {
       let repliesWrap = document.getElementById(`replies-wrap-${comment.parentId}`);
@@ -534,8 +535,21 @@
           threadDiv.appendChild(repliesWrap);
         }
       }
+
       if (repliesWrap) {
         repliesWrap.insertAdjacentHTML('beforeend', commentHtml(comment, true, comment.parentId));
+      } else {
+        const threadDiv = document.createElement('div');
+        threadDiv.className = 'comment-thread';
+        threadDiv.id = `thread-${commentId}`;
+        threadDiv.innerHTML = commentHtml(comment, false, null);
+
+        const newRepliesWrap = document.createElement('div');
+        newRepliesWrap.className = 'comment-replies-wrap';
+        newRepliesWrap.id = `replies-wrap-${commentId}`;
+        threadDiv.appendChild(newRepliesWrap);
+
+        bodyEl.appendChild(threadDiv);
       }
     } else {
       const threadDiv = document.createElement('div');
@@ -551,7 +565,9 @@
       bodyEl.appendChild(threadDiv);
     }
 
-    bodyEl.scrollTop = bodyEl.scrollHeight;
+    if (isNearBottom) {
+      bodyEl.scrollTop = bodyEl.scrollHeight;
+    }
   }
 
   function removeComment(commentId) {
@@ -706,6 +722,7 @@
     if (!activePostId) return;
 
     const postId = activePostId;
+    const currentReply = replyTarget;
     sendBtnEl.disabled = true;
 
     try {
@@ -718,17 +735,22 @@
       };
 
       const redirectUrl = (d.postUrl || window.location.pathname) + '?postId=' + postId;
-      
-      if (replyTarget) {
-        payload.parentId = replyTarget.parentId;
-        payload.replyToNickname = replyTarget.targetNickname;
-        d.sendNotification(replyTarget.targetNickname, {
+
+      if (currentReply) {
+        payload.parentId = currentReply.parentId;
+        payload.replyToNickname = currentReply.targetNickname;
+      }
+
+      await set(newCommentRef, payload);
+
+      if (currentReply && currentReply.targetNickname && currentReply.targetNickname !== nick) {
+        d.sendNotification(currentReply.targetNickname, {
           type: 'reply',
           postId: postId,
           message: text,
           redirectUrl: redirectUrl
         });
-      } else if (activeOwner) {
+      } else if (!currentReply && activeOwner && activeOwner !== nick) {
         d.sendNotification(activeOwner, {
           type: 'comment',
           postId: postId,
@@ -737,10 +759,9 @@
         });
       }
 
-      await set(newCommentRef, payload);
-
       inputEl.value = '';
       cancelReply();
+      bodyEl.scrollTop = bodyEl.scrollHeight;
     } catch (err) {
       AlertKit.error("Failed", "Could not post reply. Please try again.");
     } finally {
@@ -764,7 +785,16 @@
 
     if (isConfirmed && activePostId) {
       try {
-        await remove(ref(db, `comments/${activePostId}/${commentId}`));
+        const updates = {};
+        updates[`comments/${activePostId}/${commentId}`] = null;
+
+        Object.keys(comments).forEach((cId) => {
+          if (comments[cId].parentId === commentId) {
+            updates[`comments/${activePostId}/${cId}`] = null;
+          }
+        });
+
+        await update(ref(db), updates);
         AlertKit.toast("Comment deleted", "success");
       } catch (e) {
         AlertKit.toast("Failed to delete comment", "error");
