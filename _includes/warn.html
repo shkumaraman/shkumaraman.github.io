@@ -1,24 +1,27 @@
 <style>
   .warning-overlay {
-    display: none;
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    height: 100dvh;
     background: rgba(0, 0, 0, 0.88);
     backdrop-filter: blur(8px);
     z-index: 999999;
+    display: flex;
     align-items: center;
     justify-content: center;
     padding: 20px;
     box-sizing: border-box;
     opacity: 0;
-    transition: opacity 0.3s ease;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.25s ease, visibility 0.25s ease;
   }
   .warning-overlay.active {
-    display: flex;
     opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
   }
   .warning-card {
     background: var(--dark-surface, #18181b);
@@ -30,11 +33,11 @@
     color: var(--dark-text, #fff);
     border: 1px solid rgba(255, 107, 74, 0.4);
     box-shadow: 0 20px 40px rgba(0, 0, 0, 0.7), 0 0 30px rgba(255, 107, 74, 0.2);
-    transform: translateY(20px);
-    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    transform: translateY(20px) scale(0.96);
+    transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
   }
   .warning-overlay.active .warning-card {
-    transform: translateY(0);
+    transform: translateY(0) scale(1);
   }
   .light-mode .warning-card {
     background: var(--light-surface, #ffffff);
@@ -81,12 +84,8 @@
     color: #fff;
     transition: background 0.2s, transform 0.1s;
   }
-  .warning-btn:hover {
-    background: #ff5535;
-  }
-  .warning-btn:active {
-    transform: scale(0.97);
-  }
+  .warning-btn:hover { background: #ff5535; }
+  .warning-btn:active { transform: scale(0.97); }
   .warning-actions {
     display: flex;
     gap: 10px;
@@ -94,7 +93,6 @@
   }
   .warning-actions .warning-btn {
     flex: 1;
-    width: auto;
     text-align: center;
     text-decoration: none;
     box-sizing: border-box;
@@ -109,7 +107,7 @@
   }
 </style>
 
-<div id="talkrushWarningModal" class="warning-overlay">
+<div id="talkrushWarningModal" class="warning-overlay" aria-hidden="true" role="dialog">
   <div class="warning-card">
     <div class="warning-icon-wrap">
       <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -135,25 +133,31 @@
   let lastTargetInput = null;
 
   const blockedUrlRegex = /(^|[^a-z0-9.-])(bit\.ly|tinyurl|cutt\.ly|linktr\.ee|rebrand\.ly|shorturl|tiny\.cc|is\.gd|t\.co|v\.gd|bio\.link|beacons\.ai|taplink|heylink|onrender|vercel|github\.io|t\.me)(?![a-z0-9-])/i;
-
   const y99Regex = /(^|[^a-z0-9])y99([^a-z0-9]|$)/i;
 
   const blockedApps = [
-    'chatzyo',
-    'zangi',
-    'telegram',
-    'chatib',
-    'joingy',
-    'knotchat',
-    'subichat',
-    'justalk',
-    'onlyfans',
-    'chatblink',
-    'chitchatgg',
-    'chitchat',
-    'talkwithstranger',
-    'talktostrangers'
+    'chatzyo', 'zangi', 'telegram', 'chatib', 'joingy',
+    'knotchat', 'subichat', 'justalk', 'onlyfans', 'chatblink',
+    'chitchatgg', 'chitchat', 'talkwithstranger', 'talktostrangers'
   ];
+
+  const LEET_MAP = {
+    '@': 'a', '4': 'a',
+    '0': 'o',
+    '1': 'i', '!': 'i',
+    '$': 's', '5': 's',
+    '3': 'e',
+    '7': 't'
+  };
+  const LEET_REGEX = /[@401!$537]/g;
+
+  const BTN_TO_INPUT_MAP = {
+    'sendCommentBtn': 'commentTextInput',
+    'sendBtn': 'msgInput',
+    'submitBtn': 'postText'
+  };
+
+  const INPUT_IDS = new Set(['commentTextInput', 'msgInput', 'postText']);
 
   const modal = document.getElementById('talkrushWarningModal');
   const modalTitle = document.getElementById('talkrushWarningTitle');
@@ -164,10 +168,12 @@
     modalTitle.textContent = title;
     modalDesc.textContent = desc;
     modal.classList.add('active');
+    modal.setAttribute('aria-hidden', 'false');
   }
 
   function closeWarning() {
     modal.classList.remove('active');
+    modal.setAttribute('aria-hidden', 'true');
     if (lastTargetInput) {
       lastTargetInput.focus();
     }
@@ -177,26 +183,18 @@
     if (!text) return false;
     const lower = text.toLowerCase();
 
-    if (blockedUrlRegex.test(lower)) return true;
-    if (y99Regex.test(lower)) return true;
+    if (blockedUrlRegex.test(lower) || y99Regex.test(lower)) return true;
 
     const normalized = lower
-      .replace(/@/g, 'a')
-      .replace(/4/g, 'a')
-      .replace(/0/g, 'o')
-      .replace(/1/g, 'i')
-      .replace(/\$/g, 's')
-      .replace(/5/g, 's')
-      .replace(/3/g, 'e')
-      .replace(/7/g, 't')
+      .replace(LEET_REGEX, (ch) => LEET_MAP[ch] || '')
       .replace(/[^a-z]/g, '');
 
-    return blockedApps.some(app => normalized.includes(app));
+    return blockedApps.some((app) => normalized.includes(app));
   }
 
   function isFlooding() {
     const now = Date.now();
-    messageTimestamps = messageTimestamps.filter(ts => now - ts < FLOOD_WINDOW_MS);
+    messageTimestamps = messageTimestamps.filter((ts) => now - ts < FLOOD_WINDOW_MS);
     return messageTimestamps.length >= FLOOD_MAX_COUNT;
   }
 
@@ -205,18 +203,10 @@
   }
 
   function resolveTargetInput(sourceEl) {
-    if (sourceEl) {
-      if (sourceEl.id === 'submitBtn') return document.getElementById('postText');
-      if (sourceEl.id === 'sendBtn') return document.getElementById('msgInput');
-      if (sourceEl.id === 'sendCommentBtn') return document.getElementById('commentTextInput');
-      if (sourceEl.id === 'postText' || sourceEl.id === 'msgInput' || sourceEl.id === 'commentTextInput') return sourceEl;
-    }
-    return document.getElementById('commentTextInput') || document.getElementById('msgInput') || document.getElementById('postText');
-  }
-
-  function blockEvent(e) {
-    e.preventDefault();
-    e.stopImmediatePropagation();
+    if (!sourceEl) return null;
+    if (INPUT_IDS.has(sourceEl.id)) return sourceEl;
+    const inputId = BTN_TO_INPUT_MAP[sourceEl.id];
+    return inputId ? document.getElementById(inputId) : null;
   }
 
   function interceptSubmission(e, sourceEl) {
@@ -229,7 +219,8 @@
     lastTargetInput = targetInput;
 
     if (detectProhibitedPlatforms(rawContent) || isFlooding()) {
-      blockEvent(e);
+      e.preventDefault();
+      e.stopImmediatePropagation();
       showWarning('Message Blocked', 'Your message violates our chat rules. Promotion of other platforms and spamming are not allowed.');
       return false;
     }
@@ -244,29 +235,16 @@
         closeWarning();
         return;
       }
-      
-      const isInput = e.target && (e.target.id === 'msgInput' || e.target.id === 'commentTextInput');
-      if (isInput && e.key === 'Enter' && !e.shiftKey) {
+
+      if (e.target && INPUT_IDS.has(e.target.id) && e.key === 'Enter' && !e.shiftKey) {
         interceptSubmission(e, e.target);
       }
     }, true);
 
     window.addEventListener('click', (e) => {
-      const sendCommentBtn = e.target.closest('#sendCommentBtn');
-      if (sendCommentBtn) {
-        interceptSubmission(e, sendCommentBtn);
-        return;
-      }
-
-      const sendBtn = e.target.closest('#sendBtn');
-      if (sendBtn) {
-        interceptSubmission(e, sendBtn);
-        return;
-      }
-
-      const submitBtn = e.target.closest('#submitBtn');
-      if (submitBtn) {
-        interceptSubmission(e, submitBtn);
+      const btn = e.target.closest('#sendCommentBtn, #sendBtn, #submitBtn');
+      if (btn) {
+        interceptSubmission(e, btn);
       }
     }, true);
 
