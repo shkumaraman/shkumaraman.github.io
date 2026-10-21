@@ -61,9 +61,19 @@ if ('serviceWorker' in navigator) {
 })();
 </script>
 
-<!-- HF Storage -->
+<!-- Render RTDB & Storage -->
 <script>
   window.MEDIA_STORAGE_URL = "https://rtdb-2jsa.onrender.com";
+
+  window.rtdbPush = async function(path, data) {
+    const res = await fetch(`${window.MEDIA_STORAGE_URL}/${path}.json`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) throw new Error(`Push failed (${res.status})`);
+    return await res.json();
+  };
 
   window.uploadMediaToServer = async function(fileOrBlob, originalName = "file", isPublic = false) {
     return new Promise((resolve, reject) => {
@@ -72,9 +82,8 @@ if ('serviceWorker' in navigator) {
       formData.append("target_path", "uploads");
       formData.append("is_public", isPublic ? "true" : "false");
 
-      const baseUrl = window.MEDIA_STORAGE_URL.replace(/\/$/, "");
       const xhr = new XMLHttpRequest();
-      xhr.open("POST", `${baseUrl}/api/upload`, true);
+      xhr.open("POST", `${window.MEDIA_STORAGE_URL}/api/upload`, true);
 
       xhr.onload = () => {
         if (xhr.status >= 200 && xhr.status < 300) {
@@ -104,12 +113,11 @@ if ('serviceWorker' in navigator) {
     if (!fileUrl || !window.MEDIA_STORAGE_URL) return;
 
     try {
-      const baseUrl = window.MEDIA_STORAGE_URL.replace(/\/$/, "");
       const urlObj = new URL(fileUrl);
       const filename = urlObj.pathname.split('/').filter(Boolean).pop();
 
       if (filename) {
-        await fetch(`${baseUrl}/uploads/${filename}`, {
+        await fetch(`${window.MEDIA_STORAGE_URL}/uploads/${filename}`, {
           method: "DELETE",
           mode: "cors"
         });
