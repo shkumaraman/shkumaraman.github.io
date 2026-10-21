@@ -137,7 +137,16 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   justify-content: flex-start;
 }
 
-.msg-forward-btn {
+.msg-side-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.msg-forward-btn,
+.msg-friend-btn {
   background: none;
   border: none;
   color: var(--dark-icon-color);
@@ -150,7 +159,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   justify-content: center;
   border-radius: 50%;
   opacity: 0.65;
-  transition: opacity 0.15s, background 0.15s, transform 0.15s;
+  transition: opacity 0.15s, background 0.15s, transform 0.15s, color 0.15s;
   flex-shrink: 0;
 }
 
@@ -160,12 +169,25 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   transform: scale(1.1);
 }
 
-.light-mode .msg-forward-btn {
+.msg-friend-btn:hover {
+  opacity: 1;
+  background: var(--accent-dim);
+  color: var(--accent);
+  transform: scale(1.1);
+}
+
+.light-mode .msg-forward-btn,
+.light-mode .msg-friend-btn {
   color: var(--light-icon-color);
 }
 
 .light-mode .msg-forward-btn:hover {
   background: rgba(0, 0, 0, 0.05);
+}
+
+.light-mode .msg-friend-btn:hover {
+  background: rgba(255, 107, 74, 0.15);
+  color: var(--accent);
 }
 
 .msg {
@@ -605,6 +627,8 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 import { initializeApp, getApps } from "firebase/app";
 import { getDatabase, ref, push, set, onChildAdded, onValue, query, orderByChild, limitToLast, get, update, remove, onChildChanged, onChildRemoved, increment } from "firebase/database";
 
+const baseUrl = window.MEDIA_STORAGE_URL.replace(/\/$/, "");
+
 const firebaseConfig = {
   databaseURL: "https://talkrush2-default-rtdb.asia-southeast1.firebasedatabase.app"
 };
@@ -636,6 +660,10 @@ const editBar = document.getElementById("editBar");
 const contextMenu = document.getElementById("contextMenu");
 const passwordModal = document.getElementById("passwordModal");
 const pinnedModal = document.getElementById("pinnedModal");
+
+let myFriendsMap = {};
+let friendsWs = null;
+let friendsPingInterval = null;
 
 function safeMediaUrl(url) {
   if (typeof url !== 'string' || !url) return null;
@@ -729,6 +757,196 @@ let contextTargetMsg = null;
 let bannedRegexes = [];
 let bannedWordsLoaded = false;
 
+function cleanNick(name) {
+  return (name || '').replace(/^tr\|/i, '').trim().toLowerCase();
+}
+
+function isFriend(targetNickname) {
+  if (!targetNickname || targetNickname === 'Guest' || !myNickname || myNickname === 'Guest') return false;
+  const cleanTarget = cleanNick(targetNickname);
+  const cleanMy = cleanNick(myNickname);
+  if (!cleanTarget || cleanTarget === cleanMy) return true;
+
+  return !!(myFriendsMap[targetNickname] || myFriendsMap[cleanTarget]);
+}
+
+function updateAllFriendButtons() {
+  document.querySelectorAll('.msg-friend-btn').forEach(btn => {
+    const nick = btn.getAttribute('data-nickname');
+    if (!nick || isFriend(nick)) {
+      btn.style.display = 'none';
+    } else {
+      btn.style.display = 'flex';
+    }
+  });
+}
+
+function processFriendsData(friendsObj) {
+  myFriendsMap = {};
+  const myClean = cleanNick(myNickname);
+
+  if (friendsObj && typeof friendsObj === 'object' && myClean) {
+    Object.entries(friendsObj).forEach(([chatId, friendData]) => {
+      if (!friendData) return;
+      const u1Clean = cleanNick(friendData.nickname1);
+      const u2Clean = cleanNick(friendData.nickname2);
+
+      if (u1Clean === myClean) {
+        myFriendsMap[friendData.nickname2] = chatId;
+        myFriendsMap[u2Clean] = chatId;
+      } else if (u2Clean === myClean) {
+        myFriendsMap[friendData.nickname1] = chatId;
+        myFriendsMap[u1Clean] = chatId;
+      }
+    });
+  }
+  updateAllFriendButtons();
+}
+
+function initFriendsListener() {
+  if (friendsPingInterval) {
+    clearInterval(friendsPingInterval);
+    friendsPingInterval = null;
+  }
+  if (friendsWs) {
+    try { friendsWs.onclose = null; friendsWs.close(); } catch(e){}
+    friendsWs = null;
+  }
+
+  fetch(`${baseUrl}/friends.json`)
+    .then(r => r.json())
+    .then(data => {
+      processFriendsData(data);
+    })
+    .catch(() => {});
+
+  const wsProto = baseUrl.startsWith("https") ? "wss:" : "ws:";
+  const wsHost = baseUrl.replace(/^https?:\/\//, "");
+
+  try {
+    friendsWs = new WebSocket(`${wsProto}//${wsHost}/ws/friends`);
+    friendsWs.onopen = () => {
+      friendsPingInterval = setInterval(() => {
+        if (friendsWs && friendsWs.readyState === WebSocket.OPEN) {
+          friendsWs.send(JSON.stringify({ type: 'ping' }));
+        }
+      }, 25000);
+    };
+
+    friendsWs.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (!msg || msg.event === 'ping' || msg.event === 'pong' || msg.event === 'time' || msg.event === 'onDisconnectAck') return;
+        if (msg.event === 'connected') {
+          processFriendsData(msg.data);
+          return;
+        }
+
+        const myClean = cleanNick(myNickname);
+        const parts = (msg.path || '').split('/').filter(Boolean);
+
+        if (parts.length === 0) {
+          if (msg.event === 'delete' || msg.data === null) {
+            myFriendsMap = {};
+            updateAllFriendButtons();
+          } else if (typeof msg.data === 'object' && msg.data) {
+            processFriendsData(msg.data);
+          }
+          return;
+        }
+
+        const chatId = parts[0];
+        if (msg.event === 'delete' || msg.data === null) {
+          Object.keys(myFriendsMap).forEach(key => {
+            if (myFriendsMap[key] === chatId) delete myFriendsMap[key];
+          });
+          updateAllFriendButtons();
+        } else if (msg.event === 'put' || msg.event === 'patch') {
+          const val = msg.data;
+          if (val && typeof val === 'object' && myClean) {
+            const u1Clean = cleanNick(val.nickname1);
+            const u2Clean = cleanNick(val.nickname2);
+
+            if (u1Clean === myClean) {
+              myFriendsMap[val.nickname2] = chatId;
+              myFriendsMap[u2Clean] = chatId;
+            } else if (u2Clean === myClean) {
+              myFriendsMap[val.nickname1] = chatId;
+              myFriendsMap[u1Clean] = chatId;
+            }
+            updateAllFriendButtons();
+          }
+        }
+      } catch (e) {}
+    };
+
+    friendsWs.onclose = () => {
+      if (friendsPingInterval) clearInterval(friendsPingInterval);
+    };
+  } catch (e) {}
+}
+
+window.addGroupFriend = async function(targetNickname) {
+  if (!myNickname || myNickname === 'Guest') {
+    if (window.AlertKit && window.AlertKit.warning) {
+      await window.AlertKit.warning("Nickname Required", "Please set your nickname first to add friends.");
+    } else {
+      alert("Please set your nickname first to add friends.");
+    }
+    return;
+  }
+
+  if (isFriend(targetNickname)) return;
+
+  let displayName = targetNickname;
+  if (displayName.startsWith("TR|")) displayName = displayName.substring(3);
+
+  let isConfirmed = false;
+  if (window.AlertKit && window.AlertKit.confirm) {
+    isConfirmed = await window.AlertKit.confirm(
+      'Add Friend',
+      `Do you want to add ${displayName} to your friends list?`,
+      'Yes, Add',
+      'Cancel'
+    );
+  } else {
+    isConfirmed = confirm(`Add ${displayName} as a friend?`);
+  }
+
+  if (!isConfirmed) return;
+
+  try {
+    const res = await fetch(`${baseUrl}/friends.json`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        nickname1: myNickname,
+        nickname2: targetNickname,
+        lastMessageText: "Say Hi!",
+        lastTimestamp: Date.now(),
+        lastSender: myNickname
+      })
+    });
+
+    if (!res.ok) throw new Error("Failed to add friend");
+    const resData = await res.json();
+    if (resData && resData.name) {
+      myFriendsMap[targetNickname] = resData.name;
+      myFriendsMap[cleanNick(targetNickname)] = resData.name;
+      updateAllFriendButtons();
+    }
+    if (window.AlertKit && window.AlertKit.toast) {
+      AlertKit.toast(`Added ${displayName} as a friend!`, 'success');
+    }
+  } catch (error) {
+    if (window.AlertKit && window.AlertKit.error) {
+      AlertKit.error("Error", "Failed to add friend. Please try again.");
+    } else {
+      alert("Failed to add friend. Please try again.");
+    }
+  }
+};
+
 async function loadBannedWords() {
   try {
     const response = await fetch('filter.txt');
@@ -805,6 +1023,7 @@ async function initializeChat() {
   myNickname = localStorage.getItem('talkrush_nickname') || getGuestName();
 
   initDrawerListener();
+  initFriendsListener();
 
   if (window.MediaHub) {
     MediaHub.init({
@@ -1405,10 +1624,10 @@ function addMessageInteractions(div, msg, isMe) {
       holdTriggered = true; dragging = false; 
       div.style.transform = ''; 
       div.classList.remove('swiping');
-      const forwardBtn = div.parentNode.querySelector('.msg-forward-btn');
-      if (forwardBtn) {
-        forwardBtn.style.transform = '';
-        forwardBtn.style.transition = '';
+      const sideActions = div.parentNode.querySelector('.msg-side-actions');
+      if (sideActions) {
+        sideActions.style.transform = '';
+        sideActions.style.transition = '';
       }
       showContextMenu(e.touches[0].clientX, e.touches[0].clientY, msg, isMe);
     }, 500);
@@ -1423,10 +1642,10 @@ function addMessageInteractions(div, msg, isMe) {
       const moveX = Math.min(Math.abs(dx), 60) * (isMe ? -1 : 1);
       div.style.transform = `translateX(${moveX}px)`;
       div.classList.add('swiping');
-      const forwardBtn = div.parentNode.querySelector('.msg-forward-btn');
-      if (forwardBtn) {
-        forwardBtn.style.transform = `translateX(${moveX}px)`;
-        forwardBtn.style.transition = 'none';
+      const sideActions = div.parentNode.querySelector('.msg-side-actions');
+      if (sideActions) {
+        sideActions.style.transform = `translateX(${moveX}px)`;
+        sideActions.style.transition = 'none';
       }
     }
   }, { passive: true });
@@ -1437,10 +1656,10 @@ function addMessageInteractions(div, msg, isMe) {
     dragging = false; 
     div.style.transform = ''; 
     div.classList.remove('swiping');
-    const forwardBtn = div.parentNode.querySelector('.msg-forward-btn');
-    if (forwardBtn) {
-      forwardBtn.style.transform = '';
-      forwardBtn.style.transition = '';
+    const sideActions = div.parentNode.querySelector('.msg-side-actions');
+    if (sideActions) {
+      sideActions.style.transform = '';
+      sideActions.style.transition = '';
     }
     if ((isMe ? e.changedTouches[0].clientX - startX < -60 : e.changedTouches[0].clientX - startX > 60)) setReply(msg);
   });
@@ -1471,11 +1690,31 @@ function displayMessage(msg, prevKey) {
   row.className = `msg-row ${isMe ? 'me' : 'stranger'}`;
   row.setAttribute('data-key', msg.key);
 
+  const sideActions = document.createElement("div");
+  sideActions.className = "msg-side-actions";
+
   const forwardBtn = document.createElement("button");
   forwardBtn.className = "msg-forward-btn";
   forwardBtn.title = "Forward";
   forwardBtn.innerHTML = `<i class="fa-solid fa-share"></i>`;
   forwardBtn.onclick = () => window.forwardMessage(msg);
+  sideActions.appendChild(forwardBtn);
+
+  if (!isMe && msg.nickname && msg.nickname !== 'Guest') {
+    const friendBtn = document.createElement("button");
+    friendBtn.className = "msg-friend-btn";
+    friendBtn.title = "Add Friend";
+    friendBtn.setAttribute("data-nickname", msg.nickname);
+    friendBtn.innerHTML = `<i class="fa-solid fa-user-plus"></i>`;
+    friendBtn.onclick = (e) => {
+      e.stopPropagation();
+      window.addGroupFriend(msg.nickname);
+    };
+    if (isFriend(msg.nickname)) {
+      friendBtn.style.display = "none";
+    }
+    sideActions.appendChild(friendBtn);
+  }
 
   const bubble = document.createElement("div");
   bubble.className = "msg";
@@ -1592,11 +1831,11 @@ function displayMessage(msg, prevKey) {
   addMessageInteractions(bubble, msg, isMe);
 
   if (isMe) {
-    row.appendChild(forwardBtn);
+    row.appendChild(sideActions);
     row.appendChild(bubble);
   } else {
     row.appendChild(bubble);
-    row.appendChild(forwardBtn);
+    row.appendChild(sideActions);
   }
 
   placeRow(row, prevKey);
@@ -1747,6 +1986,7 @@ function initDrawerListener() {
 window.addEventListener('nicknameUpdated', e => {
   myNickname = e.detail.nickname;
   if (drawerStarted) bindReplyListener();
+  initFriendsListener();
 });
 
 document.getElementById('shareRoomHeaderBtn').addEventListener('click', () => {
