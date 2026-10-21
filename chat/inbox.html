@@ -1337,7 +1337,15 @@ description: "View your chat history and messages with stranger friends and stay
   }
 
   function touchFriend(chatId, text, timestamp) {
-    if (!chatId || !myFriendsMap[chatId]) return Promise.resolve();
+    if (!chatId) return Promise.resolve();
+
+    if (myFriendsMap[chatId]) {
+      myFriendsMap[chatId].lastMessageText = text;
+      myFriendsMap[chatId].lastTimestamp = timestamp;
+      myFriendsMap[chatId].lastSender = myNickname;
+      scheduleFriendsRender();
+    }
+
     return fetch(`${baseUrl}/friends/${chatId}.json`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -1361,10 +1369,20 @@ description: "View your chat history and messages with stranger friends and stay
         last = list[list.length - 1];
       }
       if (!myFriendsMap[chatId]) return;
+      const pText = previewText(last);
+      const pSender = last ? last.nickname : null;
+      
+      myFriendsMap[chatId].lastMessageText = pText;
+      if (pSender) myFriendsMap[chatId].lastSender = pSender;
+      scheduleFriendsRender();
+
       await fetch(`${baseUrl}/friends/${chatId}.json`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lastMessageText: previewText(last) })
+        body: JSON.stringify({ 
+          lastMessageText: pText,
+          ...(pSender ? { lastSender: pSender } : {})
+        })
       });
     } catch (e) {}
   }
@@ -1619,7 +1637,24 @@ description: "View your chat history and messages with stranger friends and stay
 
   window.addEventListener('nicknameUpdated', (e) => {
     myNickname = e.detail.nickname;
-    loadFriends();
+    loadFriends(true);
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) {
+      syncServerTime();
+      if (!currentChatId) {
+        fetch(`${baseUrl}/friends.json`)
+          .then(res => res.json())
+          .then(data => {
+            processFriendsPayload(data);
+          })
+          .catch(() => {});
+      }
+      if (!friendsWs || friendsWs.readyState === WebSocket.CLOSED) {
+        initFriendsWs();
+      }
+    }
   });
 
   function setupEventListeners() {
@@ -1790,7 +1825,7 @@ description: "View your chat history and messages with stranger friends and stay
       if (!friendNickname) return;
 
       let chatLastSeen = lastSeenMap[chatId] || 0;
-      let lastMessage = friend.lastMessageText || "Say Hi!";
+      let rawLastMessage = friend.lastMessageText || "Say Hi!";
       let lastTimestamp = friend.lastTimestamp || 0;
       let unreadCount = 0;
 
@@ -1798,11 +1833,20 @@ description: "View your chat history and messages with stranger friends and stay
         unreadCount = 1;
       }
 
+      let displayMsg = rawLastMessage;
+      if (friend.lastSender && friend.lastMessageText) {
+        if (friend.lastSender === myNickname) {
+          displayMsg = `You: ${rawLastMessage}`;
+        } else {
+          displayMsg = rawLastMessage;
+        }
+      }
+
       friendsArray.push({
         chatId,
         displayName: friendNickname,
         avatarLetter: getAvatarLetter(friendNickname),
-        displayMsg: lastMessage,
+        displayMsg: displayMsg,
         timestamp: lastTimestamp,
         unreadCount: unreadCount,
         friendData: friend
@@ -1832,7 +1876,7 @@ description: "View your chat history and messages with stranger friends and stay
       div.className = "friend-item";
 
       const badgeHtml = friend.unreadCount > 0
-        ? `<span class="unread-badge">!</span>`
+        ? `<span class="unread-badge">1</span>`
         : '';
 
       div.innerHTML = `
@@ -1871,49 +1915,19 @@ description: "View your chat history and messages with stranger friends and stay
   }
 
   function processFriendsPayload(data) {
-    myFriendsMap = {};
     if (data && typeof data === 'object') {
       Object.entries(data).forEach(([chatId, val]) => {
         if (!val) return;
         if (val.nickname1 === myNickname || val.nickname2 === myNickname) {
-          myFriendsMap[chatId] = val;
+          myFriendsMap[chatId] = { ...(myFriendsMap[chatId] || {}), ...val };
         }
       });
     }
     scheduleFriendsRender();
   }
 
-  function loadFriends() {
+  function initFriendsWs() {
     detachFriendsWs();
-    myFriendsMap = {};
-    myFriendsData = {};
-    initialFriendsLoaded = false;
-
-    const list = document.getElementById("friendList");
-    const loading = document.getElementById("loading");
-    const empty = document.getElementById("emptyState");
-
-    if (!myNickname || myNickname === 'Guest') {
-      loading.style.display = "none";
-      empty.style.display = "flex";
-      list.style.display = "none";
-      return;
-    }
-
-    loading.style.display = "flex";
-    empty.style.display = "none";
-    list.style.display = "none";
-
-    fetch(`${baseUrl}/friends.json`)
-      .then(res => res.json())
-      .then(data => {
-        initialFriendsLoaded = true;
-        processFriendsPayload(data);
-      })
-      .catch(() => {
-        initialFriendsLoaded = true;
-        scheduleFriendsRender();
-      });
 
     try {
       friendsWs = new WebSocket(`${wsProto}//${wsHost}/ws/friends`);
@@ -1960,12 +1974,12 @@ description: "View your chat history and messages with stranger friends and stay
         } else if (msg.event === 'put' || msg.event === 'patch') {
           const val = msg.data;
           if (val && typeof val === 'object') {
-            if (val.nickname1 === myNickname || val.nickname2 === myNickname) {
-              myFriendsMap[chatId] = { ...(myFriendsMap[chatId] || {}), ...val };
-            } else {
-              delete myFriendsMap[chatId];
+            const existing = myFriendsMap[chatId] || {};
+            const merged = { ...existing, ...val };
+            if (merged.nickname1 === myNickname || merged.nickname2 === myNickname) {
+              myFriendsMap[chatId] = merged;
+              scheduleFriendsRender();
             }
-            scheduleFriendsRender();
           }
         }
       } catch (e) {}
@@ -1974,9 +1988,41 @@ description: "View your chat history and messages with stranger friends and stay
     friendsWs.onclose = () => {
       if (friendsPingInterval) clearInterval(friendsPingInterval);
       setTimeout(() => {
-        if (!currentChatId) loadFriends();
+        if (!currentChatId) initFriendsWs();
       }, 3000);
     };
+  }
+
+  function loadFriends(forceReload = false) {
+    const list = document.getElementById("friendList");
+    const loading = document.getElementById("loading");
+    const empty = document.getElementById("emptyState");
+
+    if (!myNickname || myNickname === 'Guest') {
+      loading.style.display = "none";
+      empty.style.display = "flex";
+      list.style.display = "none";
+      return;
+    }
+
+    if (forceReload || Object.keys(myFriendsMap).length === 0) {
+      loading.style.display = "flex";
+      empty.style.display = "none";
+      list.style.display = "none";
+    }
+
+    fetch(`${baseUrl}/friends.json`)
+      .then(res => res.json())
+      .then(data => {
+        initialFriendsLoaded = true;
+        processFriendsPayload(data);
+      })
+      .catch(() => {
+        initialFriendsLoaded = true;
+        scheduleFriendsRender();
+      });
+
+    initFriendsWs();
   }
 
   function listenForMessages(chatId) {
@@ -2036,6 +2082,7 @@ description: "View your chat history and messages with stranger friends and stay
             const messageData = { key: key, ...msg.data };
             appendMessageToChat(messageData, messageData.nickname === myNickname);
             scrollToBottom();
+            markSeen(chatId);
           }
         }
       } catch (e) {}
@@ -2187,11 +2234,8 @@ description: "View your chat history and messages with stranger friends and stay
       }).then(() => {
         const friend = myFriendsMap[chatId];
         if (friend && friend.lastTimestamp === ts) {
-          fetch(`${baseUrl}/friends/${chatId}.json`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ lastMessageText: content.substring(0, 30) + (content.length > 30 ? '...' : '') })
-          }).catch(() => {});
+          const preview = content.substring(0, 30) + (content.length > 30 ? '...' : '');
+          touchFriend(chatId, preview, ts);
         }
       }).catch((err) => console.error("edit error:", err));
       clearEdit();
@@ -2284,7 +2328,8 @@ description: "View your chat history and messages with stranger friends and stay
     document.getElementById('chatContainer').style.display = 'none';
     document.getElementById('pageTitle').textContent = 'Messages';
     if (fromPopstate !== true) history.replaceState(null, '', location.pathname);
-    loadFriends();
+    
+    renderFriendsUI();
   };
 
   function appendMessageToChat(msg, isMe) {
