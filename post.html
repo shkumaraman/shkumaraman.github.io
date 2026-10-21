@@ -697,7 +697,7 @@ article.info-section li { margin-bottom: 8px; }
 <main class="main-wrapper">
   <form class="post-input-container" id="createPostForm" onsubmit="return false;">
     <div class="post-input-wrapper">
-      <textarea id="postText" class="post-textarea" placeholder="Write here..."></textarea>
+      <textarea id="postText" class="post-textarea" placeholder="Write here (minimum 25 characters)..."></textarea>
       
       <figure id="imagePreviewBox" class="post-preview-chip" style="display: none;">
         <img id="imagePreviewEl" src="" alt="Preview">
@@ -813,6 +813,7 @@ article.info-section li { margin-bottom: 8px; }
 
     const POST_EXPIRY_DAYS = 30;
     const MILLISECONDS_IN_DAY = 24 * 60 * 60 * 1000;
+    const MIN_POST_LENGTH = 25;
 
     let serverTimeOffset = 0;
     const offsetRef = ref(db, ".info/serverTimeOffset");
@@ -1689,12 +1690,16 @@ article.info-section li { margin-bottom: 8px; }
       }
 
       const text = document.getElementById("postText").value.trim();
-      if (!text && !selectedImageFile) { 
-        AlertKit.toast("Write something or attach a photo!", "warning"); 
+
+      if (text.length < MIN_POST_LENGTH) { 
+        AlertKit.warning(
+          "Too Short",
+          `Please write at least ${MIN_POST_LENGTH} characters (${text.length}/${MIN_POST_LENGTH}).`
+        ); 
         return; 
       }
 
-      if (text && containsBannedWords(text)) {
+      if (containsBannedWords(text)) {
         AlertKit.error("Blocked", "Your post contains inappropriate content and cannot be sent.");
         return;
       }
@@ -1729,10 +1734,10 @@ article.info-section li { margin-bottom: 8px; }
         const newPostRef = push(postsRef);
         const postData = {
           nickname,
+          text,
           timestamp: serverTimestamp()
         };
 
-        if (text) postData.text = text;
         if (uploadedImageUrl) postData.imageUrl = uploadedImageUrl;
 
         await set(newPostRef, postData);
