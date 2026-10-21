@@ -251,18 +251,14 @@
     ref,
     onValue,
     onChildAdded,
-    onChildChanged,
-    onChildRemoved,
     remove,
-    update,
-    query,
-    orderByChild,
-    equalTo
+    update
   } from "firebase/database";
+
+  const baseUrl = window.MEDIA_STORAGE_URL.replace(/\/$/, "");
 
   const configDefault = { databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app" };
   const configGroups = { databaseURL: "https://talkrush2-default-rtdb.asia-southeast1.firebasedatabase.app" };
-  const configFriends = { databaseURL: "https://talkrush3-default-rtdb.asia-southeast1.firebasedatabase.app" };
 
   const apps = getApps();
 
@@ -271,9 +267,6 @@
 
   const appGroups = apps.find(a => a.name === "TalkRushGroupApp") || initializeApp(configGroups, "TalkRushGroupApp");
   const dbGroups = getDatabase(appGroups);
-
-  const appFriends = apps.find(a => a.name === "TalkRushFriendApp") || initializeApp(configFriends, "TalkRushFriendApp");
-  const dbFriends = getDatabase(appFriends);
 
   let myNickname = localStorage.getItem("talkrush_nickname");
 
@@ -302,8 +295,21 @@
   let friendsInitialLoaded = false;
   let listenersAttached = false;
   let unsubs = [];
+  let friendsWs = null;
+  let friendsPingInterval = null;
 
   function detachListeners() {
+    if (friendsPingInterval) {
+      clearInterval(friendsPingInterval);
+      friendsPingInterval = null;
+    }
+    if (friendsWs) {
+      try {
+        friendsWs.onclose = null;
+        friendsWs.close();
+      } catch (e) {}
+      friendsWs = null;
+    }
     unsubs.forEach(u => {
       try {
         if (typeof u === 'function') u();
@@ -446,35 +452,94 @@
     processToastQueue();
   }
 
+  function initFriendsWebSocket() {
+    if (!myNickname || myNickname === 'Guest') return;
+
+    const wsProto = baseUrl.startsWith("https") ? "wss:" : "ws:";
+    const wsHost = baseUrl.replace(/^https?:\/\//, "");
+
+    try {
+      friendsWs = new WebSocket(`${wsProto}//${wsHost}/ws/friends`);
+    } catch (e) {
+      return;
+    }
+
+    friendsWs.onopen = () => {
+      if (friendsPingInterval) clearInterval(friendsPingInterval);
+      friendsPingInterval = setInterval(() => {
+        if (friendsWs && friendsWs.readyState === WebSocket.OPEN) {
+          friendsWs.send(JSON.stringify({ type: 'ping' }));
+        }
+      }, 25000);
+    };
+
+    friendsWs.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (!msg || msg.event === 'ping' || msg.event === 'pong' || msg.event === 'time' || msg.event === 'onDisconnectAck') return;
+
+        if (msg.event === 'connected') {
+          if (msg.data && typeof msg.data === 'object') {
+            Object.entries(msg.data).forEach(([chatId, friend]) => {
+              handleFriendRecord(chatId, friend, friendsInitialLoaded);
+            });
+          }
+          friendsInitialLoaded = true;
+          return;
+        }
+
+        const parts = (msg.path || '').split('/').filter(Boolean);
+        if (parts.length === 0) {
+          if (msg.event === 'delete' || msg.data === null) {
+            userFriendsMap = {};
+            updateFriendsBadge();
+          } else if (typeof msg.data === 'object' && msg.data) {
+            Object.entries(msg.data).forEach(([chatId, friend]) => {
+              handleFriendRecord(chatId, friend, true);
+            });
+          }
+          return;
+        }
+
+        const chatId = parts[0];
+        if (msg.event === 'delete' || msg.data === null) {
+          delete userFriendsMap[chatId];
+          updateFriendsBadge();
+        } else if (msg.event === 'patch') {
+          const merged = { ...(userFriendsMap[chatId] || {}), ...(msg.data || {}) };
+          handleFriendRecord(chatId, merged, true);
+        } else if (msg.event === 'put') {
+          handleFriendRecord(chatId, msg.data, true);
+        }
+      } catch (e) {}
+    };
+
+    friendsWs.onclose = () => {
+      if (friendsPingInterval) clearInterval(friendsPingInterval);
+      if (listenersAttached) {
+        setTimeout(initFriendsWebSocket, 3000);
+      }
+    };
+  }
+
   function startListeners() {
     detachListeners();
     if (!myNickname || myNickname === 'Guest') return;
     listenersAttached = true;
 
-    const friendsRef = ref(dbFriends, "friends");
+    fetch(`${baseUrl}/friends.json`)
+      .then(r => r.json())
+      .then(data => {
+        if (data && typeof data === 'object') {
+          Object.entries(data).forEach(([chatId, friend]) => {
+            handleFriendRecord(chatId, friend, friendsInitialLoaded);
+          });
+        }
+        friendsInitialLoaded = true;
+      })
+      .catch(() => {});
 
-    ["nickname1", "nickname2"].forEach((field) => {
-      const q = query(friendsRef, orderByChild(field), equalTo(myNickname));
-
-      const unsubAdded = onChildAdded(q, (snap) => {
-        handleFriendRecord(snap.key, snap.val(), friendsInitialLoaded);
-      }, (err) => console.error(`friends add (${field}) error:`, err));
-
-      const unsubChanged = onChildChanged(q, (snap) => {
-        handleFriendRecord(snap.key, snap.val(), true);
-      }, (err) => console.error(`friends change (${field}) error:`, err));
-
-      const unsubRemoved = onChildRemoved(q, (snap) => {
-        delete userFriendsMap[snap.key];
-        updateFriendsBadge();
-      }, (err) => console.error(`friends remove (${field}) error:`, err));
-
-      unsubs.push(unsubAdded, unsubChanged, unsubRemoved);
-    });
-
-    setTimeout(() => {
-      friendsInitialLoaded = true;
-    }, 2000);
+    initFriendsWebSocket();
 
     const safeNickKey = safeKey(myNickname);
     const postNotifRef = ref(dbDefault, `notifications/${safeNickKey}`);
