@@ -1161,28 +1161,9 @@ description: "View your chat history and messages with stranger friends and stay
 {% include menu.html %}
 
 <script type="module">
-  import { initializeApp, getApps } from "firebase/app";
-  import {
-    getDatabase,
-    ref,
-    onValue,
-    get,
-    set,
-    update,
-    remove,
-    push,
-    onChildAdded,
-    onChildChanged,
-    onChildRemoved,
-    query,
-    orderByChild,
-    limitToLast,
-    equalTo
-  } from "firebase/database";
-
-  const firebaseConfig = {
-    databaseURL: "https://talkrush3-default-rtdb.asia-southeast1.firebasedatabase.app"
-  };
+  const baseUrl = window.MEDIA_STORAGE_URL.replace(/\/$/, "");
+  const wsProto = baseUrl.startsWith("https") ? "wss:" : "ws:";
+  const wsHost = baseUrl.replace(/^https?:\/\//, "");
 
   const MESSAGE_LIMIT = 25;
 
@@ -1200,11 +1181,6 @@ description: "View your chat history and messages with stranger friends and stay
   let currentUserId = null;
   let currentChatId = null;
   let currentFriendName = "";
-  let friendUnsubs = [];
-  let messagesListener = null;
-  let messageChangedListener = null;
-  let messageRemovedListener = null;
-  let typingListener = null;
   let myNickname = null;
   let myFriendsData = {};
   let myFriendsMap = {};
@@ -1216,27 +1192,30 @@ description: "View your chat history and messages with stranger friends and stay
   let typingTimeout = null;
   const renderedMessageKeys = new Set();
 
+  let friendsWs = null;
+  let friendsPingInterval = null;
+  let messagesWs = null;
+  let messagesPingInterval = null;
+  let typingWs = null;
+  let typingPingInterval = null;
+
   let replyingTo = null;
   let editingMsgKey = null;
   let editingMsgTs = null;
   let contextTargetMsg = null;
 
-  let app;
-  const apps = getApps();
-  const targetAppName = "TalkRushFriendApp";
-  const existingApp = apps.find(a => a.name === targetAppName);
-
-  if (existingApp) {
-    app = existingApp;
-  } else {
-    app = initializeApp(firebaseConfig, targetAppName);
+  function syncServerTime() {
+    const clientTime = Date.now();
+    fetch(`${baseUrl}/api/time?clientTime=${clientTime}`)
+      .then(res => res.json())
+      .then(data => {
+        if (typeof data.serverTimeOffset === 'number') {
+          serverOffset = data.serverTimeOffset;
+        }
+      })
+      .catch(() => {});
   }
-
-  const db = getDatabase(app);
-
-  onValue(ref(db, ".info/serverTimeOffset"), (snap) => {
-    serverOffset = snap.val() || 0;
-  });
+  syncServerTime();
 
   const now = () => Date.now() + serverOffset;
 
@@ -1351,27 +1330,42 @@ description: "View your chat history and messages with stranger friends and stay
     typingTimeout = null;
     isTyping = false;
     if (currentChatId && currentUserId) {
-      remove(ref(db, `typing/${currentChatId}/${currentUserId}`)).catch(() => {});
+      fetch(`${baseUrl}/typing/${currentChatId}/${currentUserId}.json`, {
+        method: "DELETE"
+      }).catch(() => {});
     }
   }
 
   function touchFriend(chatId, text, timestamp) {
     if (!chatId || !myFriendsMap[chatId]) return Promise.resolve();
-    return update(ref(db, `friends/${chatId}`), {
-      lastMessageText: text,
-      lastTimestamp: timestamp,
-      lastSender: myNickname
+    return fetch(`${baseUrl}/friends/${chatId}.json`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        lastMessageText: text,
+        lastTimestamp: timestamp,
+        lastSender: myNickname
+      })
     }).catch((err) => console.error("friend update error:", err));
   }
 
   async function refreshLastPreview(chatId) {
     if (!chatId || !myFriendsMap[chatId]) return;
     try {
-      const snap = await get(query(ref(db, `messages/${chatId}`), orderByChild("timestamp"), limitToLast(1)));
+      const res = await fetch(`${baseUrl}/messages/${chatId}.json`);
+      if (!res.ok) return;
+      const msgs = await res.json();
       let last = null;
-      snap.forEach((child) => { last = child.val(); });
+      if (msgs && typeof msgs === 'object') {
+        const list = Object.values(msgs).sort((a, b) => (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0));
+        last = list[list.length - 1];
+      }
       if (!myFriendsMap[chatId]) return;
-      await update(ref(db, `friends/${chatId}`), { lastMessageText: previewText(last) });
+      await fetch(`${baseUrl}/friends/${chatId}.json`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lastMessageText: previewText(last) })
+      });
     } catch (e) {}
   }
 
@@ -1498,7 +1492,7 @@ description: "View your chat history and messages with stranger friends and stay
 
       if (isConfirmed) {
         try {
-          await remove(ref(db, `messages/${chatId}/${msgKey}`));
+          await fetch(`${baseUrl}/messages/${chatId}/${msgKey}.json`, { method: "DELETE" });
         } catch (err) {
           console.error("delete msg error:", err);
           return;
@@ -1575,8 +1569,12 @@ description: "View your chat history and messages with stranger friends and stay
   async function pushChatMessage(message) {
     const chatId = currentChatId;
     if (!chatId) return;
-    const newMsgRef = push(ref(db, `messages/${chatId}`));
-    await set(newMsgRef, message);
+    const res = await fetch(`${baseUrl}/messages/${chatId}.json`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(message)
+    });
+    if (!res.ok) throw new Error("Send failed");
     maintainMessageLimit(chatId);
     touchFriend(chatId, previewText(message), message.timestamp);
   }
@@ -1636,7 +1634,11 @@ description: "View your chat history and messages with stranger friends and stay
       if (!currentChatId) return;
       if (!isTyping) {
         isTyping = true;
-        set(ref(db, `typing/${currentChatId}/${currentUserId}`), true).catch(() => {});
+        fetch(`${baseUrl}/typing/${currentChatId}/${currentUserId}.json`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(true)
+        }).catch(() => {});
       }
       if (typingTimeout) clearTimeout(typingTimeout);
       typingTimeout = setTimeout(() => {
@@ -1683,6 +1685,19 @@ description: "View your chat history and messages with stranger friends and stay
     });
   }
 
+  function detachMessagesAndTypingWs() {
+    if (messagesPingInterval) { clearInterval(messagesPingInterval); messagesPingInterval = null; }
+    if (messagesWs) {
+      try { messagesWs.onclose = null; messagesWs.close(); } catch (e) {}
+      messagesWs = null;
+    }
+    if (typingPingInterval) { clearInterval(typingPingInterval); typingPingInterval = null; }
+    if (typingWs) {
+      try { typingWs.onclose = null; typingWs.close(); } catch (e) {}
+      typingWs = null;
+    }
+  }
+
   window.openChat = function(chatId, friendName) {
     const friendItem = document.querySelector(`.friend-item[data-chat-id="${chatId}"]`);
     if (friendItem) {
@@ -1715,11 +1730,7 @@ description: "View your chat history and messages with stranger friends and stay
     } catch (e) {}
 
     stopTyping();
-
-    if (messagesListener) { messagesListener(); messagesListener = null; }
-    if (messageChangedListener) { messageChangedListener(); messageChangedListener = null; }
-    if (messageRemovedListener) { messageRemovedListener(); messageRemovedListener = null; }
-    if (typingListener) { typingListener(); typingListener = null; }
+    detachMessagesAndTypingWs();
 
     document.getElementById('chatLog').innerHTML = '';
     renderedMessageKeys.clear();
@@ -1746,18 +1757,9 @@ description: "View your chat history and messages with stranger friends and stay
       history.pushState({ chat: chatId }, '', newUrl);
     }
 
-    listenForMessages();
-    listenForTyping();
+    listenForMessages(chatId);
+    listenForTyping(chatId);
   };
-
-  function detachFriendListeners() {
-    friendUnsubs.forEach(u => {
-      try {
-        if (typeof u === 'function') u();
-      } catch (e) {}
-    });
-    friendUnsubs = [];
-  }
 
   function scheduleFriendsRender() {
     clearTimeout(renderDebounceTimer);
@@ -1860,8 +1862,29 @@ description: "View your chat history and messages with stranger friends and stay
     list.style.display = "flex";
   }
 
+  function detachFriendsWs() {
+    if (friendsPingInterval) { clearInterval(friendsPingInterval); friendsPingInterval = null; }
+    if (friendsWs) {
+      try { friendsWs.onclose = null; friendsWs.close(); } catch (e) {}
+      friendsWs = null;
+    }
+  }
+
+  function processFriendsPayload(data) {
+    myFriendsMap = {};
+    if (data && typeof data === 'object') {
+      Object.entries(data).forEach(([chatId, val]) => {
+        if (!val) return;
+        if (val.nickname1 === myNickname || val.nickname2 === myNickname) {
+          myFriendsMap[chatId] = val;
+        }
+      });
+    }
+    scheduleFriendsRender();
+  }
+
   function loadFriends() {
-    detachFriendListeners();
+    detachFriendsWs();
     myFriendsMap = {};
     myFriendsData = {};
     initialFriendsLoaded = false;
@@ -1881,75 +1904,146 @@ description: "View your chat history and messages with stranger friends and stay
     empty.style.display = "none";
     list.style.display = "none";
 
-    const friendsRef = ref(db, "friends");
-
-    ["nickname1", "nickname2"].forEach((field) => {
-      const q = query(friendsRef, orderByChild(field), equalTo(myNickname));
-
-      const unsubAdded = onChildAdded(q, (snap) => {
-        const val = snap.val();
-        if (val) {
-          myFriendsMap[snap.key] = val;
-          scheduleFriendsRender();
-        }
-      }, (err) => console.error(`inbox friends ${field} add error:`, err));
-
-      const unsubChanged = onChildChanged(q, (snap) => {
-        const val = snap.val();
-        if (val) {
-          myFriendsMap[snap.key] = val;
-          scheduleFriendsRender();
-        }
-      }, (err) => console.error(`inbox friends ${field} change error:`, err));
-
-      const unsubRemoved = onChildRemoved(q, (snap) => {
-        delete myFriendsMap[snap.key];
-        delete myFriendsData[snap.key];
+    fetch(`${baseUrl}/friends.json`)
+      .then(res => res.json())
+      .then(data => {
+        initialFriendsLoaded = true;
+        processFriendsPayload(data);
+      })
+      .catch(() => {
+        initialFriendsLoaded = true;
         scheduleFriendsRender();
-      }, (err) => console.error(`inbox friends ${field} remove error:`, err));
+      });
 
-      friendUnsubs.push(unsubAdded, unsubChanged, unsubRemoved);
-    });
+    try {
+      friendsWs = new WebSocket(`${wsProto}//${wsHost}/ws/friends`);
+    } catch (e) {
+      return;
+    }
 
-    setTimeout(() => {
-      initialFriendsLoaded = true;
-      scheduleFriendsRender();
-    }, 1200);
+    friendsWs.onopen = () => {
+      if (friendsPingInterval) clearInterval(friendsPingInterval);
+      friendsPingInterval = setInterval(() => {
+        if (friendsWs && friendsWs.readyState === WebSocket.OPEN) {
+          friendsWs.send(JSON.stringify({ type: 'ping' }));
+        }
+      }, 25000);
+    };
+
+    friendsWs.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (!msg || msg.event === 'ping' || msg.event === 'pong' || msg.event === 'time' || msg.event === 'onDisconnectAck') return;
+
+        if (msg.event === 'connected') {
+          processFriendsPayload(msg.data);
+          initialFriendsLoaded = true;
+          return;
+        }
+
+        const parts = (msg.path || '').split('/').filter(Boolean);
+        if (parts.length === 0) {
+          if (msg.event === 'delete' || msg.data === null) {
+            myFriendsMap = {};
+            scheduleFriendsRender();
+          } else if (typeof msg.data === 'object' && msg.data) {
+            processFriendsPayload(msg.data);
+          }
+          return;
+        }
+
+        const chatId = parts[0];
+        if (msg.event === 'delete' || msg.data === null) {
+          delete myFriendsMap[chatId];
+          delete myFriendsData[chatId];
+          scheduleFriendsRender();
+        } else if (msg.event === 'put' || msg.event === 'patch') {
+          const val = msg.data;
+          if (val && typeof val === 'object') {
+            if (val.nickname1 === myNickname || val.nickname2 === myNickname) {
+              myFriendsMap[chatId] = { ...(myFriendsMap[chatId] || {}), ...val };
+            } else {
+              delete myFriendsMap[chatId];
+            }
+            scheduleFriendsRender();
+          }
+        }
+      } catch (e) {}
+    };
+
+    friendsWs.onclose = () => {
+      if (friendsPingInterval) clearInterval(friendsPingInterval);
+      setTimeout(() => {
+        if (!currentChatId) loadFriends();
+      }, 3000);
+    };
   }
 
-  function listenForMessages() {
-    if (!currentChatId) return;
+  function listenForMessages(chatId) {
+    try {
+      messagesWs = new WebSocket(`${wsProto}//${wsHost}/ws/messages/${chatId}`);
+    } catch (e) {
+      return;
+    }
 
-    const listenedChatId = currentChatId;
-    const messagesRef = ref(db, `messages/${listenedChatId}`);
-    const messagesQuery = query(messagesRef, orderByChild("timestamp"), limitToLast(MESSAGE_LIMIT));
+    messagesWs.onopen = () => {
+      if (messagesPingInterval) clearInterval(messagesPingInterval);
+      messagesPingInterval = setInterval(() => {
+        if (messagesWs && messagesWs.readyState === WebSocket.OPEN) {
+          messagesWs.send(JSON.stringify({ type: 'ping' }));
+        }
+      }, 25000);
+    };
 
-    messagesListener = onChildAdded(messagesQuery, (snapshot) => {
-      if (currentChatId !== listenedChatId) return;
+    messagesWs.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (!msg || msg.event === 'ping' || msg.event === 'pong' || msg.event === 'time' || msg.event === 'onDisconnectAck') return;
+        if (currentChatId !== chatId) return;
 
-      const key = snapshot.key;
-      if (renderedMessageKeys.has(key)) return;
-      renderedMessageKeys.add(key);
+        if (msg.event === 'connected') {
+          const allMsgs = msg.data;
+          if (allMsgs && typeof allMsgs === 'object') {
+            const list = Object.entries(allMsgs).map(([k, v]) => ({ key: k, ...v }));
+            list.sort((a, b) => (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0));
+            const trimmed = list.slice(-MESSAGE_LIMIT);
+            trimmed.forEach(m => {
+              if (!renderedMessageKeys.has(m.key)) {
+                renderedMessageKeys.add(m.key);
+                appendMessageToChat(m, m.nickname === myNickname);
+              }
+            });
+            scrollToBottom();
+          }
+          return;
+        }
 
-      const msg = snapshot.val();
-      msg.key = key;
+        const parts = (msg.path || '').split('/').filter(Boolean);
+        const key = parts[0];
 
-      appendMessageToChat(msg, msg.nickname === myNickname);
-      scrollToBottom();
-    }, (err) => console.error("inbox messages error:", err));
+        if (msg.event === 'delete' || msg.data === null) {
+          if (key) {
+            renderedMessageKeys.delete(key);
+            removeMessageFromDOM(key);
+          }
+        } else if (msg.event === 'patch') {
+          if (key) {
+            updateMessageInDOM({ key: key, ...msg.data });
+          }
+        } else if (msg.event === 'put') {
+          if (key && !renderedMessageKeys.has(key)) {
+            renderedMessageKeys.add(key);
+            const messageData = { key: key, ...msg.data };
+            appendMessageToChat(messageData, messageData.nickname === myNickname);
+            scrollToBottom();
+          }
+        }
+      } catch (e) {}
+    };
 
-    messageChangedListener = onChildChanged(messagesRef, (snapshot) => {
-      if (currentChatId !== listenedChatId) return;
-      const msg = snapshot.val();
-      msg.key = snapshot.key;
-      updateMessageInDOM(msg);
-    }, (err) => console.error("inbox message change error:", err));
-
-    messageRemovedListener = onChildRemoved(messagesRef, (snapshot) => {
-      if (currentChatId !== listenedChatId) return;
-      renderedMessageKeys.delete(snapshot.key);
-      removeMessageFromDOM(snapshot.key);
-    }, (err) => console.error("inbox message remove error:", err));
+    messagesWs.onclose = () => {
+      if (messagesPingInterval) clearInterval(messagesPingInterval);
+    };
   }
 
   function updateMessageInDOM(msg) {
@@ -1995,22 +2089,58 @@ description: "View your chat history and messages with stranger friends and stay
     if (row) row.remove();
   }
 
-  function listenForTyping() {
-    if (!currentChatId) return;
+  function listenForTyping(chatId) {
+    try {
+      typingWs = new WebSocket(`${wsProto}//${wsHost}/ws/typing/${chatId}`);
+    } catch (e) {
+      return;
+    }
 
-    const listenedChatId = currentChatId;
-    const typingRef = ref(db, `typing/${listenedChatId}`);
+    typingWs.onopen = () => {
+      if (typingPingInterval) clearInterval(typingPingInterval);
+      typingPingInterval = setInterval(() => {
+        if (typingWs && typingWs.readyState === WebSocket.OPEN) {
+          typingWs.send(JSON.stringify({ type: 'ping' }));
+        }
+      }, 25000);
+      try {
+        typingWs.send(JSON.stringify({
+          type: "onDisconnectDelete",
+          path: currentUserId
+        }));
+      } catch (e) {}
+    };
 
-    if (typingListener) { typingListener(); typingListener = null; }
+    typingWs.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (!msg || msg.event === 'ping' || msg.event === 'pong' || msg.event === 'time' || msg.event === 'onDisconnectAck') return;
+        if (currentChatId !== chatId) return;
 
-    typingListener = onValue(typingRef, (snapshot) => {
-      if (currentChatId !== listenedChatId) return;
-      const data = snapshot.val();
-      if (!data) { hideTypingIndicator(); return; }
-      const typingUsers = Object.keys(data).filter(id => id !== currentUserId);
-      if (typingUsers.length > 0) showTypingIndicator();
-      else hideTypingIndicator();
-    }, (err) => console.error("inbox typing error:", err));
+        if (msg.event === 'connected') {
+          const data = msg.data || {};
+          const typingUsers = Object.keys(data).filter(id => id !== currentUserId);
+          if (typingUsers.length > 0) showTypingIndicator();
+          else hideTypingIndicator();
+          return;
+        }
+
+        const parts = (msg.path || '').split('/').filter(Boolean);
+        const typingUserId = parts[0];
+
+        if (typingUserId && typingUserId !== currentUserId) {
+          if (msg.event === 'delete' || msg.data === null) {
+            hideTypingIndicator();
+          } else {
+            showTypingIndicator();
+          }
+        }
+      } catch (e) {}
+    };
+
+    typingWs.onclose = () => {
+      if (typingPingInterval) clearInterval(typingPingInterval);
+    };
   }
 
   async function maintainMessageLimit(chatId = currentChatId) {
@@ -2018,29 +2148,21 @@ description: "View your chat history and messages with stranger friends and stay
     isPruning = true;
 
     try {
-      const pruneQuery = query(
-        ref(db, `messages/${chatId}`),
-        orderByChild("timestamp"),
-        limitToLast(MESSAGE_LIMIT + 10)
-      );
+      const res = await fetch(`${baseUrl}/messages/${chatId}.json`);
+      if (!res.ok) return;
+      const msgs = await res.json();
+      if (!msgs || typeof msgs !== 'object') return;
 
-      const snapshot = await get(pruneQuery);
-      if (!snapshot.exists()) return;
-
-      const messages = [];
-      snapshot.forEach((childSnapshot) => {
-        messages.push({ key: childSnapshot.key, timestamp: childSnapshot.val().timestamp, val: childSnapshot.val() });
-      });
-
-      if (messages.length > MESSAGE_LIMIT) {
-        messages.sort((a, b) => a.timestamp - b.timestamp);
-        const toDelete = messages.slice(0, messages.length - MESSAGE_LIMIT);
-        const updates = {};
-        for (const msg of toDelete) {
-          updates[`/messages/${chatId}/${msg.key}`] = null;
-          if (msg.val && (msg.val.type === 'image' || msg.val.type === 'audio')) safeDeleteMedia(msg.val.url);
+      const entries = Object.entries(msgs);
+      if (entries.length > MESSAGE_LIMIT) {
+        entries.sort((a, b) => (Number(a[1].timestamp) || 0) - (Number(b[1].timestamp) || 0));
+        const toDelete = entries.slice(0, entries.length - MESSAGE_LIMIT);
+        for (const [mKey, mVal] of toDelete) {
+          fetch(`${baseUrl}/messages/${chatId}/${mKey}.json`, { method: "DELETE" }).catch(() => {});
+          if (mVal && (mVal.type === 'image' || mVal.type === 'audio')) {
+            safeDeleteMedia(mVal.url);
+          }
         }
-        await update(ref(db), updates);
       }
     } catch (e) {
     } finally {
@@ -2058,10 +2180,18 @@ description: "View your chat history and messages with stranger friends and stay
     if (editingMsgKey) {
       const key = editingMsgKey;
       const ts = editingMsgTs;
-      update(ref(db, `messages/${chatId}/${key}`), { text: content, edited: true }).then(() => {
+      fetch(`${baseUrl}/messages/${chatId}/${key}.json`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: content, edited: true })
+      }).then(() => {
         const friend = myFriendsMap[chatId];
         if (friend && friend.lastTimestamp === ts) {
-          update(ref(db, `friends/${chatId}`), { lastMessageText: content.substring(0, 30) + (content.length > 30 ? '...' : '') }).catch(() => {});
+          fetch(`${baseUrl}/friends/${chatId}.json`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ lastMessageText: content.substring(0, 30) + (content.length > 30 ? '...' : '') })
+          }).catch(() => {});
         }
       }).catch((err) => console.error("edit error:", err));
       clearEdit();
@@ -2140,12 +2270,8 @@ description: "View your chat history and messages with stranger friends and stay
       return;
     }
 
-    if (messagesListener) { messagesListener(); messagesListener = null; }
-    if (messageChangedListener) { messageChangedListener(); messageChangedListener = null; }
-    if (messageRemovedListener) { messageRemovedListener(); messageRemovedListener = null; }
-    if (typingListener) { typingListener(); typingListener = null; }
-
     stopTyping();
+    detachMessagesAndTypingWs();
     hideTypingIndicator();
     clearReply();
     clearEdit();
@@ -2158,7 +2284,7 @@ description: "View your chat history and messages with stranger friends and stay
     document.getElementById('chatContainer').style.display = 'none';
     document.getElementById('pageTitle').textContent = 'Messages';
     if (fromPopstate !== true) history.replaceState(null, '', location.pathname);
-    scheduleFriendsRender();
+    loadFriends();
   };
 
   function appendMessageToChat(msg, isMe) {
@@ -2266,9 +2392,11 @@ description: "View your chat history and messages with stranger friends and stay
     if (isConfirmed) {
       if (currentChatId === chatId) window.closeChat();
       delete myFriendsMap[chatId];
-      remove(ref(db, "friends/" + chatId));
-      remove(ref(db, "messages/" + chatId));
-      remove(ref(db, "typing/" + chatId));
+      await Promise.all([
+        fetch(`${baseUrl}/friends/${chatId}.json`, { method: "DELETE" }),
+        fetch(`${baseUrl}/messages/${chatId}.json`, { method: "DELETE" }),
+        fetch(`${baseUrl}/typing/${chatId}.json`, { method: "DELETE" })
+      ]).catch(() => {});
       scheduleFriendsRender();
     }
   };
