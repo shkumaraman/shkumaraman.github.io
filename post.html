@@ -153,6 +153,20 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   border-color: var(--accent-border);
 }
 
+.post-char-count {
+  position: absolute;
+  bottom: 17px;
+  left: 54px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--dark-text-muted);
+  z-index: 5;
+  pointer-events: none;
+  transition: color 0.2s;
+}
+.light-mode .post-char-count { color: var(--light-text-muted); }
+.post-char-count.ready { color: #2ecc71; }
+
 .post-preview-chip {
   position: absolute;
   bottom: 8px;
@@ -699,6 +713,8 @@ article.info-section li { margin-bottom: 8px; }
     <div class="post-input-wrapper">
       <textarea id="postText" class="post-textarea" placeholder="Write here (minimum 25 characters)..."></textarea>
       
+      <span id="postCharCount" class="post-char-count">0/25</span>
+
       <figure id="imagePreviewBox" class="post-preview-chip" style="display: none;">
         <img id="imagePreviewEl" src="" alt="Preview">
         <button type="button" id="removeImgBtn" class="remove-preview-btn" title="Remove photo" aria-label="Remove preview">✕</button>
@@ -1529,6 +1545,19 @@ article.info-section li { margin-bottom: 8px; }
     const removeImgBtn = document.getElementById("removeImgBtn");
     const submitBtn = document.getElementById("submitBtn");
     const createPostForm = document.getElementById("createPostForm");
+    const postTextEl = document.getElementById("postText");
+    const postCharCountEl = document.getElementById("postCharCount");
+
+    function updatePostState() {
+      const len = postTextEl.value.trim().length;
+      const ready = len >= MIN_POST_LENGTH;
+      postCharCountEl.textContent = `${len}/${MIN_POST_LENGTH}`;
+      postCharCountEl.classList.toggle("ready", ready);
+      submitBtn.disabled = !ready;
+    }
+
+    postTextEl.addEventListener("input", updatePostState);
+    updatePostState();
 
     const defaultSubmitSvg = `
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -1690,16 +1719,14 @@ article.info-section li { margin-bottom: 8px; }
       }
 
       const text = document.getElementById("postText").value.trim();
-
-      if (text.length < MIN_POST_LENGTH) { 
-        AlertKit.warning(
-          "Too Short",
-          `Please write at least ${MIN_POST_LENGTH} characters (${text.length}/${MIN_POST_LENGTH}).`
-        ); 
+      if (!text && !selectedImageFile) { 
+        AlertKit.toast("Write something or attach a photo!", "warning"); 
         return; 
       }
 
-      if (containsBannedWords(text)) {
+      if (text.length < MIN_POST_LENGTH) return;
+
+      if (text && containsBannedWords(text)) {
         AlertKit.error("Blocked", "Your post contains inappropriate content and cannot be sent.");
         return;
       }
@@ -1715,7 +1742,7 @@ article.info-section li { margin-bottom: 8px; }
             const isSafe = await window.checkImageSafety(selectedImageFile);
             if (!isSafe) {
               AlertKit.warning("Image Blocked", "Nudity or explicit content is strictly not allowed in public posts.");
-              submitBtn.disabled = false;
+              updatePostState();
               submitBtn.innerHTML = defaultSubmitSvg;
               return;
             }
@@ -1723,7 +1750,7 @@ article.info-section li { margin-bottom: 8px; }
 
           if (typeof window.uploadMediaToServer !== 'function') {
             AlertKit.error("Server Error", "Upload service is not ready. Please refresh.");
-            submitBtn.disabled = false;
+            updatePostState();
             submitBtn.innerHTML = defaultSubmitSvg;
             return;
           }
@@ -1734,10 +1761,10 @@ article.info-section li { margin-bottom: 8px; }
         const newPostRef = push(postsRef);
         const postData = {
           nickname,
-          text,
           timestamp: serverTimestamp()
         };
 
+        if (text) postData.text = text;
         if (uploadedImageUrl) postData.imageUrl = uploadedImageUrl;
 
         await set(newPostRef, postData);
@@ -1752,6 +1779,7 @@ article.info-section li { margin-bottom: 8px; }
 
         document.getElementById("postText").value = "";
         clearSelectedImage();
+        updatePostState();
 
         AlertKit.toast("Post published successfully!", "success");
       } catch (error) {
@@ -1761,7 +1789,7 @@ article.info-section li { margin-bottom: 8px; }
           AlertKit.error("Failed", "Failed to publish post. Please try again.");
         }
       } finally {
-        submitBtn.disabled = false;
+        updatePostState();
         submitBtn.innerHTML = defaultSubmitSvg;
       }
     }
