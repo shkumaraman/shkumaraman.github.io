@@ -550,11 +550,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   const defaultApp = apps.find(a => a.name === '[DEFAULT]') || initializeApp(firebaseConfig);
   const db = getDatabase(defaultApp);
 
-  const friendFirebaseConfig = { databaseURL: "https://talkrush3-default-rtdb.asia-southeast1.firebasedatabase.app" };
-  const friendAppName = "TalkRushFriendApp";
-  const existingFriendApp = apps.find(a => a.name === friendAppName);
-  const friendApp = existingFriendApp ? existingFriendApp : initializeApp(friendFirebaseConfig, friendAppName);
-  const friendDb = getDatabase(friendApp);
+  const baseUrl = window.MEDIA_STORAGE_URL.replace(/\/$/, "");
 
   let GIPHY_API_KEY = '';
   let CHAT_END_IMAGE = '/assets/chat_end.png';
@@ -1464,8 +1460,20 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     }
 
     try {
-      const newChatRef = push(ref(friendDb, 'friends'));
-      await set(newChatRef, { nickname1: myNickname, nickname2: currentStrangerNickname, lastMessageText: "Say Hi!", lastTimestamp: Date.now(), lastSender: myNickname });
+      const res = await fetch(`${baseUrl}/friends.json`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nickname1: myNickname,
+          nickname2: currentStrangerNickname,
+          lastMessageText: "Say Hi!",
+          lastTimestamp: Date.now(),
+          lastSender: myNickname
+        })
+      });
+
+      if (!res.ok) throw new Error("Failed to save friend");
+
       if (!isBotActive) {
         myConn.send({ type: 'friend_added', nickname: myNickname });
       }
