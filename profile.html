@@ -843,16 +843,11 @@ import {
   get, 
   push,
   remove,
-  query,
-  orderByChild,
-  equalTo,
   onChildAdded,
   onChildRemoved
 } from "firebase/database";
 
-const friendsFirebaseConfig = {
-  databaseURL: "https://talkrush3-default-rtdb.asia-southeast1.firebasedatabase.app"
-};
+const baseUrl = window.MEDIA_STORAGE_URL.replace(/\/$/, "");
 
 const postsFirebaseConfig = {
   databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app"
@@ -861,19 +856,6 @@ const postsFirebaseConfig = {
 const POST_EXPIRY_DAYS = 30;
 const MILLISECONDS_IN_DAY = 24 * 60 * 60 * 1000;
 const POSTS_PAGE_URL = "/post.html";
-
-let app;
-const apps = getApps();
-const targetAppName = "TalkRushFriendApp";
-const existingApp = apps.find(a => a.name === targetAppName);
-
-if (existingApp) {
-  app = existingApp;
-} else {
-  app = initializeApp(friendsFirebaseConfig, targetAppName);
-}
-
-const db = window.firebaseDB || getDatabase(app);
 
 const postsApp = getApps().find(a => a.name === "[DEFAULT]") || initializeApp(postsFirebaseConfig);
 const postsDb = getDatabase(postsApp);
@@ -1393,36 +1375,30 @@ async function checkFriendStatus(targetFullId, targetClean) {
     return;
   }
 
-  const friendsTableRef = ref(db, 'friends');
-
   try {
-    const q1 = query(friendsTableRef, orderByChild("nickname1"), equalTo(currentNick));
-    const q2 = query(friendsTableRef, orderByChild("nickname2"), equalTo(currentNick));
-
-    const [snap1, snap2] = await Promise.all([get(q1), get(q2)]);
+    const res = await fetch(`${baseUrl}/friends.json`);
+    if (!res.ok) throw new Error("Failed to fetch friends");
+    const data = await res.json();
 
     isFriend = false;
     existingChatId = null;
 
-    const evaluateFriendsMap = (snap) => {
-      if (!snap.exists()) return false;
-      const data = snap.val();
+    if (data && typeof data === 'object') {
       for (const [chatId, friend] of Object.entries(data)) {
-        const other = isSameNickname(friend.nickname1, currentNick)
-          ? friend.nickname2 
-          : friend.nickname1;
+        if (!friend) continue;
+        const isUserInChat = isSameNickname(friend.nickname1, currentNick) || isSameNickname(friend.nickname2, currentNick);
+        if (isUserInChat) {
+          const other = isSameNickname(friend.nickname1, currentNick)
+            ? friend.nickname2 
+            : friend.nickname1;
 
-        if (isSameNickname(other, targetFullId)) {
-          isFriend = true;
-          existingChatId = chatId;
-          return true;
+          if (isSameNickname(other, targetFullId)) {
+            isFriend = true;
+            existingChatId = chatId;
+            break;
+          }
         }
       }
-      return false;
-    };
-
-    if (!evaluateFriendsMap(snap1)) {
-      evaluateFriendsMap(snap2);
     }
   } catch (error) {
     console.error(error);
@@ -1515,16 +1491,22 @@ window.sendFriendRequest = async (targetId) => {
   if (!isConfirmed) return;
 
   try {
-    const newChatRef = push(ref(db, 'friends'));
-    await set(newChatRef, {
-      nickname1: currentNick,
-      nickname2: targetId,
-      lastMessageText: "Say Hi!",
-      lastTimestamp: Date.now(),
-      lastSender: currentNick
+    const res = await fetch(`${baseUrl}/friends.json`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        nickname1: currentNick,
+        nickname2: targetId,
+        lastMessageText: "Say Hi!",
+        lastTimestamp: Date.now(),
+        lastSender: currentNick
+      })
     });
+
+    if (!res.ok) throw new Error("Failed to save friend");
+    const resData = await res.json();
     isFriend = true;
-    existingChatId = newChatRef.key;
+    existingChatId = resData.name;
     if (currentActiveUser) {
       renderProfile(currentActiveUser);
     }
@@ -1543,9 +1525,11 @@ window.removeFriendConfirmation = async () => {
 
   if (isConfirmed && existingChatId) {
     try {
-      await remove(ref(db, `friends/${existingChatId}`));
-      await remove(ref(db, `messages/${existingChatId}`));
-      await remove(ref(db, `typing/${existingChatId}`));
+      await Promise.all([
+        fetch(`${baseUrl}/friends/${existingChatId}.json`, { method: "DELETE" }),
+        fetch(`${baseUrl}/messages/${existingChatId}.json`, { method: "DELETE" }),
+        fetch(`${baseUrl}/typing/${existingChatId}.json`, { method: "DELETE" })
+      ]);
       
       isFriend = false;
       existingChatId = null;
