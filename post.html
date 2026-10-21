@@ -797,26 +797,19 @@ article.info-section li { margin-bottom: 8px; }
       limitToLast,
       endAt,
       get,
-      equalTo,
       serverTimestamp
     } from "firebase/database";
 
+    const baseUrl = window.MEDIA_STORAGE_URL.replace(/\/$/, "");
+
     const postsFirebaseConfig = {
       databaseURL: "https://talkrush-76259-default-rtdb.asia-southeast1.firebasedatabase.app"
-    };
-
-    const friendsFirebaseConfig = {
-      databaseURL: "https://talkrush3-default-rtdb.asia-southeast1.firebasedatabase.app"
     };
 
     const apps = getApps();
     const app = apps.find(a => a.name === "TalkRushPostsApp") || initializeApp(postsFirebaseConfig, "TalkRushPostsApp");
     const db = getDatabase(app, postsFirebaseConfig.databaseURL);
     const postsRef = ref(db, "posts");
-
-    const friendApp = apps.find(a => a.name === "TalkRushFriendApp") || initializeApp(friendsFirebaseConfig, "TalkRushFriendApp");
-    const friendsDb = getDatabase(friendApp, friendsFirebaseConfig.databaseURL);
-    const friendsRef = ref(friendsDb, "friends");
 
     const POST_EXPIRY_DAYS = 30;
     const MILLISECONDS_IN_DAY = 24 * 60 * 60 * 1000;
@@ -847,7 +840,8 @@ article.info-section li { margin-bottom: 8px; }
     const activeCommentListeners = new Set();
     const activeLikeListeners = new Set();
 
-    let cleanFriendsListeners = null;
+    let friendsWs = null;
+    let friendsPingInterval = null;
 
     let currentNickname = localStorage.getItem("talkrush_nickname");
 
@@ -933,9 +927,16 @@ article.info-section li { margin-bottom: 8px; }
     };
 
     function initFriendsListener() {
-      if (cleanFriendsListeners) {
-        cleanFriendsListeners();
-        cleanFriendsListeners = null;
+      if (friendsPingInterval) {
+        clearInterval(friendsPingInterval);
+        friendsPingInterval = null;
+      }
+      if (friendsWs) {
+        try {
+          friendsWs.onclose = null;
+          friendsWs.close();
+        } catch (e) {}
+        friendsWs = null;
       }
       myFriendsMap = {};
 
@@ -945,39 +946,102 @@ article.info-section li { margin-bottom: 8px; }
         return;
       }
 
-      const q1 = query(friendsRef, orderByChild("nickname1"), equalTo(nick));
-      const q2 = query(friendsRef, orderByChild("nickname2"), equalTo(nick));
-
-      const handleAdded = (snap) => {
-        const val = snap.val();
-        if (!val) return;
-        const otherNick = (val.nickname1 === nick) ? val.nickname2 : val.nickname1;
-        if (otherNick) {
-          myFriendsMap[otherNick] = snap.key;
+      fetch(`${baseUrl}/friends.json`)
+        .then(r => r.json())
+        .then(data => {
+          if (data && typeof data === 'object') {
+            Object.entries(data).forEach(([chatId, val]) => {
+              if (!val) return;
+              if (isSameNickname(val.nickname1, nick)) {
+                myFriendsMap[val.nickname2] = chatId;
+              } else if (isSameNickname(val.nickname2, nick)) {
+                myFriendsMap[val.nickname1] = chatId;
+              }
+            });
+          }
           updateAllFriendButtons();
-        }
+        })
+        .catch(() => {});
+
+      const wsProto = baseUrl.startsWith("https") ? "wss:" : "ws:";
+      const wsHost = baseUrl.replace(/^https?:\/\//, "");
+
+      try {
+        friendsWs = new WebSocket(`${wsProto}//${wsHost}/ws/friends`);
+      } catch (e) {
+        return;
+      }
+
+      friendsWs.onopen = () => {
+        if (friendsPingInterval) clearInterval(friendsPingInterval);
+        friendsPingInterval = setInterval(() => {
+          if (friendsWs && friendsWs.readyState === WebSocket.OPEN) {
+            friendsWs.send(JSON.stringify({ type: 'ping' }));
+          }
+        }, 25000);
       };
 
-      const handleRemoved = (snap) => {
-        const val = snap.val();
-        if (!val) return;
-        const otherNick = (val.nickname1 === nick) ? val.nickname2 : val.nickname1;
-        if (otherNick && myFriendsMap[otherNick]) {
-          delete myFriendsMap[otherNick];
-          updateAllFriendButtons();
-        }
+      friendsWs.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (!msg || msg.event === 'ping' || msg.event === 'pong' || msg.event === 'time' || msg.event === 'onDisconnectAck') return;
+
+          if (msg.event === 'connected') {
+            if (msg.data && typeof msg.data === 'object') {
+              Object.entries(msg.data).forEach(([chatId, val]) => {
+                if (!val) return;
+                if (isSameNickname(val.nickname1, nick)) {
+                  myFriendsMap[val.nickname2] = chatId;
+                } else if (isSameNickname(val.nickname2, nick)) {
+                  myFriendsMap[val.nickname1] = chatId;
+                }
+              });
+              updateAllFriendButtons();
+            }
+            return;
+          }
+
+          const parts = (msg.path || '').split('/').filter(Boolean);
+          if (parts.length === 0) {
+            if (msg.event === 'delete' || msg.data === null) {
+              myFriendsMap = {};
+              updateAllFriendButtons();
+            } else if (typeof msg.data === 'object' && msg.data) {
+              Object.entries(msg.data).forEach(([chatId, val]) => {
+                if (!val) return;
+                if (isSameNickname(val.nickname1, nick)) {
+                  myFriendsMap[val.nickname2] = chatId;
+                } else if (isSameNickname(val.nickname2, nick)) {
+                  myFriendsMap[val.nickname1] = chatId;
+                }
+              });
+              updateAllFriendButtons();
+            }
+            return;
+          }
+
+          const chatId = parts[0];
+          if (msg.event === 'delete' || msg.data === null) {
+            Object.keys(myFriendsMap).forEach(key => {
+              if (myFriendsMap[key] === chatId) delete myFriendsMap[key];
+            });
+            updateAllFriendButtons();
+          } else if (msg.event === 'put' || msg.event === 'patch') {
+            const val = msg.data;
+            if (val && typeof val === 'object') {
+              if (isSameNickname(val.nickname1, nick)) {
+                myFriendsMap[val.nickname2] = chatId;
+              } else if (isSameNickname(val.nickname2, nick)) {
+                myFriendsMap[val.nickname1] = chatId;
+              }
+              updateAllFriendButtons();
+            }
+          }
+        } catch (e) {}
       };
 
-      const unsubAdded1 = onChildAdded(q1, handleAdded, () => {});
-      const unsubRemoved1 = onChildRemoved(q1, handleRemoved, () => {});
-      const unsubAdded2 = onChildAdded(q2, handleAdded, () => {});
-      const unsubRemoved2 = onChildRemoved(q2, handleRemoved, () => {});
-
-      cleanFriendsListeners = () => {
-        unsubAdded1();
-        unsubRemoved1();
-        unsubAdded2();
-        unsubRemoved2();
+      friendsWs.onclose = () => {
+        if (friendsPingInterval) clearInterval(friendsPingInterval);
       };
     }
 
@@ -1430,7 +1494,7 @@ article.info-section li { margin-bottom: 8px; }
         displayName = displayName.substring(3);
       }
 
-      const isFriend = !!myFriendsMap[targetNickname];
+      const isFriend = Object.keys(myFriendsMap).some(friendNick => isSameNickname(friendNick, targetNickname));
       const safeTargetNick = escapeHtml(targetNickname);
       const safeDisplay = escapeHtml(displayName);
 
@@ -1529,14 +1593,24 @@ article.info-section li { margin-bottom: 8px; }
       if (!isConfirmed) return;
 
       try {
-        const newChatRef = push(ref(friendsDb, 'friends'));
-        await set(newChatRef, {
-          nickname1: currentNick,
-          nickname2: targetNickname,
-          lastMessageText: "Say Hi!",
-          lastTimestamp: serverTimestamp(),
-          lastSender: currentNick
+        const res = await fetch(`${baseUrl}/friends.json`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            nickname1: currentNick,
+            nickname2: targetNickname,
+            lastMessageText: "Say Hi!",
+            lastTimestamp: Date.now(),
+            lastSender: currentNick
+          })
         });
+
+        if (!res.ok) throw new Error("Failed to add friend");
+        const resData = await res.json();
+        if (resData && resData.name) {
+          myFriendsMap[targetNickname] = resData.name;
+          updateAllFriendButtons();
+        }
         AlertKit.toast(`Added ${displayName} as a friend!`, 'success');
       } catch (error) {
         AlertKit.error("Error", "Failed to add friend. Please try again.");
@@ -1544,7 +1618,7 @@ article.info-section li { margin-bottom: 8px; }
     };
 
     window.messageUser = (targetNickname) => {
-      const chatId = myFriendsMap[targetNickname];
+      const chatId = myFriendsMap[targetNickname] || Object.entries(myFriendsMap).find(([fn]) => isSameNickname(fn, targetNickname))?.[1];
       if (chatId) {
         window.location.href = `/chat/inbox.html?chatId=${encodeURIComponent(chatId)}&friend=${encodeURIComponent(targetNickname)}`;
       } else {
