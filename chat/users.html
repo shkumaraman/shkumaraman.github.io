@@ -688,16 +688,11 @@ body.light-mode {
 
 <script type="module">
   import { initializeApp, getApps } from "firebase/app";
-  import { getDatabase, ref, onValue, set, push, onChildAdded, onChildChanged, onChildRemoved } from "firebase/database";
+  import { getDatabase, ref, onChildAdded, onChildChanged, onChildRemoved } from "firebase/database";
+
+  const baseUrl = window.MEDIA_STORAGE_URL.replace(/\/$/, "");
 
   const apps = getApps();
-
-  const firebaseConfigFriends = {
-    databaseURL: "https://talkrush3-default-rtdb.asia-southeast1.firebasedatabase.app"
-  };
-  const targetAppFriends = "TalkRushFriendApp";
-  const appFriends = apps.find(a => a.name === targetAppFriends) || initializeApp(firebaseConfigFriends, targetAppFriends);
-  const db = getDatabase(appFriends);
 
   const firebaseConfigUsers = {
     databaseURL: "https://talkrush4-default-rtdb.asia-southeast1.firebasedatabase.app"
@@ -715,6 +710,8 @@ body.light-mode {
   let currentNickname = localStorage.getItem("talkrush_nickname");
   let isInitialLoaded = false;
   let myFriendsMap = {};
+  let friendsWs = null;
+  let friendsPingInterval = null;
 
   const cleanNick = (name) => (name || '').replace(/^tr\|/i, '').trim().toLowerCase();
 
@@ -988,7 +985,6 @@ body.light-mode {
   loadBotUsers();
 
   const usersRef = ref(dbUsers, 'users');
-  const friendsRef = ref(db, 'friends');
 
   setTimeout(() => {
     if (!isInitialLoaded) {
@@ -1026,29 +1022,121 @@ body.light-mode {
     }
   });
 
-  onValue(friendsRef, (snapshot) => {
+  function processFriendsData(friendsObj) {
     myFriendsMap = {};
     const myClean = cleanNick(currentNickname || localStorage.getItem("talkrush_nickname"));
 
-    if (snapshot.exists() && myClean) {
-      snapshot.forEach(child => {
-        const friendData = child.val();
+    if (friendsObj && typeof friendsObj === 'object' && myClean) {
+      Object.entries(friendsObj).forEach(([chatId, friendData]) => {
         if (!friendData) return;
 
         const u1Clean = cleanNick(friendData.nickname1);
         const u2Clean = cleanNick(friendData.nickname2);
 
         if (u1Clean === myClean) {
-          myFriendsMap[friendData.nickname2] = child.key;
-          myFriendsMap[u2Clean] = child.key;
+          myFriendsMap[friendData.nickname2] = chatId;
+          myFriendsMap[u2Clean] = chatId;
         } else if (u2Clean === myClean) {
-          myFriendsMap[friendData.nickname1] = child.key;
-          myFriendsMap[u1Clean] = child.key;
+          myFriendsMap[friendData.nickname1] = chatId;
+          myFriendsMap[u1Clean] = chatId;
         }
       });
     }
     updateAllFriendButtons();
-  });
+  }
+
+  function initFriendsListener() {
+    if (friendsPingInterval) {
+      clearInterval(friendsPingInterval);
+      friendsPingInterval = null;
+    }
+    if (friendsWs) {
+      try {
+        friendsWs.onclose = null;
+        friendsWs.close();
+      } catch (e) {}
+      friendsWs = null;
+    }
+
+    fetch(`${baseUrl}/friends.json`)
+      .then(res => res.json())
+      .then(data => {
+        processFriendsData(data);
+      })
+      .catch(() => {});
+
+    const wsProto = baseUrl.startsWith("https") ? "wss:" : "ws:";
+    const wsHost = baseUrl.replace(/^https?:\/\//, "");
+
+    try {
+      friendsWs = new WebSocket(`${wsProto}//${wsHost}/ws/friends`);
+    } catch (e) {
+      return;
+    }
+
+    friendsWs.onopen = () => {
+      if (friendsPingInterval) clearInterval(friendsPingInterval);
+      friendsPingInterval = setInterval(() => {
+        if (friendsWs && friendsWs.readyState === WebSocket.OPEN) {
+          friendsWs.send(JSON.stringify({ type: 'ping' }));
+        }
+      }, 25000);
+    };
+
+    friendsWs.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (!msg || msg.event === 'ping' || msg.event === 'pong' || msg.event === 'time' || msg.event === 'onDisconnectAck') return;
+
+        if (msg.event === 'connected') {
+          processFriendsData(msg.data);
+          return;
+        }
+
+        const myClean = cleanNick(currentNickname || localStorage.getItem("talkrush_nickname"));
+        const parts = (msg.path || '').split('/').filter(Boolean);
+
+        if (parts.length === 0) {
+          if (msg.event === 'delete' || msg.data === null) {
+            myFriendsMap = {};
+            updateAllFriendButtons();
+          } else if (typeof msg.data === 'object' && msg.data) {
+            processFriendsData(msg.data);
+          }
+          return;
+        }
+
+        const chatId = parts[0];
+        if (msg.event === 'delete' || msg.data === null) {
+          Object.keys(myFriendsMap).forEach(key => {
+            if (myFriendsMap[key] === chatId) delete myFriendsMap[key];
+          });
+          updateAllFriendButtons();
+        } else if (msg.event === 'put' || msg.event === 'patch') {
+          const val = msg.data;
+          if (val && typeof val === 'object' && myClean) {
+            const u1Clean = cleanNick(val.nickname1);
+            const u2Clean = cleanNick(val.nickname2);
+
+            if (u1Clean === myClean) {
+              myFriendsMap[val.nickname2] = chatId;
+              myFriendsMap[u2Clean] = chatId;
+            } else if (u2Clean === myClean) {
+              myFriendsMap[val.nickname1] = chatId;
+              myFriendsMap[u1Clean] = chatId;
+            }
+            updateAllFriendButtons();
+          }
+        }
+      } catch (e) {}
+    };
+
+    friendsWs.onclose = () => {
+      if (friendsPingInterval) clearInterval(friendsPingInterval);
+    };
+  }
+
+  initFriendsListener();
 
   setInterval(() => {
     const allCards = usersGrid.querySelectorAll('.user-card');
@@ -1081,7 +1169,7 @@ body.light-mode {
 
   window.addEventListener('nicknameUpdated', (e) => {
     currentNickname = e.detail?.nickname;
-    updateAllFriendButtons();
+    initFriendsListener();
     const myClean = cleanNick(currentNickname);
     const allCards = usersGrid.querySelectorAll('.user-card');
     allCards.forEach(card => {
@@ -1130,17 +1218,24 @@ body.light-mode {
     if (!isConfirmed) return;
 
     try {
-      const newChatRef = push(ref(db, 'friends'));
-      await set(newChatRef, {
-        nickname1: myNick,
-        nickname2: targetNickname,
-        lastMessageText: "Say Hi!",
-        lastTimestamp: Date.now(),
-        lastSender: myNick
+      const res = await fetch(`${baseUrl}/friends.json`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nickname1: myNick,
+          nickname2: targetNickname,
+          lastMessageText: "Say Hi!",
+          lastTimestamp: Date.now(),
+          lastSender: myNick
+        })
       });
 
-      myFriendsMap[targetNickname] = newChatRef.key;
-      myFriendsMap[tClean] = newChatRef.key;
+      if (!res.ok) throw new Error("Failed to save friend");
+      const resData = await res.json();
+      const newChatId = resData.name;
+
+      myFriendsMap[targetNickname] = newChatId;
+      myFriendsMap[tClean] = newChatId;
 
       const targetCard = Array.from(usersGrid.querySelectorAll('.user-card'))
         .find(c => cleanNick(c.dataset.nickname) === tClean);
