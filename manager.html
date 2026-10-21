@@ -239,11 +239,7 @@ description: "Database Cleanup utility for TalkRush"
   import { initializeApp } from "firebase/app";
   import { getDatabase, ref, get, update } from "firebase/database";
 
-  const firebaseConfigUsers = {
-    databaseURL: "https://talkrush3-default-rtdb.asia-southeast1.firebasedatabase.app"
-  };
-  const appUsers = initializeApp(firebaseConfigUsers, "TalkRushManagerAppUsers");
-  const dbUsers = getDatabase(appUsers);
+  const baseUrl = window.MEDIA_STORAGE_URL.replace(/\/$/, "");
 
   const firebaseConfigGroups = {
     databaseURL: "https://talkrush2-default-rtdb.asia-southeast1.firebasedatabase.app"
@@ -274,35 +270,57 @@ description: "Database Cleanup utility for TalkRush"
       
       logToUsers(`Cutoff Time: ${new Date(cutoffTime).toLocaleString()}`);
 
-      const friendsSnap = await get(ref(dbUsers, 'friends'));
+      const res = await fetch(`${baseUrl}/friends.json`);
+      if (!res.ok) throw new Error(`Server returned status ${res.status}`);
 
-      if (!friendsSnap.exists()) {
+      const friendsData = await res.json();
+
+      if (!friendsData || typeof friendsData !== 'object' || Object.keys(friendsData).length === 0) {
         usersStatus.textContent = "Database is clean. No friends data found.";
         usersStatus.style.color = "#25D366";
         logToUsers("No chats matched the cleanup criteria.");
       } else {
-        const updates = {};
+        const updatesFriends = {};
+        const updatesMessages = {};
+        const updatesTyping = {};
         let count = 0;
 
-        friendsSnap.forEach((childSnap) => {
-          const chatId = childSnap.key;
-          const data = childSnap.val();
+        Object.entries(friendsData).forEach(([chatId, data]) => {
+          if (!data) return;
           const lastTime = data.lastTimestamp || 0;
 
           if (lastTime < cutoffTime) {
-            updates[`friends/${chatId}`] = null;
-            updates[`messages/${chatId}`] = null;
+            updatesFriends[chatId] = null;
+            updatesMessages[chatId] = null;
+            updatesTyping[chatId] = null;
             count++;
           }
         });
 
         if (count > 0) {
           usersStatus.textContent = `Deleting ${count} chat records...`;
-          await update(ref(dbUsers), updates);
+          
+          await Promise.all([
+            fetch(`${baseUrl}/friends.json`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(updatesFriends)
+            }),
+            fetch(`${baseUrl}/messages.json`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(updatesMessages)
+            }),
+            fetch(`${baseUrl}/typing.json`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(updatesTyping)
+            })
+          ]);
           
           usersStatus.textContent = `Successfully deleted ${count} old records.`;
           usersStatus.style.color = "#25D366";
-          logToUsers(`Cleaned up ${count} inactive threads from friends and messages.`);
+          logToUsers(`Cleaned up ${count} inactive threads from friends, messages and typing.`);
         } else {
           usersStatus.textContent = "Database is clean. No old data found.";
           usersStatus.style.color = "#25D366";
@@ -432,9 +450,6 @@ description: "Database Cleanup utility for TalkRush"
     const cutoffTime = Date.now() - THIRTY_DAYS_MS;
 
     try {
-      const baseUrl = (window.MEDIA_STORAGE_URL || "").replace(/\/$/, "");
-      if (!baseUrl) throw new Error("MEDIA_STORAGE_URL not defined");
-
       logToMedia("Querying uploads list from server...");
 
       const res = await fetch(`${baseUrl}/uploads.json`);
