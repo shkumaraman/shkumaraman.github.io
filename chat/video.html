@@ -458,14 +458,8 @@ const apps = getApps();
 const defaultApp = apps.find(a => a.name === '[DEFAULT]') || initializeApp(firebaseConfig);
 const db = getDatabase(defaultApp);
 
-const friendFirebaseConfig = {
-  databaseURL: "https://talkrush3-default-rtdb.asia-southeast1.firebasedatabase.app"
-};
-const friendAppName = "TalkRushFriendApp";
-const existingFriendApp = apps.find(a => a.name === friendAppName);
-const friendApp = existingFriendApp ? existingFriendApp : initializeApp(friendFirebaseConfig, friendAppName);
-const friendDb = getDatabase(friendApp);
-    
+const baseUrl = window.MEDIA_STORAGE_URL.replace(/\/$/, "");
+
 let peer = null;
 let myConn = null;
 let myId = null;
@@ -643,15 +637,20 @@ friendBtn.onclick = async () => {
   
   friendBtn.disabled = true;
   try {
-    const newChatRef = push(ref(friendDb, 'friends'));
-    await set(newChatRef, {
-      nickname1: myNickname,
-      nickname2: currentStrangerNickname,
-      lastMessageText: "Say Hi!",
-      lastTimestamp: Date.now(),
-      lastSender: myNickname
+    const res = await fetch(`${baseUrl}/friends.json`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        nickname1: myNickname,
+        nickname2: currentStrangerNickname,
+        lastMessageText: "Say Hi!",
+        lastTimestamp: Date.now(),
+        lastSender: myNickname
+      })
     });
-    
+
+    if (!res.ok) throw new Error("Failed to save friend");
+
     dataChannel.send(JSON.stringify({ type: 'friend_added', nickname: myNickname }));
     addMessage("You added " + currentStrangerNickname + " as a friend.", 'system');
     hideFriendButton();
