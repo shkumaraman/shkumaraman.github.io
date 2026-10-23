@@ -1371,7 +1371,7 @@ description: "View your chat history and messages with stranger friends and stay
       if (!myFriendsMap[chatId]) return;
       const pText = previewText(last);
       const pSender = last ? last.nickname : null;
-      
+
       myFriendsMap[chatId].lastMessageText = pText;
       if (pSender) myFriendsMap[chatId].lastSender = pSender;
       scheduleFriendsRender();
@@ -1379,7 +1379,7 @@ description: "View your chat history and messages with stranger friends and stay
       await fetch(`${baseUrl}/friends/${chatId}.json`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           lastMessageText: pText,
           ...(pSender ? { lastSender: pSender } : {})
         })
@@ -2102,11 +2102,12 @@ description: "View your chat history and messages with stranger friends and stay
   function updateMessageInDOM(msg) {
     const row = document.querySelector(`.msg-row[data-key="${msg.key}"]`);
     if (!row) return;
+    if (row._msg) Object.assign(row._msg, msg);
     const bubble = row.querySelector('.msg');
     if (!bubble) return;
 
     const textDiv = bubble.querySelector('.text-content');
-    if (textDiv && msg.type === 'text') {
+    if (textDiv && typeof msg.text === 'string') {
       textDiv.innerHTML = '';
       if (isSingleEmoji(msg.text)) {
         bubble.classList.add('msg-single-emoji');
@@ -2210,7 +2211,7 @@ description: "View your chat history and messages with stranger friends and stay
       if (entries.length > MESSAGE_LIMIT) {
         entries.sort((a, b) => (Number(a[1].timestamp) || 0) - (Number(b[1].timestamp) || 0));
         const toDelete = entries.slice(0, entries.length - MESSAGE_LIMIT);
-        
+
         await Promise.all(toDelete.map(([mKey, mVal]) => {
           if (mVal && (mVal.type === 'image' || mVal.type === 'audio')) {
             safeDeleteMedia(mVal.url);
@@ -2335,7 +2336,7 @@ description: "View your chat history and messages with stranger friends and stay
     document.getElementById('chatContainer').style.display = 'none';
     document.getElementById('pageTitle').textContent = 'Messages';
     if (fromPopstate !== true) history.replaceState(null, '', location.pathname);
-    
+
     initFriendsWs();
     renderFriendsUI();
   };
@@ -2347,6 +2348,7 @@ description: "View your chat history and messages with stranger friends and stay
     const row = document.createElement("div");
     row.className = `msg-row ${isMe ? 'me' : 'stranger'}`;
     row.setAttribute('data-key', msg.key);
+    row._msg = msg;
 
     const forwardBtn = document.createElement("button");
     forwardBtn.className = "msg-forward-btn";
