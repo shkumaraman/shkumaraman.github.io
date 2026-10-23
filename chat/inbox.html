@@ -1167,7 +1167,6 @@ description: "View your chat history and messages with stranger friends and stay
 
   const MESSAGE_LIMIT = 25;
   const JSON_H = { "Content-Type": "application/json" };
-  const uKey = (n) => String(n || '').replace(/[.#$\[\]\/%\s]/g, '_');
 
   let GIPHY_API_KEY = '';
 
@@ -1343,39 +1342,23 @@ description: "View your chat history and messages with stranger friends and stay
     }
   }
 
-  function chatRecord(chatId) {
-    const f = myFriendsMap[chatId];
-    return f && {
-      nickname1: f.nickname1,
-      nickname2: f.nickname2,
-      lastMessageText: f.lastMessageText || "",
-      lastTimestamp: f.lastTimestamp || 0,
-      lastSender: f.lastSender || ""
-    };
-  }
-
-  function pushChatRecord(chatId) {
-    const rec = chatRecord(chatId);
-    if (!rec) return Promise.resolve();
-    const body = {
-      [`${uKey(rec.nickname1)}/${chatId}`]: rec,
-      [`${uKey(rec.nickname2)}/${chatId}`]: rec
-    };
-    return fetch(`${baseUrl}/userChats.json`, {
+  function touchFriend(chatId, text, timestamp) {
+    if (!chatId) return Promise.resolve();
+    if (myFriendsMap[chatId]) {
+      myFriendsMap[chatId].lastMessageText = text;
+      myFriendsMap[chatId].lastTimestamp = timestamp;
+      myFriendsMap[chatId].lastSender = myNickname;
+      scheduleFriendsRender();
+    }
+    return fetch(`${baseUrl}/friends/${chatId}.json`, {
       method: "PATCH",
       headers: JSON_H,
-      body: JSON.stringify(body)
-    }).catch((err) => console.error("userChats update error:", err));
-  }
-
-  function touchFriend(chatId, text, timestamp) {
-    const f = myFriendsMap[chatId];
-    if (!f) return Promise.resolve();
-    f.lastMessageText = text;
-    f.lastTimestamp = timestamp;
-    f.lastSender = myNickname;
-    scheduleFriendsRender();
-    return pushChatRecord(chatId);
+      body: JSON.stringify({
+        lastMessageText: text,
+        lastTimestamp: timestamp,
+        lastSender: myNickname
+      })
+    }).catch((err) => console.error("touchFriend error:", err));
   }
 
   async function refreshLastPreview(chatId) {
@@ -1397,7 +1380,14 @@ description: "View your chat history and messages with stranger friends and stay
       if (pSender) myFriendsMap[chatId].lastSender = pSender;
       scheduleFriendsRender();
 
-      await pushChatRecord(chatId);
+      await fetch(`${baseUrl}/friends/${chatId}.json`, {
+        method: "PATCH",
+        headers: JSON_H,
+        body: JSON.stringify({
+          lastMessageText: pText,
+          ...(pSender ? { lastSender: pSender } : {})
+        })
+      });
     } catch (e) {}
   }
 
@@ -1659,8 +1649,8 @@ description: "View your chat history and messages with stranger friends and stay
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) {
       syncServerTime();
-      if (!currentChatId && myNickname && myNickname !== 'Guest') {
-        fetch(`${baseUrl}/userChats/${uKey(myNickname)}.json`)
+      if (!currentChatId) {
+        fetch(`${baseUrl}/friends.json`)
           .then(res => res.json())
           .then(data => {
             processFriendsPayload(data);
@@ -1934,40 +1924,19 @@ description: "View your chat history and messages with stranger friends and stay
     if (data && typeof data === 'object') {
       Object.entries(data).forEach(([chatId, val]) => {
         if (!val) return;
-        myFriendsMap[chatId] = { ...(myFriendsMap[chatId] || {}), ...val };
+        if (val.nickname1 === myNickname || val.nickname2 === myNickname) {
+          myFriendsMap[chatId] = { ...(myFriendsMap[chatId] || {}), ...val };
+        }
       });
     }
     scheduleFriendsRender();
   }
 
-  async function migrateOldFriends() {
-    try {
-      const all = await (await fetch(`${baseUrl}/friends.json`)).json();
-      const body = {};
-      Object.entries(all || {}).forEach(([id, v]) => {
-        if (v && (v.nickname1 === myNickname || v.nickname2 === myNickname)) {
-          body[`${uKey(v.nickname1)}/${id}`] = v;
-          body[`${uKey(v.nickname2)}/${id}`] = v;
-        }
-      });
-      if (Object.keys(body).length) {
-        await fetch(`${baseUrl}/userChats.json`, {
-          method: "PATCH",
-          headers: JSON_H,
-          body: JSON.stringify(body)
-        });
-      }
-      localStorage.setItem('uc_migrated', '1');
-    } catch (e) {}
-  }
-
   function initFriendsWs() {
-    if (!myNickname || myNickname === 'Guest') return;
     detachFriendsWs();
 
-    const myKey = uKey(myNickname);
     try {
-      friendsWs = new WebSocket(`${wsProto}//${wsHost}/ws/userChats/${myKey}`);
+      friendsWs = new WebSocket(`${wsProto}//${wsHost}/ws/friends`);
     } catch (e) {
       return;
     }
@@ -2013,8 +1982,11 @@ description: "View your chat history and messages with stranger friends and stay
           const val = msg.data;
           if (val && typeof val === 'object') {
             const existing = myFriendsMap[chatId] || {};
-            myFriendsMap[chatId] = { ...existing, ...val };
-            scheduleFriendsRender();
+            const merged = { ...existing, ...val };
+            if (merged.nickname1 === myNickname || merged.nickname2 === myNickname) {
+              myFriendsMap[chatId] = merged;
+              scheduleFriendsRender();
+            }
           }
         }
       } catch (e) {}
@@ -2049,15 +2021,9 @@ description: "View your chat history and messages with stranger friends and stay
       list.style.display = "none";
     }
 
-    const myKey = uKey(myNickname);
-    fetch(`${baseUrl}/userChats/${myKey}.json`)
+    fetch(`${baseUrl}/friends.json`)
       .then(res => res.json())
-      .then(async (data) => {
-        if (!data && !localStorage.getItem('uc_migrated')) {
-          await migrateOldFriends();
-          const freshRes = await fetch(`${baseUrl}/userChats/${myKey}.json`);
-          data = await freshRes.json();
-        }
+      .then(data => {
         initialFriendsLoaded = true;
         processFriendsPayload(data);
       })
@@ -2454,10 +2420,18 @@ description: "View your chat history and messages with stranger friends and stay
         };
         textDiv.appendChild(img);
       } else {
+        bubble.classList.remove('msg-single-emoji');
         textDiv.innerHTML = linkifyText(msg.text);
       }
-
-      bubble.appendChild(textDiv);
+      if (msg.edited && !bubble.querySelector('.edited-label')) {
+        const editedSpan = document.createElement('span');
+        editedSpan.className = 'edited-label';
+        editedSpan.textContent = '(edited)';
+        const timeDiv = bubble.querySelector('.timestamp');
+        if (timeDiv) {
+          timeDiv.appendChild(editedSpan);
+        }
+      }
     }
 
     const timeDiv = document.createElement("div");
@@ -2495,7 +2469,6 @@ description: "View your chat history and messages with stranger friends and stay
 
     if (isConfirmed) {
       if (currentChatId === chatId) window.closeChat();
-      const rec = chatRecord(chatId);
       delete myFriendsMap[chatId];
       delete myFriendsData[chatId];
 
@@ -2504,11 +2477,6 @@ description: "View your chat history and messages with stranger friends and stay
         fetch(`${baseUrl}/typing/${chatId}.json`, { method: "DELETE" }),
         fetch(`${baseUrl}/friends/${chatId}.json`, { method: "DELETE" })
       ];
-
-      if (rec) {
-        dels.push(fetch(`${baseUrl}/userChats/${uKey(rec.nickname1)}/${chatId}.json`, { method: "DELETE" }));
-        dels.push(fetch(`${baseUrl}/userChats/${uKey(rec.nickname2)}/${chatId}.json`, { method: "DELETE" }));
-      }
 
       await Promise.all(dels).catch(() => {});
       scheduleFriendsRender();
