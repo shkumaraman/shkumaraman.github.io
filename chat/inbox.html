@@ -1360,7 +1360,7 @@ description: "View your chat history and messages with stranger friends and stay
   async function refreshLastPreview(chatId) {
     if (!chatId || !myFriendsMap[chatId]) return;
     try {
-      const res = await fetch(`${baseUrl}/messages/${chatId}.json?orderBy="timestamp"&limitToLast=1`);
+      const res = await fetch(`${baseUrl}/messages/${chatId}.json?orderBy=%22timestamp%22&limitToLast=1`);
       if (!res.ok) return;
       const msgs = await res.json();
       let last = null;
@@ -1650,9 +1650,13 @@ description: "View your chat history and messages with stranger friends and stay
             processFriendsPayload(data);
           })
           .catch(() => {});
+        if (!friendsWs || friendsWs.readyState === WebSocket.CLOSED) {
+          initFriendsWs();
+        }
       }
-      if (!friendsWs || friendsWs.readyState === WebSocket.CLOSED) {
-        initFriendsWs();
+    } else {
+      if (!currentChatId) {
+        detachFriendsWs();
       }
     }
   });
@@ -1927,6 +1931,7 @@ description: "View your chat history and messages with stranger friends and stay
   }
 
   function initFriendsWs() {
+    if (currentChatId) return;
     detachFriendsWs();
 
     try {
@@ -2027,7 +2032,7 @@ description: "View your chat history and messages with stranger friends and stay
 
   function listenForMessages(chatId) {
     try {
-      const wsUrl = `${wsProto}//${wsHost}/ws/messages/${chatId}?orderBy="timestamp"&limitToLast=${MESSAGE_LIMIT}`;
+      const wsUrl = `${wsProto}//${wsHost}/ws/messages/${chatId}?orderBy=%22timestamp%22&limitToLast=${MESSAGE_LIMIT}`;
       messagesWs = new WebSocket(wsUrl);
     } catch (e) {
       return;
@@ -2192,31 +2197,32 @@ description: "View your chat history and messages with stranger friends and stay
   }
 
   async function maintainMessageLimit(chatId = currentChatId) {
-    if (!chatId || isPruning) return;
-    isPruning = true;
+  if (!chatId || isPruning) return;
+  isPruning = true;
 
-    try {
-      const res = await fetch(`${baseUrl}/messages/${chatId}.json`);
-      if (!res.ok) return;
-      const msgs = await res.json();
-      if (!msgs || typeof msgs !== 'object') return;
+  try {
+    const res = await fetch(`${baseUrl}/messages/${chatId}.json`);
+    if (!res.ok) return;
+    const msgs = await res.json();
+    if (!msgs || typeof msgs !== 'object') return;
 
-      const entries = Object.entries(msgs);
-      if (entries.length > MESSAGE_LIMIT) {
-        entries.sort((a, b) => (Number(a[1].timestamp) || 0) - (Number(b[1].timestamp) || 0));
-        const toDelete = entries.slice(0, entries.length - MESSAGE_LIMIT);
-        for (const [mKey, mVal] of toDelete) {
-          fetch(`${baseUrl}/messages/${chatId}/${mKey}.json`, { method: "DELETE" }).catch(() => {});
-          if (mVal && (mVal.type === 'image' || mVal.type === 'audio')) {
-            safeDeleteMedia(mVal.url);
-          }
+    const entries = Object.entries(msgs);
+    if (entries.length > MESSAGE_LIMIT) {
+      entries.sort((a, b) => (Number(a[1].timestamp) || 0) - (Number(b[1].timestamp) || 0));
+      const toDelete = entries.slice(0, entries.length - MESSAGE_LIMIT);
+      
+      await Promise.all(toDelete.map(([mKey, mVal]) => {
+        if (mVal && (mVal.type === 'image' || mVal.type === 'audio')) {
+          safeDeleteMedia(mVal.url);
         }
-      }
-    } catch (e) {
-    } finally {
-      isPruning = false;
+        return fetch(`${baseUrl}/messages/${chatId}/${mKey}.json`, { method: "DELETE" }).catch(() => {});
+      }));
     }
+  } catch (e) {
+  } finally {
+    isPruning = false;
   }
+}
 
   function sendMessage() {
     const input = document.getElementById('msgInput');
@@ -2330,6 +2336,7 @@ description: "View your chat history and messages with stranger friends and stay
     document.getElementById('pageTitle').textContent = 'Messages';
     if (fromPopstate !== true) history.replaceState(null, '', location.pathname);
     
+    initFriendsWs();
     renderFriendsUI();
   };
 
