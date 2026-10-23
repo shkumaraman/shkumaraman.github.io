@@ -1161,418 +1161,390 @@ description: "View your chat history and messages with stranger friends and stay
 {% include menu.html %}
 
 <script type="module">
-  const baseUrl = window.MEDIA_STORAGE_URL.replace(/\/$/, "");
-  const wsProto = baseUrl.startsWith("https") ? "wss:" : "ws:";
-  const wsHost = baseUrl.replace(/^https?:\/\//, "");
+const baseUrl = window.MEDIA_STORAGE_URL.replace(/\/$/, "");
+const wsProto = baseUrl.startsWith("https") ? "wss:" : "ws:";
+const wsHost = baseUrl.replace(/^https?:\/\//, "");
 
-  const MESSAGE_LIMIT = 25;
+const MESSAGE_LIMIT = 25;
 
-  let GIPHY_API_KEY = '';
+let GIPHY_API_KEY = '';
 
-  async function loadKeys() {
-    try {
-      const res = await fetch('/key.json');
-      const keys = await res.json();
-      GIPHY_API_KEY = keys.giphy || '';
-      if (window.MediaHub) MediaHub.setApiKey(GIPHY_API_KEY);
-    } catch (e) {}
+async function loadKeys() {
+  try {
+    const res = await fetch('/key.json');
+    const keys = await res.json();
+    GIPHY_API_KEY = keys.giphy || '';
+    if (window.MediaHub) MediaHub.setApiKey(GIPHY_API_KEY);
+  } catch (e) {}
+}
+
+let currentUserId = null;
+let currentChatId = null;
+let currentFriendName = "";
+let myNickname = null;
+let myFriendsData = {};
+let myFriendsMap = {};
+let initialFriendsLoaded = false;
+let renderDebounceTimer = null;
+let serverOffset = 0;
+let isTyping = false;
+let typingTimeout = null;
+const renderedMessageKeys = new Set();
+
+let unifiedWs = null;
+let pingInterval = null;
+let reconnectTimer = null;
+let retryCount = 0;
+
+let replyingTo = null;
+let editingMsgKey = null;
+let editingMsgTs = null;
+let contextTargetMsg = null;
+
+function syncServerTime() {
+  const clientTime = Date.now();
+  fetch(`${baseUrl}/api/time?clientTime=${clientTime}`)
+    .then(res => res.json())
+    .then(data => {
+      if (typeof data.serverTimeOffset === 'number') {
+        serverOffset = data.serverTimeOffset;
+      }
+    })
+    .catch(() => {});
+}
+syncServerTime();
+
+const now = () => Date.now() + serverOffset;
+
+const replyBar = document.getElementById("replyBar");
+const replyBarText = document.getElementById("replyBarText");
+const editBar = document.getElementById("editBar");
+const msgInput = document.getElementById('msgInput');
+const contextMenu = document.getElementById('contextMenu');
+
+function markSeen(chatId) {
+  if (!chatId) return;
+  let lastSeenMap = {};
+  try { lastSeenMap = JSON.parse(localStorage.getItem('inbox_last_seen') || '{}'); } catch (e) {}
+  lastSeenMap[chatId] = now();
+  localStorage.setItem('inbox_last_seen', JSON.stringify(lastSeenMap));
+}
+
+setInterval(() => {
+  if (currentChatId) markSeen(currentChatId);
+}, 3000);
+
+function getAvatarLetter(name) {
+  if (!name) return "?";
+  if (name.startsWith("TR|")) return name.charAt(3) || "?";
+  return name.charAt(0).toUpperCase();
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text || "";
+  return div.innerHTML;
+}
+
+function linkifyText(text) {
+  const escaped = escapeHtml(text);
+  const urlRegex = /(https?:\/\/[^\s<>"']+)/g;
+  return escaped.replace(urlRegex, (url) => {
+    return `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline; word-break: break-all;">${url}</a>`;
+  });
+}
+
+function isSingleEmoji(text) {
+  if (!text) return false;
+  const t = text.trim();
+  try {
+    const segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' });
+    const segments = Array.from(segmenter.segment(t));
+    if (segments.length === 1) {
+      return /^[\p{Emoji_Presentation}\p{Extended_Pictographic}]/u.test(t);
+    }
+    return false;
+  } catch (e) {
+    return /^(\p{Emoji_Presentation}|\p{Extended_Pictographic})[\uFE0F\u200D\p{Emoji_Presentation}\p{Extended_Pictographic}]*$/u.test(t);
   }
+}
 
-  let currentUserId = null;
-  let currentChatId = null;
-  let currentFriendName = "";
-  let myNickname = null;
-  let myFriendsData = {};
-  let myFriendsMap = {};
-  let initialFriendsLoaded = false;
-  let renderDebounceTimer = null;
-  let isPruning = false;
-  let serverOffset = 0;
-  let isTyping = false;
-  let typingTimeout = null;
-  const renderedMessageKeys = new Set();
-
-  let friendsWs = null;
-  let friendsPingInterval = null;
-  let messagesWs = null;
-  let messagesPingInterval = null;
-  let typingWs = null;
-  let typingPingInterval = null;
-
-  let replyingTo = null;
-  let editingMsgKey = null;
-  let editingMsgTs = null;
-  let contextTargetMsg = null;
-
-  function syncServerTime() {
-    const clientTime = Date.now();
-    fetch(`${baseUrl}/api/time?clientTime=${clientTime}`)
-      .then(res => res.json())
-      .then(data => {
-        if (typeof data.serverTimeOffset === 'number') {
-          serverOffset = data.serverTimeOffset;
-        }
-      })
-      .catch(() => {});
+function getEmojiCodePoint(emoji) {
+  let codePoints = [];
+  for (let char of emoji) {
+    codePoints.push(char.codePointAt(0).toString(16));
   }
-  syncServerTime();
+  return codePoints.filter(c => c !== 'fe0f').join('_');
+}
 
-  const now = () => Date.now() + serverOffset;
-
-  const replyBar = document.getElementById("replyBar");
-  const replyBarText = document.getElementById("replyBarText");
-  const editBar = document.getElementById("editBar");
-  const msgInput = document.getElementById('msgInput');
-  const contextMenu = document.getElementById('contextMenu');
-
-  function markSeen(chatId) {
-    if (!chatId) return;
-    let lastSeenMap = {};
-    try { lastSeenMap = JSON.parse(localStorage.getItem('inbox_last_seen') || '{}'); } catch (e) {}
-    lastSeenMap[chatId] = now();
-    localStorage.setItem('inbox_last_seen', JSON.stringify(lastSeenMap));
+function formatTime(timestamp) {
+  if (!timestamp) return "";
+  const date = new Date(timestamp);
+  const current = new Date(now());
+  const diff = current - date;
+  if (diff < 86400000 && date.getDate() === current.getDate()) {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } else if (diff < 172800000) {
+    return 'Yesterday';
+  } else if (diff < 604800000) {
+    return date.toLocaleDateString([], { weekday: 'short' });
+  } else {
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
   }
+}
 
-  setInterval(() => {
-    if (currentChatId) markSeen(currentChatId);
-  }, 3000);
+function formatMessageTime(timestamp) {
+  if (!timestamp) return "";
+  return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
 
-  function getAvatarLetter(name) {
-    if (!name) return "?";
-    if (name.startsWith("TR|")) return name.charAt(3) || "?";
-    return name.charAt(0).toUpperCase();
-  }
+function previewText(msg) {
+  if (!msg) return "Say Hi!";
+  if (msg.type === 'image') return '📷 Image';
+  if (msg.type === 'gif') return '🎯 GIF';
+  if (msg.type === 'audio') return '🎤 Voice note';
+  const text = msg.text || '';
+  return text.length > 30 ? text.substring(0, 30) + '...' : text;
+}
 
-  function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text || "";
-    return div.innerHTML;
-  }
+function scrollToBottom() {
+  const chatDiv = document.getElementById('chatLog');
+  if (chatDiv) setTimeout(() => { chatDiv.scrollTop = chatDiv.scrollHeight; }, 100);
+}
 
-  function linkifyText(text) {
-    const escaped = escapeHtml(text);
-    const urlRegex = /(https?:\/\/[^\s<>"']+)/g;
-    return escaped.replace(urlRegex, (url) => {
-      return `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline; word-break: break-all;">${url}</a>`;
+function showTypingIndicator() {
+  const indicator = document.getElementById('typingIndicator');
+  if (indicator) indicator.style.display = "block";
+}
+
+function hideTypingIndicator() {
+  const indicator = document.getElementById('typingIndicator');
+  if (indicator) indicator.style.display = "none";
+}
+
+function stopTyping() {
+  clearTimeout(typingTimeout);
+  typingTimeout = null;
+  isTyping = false;
+  if (currentChatId && currentUserId) {
+    wsSend({
+      type: "remove",
+      path: `typing/${currentChatId}/${currentUserId}`
     });
   }
+}
 
-  function isSingleEmoji(text) {
-    if (!text) return false;
-    const t = text.trim();
-    try {
-      const segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' });
-      const segments = Array.from(segmenter.segment(t));
-      if (segments.length === 1) {
-        return /^[\p{Emoji_Presentation}\p{Extended_Pictographic}]/u.test(t);
-      }
-      return false;
-    } catch (e) {
-      return /^(\p{Emoji_Presentation}|\p{Extended_Pictographic})[\uFE0F\u200D\p{Emoji_Presentation}\p{Extended_Pictographic}]*$/u.test(t);
+function wsSend(obj) {
+  if (unifiedWs && unifiedWs.readyState === WebSocket.OPEN) {
+    unifiedWs.send(JSON.stringify(obj));
+  }
+}
+
+function touchFriend(chatId, text, timestamp) {
+  if (!chatId) return Promise.resolve();
+
+  if (myFriendsMap[chatId]) {
+    myFriendsMap[chatId].lastMessageText = text;
+    myFriendsMap[chatId].lastTimestamp = timestamp;
+    myFriendsMap[chatId].lastSender = myNickname;
+    scheduleFriendsRender();
+  }
+
+  return fetch(`${baseUrl}/friends/${chatId}.json`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      lastMessageText: text,
+      lastTimestamp: timestamp,
+      lastSender: myNickname
+    })
+  }).catch((err) => console.error("friend update error:", err));
+}
+
+async function refreshLastPreview(chatId) {
+  if (!chatId || !myFriendsMap[chatId]) return;
+  try {
+    const res = await fetch(`${baseUrl}/messages/${chatId}.json?orderBy=%22timestamp%22&limitToLast=1`);
+    if (!res.ok) return;
+    const msgs = await res.json();
+    let last = null;
+    if (msgs && typeof msgs === 'object') {
+      const list = Object.values(msgs).sort((a, b) => (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0));
+      last = list[list.length - 1];
     }
-  }
+    if (!myFriendsMap[chatId]) return;
+    const pText = previewText(last);
+    const pSender = last ? last.nickname : null;
 
-  function getEmojiCodePoint(emoji) {
-    let codePoints = [];
-    for (let char of emoji) {
-      codePoints.push(char.codePointAt(0).toString(16));
-    }
-    return codePoints.filter(c => c !== 'fe0f').join('_');
-  }
+    myFriendsMap[chatId].lastMessageText = pText;
+    if (pSender) myFriendsMap[chatId].lastSender = pSender;
+    scheduleFriendsRender();
 
-  function formatTime(timestamp) {
-    if (!timestamp) return "";
-    const date = new Date(timestamp);
-    const current = new Date(now());
-    const diff = current - date;
-    if (diff < 86400000 && date.getDate() === current.getDate()) {
-      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    } else if (diff < 172800000) {
-      return 'Yesterday';
-    } else if (diff < 604800000) {
-      return date.toLocaleDateString([], { weekday: 'short' });
-    } else {
-      return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-    }
-  }
-
-  function formatMessageTime(timestamp) {
-    if (!timestamp) return "";
-    return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  }
-
-  function previewText(msg) {
-    if (!msg) return "Say Hi!";
-    if (msg.type === 'image') return '📷 Image';
-    if (msg.type === 'gif') return '🎯 GIF';
-    if (msg.type === 'audio') return '🎤 Voice note';
-    const text = msg.text || '';
-    return text.length > 30 ? text.substring(0, 30) + '...' : text;
-  }
-
-  function scrollToBottom() {
-    const chatDiv = document.getElementById('chatLog');
-    if (chatDiv) setTimeout(() => { chatDiv.scrollTop = chatDiv.scrollHeight; }, 100);
-  }
-
-  function showTypingIndicator() {
-    const indicator = document.getElementById('typingIndicator');
-    if (indicator) indicator.style.display = "block";
-  }
-
-  function hideTypingIndicator() {
-    const indicator = document.getElementById('typingIndicator');
-    if (indicator) indicator.style.display = "none";
-  }
-
-  function stopTyping() {
-    clearTimeout(typingTimeout);
-    typingTimeout = null;
-    isTyping = false;
-    if (currentChatId && currentUserId) {
-      fetch(`${baseUrl}/typing/${currentChatId}/${currentUserId}.json`, {
-        method: "DELETE"
-      }).catch(() => {});
-    }
-  }
-
-  function touchFriend(chatId, text, timestamp) {
-    if (!chatId) return Promise.resolve();
-
-    if (myFriendsMap[chatId]) {
-      myFriendsMap[chatId].lastMessageText = text;
-      myFriendsMap[chatId].lastTimestamp = timestamp;
-      myFriendsMap[chatId].lastSender = myNickname;
-      scheduleFriendsRender();
-    }
-
-    return fetch(`${baseUrl}/friends/${chatId}.json`, {
+    await fetch(`${baseUrl}/friends/${chatId}.json`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        lastMessageText: text,
-        lastTimestamp: timestamp,
-        lastSender: myNickname
+        lastMessageText: pText,
+        ...(pSender ? { lastSender: pSender } : {})
       })
-    }).catch((err) => console.error("friend update error:", err));
+    });
+  } catch (e) {}
+}
+
+function safeDeleteMedia(url) {
+  if (!url || typeof window.deleteMediaFromServer !== 'function') return;
+  try {
+    Promise.resolve(window.deleteMediaFromServer(url)).catch(() => {});
+  } catch (e) {}
+}
+
+window.forwardMessage = function(content) {
+  if (window.openShareModal) {
+    window.openShareModal(content);
+  } else if (navigator.clipboard) {
+    const copyText = typeof content === 'object' ? (content.url || content.text || '') : content;
+    navigator.clipboard.writeText(copyText).then(() => {
+      AlertKit.toast("Message copied to clipboard!", "success");
+    });
+  }
+};
+
+function checkUrlNavigation() {
+  const params = new URLSearchParams(window.location.search);
+  const targetChatId = params.get('chatId');
+  const targetFriend = params.get('friend');
+  const shareText = params.get('shareText');
+  const shareUrl = params.get('shareUrl');
+
+  if (targetChatId && targetFriend) {
+    openChat(targetChatId, targetFriend);
   }
 
-  async function refreshLastPreview(chatId) {
-    if (!chatId || !myFriendsMap[chatId]) return;
-    try {
-      const res = await fetch(`${baseUrl}/messages/${chatId}.json?orderBy=%22timestamp%22&limitToLast=1`);
-      if (!res.ok) return;
-      const msgs = await res.json();
-      let last = null;
-      if (msgs && typeof msgs === 'object') {
-        const list = Object.values(msgs).sort((a, b) => (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0));
-        last = list[list.length - 1];
-      }
-      if (!myFriendsMap[chatId]) return;
-      const pText = previewText(last);
-      const pSender = last ? last.nickname : null;
-
-      myFriendsMap[chatId].lastMessageText = pText;
-      if (pSender) myFriendsMap[chatId].lastSender = pSender;
-      scheduleFriendsRender();
-
-      await fetch(`${baseUrl}/friends/${chatId}.json`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          lastMessageText: pText,
-          ...(pSender ? { lastSender: pSender } : {})
-        })
-      });
-    } catch (e) {}
-  }
-
-  function safeDeleteMedia(url) {
-    if (!url || typeof window.deleteMediaFromServer !== 'function') return;
-    try {
-      Promise.resolve(window.deleteMediaFromServer(url)).catch(() => {});
-    } catch (e) {}
-  }
-
-  window.forwardMessage = function(content) {
+  if (shareText || shareUrl) {
     if (window.openShareModal) {
-      window.openShareModal(content);
-    } else if (navigator.clipboard) {
-      const copyText = typeof content === 'object' ? (content.url || content.text || '') : content;
-      navigator.clipboard.writeText(copyText).then(() => {
-        AlertKit.toast("Message copied to clipboard!", "success");
-      });
-    }
-  };
-
-  function checkUrlNavigation() {
-    const params = new URLSearchParams(window.location.search);
-    const targetChatId = params.get('chatId');
-    const targetFriend = params.get('friend');
-    const shareText = params.get('shareText');
-    const shareUrl = params.get('shareUrl');
-
-    if (targetChatId && targetFriend) {
-      openChat(targetChatId, targetFriend);
-    }
-
-    if (shareText || shareUrl) {
-      if (window.openShareModal) {
-        window.openShareModal(shareText || shareUrl);
-      }
+      window.openShareModal(shareText || shareUrl);
     }
   }
+}
 
-  function setReply(msg) {
-    if (editingMsgKey) clearEdit();
-    replyingTo = msg;
-    const preview = msg.type === "text" ? msg.text : (msg.type === "audio" ? "🎤 Voice note" : `📷 ${msg.type}`);
-    replyBarText.textContent = `${msg.nickname || currentFriendName}: ${preview}`;
-    replyBar.classList.add('active');
+function setReply(msg) {
+  if (editingMsgKey) clearEdit();
+  replyingTo = msg;
+  const preview = msg.type === "text" ? msg.text : (msg.type === "audio" ? "🎤 Voice note" : `📷 ${msg.type}`);
+  replyBarText.textContent = `${msg.nickname || currentFriendName}: ${preview}`;
+  replyBar.classList.add('active');
+  msgInput.focus();
+}
+
+function clearReply() {
+  replyingTo = null;
+  replyBar.classList.remove('active');
+  replyBarText.textContent = '';
+}
+document.getElementById('replyBarClose').addEventListener('click', clearReply);
+
+function clearEdit() {
+  editingMsgKey = null;
+  editingMsgTs = null;
+  editBar.classList.remove('active');
+  msgInput.value = '';
+}
+document.getElementById('editBarClose').addEventListener('click', clearEdit);
+
+function getReplyPayload() {
+  if (!replyingTo) return null;
+  return {
+    nickname: replyingTo.nickname || currentFriendName,
+    preview: replyingTo.type === "text" ? replyingTo.text : (replyingTo.type === "audio" ? "🎤 Voice note" : `📷 ${replyingTo.type}`),
+    originalId: replyingTo.timestamp
+  };
+}
+
+function showContextMenu(x, y, msg, isMe) {
+  contextTargetMsg = msg;
+
+  document.getElementById('contextEditBtn').style.display = (isMe && msg.type === 'text') ? 'flex' : 'none';
+  document.getElementById('contextDeleteBtn').style.display = isMe ? 'flex' : 'none';
+
+  contextMenu.style.left = Math.min(x, window.innerWidth - 170) + 'px';
+  contextMenu.style.top = Math.min(y, window.innerHeight - 180) + 'px';
+  contextMenu.classList.add('active');
+}
+
+function hideContextMenu() {
+  contextMenu.classList.remove('active');
+  contextTargetMsg = null;
+}
+
+['click', 'touchstart'].forEach(evt => document.addEventListener(evt, (e) => {
+  if (!contextMenu.contains(e.target)) hideContextMenu();
+}, { passive: true }));
+
+document.getElementById('contextReplyBtn').addEventListener('click', () => {
+  if (contextTargetMsg) setReply(contextTargetMsg);
+  hideContextMenu();
+});
+
+document.getElementById('contextEditBtn').addEventListener('click', () => {
+  if (contextTargetMsg && contextTargetMsg.type === 'text') {
+    clearReply();
+    editingMsgKey = contextTargetMsg.key;
+    editingMsgTs = contextTargetMsg.timestamp;
+    msgInput.value = contextTargetMsg.text;
+    editBar.classList.add('active');
     msgInput.focus();
   }
+  hideContextMenu();
+});
 
-  function clearReply() {
-    replyingTo = null;
-    replyBar.classList.remove('active');
-    replyBarText.textContent = '';
-  }
-  document.getElementById('replyBarClose').addEventListener('click', clearReply);
+document.getElementById('contextDeleteBtn').addEventListener('click', async () => {
+  if (contextTargetMsg && currentChatId) {
+    const msgKey = contextTargetMsg.key;
+    const chatId = currentChatId;
+    const targetMsg = contextTargetMsg;
 
-  function clearEdit() {
-    editingMsgKey = null;
-    editingMsgTs = null;
-    editBar.classList.remove('active');
-    msgInput.value = '';
-  }
-  document.getElementById('editBarClose').addEventListener('click', clearEdit);
-
-  function getReplyPayload() {
-    if (!replyingTo) return null;
-    return {
-      nickname: replyingTo.nickname || currentFriendName,
-      preview: replyingTo.type === "text" ? replyingTo.text : (replyingTo.type === "audio" ? "🎤 Voice note" : `📷 ${replyingTo.type}`),
-      originalId: replyingTo.timestamp
-    };
-  }
-
-  function showContextMenu(x, y, msg, isMe) {
-    contextTargetMsg = msg;
-
-    document.getElementById('contextEditBtn').style.display = (isMe && msg.type === 'text') ? 'flex' : 'none';
-    document.getElementById('contextDeleteBtn').style.display = isMe ? 'flex' : 'none';
-
-    contextMenu.style.left = Math.min(x, window.innerWidth - 170) + 'px';
-    contextMenu.style.top = Math.min(y, window.innerHeight - 180) + 'px';
-    contextMenu.classList.add('active');
-  }
-
-  function hideContextMenu() {
-    contextMenu.classList.remove('active');
-    contextTargetMsg = null;
-  }
-
-  ['click', 'touchstart'].forEach(evt => document.addEventListener(evt, (e) => {
-    if (!contextMenu.contains(e.target)) hideContextMenu();
-  }, { passive: true }));
-
-  document.getElementById('contextReplyBtn').addEventListener('click', () => {
-    if (contextTargetMsg) setReply(contextTargetMsg);
     hideContextMenu();
-  });
 
-  document.getElementById('contextEditBtn').addEventListener('click', () => {
-    if (contextTargetMsg && contextTargetMsg.type === 'text') {
-      clearReply();
-      editingMsgKey = contextTargetMsg.key;
-      editingMsgTs = contextTargetMsg.timestamp;
-      msgInput.value = contextTargetMsg.text;
-      editBar.classList.add('active');
-      msgInput.focus();
-    }
-    hideContextMenu();
-  });
+    const isConfirmed = await AlertKit.confirm(
+      'Delete Message?',
+      'This message will be deleted for everyone.',
+      'Delete',
+      'Cancel'
+    );
 
-  document.getElementById('contextDeleteBtn').addEventListener('click', async () => {
-    if (contextTargetMsg && currentChatId) {
-      const msgKey = contextTargetMsg.key;
-      const chatId = currentChatId;
-      const targetMsg = contextTargetMsg;
-
-      hideContextMenu();
-
-      const isConfirmed = await AlertKit.confirm(
-        'Delete Message?',
-        'This message will be deleted for everyone.',
-        'Delete',
-        'Cancel'
-      );
-
-      if (isConfirmed) {
-        try {
-          await fetch(`${baseUrl}/messages/${chatId}/${msgKey}.json`, { method: "DELETE" });
-        } catch (err) {
-          console.error("delete msg error:", err);
-          return;
-        }
-        if (targetMsg.type === 'image' || targetMsg.type === 'audio') safeDeleteMedia(targetMsg.url);
-        const friend = myFriendsMap[chatId];
-        if (friend && friend.lastTimestamp === targetMsg.timestamp) refreshLastPreview(chatId);
+    if (isConfirmed) {
+      try {
+        await fetch(`${baseUrl}/messages/${chatId}/${msgKey}.json`, { method: "DELETE" });
+      } catch (err) {
+        console.error("delete msg error:", err);
+        return;
       }
-    } else {
-      hideContextMenu();
+      if (targetMsg.type === 'image' || targetMsg.type === 'audio') safeDeleteMedia(targetMsg.url);
+      const friend = myFriendsMap[chatId];
+      if (friend && friend.lastTimestamp === targetMsg.timestamp) refreshLastPreview(chatId);
     }
-  });
-
-  document.getElementById('contextForwardBtn').addEventListener('click', () => {
-    if (contextTargetMsg) {
-      window.forwardMessage(contextTargetMsg);
-    }
+  } else {
     hideContextMenu();
-  });
+  }
+});
 
-  function addMessageInteractions(div, msg, isMe) {
-    let holdTimer, holdTriggered = false, startX, startY, dragging = false;
+document.getElementById('contextForwardBtn').addEventListener('click', () => {
+  if (contextTargetMsg) {
+    window.forwardMessage(contextTargetMsg);
+  }
+  hideContextMenu();
+});
 
-    div.addEventListener('contextmenu', e => { e.preventDefault(); showContextMenu(e.clientX, e.clientY, msg, isMe); });
+function addMessageInteractions(div, msg, isMe) {
+  let holdTimer, holdTriggered = false, startX, startY, dragging = false;
 
-    div.addEventListener('touchstart', e => {
-      holdTriggered = false; dragging = true;
-      startX = e.touches[0].clientX; startY = e.touches[0].clientY;
-      holdTimer = setTimeout(() => {
-        holdTriggered = true; dragging = false;
-        div.style.transform = '';
-        div.classList.remove('swiping');
-        const forwardBtn = div.parentNode.querySelector('.msg-forward-btn');
-        if (forwardBtn) {
-          forwardBtn.style.transform = '';
-          forwardBtn.style.transition = '';
-        }
-        showContextMenu(e.touches[0].clientX, e.touches[0].clientY, msg, isMe);
-      }, 500);
-    }, { passive: true });
+  div.addEventListener('contextmenu', e => { e.preventDefault(); showContextMenu(e.clientX, e.clientY, msg, isMe); });
 
-    div.addEventListener('touchmove', e => {
-      if (holdTriggered || !dragging) return;
-      const dx = e.touches[0].clientX - startX;
-      if (Math.abs(e.touches[0].clientY - startY) > Math.abs(dx) || Math.abs(dx) > 10) clearTimeout(holdTimer);
-
-      if ((isMe ? dx < 0 : dx > 0)) {
-        const moveX = Math.min(Math.abs(dx), 60) * (isMe ? -1 : 1);
-        div.style.transform = `translateX(${moveX}px)`;
-        div.classList.add('swiping');
-        const forwardBtn = div.parentNode.querySelector('.msg-forward-btn');
-        if (forwardBtn) {
-          forwardBtn.style.transform = `translateX(${moveX}px)`;
-          forwardBtn.style.transition = 'none';
-        }
-      }
-    }, { passive: true });
-
-    div.addEventListener('touchend', e => {
-      clearTimeout(holdTimer);
-      if (holdTriggered) return;
-      dragging = false;
+  div.addEventListener('touchstart', e => {
+    holdTriggered = false; dragging = true;
+    startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+    holdTimer = setTimeout(() => {
+      holdTriggered = true; dragging = false;
       div.style.transform = '';
       div.classList.remove('swiping');
       const forwardBtn = div.parentNode.querySelector('.msg-forward-btn');
@@ -1580,894 +1552,885 @@ description: "View your chat history and messages with stranger friends and stay
         forwardBtn.style.transform = '';
         forwardBtn.style.transition = '';
       }
-      if ((isMe ? e.changedTouches[0].clientX - startX < -60 : e.changedTouches[0].clientX - startX > 60)) setReply(msg);
-    });
-  }
+      showContextMenu(e.touches[0].clientX, e.touches[0].clientY, msg, isMe);
+    }, 500);
+  }, { passive: true });
 
-  async function pushChatMessage(message) {
-    const chatId = currentChatId;
-    if (!chatId) return;
-    const res = await fetch(`${baseUrl}/messages/${chatId}.json`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(message)
-    });
-    if (!res.ok) throw new Error("Send failed");
-    maintainMessageLimit(chatId);
-    touchFriend(chatId, previewText(message), message.timestamp);
-  }
+  div.addEventListener('touchmove', e => {
+    if (holdTriggered || !dragging) return;
+    const dx = e.touches[0].clientX - startX;
+    if (Math.abs(e.touches[0].clientY - startY) > Math.abs(dx) || Math.abs(dx) > 10) clearTimeout(holdTimer);
 
-  document.addEventListener("DOMContentLoaded", async () => {
-    myNickname = localStorage.getItem("talkrush_nickname") || "Guest";
-    currentUserId = 'user_' + Math.random().toString(36).substr(2, 9);
-    await loadKeys();
+    if ((isMe ? dx < 0 : dx > 0)) {
+      const moveX = Math.min(Math.abs(dx), 60) * (isMe ? -1 : 1);
+      div.style.transform = `translateX(${moveX}px)`;
+      div.classList.add('swiping');
+      const forwardBtn = div.parentNode.querySelector('.msg-forward-btn');
+      if (forwardBtn) {
+        forwardBtn.style.transform = `translateX(${moveX}px)`;
+        forwardBtn.style.transition = 'none';
+      }
+    }
+  }, { passive: true });
 
-    if (window.MediaHub) {
-      MediaHub.init({
-        giphyApiKey: GIPHY_API_KEY,
-        onSendVoice: async (base64Data, duration) => {
-          if (!currentChatId) return;
-          const loadingBubble = showUploadingBubble();
-          try {
-            const res = await fetch(base64Data);
-            const audioBlob = await res.blob();
-            const audioUrl = await window.uploadMediaToServer(audioBlob, "voice.webm");
-            const message = { nickname: myNickname, type: "audio", timestamp: now(), url: audioUrl, duration: duration };
-            if (replyingTo) {
-              message.replyTo = getReplyPayload();
-              clearReply();
-            }
-            await pushChatMessage(message);
-          } catch (err) {
-            AlertKit.error("Failed", "Failed to upload voice note.");
-          } finally {
-            loadingBubble.remove();
+  div.addEventListener('touchend', e => {
+    clearTimeout(holdTimer);
+    if (holdTriggered) return;
+    dragging = false;
+    div.style.transform = '';
+    div.classList.remove('swiping');
+    const forwardBtn = div.parentNode.querySelector('.msg-forward-btn');
+    if (forwardBtn) {
+      forwardBtn.style.transform = '';
+      forwardBtn.style.transition = '';
+    }
+    if ((isMe ? e.changedTouches[0].clientX - startX < -60 : e.changedTouches[0].clientX - startX > 60)) setReply(msg);
+  });
+}
+
+async function pushChatMessage(message) {
+  const chatId = currentChatId;
+  if (!chatId) return;
+  const res = await fetch(`${baseUrl}/messages/${chatId}.json`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(message)
+  });
+  if (!res.ok) throw new Error("Send failed");
+  touchFriend(chatId, previewText(message), message.timestamp);
+}
+
+document.addEventListener("DOMContentLoaded", async () => {
+  myNickname = localStorage.getItem("talkrush_nickname") || "Guest";
+  currentUserId = 'user_' + Math.random().toString(36).substr(2, 9);
+  await loadKeys();
+
+  if (window.MediaHub) {
+    MediaHub.init({
+      giphyApiKey: GIPHY_API_KEY,
+      onSendVoice: async (base64Data, duration) => {
+        if (!currentChatId) return;
+        const loadingBubble = showUploadingBubble();
+        try {
+          const res = await fetch(base64Data);
+          const audioBlob = await res.blob();
+          const audioUrl = await window.uploadMediaToServer(audioBlob, "voice.webm");
+          const message = { nickname: myNickname, type: "audio", timestamp: now(), url: audioUrl, duration: duration };
+          if (replyingTo) {
+            message.replyTo = getReplyPayload();
+            clearReply();
           }
-        },
-        onSelectGif: (url) => {
-          sendGifToChat(url);
+          await pushChatMessage(message);
+        } catch (err) {
+          AlertKit.error("Failed", "Failed to upload voice note.");
+        } finally {
+          loadingBubble.remove();
         }
+      },
+      onSelectGif: (url) => {
+        sendGifToChat(url);
+      }
+    });
+  }
+
+  initUnifiedWs();
+  loadFriends();
+  setupEventListeners();
+  checkUrlNavigation();
+});
+
+window.addEventListener('nicknameUpdated', (e) => {
+  myNickname = e.detail.nickname;
+  loadFriends(true);
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) {
+    syncServerTime();
+    if (!unifiedWs || unifiedWs.readyState === WebSocket.CLOSED) {
+      initUnifiedWs();
+    }
+    if (!currentChatId) {
+      fetchUserFriends();
+    }
+  }
+});
+
+function setupEventListeners() {
+  msgInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  msgInput.addEventListener('input', () => {
+    if (!currentChatId) return;
+    if (!isTyping) {
+      isTyping = true;
+      wsSend({
+        type: "put",
+        path: `typing/${currentChatId}/${currentUserId}`,
+        data: true
       });
     }
-
-    loadFriends();
-    setupEventListeners();
-    checkUrlNavigation();
-  });
-
-  window.addEventListener('nicknameUpdated', (e) => {
-    myNickname = e.detail.nickname;
-    loadFriends(true);
-  });
-
-  document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) {
-      syncServerTime();
-      if (!currentChatId) {
-        fetch(`${baseUrl}/friends.json`)
-          .then(res => res.json())
-          .then(data => {
-            processFriendsPayload(data);
-          })
-          .catch(() => {});
-        if (!friendsWs || friendsWs.readyState === WebSocket.CLOSED) {
-          initFriendsWs();
-        }
-      }
-    } else {
-      if (!currentChatId) {
-        detachFriendsWs();
-      }
-    }
-  });
-
-  function setupEventListeners() {
-    msgInput.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        sendMessage();
-      }
-    });
-
-    msgInput.addEventListener('input', () => {
-      if (!currentChatId) return;
-      if (!isTyping) {
-        isTyping = true;
-        fetch(`${baseUrl}/typing/${currentChatId}/${currentUserId}.json`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(true)
-        }).catch(() => {});
-      }
-      if (typingTimeout) clearTimeout(typingTimeout);
-      typingTimeout = setTimeout(() => {
-        stopTyping();
-      }, 2000);
-    });
-
-    msgInput.addEventListener('blur', () => {
+    if (typingTimeout) clearTimeout(typingTimeout);
+    typingTimeout = setTimeout(() => {
       stopTyping();
-    });
+    }, 2000);
+  });
 
-    document.getElementById('imgBtn').onclick = () => {
-      document.getElementById('imgInput').click();
-    };
-
-    document.getElementById('imgInput').addEventListener('change', handleImageUpload);
-
-    document.getElementById('sendBtn').onclick = sendMessage;
-
-    document.getElementById('callBtn').onclick = () => {
-      if (!currentChatId || !currentFriendName) return;
-      document.getElementById('callTypeModal').style.display = 'flex';
-    };
-
-    window.closeCallTypeModal = function () {
-      document.getElementById('callTypeModal').style.display = 'none';
-    };
-
-    window.proceedCall = function (type) {
-      closeCallTypeModal();
-      if (window.startOutgoingCall) {
-        window.startOutgoingCall(currentFriendName, type);
-      }
-    };
-
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && currentChatId) closeChat();
-    });
-
-    window.addEventListener('popstate', () => {
-      if (currentChatId && !(history.state && history.state.chat)) {
-        closeChat(true);
-      }
-    });
-  }
-
-  function detachMessagesAndTypingWs() {
-    if (messagesPingInterval) { clearInterval(messagesPingInterval); messagesPingInterval = null; }
-    if (messagesWs) {
-      try { messagesWs.onclose = null; messagesWs.close(); } catch (e) {}
-      messagesWs = null;
-    }
-    if (typingPingInterval) { clearInterval(typingPingInterval); typingPingInterval = null; }
-    if (typingWs) {
-      try { typingWs.onclose = null; typingWs.close(); } catch (e) {}
-      typingWs = null;
-    }
-  }
-
-  window.openChat = function(chatId, friendName) {
-    const friendItem = document.querySelector(`.friend-item[data-chat-id="${chatId}"]`);
-    if (friendItem) {
-      const badge = friendItem.querySelector('.unread-badge');
-      if (badge) {
-        badge.remove();
-        if (typeof window._lastInboxBadgeCount !== 'undefined' && window._lastInboxBadgeCount > 0) {
-          window._lastInboxBadgeCount--;
-          window.dispatchEvent(new CustomEvent('updateInboxBadge', { detail: window._lastInboxBadgeCount }));
-        }
-      }
-    }
-
-    markSeen(chatId);
-
-    try {
-      let notifList = JSON.parse(localStorage.getItem("talkrush_notifications_history") || "[]");
-      let notifChanged = false;
-      notifList = notifList.map(n => {
-        if (n.type === 'dm' && !n.read && (n.chatId === chatId || n.senderName === friendName)) {
-          notifChanged = true;
-          return { ...n, read: true };
-        }
-        return n;
-      });
-      if (notifChanged) {
-        localStorage.setItem("talkrush_notifications_history", JSON.stringify(notifList));
-        window.dispatchEvent(new CustomEvent("localNotificationsUpdated"));
-      }
-    } catch (e) {}
-
+  msgInput.addEventListener('blur', () => {
     stopTyping();
-    detachMessagesAndTypingWs();
+  });
 
-    document.getElementById('chatLog').innerHTML = '';
-    renderedMessageKeys.clear();
-    hideTypingIndicator();
-    clearReply();
-    clearEdit();
-
-    currentChatId = chatId;
-    window.currentInboxChatId = chatId;
-    currentFriendName = friendName;
-
-    document.getElementById('chatAvatar').textContent = getAvatarLetter(friendName);
-    document.getElementById('chatName').textContent = friendName;
-    document.getElementById('pageTitle').textContent = `Messages – ${friendName}`;
-
-    document.getElementById('friendsContainer').style.display = 'none';
-    document.getElementById('chatContainer').style.display = 'flex';
-
-    const newUrl = `${location.pathname}?chatId=${encodeURIComponent(chatId)}&friend=${encodeURIComponent(friendName)}`;
-    const alreadyInUrl = new URLSearchParams(location.search).get('chatId') === chatId;
-    if (alreadyInUrl) {
-      history.replaceState({ chat: chatId, direct: true }, '', newUrl);
-    } else {
-      history.pushState({ chat: chatId }, '', newUrl);
-    }
-
-    listenForMessages(chatId);
-    listenForTyping(chatId);
+  document.getElementById('imgBtn').onclick = () => {
+    document.getElementById('imgInput').click();
   };
 
-  function scheduleFriendsRender() {
-    clearTimeout(renderDebounceTimer);
-    renderDebounceTimer = setTimeout(() => {
-      renderFriendsUI();
-    }, 40);
+  document.getElementById('imgInput').addEventListener('change', handleImageUpload);
+
+  document.getElementById('sendBtn').onclick = sendMessage;
+
+  document.getElementById('callBtn').onclick = () => {
+    if (!currentChatId || !currentFriendName) return;
+    document.getElementById('callTypeModal').style.display = 'flex';
+  };
+
+  window.closeCallTypeModal = function () {
+    document.getElementById('callTypeModal').style.display = 'none';
+  };
+
+  window.proceedCall = function (type) {
+    closeCallTypeModal();
+    if (window.startOutgoingCall) {
+      window.startOutgoingCall(currentFriendName, type);
+    }
+  };
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && currentChatId) closeChat();
+  });
+
+  window.addEventListener('popstate', () => {
+    if (currentChatId && !(history.state && history.state.chat)) {
+      closeChat(true);
+    }
+  });
+}
+
+function initUnifiedWs() {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  if (unifiedWs && (unifiedWs.readyState === WebSocket.OPEN || unifiedWs.readyState === WebSocket.CONNECTING)) {
+    return;
   }
 
-  function renderFriendsUI() {
-    const list = document.getElementById("friendList");
-    const loading = document.getElementById("loading");
-    const empty = document.getElementById("emptyState");
+  try {
+    unifiedWs = new WebSocket(`${wsProto}//${wsHost}/ws/`);
+  } catch (e) {
+    return;
+  }
 
-    loading.style.display = "none";
-
-    const friendsArray = [];
-    let lastSeenMap = {};
-    try { lastSeenMap = JSON.parse(localStorage.getItem('inbox_last_seen') || '{}'); } catch (e) {}
-
-    if (currentChatId) {
-      lastSeenMap[currentChatId] = now();
-      localStorage.setItem('inbox_last_seen', JSON.stringify(lastSeenMap));
-    }
-
-    Object.entries(myFriendsMap).forEach(([chatId, friend]) => {
-      const friendNickname = friend.nickname2 === myNickname ? friend.nickname1 :
-        friend.nickname1 === myNickname ? friend.nickname2 : null;
-      if (!friendNickname) return;
-
-      let chatLastSeen = lastSeenMap[chatId] || 0;
-      let rawLastMessage = friend.lastMessageText || "Say Hi!";
-      let lastTimestamp = friend.lastTimestamp || 0;
-      let unreadCount = 0;
-
-      if (friend.lastSender && friend.lastSender !== myNickname && lastTimestamp > chatLastSeen && chatId !== currentChatId) {
-        unreadCount = 1;
+  unifiedWs.onopen = () => {
+    retryCount = 0;
+    if (pingInterval) clearInterval(pingInterval);
+    pingInterval = setInterval(() => {
+      if (unifiedWs && unifiedWs.readyState === WebSocket.OPEN) {
+        unifiedWs.send(JSON.stringify({ type: 'ping' }));
       }
+    }, 25000);
 
-      let displayMsg = rawLastMessage;
-      if (friend.lastSender && friend.lastMessageText) {
-        if (friend.lastSender === myNickname) {
-          displayMsg = `You: ${rawLastMessage}`;
-        } else {
-          displayMsg = rawLastMessage;
-        }
-      }
+    subscribeChannels();
+  };
 
-      friendsArray.push({
-        chatId,
-        displayName: friendNickname,
-        avatarLetter: getAvatarLetter(friendNickname),
-        displayMsg: displayMsg,
-        timestamp: lastTimestamp,
-        unreadCount: unreadCount,
-        friendData: friend
-      });
-
-      myFriendsData[chatId] = {
-        displayName: friendNickname,
-        isUserNickname1: myNickname === friend.nickname1,
-        isUserNickname2: myNickname === friend.nickname2
-      };
-    });
-
-    if (friendsArray.length === 0) {
-      if (initialFriendsLoaded) {
-        empty.style.display = "flex";
-        list.style.display = "none";
-        list.innerHTML = "";
-      }
-      return;
-    }
-
-    friendsArray.sort((a, b) => b.timestamp - a.timestamp);
-
-    list.innerHTML = "";
-    friendsArray.forEach(friend => {
-      const div = document.createElement("div");
-      div.className = "friend-item";
-
-      const badgeHtml = friend.unreadCount > 0
-        ? `<span class="unread-badge">1</span>`
-        : '';
-
-      div.innerHTML = `
-        <div class="friend-avatar">${escapeHtml(friend.avatarLetter)}</div>
-        <div class="friend-info">
-          <p class="friend-name">${escapeHtml(friend.displayName)}</p>
-          <p class="last-message">${escapeHtml(friend.displayMsg)}</p>
-        </div>
-        <div class="message-meta">
-          <span class="message-time">${formatTime(friend.timestamp)}</span>
-          ${badgeHtml}
-        </div>
-        <button class="unfriend-btn" onclick="event.stopPropagation(); unfriend('${friend.chatId}')" title="Remove friend">
-          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-            <circle cx="8.5" cy="7" r="4"></circle>
-            <line x1="23" y1="11" x2="17" y2="11"></line>
-          </svg>
-        </button>
-      `;
-      div.setAttribute('data-chat-id', friend.chatId);
-      div.onclick = () => openChat(friend.chatId, friend.displayName);
-      list.appendChild(div);
-    });
-
-    empty.style.display = "none";
-    list.style.display = "flex";
-  }
-
-  function detachFriendsWs() {
-    if (friendsPingInterval) { clearInterval(friendsPingInterval); friendsPingInterval = null; }
-    if (friendsWs) {
-      try { friendsWs.onclose = null; friendsWs.close(); } catch (e) {}
-      friendsWs = null;
-    }
-  }
-
-  function processFriendsPayload(data) {
-    if (data && typeof data === 'object') {
-      Object.entries(data).forEach(([chatId, val]) => {
-        if (!val) return;
-        if (val.nickname1 === myNickname || val.nickname2 === myNickname) {
-          myFriendsMap[chatId] = { ...(myFriendsMap[chatId] || {}), ...val };
-        }
-      });
-    }
-    scheduleFriendsRender();
-  }
-
-  function initFriendsWs() {
-    if (currentChatId) return;
-    detachFriendsWs();
-
+  unifiedWs.onmessage = (event) => {
     try {
-      friendsWs = new WebSocket(`${wsProto}//${wsHost}/ws/friends`);
-    } catch (e) {
+      const msg = JSON.parse(event.data);
+      if (!msg || msg.event === 'ping' || msg.event === 'pong' || msg.event === 'time' || msg.event === 'onDisconnectAck') return;
+      handleUnifiedWsMessage(msg);
+    } catch (e) {}
+  };
+
+  unifiedWs.onclose = () => {
+    if (pingInterval) clearInterval(pingInterval);
+    if (!document.hidden) {
+      const delay = Math.min(30000, 1000 * Math.pow(1.5, retryCount++));
+      reconnectTimer = setTimeout(initUnifiedWs, delay);
+    }
+  };
+}
+
+function subscribeChannels() {
+  wsSend({ type: "subscribe", path: "friends" });
+
+  if (currentChatId) {
+    wsSend({
+      type: "subscribe",
+      path: `messages/${currentChatId}`,
+      query: { orderBy: '"timestamp"', limitToLast: MESSAGE_LIMIT }
+    });
+    wsSend({
+      type: "subscribe",
+      path: `typing/${currentChatId}`
+    });
+    wsSend({
+      type: "onDisconnectDelete",
+      path: `typing/${currentChatId}/${currentUserId}`
+    });
+  }
+}
+
+function handleUnifiedWsMessage(msg) {
+  const fullPath = (msg.path || '').trim();
+  const parts = fullPath.split('/').filter(Boolean);
+
+  if (fullPath === 'friends' || (parts.length > 0 && parts[0] === 'friends')) {
+    handleFriendsWsMessage(msg, parts.slice(1));
+    return;
+  }
+
+  if (currentChatId) {
+    const msgPrefix = `messages/${currentChatId}`;
+    const typingPrefix = `typing/${currentChatId}`;
+
+    if (fullPath === msgPrefix || fullPath.startsWith(msgPrefix + '/')) {
+      const subParts = fullPath.slice(msgPrefix.length).split('/').filter(Boolean);
+      handleMessagesWsMessage(msg, subParts);
       return;
     }
 
-    friendsWs.onopen = () => {
-      if (friendsPingInterval) clearInterval(friendsPingInterval);
-      friendsPingInterval = setInterval(() => {
-        if (friendsWs && friendsWs.readyState === WebSocket.OPEN) {
-          friendsWs.send(JSON.stringify({ type: 'ping' }));
-        }
-      }, 25000);
-    };
+    if (fullPath === typingPrefix || fullPath.startsWith(typingPrefix + '/')) {
+      const subParts = fullPath.slice(typingPrefix.length).split('/').filter(Boolean);
+      handleTypingWsMessage(msg, subParts);
+      return;
+    }
+  }
+}
 
-    friendsWs.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data);
-        if (!msg || msg.event === 'ping' || msg.event === 'pong' || msg.event === 'time' || msg.event === 'onDisconnectAck') return;
-
-        if (msg.event === 'connected') {
-          processFriendsPayload(msg.data);
-          initialFriendsLoaded = true;
-          return;
-        }
-
-        const parts = (msg.path || '').split('/').filter(Boolean);
-        if (parts.length === 0) {
-          if (msg.event === 'delete' || msg.data === null) {
-            myFriendsMap = {};
-            scheduleFriendsRender();
-          } else if (typeof msg.data === 'object' && msg.data) {
-            processFriendsPayload(msg.data);
-          }
-          return;
-        }
-
-        const chatId = parts[0];
-        if (msg.event === 'delete' || msg.data === null) {
-          delete myFriendsMap[chatId];
-          delete myFriendsData[chatId];
-          scheduleFriendsRender();
-        } else if (msg.event === 'put' || msg.event === 'patch') {
-          const val = msg.data;
-          if (val && typeof val === 'object') {
-            const existing = myFriendsMap[chatId] || {};
-            const merged = { ...existing, ...val };
-            if (merged.nickname1 === myNickname || merged.nickname2 === myNickname) {
-              myFriendsMap[chatId] = merged;
-              scheduleFriendsRender();
-            }
-          }
-        }
-      } catch (e) {}
-    };
-
-    friendsWs.onclose = () => {
-      if (friendsPingInterval) clearInterval(friendsPingInterval);
-      setTimeout(() => {
-        if (!currentChatId) initFriendsWs();
-      }, 3000);
-    };
+function handleFriendsWsMessage(msg, parts) {
+  if (parts.length === 0) {
+    if (msg.event === 'connected' || msg.event === 'snapshot') {
+      processFriendsPayload(msg.data);
+      initialFriendsLoaded = true;
+    } else if (msg.event === 'delete' || msg.data === null) {
+      myFriendsMap = {};
+      scheduleFriendsRender();
+    } else if (typeof msg.data === 'object' && msg.data) {
+      processFriendsPayload(msg.data);
+    }
+    return;
   }
 
-  function loadFriends(forceReload = false) {
-    const list = document.getElementById("friendList");
-    const loading = document.getElementById("loading");
-    const empty = document.getElementById("emptyState");
+  const chatId = parts[0];
+  if (msg.event === 'delete' || msg.data === null) {
+    delete myFriendsMap[chatId];
+    delete myFriendsData[chatId];
+    scheduleFriendsRender();
+  } else if (msg.event === 'put' || msg.event === 'patch') {
+    const val = msg.data;
+    if (val && typeof val === 'object') {
+      const existing = myFriendsMap[chatId] || {};
+      const merged = { ...existing, ...val };
+      if (merged.nickname1 === myNickname || merged.nickname2 === myNickname) {
+        myFriendsMap[chatId] = merged;
+        scheduleFriendsRender();
+      }
+    }
+  }
+}
 
-    if (!myNickname || myNickname === 'Guest') {
-      loading.style.display = "none";
+function handleMessagesWsMessage(msg, parts) {
+  if (parts.length === 0) {
+    if (msg.event === 'connected' || msg.event === 'snapshot') {
+      const allMsgs = msg.data;
+      if (allMsgs && typeof allMsgs === 'object') {
+        const list = Object.entries(allMsgs).map(([k, v]) => ({ key: k, ...v }));
+        list.sort((a, b) => (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0));
+        const trimmed = list.slice(-MESSAGE_LIMIT);
+        trimmed.forEach(m => {
+          if (!renderedMessageKeys.has(m.key)) {
+            renderedMessageKeys.add(m.key);
+            appendMessageToChat(m, m.nickname === myNickname);
+          }
+        });
+        scrollToBottom();
+      }
+    }
+    return;
+  }
+
+  const key = parts[0];
+  if (msg.event === 'delete' || msg.data === null) {
+    if (key) {
+      renderedMessageKeys.delete(key);
+      removeMessageFromDOM(key);
+    }
+  } else if (msg.event === 'patch') {
+    if (key) {
+      updateMessageInDOM({ key: key, ...msg.data });
+    }
+  } else if (msg.event === 'put') {
+    if (key && !renderedMessageKeys.has(key)) {
+      renderedMessageKeys.add(key);
+      const messageData = { key: key, ...msg.data };
+      appendMessageToChat(messageData, messageData.nickname === myNickname);
+      scrollToBottom();
+      markSeen(currentChatId);
+    }
+  }
+}
+
+function handleTypingWsMessage(msg, parts) {
+  if (parts.length === 0) {
+    if (msg.event === 'connected' || msg.event === 'snapshot') {
+      const data = msg.data || {};
+      const typingUsers = Object.keys(data).filter(id => id !== currentUserId);
+      if (typingUsers.length > 0) showTypingIndicator();
+      else hideTypingIndicator();
+    }
+    return;
+  }
+
+  const typingUserId = parts[0];
+  if (typingUserId && typingUserId !== currentUserId) {
+    if (msg.event === 'delete' || msg.data === null) {
+      hideTypingIndicator();
+    } else {
+      showTypingIndicator();
+    }
+  }
+}
+
+window.openChat = function(chatId, friendName) {
+  const friendItem = document.querySelector(`.friend-item[data-chat-id="${chatId}"]`);
+  if (friendItem) {
+    const badge = friendItem.querySelector('.unread-badge');
+    if (badge) {
+      badge.remove();
+      if (typeof window._lastInboxBadgeCount !== 'undefined' && window._lastInboxBadgeCount > 0) {
+        window._lastInboxBadgeCount--;
+        window.dispatchEvent(new CustomEvent('updateInboxBadge', { detail: window._lastInboxBadgeCount }));
+      }
+    }
+  }
+
+  markSeen(chatId);
+
+  try {
+    let notifList = JSON.parse(localStorage.getItem("talkrush_notifications_history") || "[]");
+    let notifChanged = false;
+    notifList = notifList.map(n => {
+      if (n.type === 'dm' && !n.read && (n.chatId === chatId || n.senderName === friendName)) {
+        notifChanged = true;
+        return { ...n, read: true };
+      }
+      return n;
+    });
+    if (notifChanged) {
+      localStorage.setItem("talkrush_notifications_history", JSON.stringify(notifList));
+      window.dispatchEvent(new CustomEvent("localNotificationsUpdated"));
+    }
+  } catch (e) {}
+
+  stopTyping();
+
+  if (currentChatId) {
+    wsSend({ type: "unsubscribe", path: `messages/${currentChatId}` });
+    wsSend({ type: "unsubscribe", path: `typing/${currentChatId}` });
+  }
+
+  document.getElementById('chatLog').innerHTML = '';
+  renderedMessageKeys.clear();
+  hideTypingIndicator();
+  clearReply();
+  clearEdit();
+
+  currentChatId = chatId;
+  window.currentInboxChatId = chatId;
+  currentFriendName = friendName;
+
+  document.getElementById('chatAvatar').textContent = getAvatarLetter(friendName);
+  document.getElementById('chatName').textContent = friendName;
+  document.getElementById('pageTitle').textContent = `Messages – ${friendName}`;
+
+  document.getElementById('friendsContainer').style.display = 'none';
+  document.getElementById('chatContainer').style.display = 'flex';
+
+  const newUrl = `${location.pathname}?chatId=${encodeURIComponent(chatId)}&friend=${encodeURIComponent(friendName)}`;
+  const alreadyInUrl = new URLSearchParams(location.search).get('chatId') === chatId;
+  if (alreadyInUrl) {
+    history.replaceState({ chat: chatId, direct: true }, '', newUrl);
+  } else {
+    history.pushState({ chat: chatId }, '', newUrl);
+  }
+
+  wsSend({
+    type: "subscribe",
+    path: `messages/${chatId}`,
+    query: { orderBy: '"timestamp"', limitToLast: MESSAGE_LIMIT }
+  });
+  wsSend({
+    type: "subscribe",
+    path: `typing/${chatId}`
+  });
+  wsSend({
+    type: "onDisconnectDelete",
+    path: `typing/${chatId}/${currentUserId}`
+  });
+};
+
+function scheduleFriendsRender() {
+  clearTimeout(renderDebounceTimer);
+  renderDebounceTimer = setTimeout(() => {
+    renderFriendsUI();
+  }, 40);
+}
+
+function renderFriendsUI() {
+  const list = document.getElementById("friendList");
+  const loading = document.getElementById("loading");
+  const empty = document.getElementById("emptyState");
+
+  loading.style.display = "none";
+
+  const friendsArray = [];
+  let lastSeenMap = {};
+  try { lastSeenMap = JSON.parse(localStorage.getItem('inbox_last_seen') || '{}'); } catch (e) {}
+
+  if (currentChatId) {
+    lastSeenMap[currentChatId] = now();
+    localStorage.setItem('inbox_last_seen', JSON.stringify(lastSeenMap));
+  }
+
+  Object.entries(myFriendsMap).forEach(([chatId, friend]) => {
+    const friendNickname = friend.nickname2 === myNickname ? friend.nickname1 :
+      friend.nickname1 === myNickname ? friend.nickname2 : null;
+    if (!friendNickname) return;
+
+    let chatLastSeen = lastSeenMap[chatId] || 0;
+    let rawLastMessage = friend.lastMessageText || "Say Hi!";
+    let lastTimestamp = friend.lastTimestamp || 0;
+    let unreadCount = 0;
+
+    if (friend.lastSender && friend.lastSender !== myNickname && lastTimestamp > chatLastSeen && chatId !== currentChatId) {
+      unreadCount = 1;
+    }
+
+    let displayMsg = rawLastMessage;
+    if (friend.lastSender && friend.lastMessageText) {
+      if (friend.lastSender === myNickname) {
+        displayMsg = `You: ${rawLastMessage}`;
+      } else {
+        displayMsg = rawLastMessage;
+      }
+    }
+
+    friendsArray.push({
+      chatId,
+      displayName: friendNickname,
+      avatarLetter: getAvatarLetter(friendNickname),
+      displayMsg: displayMsg,
+      timestamp: lastTimestamp,
+      unreadCount: unreadCount,
+      friendData: friend
+    });
+
+    myFriendsData[chatId] = {
+      displayName: friendNickname,
+      isUserNickname1: myNickname === friend.nickname1,
+      isUserNickname2: myNickname === friend.nickname2
+    };
+  });
+
+  if (friendsArray.length === 0) {
+    if (initialFriendsLoaded) {
       empty.style.display = "flex";
       list.style.display = "none";
-      return;
+      list.innerHTML = "";
     }
-
-    if (forceReload || Object.keys(myFriendsMap).length === 0) {
-      loading.style.display = "flex";
-      empty.style.display = "none";
-      list.style.display = "none";
-    }
-
-    fetch(`${baseUrl}/friends.json`)
-      .then(res => res.json())
-      .then(data => {
-        initialFriendsLoaded = true;
-        processFriendsPayload(data);
-      })
-      .catch(() => {
-        initialFriendsLoaded = true;
-        scheduleFriendsRender();
-      });
-
-    initFriendsWs();
+    return;
   }
 
-  function listenForMessages(chatId) {
-    try {
-      const wsUrl = `${wsProto}//${wsHost}/ws/messages/${chatId}?orderBy=%22timestamp%22&limitToLast=${MESSAGE_LIMIT}`;
-      messagesWs = new WebSocket(wsUrl);
-    } catch (e) {
-      return;
-    }
+  friendsArray.sort((a, b) => b.timestamp - a.timestamp);
 
-    messagesWs.onopen = () => {
-      if (messagesPingInterval) clearInterval(messagesPingInterval);
-      messagesPingInterval = setInterval(() => {
-        if (messagesWs && messagesWs.readyState === WebSocket.OPEN) {
-          messagesWs.send(JSON.stringify({ type: 'ping' }));
-        }
-      }, 25000);
-    };
+  list.innerHTML = "";
+  friendsArray.forEach(friend => {
+    const div = document.createElement("div");
+    div.className = "friend-item";
 
-    messagesWs.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data);
-        if (!msg || msg.event === 'ping' || msg.event === 'pong' || msg.event === 'time' || msg.event === 'onDisconnectAck') return;
-        if (currentChatId !== chatId) return;
+    const badgeHtml = friend.unreadCount > 0
+      ? `<span class="unread-badge">1</span>`
+      : '';
 
-        if (msg.event === 'connected') {
-          const allMsgs = msg.data;
-          if (allMsgs && typeof allMsgs === 'object') {
-            const list = Object.entries(allMsgs).map(([k, v]) => ({ key: k, ...v }));
-            list.sort((a, b) => (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0));
-            const trimmed = list.slice(-MESSAGE_LIMIT);
-            trimmed.forEach(m => {
-              if (!renderedMessageKeys.has(m.key)) {
-                renderedMessageKeys.add(m.key);
-                appendMessageToChat(m, m.nickname === myNickname);
-              }
-            });
-            scrollToBottom();
-          }
-          return;
-        }
+    div.innerHTML = `
+      <div class="friend-avatar">${escapeHtml(friend.avatarLetter)}</div>
+      <div class="friend-info">
+        <p class="friend-name">${escapeHtml(friend.displayName)}</p>
+        <p class="last-message">${escapeHtml(friend.displayMsg)}</p>
+      </div>
+      <div class="message-meta">
+        <span class="message-time">${formatTime(friend.timestamp)}</span>
+        ${badgeHtml}
+      </div>
+      <button class="unfriend-btn" onclick="event.stopPropagation(); unfriend('${friend.chatId}')" title="Remove friend">
+        <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+          <circle cx="8.5" cy="7" r="4"></circle>
+          <line x1="23" y1="11" x2="17" y2="11"></line>
+        </svg>
+      </button>
+    `;
+    div.setAttribute('data-chat-id', friend.chatId);
+    div.onclick = () => openChat(friend.chatId, friend.displayName);
+    list.appendChild(div);
+  });
 
-        const parts = (msg.path || '').split('/').filter(Boolean);
-        const key = parts[0];
+  empty.style.display = "none";
+  list.style.display = "flex";
+}
 
-        if (msg.event === 'delete' || msg.data === null) {
-          if (key) {
-            renderedMessageKeys.delete(key);
-            removeMessageFromDOM(key);
-          }
-        } else if (msg.event === 'patch') {
-          if (key) {
-            updateMessageInDOM({ key: key, ...msg.data });
-          }
-        } else if (msg.event === 'put') {
-          if (key && !renderedMessageKeys.has(key)) {
-            renderedMessageKeys.add(key);
-            const messageData = { key: key, ...msg.data };
-            appendMessageToChat(messageData, messageData.nickname === myNickname);
-            scrollToBottom();
-            markSeen(chatId);
-          }
-        }
-      } catch (e) {}
-    };
-
-    messagesWs.onclose = () => {
-      if (messagesPingInterval) clearInterval(messagesPingInterval);
-    };
-  }
-
-  function updateMessageInDOM(msg) {
-    const row = document.querySelector(`.msg-row[data-key="${msg.key}"]`);
-    if (!row) return;
-    if (row._msg) Object.assign(row._msg, msg);
-    const bubble = row.querySelector('.msg');
-    if (!bubble) return;
-
-    const textDiv = bubble.querySelector('.text-content');
-    if (textDiv && typeof msg.text === 'string') {
-      textDiv.innerHTML = '';
-      if (isSingleEmoji(msg.text)) {
-        bubble.classList.add('msg-single-emoji');
-        const emojiText = msg.text.trim();
-        const codePointStr = getEmojiCodePoint(emojiText);
-
-        const img = document.createElement('img');
-        img.src = `https://fonts.gstatic.com/s/e/notoemoji/latest/${codePointStr}/512.webp`;
-        img.className = 'animated-emoji-img';
-        img.alt = emojiText;
-        img.onerror = () => {
-          textDiv.textContent = emojiText;
-        };
-        textDiv.appendChild(img);
-      } else {
-        bubble.classList.remove('msg-single-emoji');
-        textDiv.innerHTML = linkifyText(msg.text);
+function processFriendsPayload(data) {
+  if (data && typeof data === 'object') {
+    Object.entries(data).forEach(([chatId, val]) => {
+      if (!val) return;
+      if (val.nickname1 === myNickname || val.nickname2 === myNickname) {
+        myFriendsMap[chatId] = { ...(myFriendsMap[chatId] || {}), ...val };
       }
-      if (msg.edited && !bubble.querySelector('.edited-label')) {
-        const editedSpan = document.createElement('span');
-        editedSpan.className = 'edited-label';
-        editedSpan.textContent = '(edited)';
-        const timeDiv = bubble.querySelector('.timestamp');
-        if (timeDiv) {
-          timeDiv.appendChild(editedSpan);
-        }
-      }
-    }
+    });
+  }
+  scheduleFriendsRender();
+}
+
+function fetchUserFriends() {
+  if (!myNickname || myNickname === 'Guest') return;
+  const encodedNick = encodeURIComponent(JSON.stringify(myNickname));
+  const p1 = fetch(`${baseUrl}/friends.json?orderBy=%22nickname1%22&equalTo=${encodedNick}`).then(r => r.json()).catch(() => ({}));
+  const p2 = fetch(`${baseUrl}/friends.json?orderBy=%22nickname2%22&equalTo=${encodedNick}`).then(r => r.json()).catch(() => ({}));
+
+  Promise.all([p1, p2]).then(([d1, d2]) => {
+    initialFriendsLoaded = true;
+    processFriendsPayload({ ...(d1 || {}), ...(d2 || {}) });
+  }).catch(() => {
+    initialFriendsLoaded = true;
+    scheduleFriendsRender();
+  });
+}
+
+function loadFriends(forceReload = false) {
+  const list = document.getElementById("friendList");
+  const loading = document.getElementById("loading");
+  const empty = document.getElementById("emptyState");
+
+  if (!myNickname || myNickname === 'Guest') {
+    loading.style.display = "none";
+    empty.style.display = "flex";
+    list.style.display = "none";
+    return;
   }
 
-  function removeMessageFromDOM(key) {
-    const row = document.querySelector(`.msg-row[data-key="${key}"]`);
-    if (row) row.remove();
+  if (forceReload || Object.keys(myFriendsMap).length === 0) {
+    loading.style.display = "flex";
+    empty.style.display = "none";
+    list.style.display = "none";
   }
 
-  function listenForTyping(chatId) {
-    try {
-      typingWs = new WebSocket(`${wsProto}//${wsHost}/ws/typing/${chatId}`);
-    } catch (e) {
-      return;
-    }
+  fetchUserFriends();
+}
 
-    typingWs.onopen = () => {
-      if (typingPingInterval) clearInterval(typingPingInterval);
-      typingPingInterval = setInterval(() => {
-        if (typingWs && typingWs.readyState === WebSocket.OPEN) {
-          typingWs.send(JSON.stringify({ type: 'ping' }));
-        }
-      }, 25000);
-      try {
-        typingWs.send(JSON.stringify({
-          type: "onDisconnectDelete",
-          path: currentUserId
-        }));
-      } catch (e) {}
-    };
+function updateMessageInDOM(msg) {
+  const row = document.querySelector(`.msg-row[data-key="${msg.key}"]`);
+  if (!row) return;
+  if (row._msg) Object.assign(row._msg, msg);
+  const bubble = row.querySelector('.msg');
+  if (!bubble) return;
 
-    typingWs.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data);
-        if (!msg || msg.event === 'ping' || msg.event === 'pong' || msg.event === 'time' || msg.event === 'onDisconnectAck') return;
-        if (currentChatId !== chatId) return;
+  const textDiv = bubble.querySelector('.text-content');
+  if (textDiv && typeof msg.text === 'string') {
+    textDiv.innerHTML = '';
+    if (isSingleEmoji(msg.text)) {
+      bubble.classList.add('msg-single-emoji');
+      const emojiText = msg.text.trim();
+      const codePointStr = getEmojiCodePoint(emojiText);
 
-        if (msg.event === 'connected') {
-          const data = msg.data || {};
-          const typingUsers = Object.keys(data).filter(id => id !== currentUserId);
-          if (typingUsers.length > 0) showTypingIndicator();
-          else hideTypingIndicator();
-          return;
-        }
-
-        const parts = (msg.path || '').split('/').filter(Boolean);
-        const typingUserId = parts[0];
-
-        if (typingUserId && typingUserId !== currentUserId) {
-          if (msg.event === 'delete' || msg.data === null) {
-            hideTypingIndicator();
-          } else {
-            showTypingIndicator();
-          }
-        }
-      } catch (e) {}
-    };
-
-    typingWs.onclose = () => {
-      if (typingPingInterval) clearInterval(typingPingInterval);
-    };
-  }
-
-  async function maintainMessageLimit(chatId = currentChatId) {
-    if (!chatId || isPruning) return;
-    isPruning = true;
-
-    try {
-      const res = await fetch(`${baseUrl}/messages/${chatId}.json`);
-      if (!res.ok) return;
-      const msgs = await res.json();
-      if (!msgs || typeof msgs !== 'object') return;
-
-      const entries = Object.entries(msgs);
-      if (entries.length > MESSAGE_LIMIT) {
-        entries.sort((a, b) => (Number(a[1].timestamp) || 0) - (Number(b[1].timestamp) || 0));
-        const toDelete = entries.slice(0, entries.length - MESSAGE_LIMIT);
-
-        await Promise.all(toDelete.map(([mKey, mVal]) => {
-          if (mVal && (mVal.type === 'image' || mVal.type === 'audio')) {
-            safeDeleteMedia(mVal.url);
-          }
-          return fetch(`${baseUrl}/messages/${chatId}/${mKey}.json`, { method: "DELETE" }).catch(() => {});
-        }));
-      }
-    } catch (e) {
-    } finally {
-      isPruning = false;
-    }
-  }
-
-  function sendMessage() {
-    const input = document.getElementById('msgInput');
-    const content = input.value.trim();
-    if (!content || !currentChatId) return;
-
-    const chatId = currentChatId;
-
-    if (editingMsgKey) {
-      const key = editingMsgKey;
-      const ts = editingMsgTs;
-      fetch(`${baseUrl}/messages/${chatId}/${key}.json`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: content, edited: true })
-      }).then(() => {
-        const friend = myFriendsMap[chatId];
-        if (friend && friend.lastTimestamp === ts) {
-          const preview = content.substring(0, 30) + (content.length > 30 ? '...' : '');
-          touchFriend(chatId, preview, ts);
-        }
-      }).catch((err) => console.error("edit error:", err));
-      clearEdit();
+      const img = document.createElement('img');
+      img.src = `https://fonts.gstatic.com/s/e/notoemoji/latest/${codePointStr}/512.webp`;
+      img.className = 'animated-emoji-img';
+      img.alt = emojiText;
+      img.onerror = () => {
+        textDiv.textContent = emojiText;
+      };
+      textDiv.appendChild(img);
     } else {
-      const message = { nickname: myNickname, text: content, timestamp: now(), type: "text" };
-
-      if (replyingTo) {
-        message.replyTo = getReplyPayload();
-        clearReply();
+      bubble.classList.remove('msg-single-emoji');
+      textDiv.innerHTML = linkifyText(msg.text);
+    }
+    if (msg.edited && !bubble.querySelector('.edited-label')) {
+      const editedSpan = document.createElement('span');
+      editedSpan.className = 'edited-label';
+      editedSpan.textContent = '(edited)';
+      const timeDiv = bubble.querySelector('.timestamp');
+      if (timeDiv) {
+        timeDiv.appendChild(editedSpan);
       }
-
-      pushChatMessage(message).catch((err) => console.error("send error:", err));
     }
-
-    stopTyping();
-    input.value = '';
   }
+}
 
-  async function handleImageUpload(e) {
-    const file = e.target.files[0];
-    if (!file || !currentChatId) return;
+function removeMessageFromDOM(key) {
+  const row = document.querySelector(`.msg-row[data-key="${key}"]`);
+  if (row) row.remove();
+}
 
-    if (file.size > 10 * 1024 * 1024) {
-      AlertKit.error('File Too Large', 'Image size should be less than 10MB');
-      e.target.value = '';
-      return;
-    }
+function sendMessage() {
+  const input = document.getElementById('msgInput');
+  const content = input.value.trim();
+  if (!content || !currentChatId) return;
 
-    const loadingBubble = showUploadingBubble();
+  const chatId = currentChatId;
 
-    try {
-      const imageUrl = await window.uploadMediaToServer(file, file.name);
-
-      const message = { nickname: myNickname, url: imageUrl, timestamp: now(), type: "image" };
-
-      if (replyingTo) {
-        message.replyTo = getReplyPayload();
-        clearReply();
+  if (editingMsgKey) {
+    const key = editingMsgKey;
+    const ts = editingMsgTs;
+    fetch(`${baseUrl}/messages/${chatId}/${key}.json`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: content, edited: true })
+    }).then(() => {
+      const friend = myFriendsMap[chatId];
+      if (friend && friend.lastTimestamp === ts) {
+        const preview = content.substring(0, 30) + (content.length > 30 ? '...' : '');
+        touchFriend(chatId, preview, ts);
       }
-
-      await pushChatMessage(message);
-    } catch (err) {
-      AlertKit.error('Upload Failed', 'Failed to upload image. Please try again.');
-    } finally {
-      loadingBubble.remove();
-    }
-
-    e.target.value = '';
-  }
-
-  function sendGifToChat(url) {
-    if (!currentChatId) return;
-    const message = { nickname: myNickname, url: url, timestamp: now(), type: "gif" };
+    }).catch((err) => console.error("edit error:", err));
+    clearEdit();
+  } else {
+    const message = { nickname: myNickname, text: content, timestamp: now(), type: "text" };
 
     if (replyingTo) {
       message.replyTo = getReplyPayload();
       clearReply();
     }
 
-    pushChatMessage(message).catch((err) => console.error("gif send error:", err));
+    pushChatMessage(message).catch((err) => console.error("send error:", err));
   }
 
-  function showUploadingBubble() {
-    const chatDiv = document.getElementById('chatLog');
-    const row = document.createElement("div");
-    row.className = "msg-row me";
-    row.innerHTML = `<div class="msg"><div class="uploading-bubble"><div class="upload-spinner"></div><span>Uploading...</span></div></div>`;
-    chatDiv.appendChild(row);
-    scrollToBottom();
-    return row;
+  stopTyping();
+  input.value = '';
+}
+
+async function handleImageUpload(e) {
+  const file = e.target.files[0];
+  if (!file || !currentChatId) return;
+
+  if (file.size > 10 * 1024 * 1024) {
+    AlertKit.error('File Too Large', 'Image size should be less than 10MB');
+    e.target.value = '';
+    return;
   }
 
-  window.closeChat = function (fromPopstate = false) {
-    if (fromPopstate !== true && history.state && history.state.chat && !history.state.direct) {
-      history.back();
-      return;
+  const loadingBubble = showUploadingBubble();
+
+  try {
+    const imageUrl = await window.uploadMediaToServer(file, file.name);
+
+    const message = { nickname: myNickname, url: imageUrl, timestamp: now(), type: "image" };
+
+    if (replyingTo) {
+      message.replyTo = getReplyPayload();
+      clearReply();
     }
 
-    stopTyping();
-    detachMessagesAndTypingWs();
-    hideTypingIndicator();
+    await pushChatMessage(message);
+  } catch (err) {
+    AlertKit.error('Upload Failed', 'Failed to upload image. Please try again.');
+  } finally {
+    loadingBubble.remove();
+  }
+
+  e.target.value = '';
+}
+
+function sendGifToChat(url) {
+  if (!currentChatId) return;
+  const message = { nickname: myNickname, url: url, timestamp: now(), type: "gif" };
+
+  if (replyingTo) {
+    message.replyTo = getReplyPayload();
     clearReply();
-    clearEdit();
-    document.getElementById('chatLog').innerHTML = '';
-    renderedMessageKeys.clear();
-    currentChatId = null;
-    window.currentInboxChatId = null;
-    currentFriendName = "";
-    document.getElementById('friendsContainer').style.display = 'flex';
-    document.getElementById('chatContainer').style.display = 'none';
-    document.getElementById('pageTitle').textContent = 'Messages';
-    if (fromPopstate !== true) history.replaceState(null, '', location.pathname);
-
-    initFriendsWs();
-    renderFriendsUI();
-  };
-
-  function appendMessageToChat(msg, isMe) {
-    if (document.querySelector(`.msg-row[data-key="${msg.key}"]`)) return;
-
-    const chatDiv = document.getElementById('chatLog');
-    const row = document.createElement("div");
-    row.className = `msg-row ${isMe ? 'me' : 'stranger'}`;
-    row.setAttribute('data-key', msg.key);
-    row._msg = msg;
-
-    const forwardBtn = document.createElement("button");
-    forwardBtn.className = "msg-forward-btn";
-    forwardBtn.title = "Forward";
-    forwardBtn.innerHTML = `<i class="fa-solid fa-share"></i>`;
-    forwardBtn.onclick = () => window.forwardMessage(msg);
-
-    const bubble = document.createElement("div");
-    bubble.className = "msg";
-    bubble.setAttribute('data-id', msg.timestamp);
-
-    if (msg.replyTo) {
-      const replyDiv = document.createElement("div");
-      replyDiv.className = "reply-preview";
-      replyDiv.textContent = `${msg.replyTo.nickname}: ${msg.replyTo.preview}`;
-
-      if (msg.replyTo.originalId) {
-        replyDiv.title = "Click to jump to original message";
-        replyDiv.addEventListener("click", () => {
-          const target = document.querySelector(`[data-id="${msg.replyTo.originalId}"]`);
-          if (target) {
-            target.scrollIntoView({ behavior: "smooth", block: "center" });
-            const oldBg = target.style.backgroundColor;
-            target.style.backgroundColor = "rgba(91, 155, 213, 0.4)";
-            setTimeout(() => target.style.backgroundColor = oldBg, 1500);
-          }
-        });
-      }
-      bubble.appendChild(replyDiv);
-    }
-
-    if (msg.type === "audio" && window.MediaHub) {
-      const audioBubble = MediaHub.createAudioBubble(msg.url, msg.duration);
-      bubble.appendChild(audioBubble);
-    } else if (msg.type === 'image' || msg.type === 'gif') {
-      const img = document.createElement("img");
-      img.src = msg.url;
-      bubble.appendChild(img);
-    } else {
-      const textDiv = document.createElement("div");
-      textDiv.className = "text-content";
-
-      if (isSingleEmoji(msg.text)) {
-        bubble.classList.add("msg-single-emoji");
-        const emojiText = msg.text.trim();
-        const codePointStr = getEmojiCodePoint(emojiText);
-
-        const img = document.createElement('img');
-        img.src = `https://fonts.gstatic.com/s/e/notoemoji/latest/${codePointStr}/512.webp`;
-        img.className = 'animated-emoji-img';
-        img.alt = emojiText;
-        img.onerror = () => {
-          textDiv.textContent = emojiText;
-        };
-        textDiv.appendChild(img);
-      } else {
-        textDiv.innerHTML = linkifyText(msg.text);
-      }
-
-      bubble.appendChild(textDiv);
-    }
-
-    const timeDiv = document.createElement("div");
-    timeDiv.className = "timestamp";
-    timeDiv.textContent = formatMessageTime(msg.timestamp);
-    if (msg.edited) {
-      const editedSpan = document.createElement('span');
-      editedSpan.className = 'edited-label';
-      editedSpan.textContent = '(edited)';
-      timeDiv.appendChild(editedSpan);
-    }
-    bubble.appendChild(timeDiv);
-
-    addMessageInteractions(bubble, msg, isMe);
-
-    if (isMe) {
-      row.appendChild(forwardBtn);
-      row.appendChild(bubble);
-    } else {
-      row.appendChild(bubble);
-      row.appendChild(forwardBtn);
-    }
-
-    chatDiv.appendChild(row);
-    scrollToBottom();
   }
 
-  window.unfriend = async function (chatId) {
-    const isConfirmed = await AlertKit.confirm(
-      'Remove Friend?',
-      'All chat history will be permanently deleted.',
-      'Yes, remove',
-      'Cancel'
-    );
+  pushChatMessage(message).catch((err) => console.error("gif send error:", err));
+}
 
-    if (isConfirmed) {
-      if (currentChatId === chatId) window.closeChat();
-      delete myFriendsMap[chatId];
+function showUploadingBubble() {
+  const chatDiv = document.getElementById('chatLog');
+  const row = document.createElement("div");
+  row.className = "msg-row me";
+  row.innerHTML = `<div class="msg"><div class="uploading-bubble"><div class="upload-spinner"></div><span>Uploading...</span></div></div>`;
+  chatDiv.appendChild(row);
+  scrollToBottom();
+  return row;
+}
 
-      try {
-        const res = await fetch(`${baseUrl}/messages/${chatId}.json`);
-        if (res.ok) {
-          const msgs = await res.json();
-          if (msgs && typeof msgs === 'object') {
-            Object.values(msgs).forEach(m => {
-              if (m && (m.type === 'image' || m.type === 'audio')) {
-                safeDeleteMedia(m.url);
-              }
-            });
-          }
+window.closeChat = function (fromPopstate = false) {
+  if (fromPopstate !== true && history.state && history.state.chat && !history.state.direct) {
+    history.back();
+    return;
+  }
+
+  stopTyping();
+
+  if (currentChatId) {
+    wsSend({ type: "unsubscribe", path: `messages/${currentChatId}` });
+    wsSend({ type: "unsubscribe", path: `typing/${currentChatId}` });
+  }
+
+  hideTypingIndicator();
+  clearReply();
+  clearEdit();
+  document.getElementById('chatLog').innerHTML = '';
+  renderedMessageKeys.clear();
+  currentChatId = null;
+  window.currentInboxChatId = null;
+  currentFriendName = "";
+  document.getElementById('friendsContainer').style.display = 'flex';
+  document.getElementById('chatContainer').style.display = 'none';
+  document.getElementById('pageTitle').textContent = 'Messages';
+  if (fromPopstate !== true) history.replaceState(null, '', location.pathname);
+
+  renderFriendsUI();
+};
+
+function appendMessageToChat(msg, isMe) {
+  if (document.querySelector(`.msg-row[data-key="${msg.key}"]`)) return;
+
+  const chatDiv = document.getElementById('chatLog');
+  const row = document.createElement("div");
+  row.className = `msg-row ${isMe ? 'me' : 'stranger'}`;
+  row.setAttribute('data-key', msg.key);
+  row._msg = msg;
+
+  const forwardBtn = document.createElement("button");
+  forwardBtn.className = "msg-forward-btn";
+  forwardBtn.title = "Forward";
+  forwardBtn.innerHTML = `<i class="fa-solid fa-share"></i>`;
+  forwardBtn.onclick = () => window.forwardMessage(msg);
+
+  const bubble = document.createElement("div");
+  bubble.className = "msg";
+  bubble.setAttribute('data-id', msg.timestamp);
+
+  if (msg.replyTo) {
+    const replyDiv = document.createElement("div");
+    replyDiv.className = "reply-preview";
+    replyDiv.textContent = `${msg.replyTo.nickname}: ${msg.replyTo.preview}`;
+
+    if (msg.replyTo.originalId) {
+      replyDiv.title = "Click to jump to original message";
+      replyDiv.addEventListener("click", () => {
+        const target = document.querySelector(`[data-id="${msg.replyTo.originalId}"]`);
+        if (target) {
+          target.scrollIntoView({ behavior: "smooth", block: "center" });
+          const oldBg = target.style.backgroundColor;
+          target.style.backgroundColor = "rgba(91, 155, 213, 0.4)";
+          setTimeout(() => target.style.backgroundColor = oldBg, 1500);
         }
-      } catch (e) {}
-
-      await Promise.all([
-        fetch(`${baseUrl}/friends/${chatId}.json`, { method: "DELETE" }),
-        fetch(`${baseUrl}/messages/${chatId}.json`, { method: "DELETE" }),
-        fetch(`${baseUrl}/typing/${chatId}.json`, { method: "DELETE" })
-      ]).catch(() => {});
-      scheduleFriendsRender();
+      });
     }
-  };
+    bubble.appendChild(replyDiv);
+  }
+
+  if (msg.type === "audio" && window.MediaHub) {
+    const audioBubble = MediaHub.createAudioBubble(msg.url, msg.duration);
+    bubble.appendChild(audioBubble);
+  } else if (msg.type === 'image' || msg.type === 'gif') {
+    const img = document.createElement("img");
+    img.src = msg.url;
+    bubble.appendChild(img);
+  } else {
+    const textDiv = document.createElement("div");
+    textDiv.className = "text-content";
+
+    if (isSingleEmoji(msg.text)) {
+      bubble.classList.add("msg-single-emoji");
+      const emojiText = msg.text.trim();
+      const codePointStr = getEmojiCodePoint(emojiText);
+
+      const img = document.createElement('img');
+      img.src = `https://fonts.gstatic.com/s/e/notoemoji/latest/${codePointStr}/512.webp`;
+      img.className = 'animated-emoji-img';
+      img.alt = emojiText;
+      img.onerror = () => {
+        textDiv.textContent = emojiText;
+      };
+      textDiv.appendChild(img);
+    } else {
+      textDiv.innerHTML = linkifyText(msg.text);
+    }
+
+    bubble.appendChild(textDiv);
+  }
+
+  const timeDiv = document.createElement("div");
+  timeDiv.className = "timestamp";
+  timeDiv.textContent = formatMessageTime(msg.timestamp);
+  if (msg.edited) {
+    const editedSpan = document.createElement('span');
+    editedSpan.className = 'edited-label';
+    editedSpan.textContent = '(edited)';
+    timeDiv.appendChild(editedSpan);
+  }
+  bubble.appendChild(timeDiv);
+
+  addMessageInteractions(bubble, msg, isMe);
+
+  if (isMe) {
+    row.appendChild(forwardBtn);
+    row.appendChild(bubble);
+  } else {
+    row.appendChild(bubble);
+    row.appendChild(forwardBtn);
+  }
+
+  chatDiv.appendChild(row);
+  scrollToBottom();
+}
+
+window.unfriend = async function (chatId) {
+  const isConfirmed = await AlertKit.confirm(
+    'Remove Friend?',
+    'All chat history will be permanently deleted.',
+    'Yes, remove',
+    'Cancel'
+  );
+
+  if (isConfirmed) {
+    if (currentChatId === chatId) window.closeChat();
+    delete myFriendsMap[chatId];
+
+    try {
+      const res = await fetch(`${baseUrl}/messages/${chatId}.json`);
+      if (res.ok) {
+        const msgs = await res.json();
+        if (msgs && typeof msgs === 'object') {
+          Object.values(msgs).forEach(m => {
+            if (m && (m.type === 'image' || m.type === 'audio')) {
+              safeDeleteMedia(m.url);
+            }
+          });
+        }
+      }
+    } catch (e) {}
+
+    await Promise.all([
+      fetch(`${baseUrl}/friends/${chatId}.json`, { method: "DELETE" }),
+      fetch(`${baseUrl}/messages/${chatId}.json`, { method: "DELETE" }),
+      fetch(`${baseUrl}/typing/${chatId}.json`, { method: "DELETE" })
+    ]).catch(() => {});
+    scheduleFriendsRender();
+  }
+};
 </script>
