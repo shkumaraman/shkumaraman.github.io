@@ -469,25 +469,7 @@
 </div>
 
 <script type="module">
-  import { initializeApp, getApps } from "firebase/app";
-  import { getDatabase, ref, get, push, set, update } from "firebase/database";
-
-  const firebaseConfig = {
-    databaseURL: "https://talkrush3-default-rtdb.asia-southeast1.firebasedatabase.app"
-  };
-
-  let app;
-  const apps = getApps();
-  const targetAppName = "TalkRushFriendApp";
-  const existingApp = apps.find(a => a.name === targetAppName);
-
-  if (existingApp) {
-    app = existingApp;
-  } else {
-    app = initializeApp(firebaseConfig, targetAppName);
-  }
-
-  const db = getDatabase(app);
+  const baseUrl = window.MEDIA_STORAGE_URL.replace(/\/$/, "");
 
   let cachedFriends = [];
   let selectedChatIds = new Set();
@@ -568,15 +550,28 @@
 
   async function fetchFriendsForShare() {
     const myNickname = localStorage.getItem("talkrush_nickname") || "Guest";
-    const friendsRef = ref(db, "friends");
+    const grid = document.getElementById("shareFriendsGrid");
 
+    if (!myNickname || myNickname === "Guest") {
+      cachedFriends = [];
+      if (grid) grid.innerHTML = `<div class="share-empty-notice">Please set a nickname first</div>`;
+      return;
+    }
+
+    if (grid) grid.innerHTML = `<div class="share-empty-notice">Loading friends...</div>`;
+
+    const encodedNick = encodeURIComponent(JSON.stringify(myNickname));
     try {
-      const snap = await get(friendsRef);
-      const data = snap.val();
+      const p1 = fetch(`${baseUrl}/friends.json?orderBy=%22nickname1%22&equalTo=${encodedNick}`).then(r => r.json()).catch(() => ({}));
+      const p2 = fetch(`${baseUrl}/friends.json?orderBy=%22nickname2%22&equalTo=${encodedNick}`).then(r => r.json()).catch(() => ({}));
+
+      const [d1, d2] = await Promise.all([p1, p2]);
+      const data = { ...(d1 || {}), ...(d2 || {}) };
       cachedFriends = [];
 
-      if (data) {
+      if (data && typeof data === "object") {
         Object.entries(data).forEach(([chatId, friend]) => {
+          if (!friend) return;
           const friendNickname = friend.nickname2 === myNickname ? friend.nickname1 :
             friend.nickname1 === myNickname ? friend.nickname2 : null;
           
@@ -592,7 +587,6 @@
       }
       renderShareGrid();
     } catch (e) {
-      const grid = document.getElementById("shareFriendsGrid");
       if (grid) grid.innerHTML = `<div class="share-empty-notice">Failed to load friends</div>`;
     }
   }
@@ -717,17 +711,18 @@
 
       Array.from(selectedChatIds).forEach(chatId => {
         let baseTime = Date.now();
-        const messagesRef = ref(db, `messages/${chatId}`);
-        const friendRef = ref(db, `friends/${chatId}`);
-
         let lastText = "";
 
         if (currentShareItem.type === "image" && currentShareItem.url) {
-          promises.push(set(push(messagesRef), {
-            nickname: myNickname,
-            type: "image",
-            url: currentShareItem.url,
-            timestamp: baseTime
+          promises.push(fetch(`${baseUrl}/messages/${chatId}.json`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              nickname: myNickname,
+              type: "image",
+              url: currentShareItem.url,
+              timestamp: baseTime
+            })
           }));
           lastText = "📷 Image";
 
@@ -743,29 +738,41 @@
 
           if (combinedPostText) {
             baseTime += 1;
-            promises.push(set(push(messagesRef), {
-              nickname: myNickname,
-              type: "text",
-              text: combinedPostText,
-              timestamp: baseTime
+            promises.push(fetch(`${baseUrl}/messages/${chatId}.json`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                nickname: myNickname,
+                type: "text",
+                text: combinedPostText,
+                timestamp: baseTime
+              })
             }));
             lastText = combinedPostText.substring(0, 30);
           }
         } else if (currentShareItem.type === "audio" && currentShareItem.url) {
-          promises.push(set(push(messagesRef), {
-            nickname: myNickname,
-            type: "audio",
-            url: currentShareItem.url,
-            duration: currentShareItem.duration || 0,
-            timestamp: baseTime
+          promises.push(fetch(`${baseUrl}/messages/${chatId}.json`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              nickname: myNickname,
+              type: "audio",
+              url: currentShareItem.url,
+              duration: currentShareItem.duration || 0,
+              timestamp: baseTime
+            })
           }));
           lastText = "🎤 Voice note";
         } else if (currentShareItem.type === "gif" && currentShareItem.url) {
-          promises.push(set(push(messagesRef), {
-            nickname: myNickname,
-            type: "gif",
-            url: currentShareItem.url,
-            timestamp: baseTime
+          promises.push(fetch(`${baseUrl}/messages/${chatId}.json`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              nickname: myNickname,
+              type: "gif",
+              url: currentShareItem.url,
+              timestamp: baseTime
+            })
           }));
           lastText = "🎯 GIF";
         } else {
@@ -779,30 +786,42 @@
             fullText = postCaption || linkStr;
           }
 
-          promises.push(set(push(messagesRef), {
-            nickname: myNickname,
-            type: "text",
-            text: fullText,
-            timestamp: baseTime
+          promises.push(fetch(`${baseUrl}/messages/${chatId}.json`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              nickname: myNickname,
+              type: "text",
+              text: fullText,
+              timestamp: baseTime
+            })
           }));
           lastText = fullText.substring(0, 30) + (fullText.length > 30 ? "..." : "");
         }
 
         if (customText) {
           baseTime += 1;
-          promises.push(set(push(messagesRef), {
-            nickname: myNickname,
-            text: customText,
-            timestamp: baseTime,
-            type: "text"
+          promises.push(fetch(`${baseUrl}/messages/${chatId}.json`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              nickname: myNickname,
+              text: customText,
+              timestamp: baseTime,
+              type: "text"
+            })
           }));
           lastText = customText.substring(0, 30) + (customText.length > 30 ? "..." : "");
         }
 
-        promises.push(update(friendRef, {
-          lastMessageText: lastText,
-          lastTimestamp: baseTime,
-          lastSender: myNickname
+        promises.push(fetch(`${baseUrl}/friends/${chatId}.json`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            lastMessageText: lastText,
+            lastTimestamp: baseTime,
+            lastSender: myNickname
+          })
         }));
       });
 
