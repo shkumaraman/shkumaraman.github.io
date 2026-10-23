@@ -330,15 +330,8 @@ description: "View your chat history and messages with stranger friends and stay
   }
 
   .chat-container {
-    display: none;
-    flex-direction: column;
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: var(--dark-bg);
-    z-index: 10001;
+    display: flex; flex-direction: column; height: 100vh; height: 100dvh;
+    max-width: 720px; margin: 0 auto; padding-top: 50px; position: relative; width: 100%;
   }
 
   .light-mode .chat-container {
@@ -805,13 +798,7 @@ description: "View your chat history and messages with stranger friends and stay
   }
 
   @media (min-width: 769px) {
-    .chat-container {
-      max-width: 720px;
-      margin: 0 auto;
-      width: 100%;
-      left: 50%;
-      transform: translateX(-50%);
-    }
+    .chat-container { max-width: 720px; margin: 0 auto; width: 100%; }
 
     .chat-header {
       max-width: 720px;
@@ -1161,12 +1148,12 @@ description: "View your chat history and messages with stranger friends and stay
 {% include menu.html %}
 
 <script type="module">
-  const baseUrl = window.MEDIA_STORAGE_URL.replace(/\/$/, "");
+  const rawUrl = window.MEDIA_STORAGE_URL || "https://rtdb-w4kq.onrender.com";
+  const baseUrl = rawUrl.replace(/\/$/, "");
   const wsProto = baseUrl.startsWith("https") ? "wss:" : "ws:";
   const wsHost = baseUrl.replace(/^https?:\/\//, "");
 
   const MESSAGE_LIMIT = 25;
-  const JSON_H = { "Content-Type": "application/json" };
 
   let GIPHY_API_KEY = '';
 
@@ -1175,7 +1162,9 @@ description: "View your chat history and messages with stranger friends and stay
       const res = await fetch('/key.json');
       const keys = await res.json();
       GIPHY_API_KEY = keys.giphy || '';
-      if (window.MediaHub) MediaHub.setApiKey(GIPHY_API_KEY);
+      if (window.MediaHub && typeof window.MediaHub.setApiKey === 'function') {
+        window.MediaHub.setApiKey(GIPHY_API_KEY);
+      }
     } catch (e) {}
   }
 
@@ -1195,20 +1184,37 @@ description: "View your chat history and messages with stranger friends and stay
 
   let friendsWs = null;
   let friendsPingInterval = null;
-  let friendsRetry = 0;
-
   let messagesWs = null;
   let messagesPingInterval = null;
-  let msgRetry = 0;
-
+  let messagesReconnectTimer = null;
   let typingWs = null;
   let typingPingInterval = null;
-  let typingRetry = 0;
 
   let replyingTo = null;
   let editingMsgKey = null;
   let editingMsgTs = null;
   let contextTargetMsg = null;
+
+  async function confirmDialog(title, message, confirmText = 'OK', cancelText = 'Cancel') {
+    if (window.AlertKit && typeof window.AlertKit.confirm === 'function') {
+      return await window.AlertKit.confirm(title, message, confirmText, cancelText);
+    }
+    return window.confirm(`${title}\n\n${message}`);
+  }
+
+  function notifyError(title, msg) {
+    if (window.AlertKit && typeof window.AlertKit.error === 'function') {
+      window.AlertKit.error(title, msg);
+    } else {
+      alert(`${title}: ${msg}`);
+    }
+  }
+
+  function notifyToast(msg) {
+    if (window.AlertKit && typeof window.AlertKit.toast === 'function') {
+      window.AlertKit.toast(msg, "success");
+    }
+  }
 
   function syncServerTime() {
     const clientTime = Date.now();
@@ -1344,27 +1350,29 @@ description: "View your chat history and messages with stranger friends and stay
 
   function touchFriend(chatId, text, timestamp) {
     if (!chatId) return Promise.resolve();
+
     if (myFriendsMap[chatId]) {
       myFriendsMap[chatId].lastMessageText = text;
       myFriendsMap[chatId].lastTimestamp = timestamp;
       myFriendsMap[chatId].lastSender = myNickname;
       scheduleFriendsRender();
     }
+
     return fetch(`${baseUrl}/friends/${chatId}.json`, {
       method: "PATCH",
-      headers: JSON_H,
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         lastMessageText: text,
         lastTimestamp: timestamp,
         lastSender: myNickname
       })
-    }).catch((err) => console.error("touchFriend error:", err));
+    }).catch(() => {});
   }
 
   async function refreshLastPreview(chatId) {
     if (!chatId || !myFriendsMap[chatId]) return;
     try {
-      const res = await fetch(`${baseUrl}/messages/${chatId}.json?limitToLast=1`);
+      const res = await fetch(`${baseUrl}/messages/${chatId}.json?orderBy=%22timestamp%22&limitToLast=1`);
       if (!res.ok) return;
       const msgs = await res.json();
       let last = null;
@@ -1382,8 +1390,8 @@ description: "View your chat history and messages with stranger friends and stay
 
       await fetch(`${baseUrl}/friends/${chatId}.json`, {
         method: "PATCH",
-        headers: JSON_H,
-        body: JSON.stringify({
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
           lastMessageText: pText,
           ...(pSender ? { lastSender: pSender } : {})
         })
@@ -1404,7 +1412,7 @@ description: "View your chat history and messages with stranger friends and stay
     } else if (navigator.clipboard) {
       const copyText = typeof content === 'object' ? (content.url || content.text || '') : content;
       navigator.clipboard.writeText(copyText).then(() => {
-        AlertKit.toast("Message copied to clipboard!", "success");
+        notifyToast("Message copied to clipboard!");
       });
     }
   };
@@ -1505,7 +1513,7 @@ description: "View your chat history and messages with stranger friends and stay
 
       hideContextMenu();
 
-      const isConfirmed = await AlertKit.confirm(
+      const isConfirmed = await confirmDialog(
         'Delete Message?',
         'This message will be deleted for everyone.',
         'Delete',
@@ -1516,7 +1524,6 @@ description: "View your chat history and messages with stranger friends and stay
         try {
           await fetch(`${baseUrl}/messages/${chatId}/${msgKey}.json`, { method: "DELETE" });
         } catch (err) {
-          console.error("delete msg error:", err);
           return;
         }
         if (targetMsg.type === 'image' || targetMsg.type === 'audio') safeDeleteMedia(targetMsg.url);
@@ -1593,13 +1600,11 @@ description: "View your chat history and messages with stranger friends and stay
     if (!chatId) return;
     const res = await fetch(`${baseUrl}/messages/${chatId}.json`, {
       method: "POST",
-      headers: JSON_H,
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(message)
     });
     if (!res.ok) throw new Error("Send failed");
-    if (renderedMessageKeys.size >= MESSAGE_LIMIT) {
-      maintainMessageLimit(chatId);
-    }
+    maintainMessageLimit(chatId);
     touchFriend(chatId, previewText(message), message.timestamp);
   }
 
@@ -1608,8 +1613,8 @@ description: "View your chat history and messages with stranger friends and stay
     currentUserId = 'user_' + Math.random().toString(36).substr(2, 9);
     await loadKeys();
 
-    if (window.MediaHub) {
-      MediaHub.init({
+    if (window.MediaHub && typeof window.MediaHub.init === 'function') {
+      window.MediaHub.init({
         giphyApiKey: GIPHY_API_KEY,
         onSendVoice: async (base64Data, duration) => {
           if (!currentChatId) return;
@@ -1617,7 +1622,7 @@ description: "View your chat history and messages with stranger friends and stay
           try {
             const res = await fetch(base64Data);
             const audioBlob = await res.blob();
-            const audioUrl = await window.uploadMediaToServer(audioBlob, "voice.webm");
+            const audioUrl = await window.uploadMediaToServer(audioBlob, "voice.webm", true);
             const message = { nickname: myNickname, type: "audio", timestamp: now(), url: audioUrl, duration: duration };
             if (replyingTo) {
               message.replyTo = getReplyPayload();
@@ -1625,7 +1630,7 @@ description: "View your chat history and messages with stranger friends and stay
             }
             await pushChatMessage(message);
           } catch (err) {
-            AlertKit.error("Failed", "Failed to upload voice note.");
+            notifyError("Failed", "Failed to upload voice note.");
           } finally {
             loadingBubble.remove();
           }
@@ -1657,8 +1662,11 @@ description: "View your chat history and messages with stranger friends and stay
           })
           .catch(() => {});
       }
-      if (!friendsWs || friendsWs.readyState > 1) {
+      if (!friendsWs || friendsWs.readyState === WebSocket.CLOSED) {
         initFriendsWs();
+      }
+      if (currentChatId && (!messagesWs || messagesWs.readyState === WebSocket.CLOSED)) {
+        listenForMessages(currentChatId);
       }
     }
   });
@@ -1677,7 +1685,7 @@ description: "View your chat history and messages with stranger friends and stay
         isTyping = true;
         fetch(`${baseUrl}/typing/${currentChatId}/${currentUserId}.json`, {
           method: "PUT",
-          headers: JSON_H,
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(true)
         }).catch(() => {});
       }
@@ -1727,6 +1735,7 @@ description: "View your chat history and messages with stranger friends and stay
   }
 
   function detachMessagesAndTypingWs() {
+    if (messagesReconnectTimer) { clearTimeout(messagesReconnectTimer); messagesReconnectTimer = null; }
     if (messagesPingInterval) { clearInterval(messagesPingInterval); messagesPingInterval = null; }
     if (messagesWs) {
       try { messagesWs.onclose = null; messagesWs.close(); } catch (e) {}
@@ -1942,7 +1951,6 @@ description: "View your chat history and messages with stranger friends and stay
     }
 
     friendsWs.onopen = () => {
-      friendsRetry = 0;
       if (friendsPingInterval) clearInterval(friendsPingInterval);
       friendsPingInterval = setInterval(() => {
         if (friendsWs && friendsWs.readyState === WebSocket.OPEN) {
@@ -1994,12 +2002,9 @@ description: "View your chat history and messages with stranger friends and stay
 
     friendsWs.onclose = () => {
       if (friendsPingInterval) clearInterval(friendsPingInterval);
-      if (!currentChatId) {
-        const delay = Math.min(30000, 3000 * Math.pow(1.5, friendsRetry++));
-        setTimeout(() => {
-          if (!currentChatId) initFriendsWs();
-        }, delay);
-      }
+      setTimeout(() => {
+        if (!currentChatId) initFriendsWs();
+      }, 3000);
     };
   }
 
@@ -2036,14 +2041,15 @@ description: "View your chat history and messages with stranger friends and stay
   }
 
   function listenForMessages(chatId) {
+    if (messagesReconnectTimer) { clearTimeout(messagesReconnectTimer); messagesReconnectTimer = null; }
     try {
-      messagesWs = new WebSocket(`${wsProto}//${wsHost}/ws/messages/${chatId}?limitToLast=${MESSAGE_LIMIT}`);
+      const wsUrl = `${wsProto}//${wsHost}/ws/messages/${chatId}?orderBy=%22timestamp%22&limitToLast=${MESSAGE_LIMIT}`;
+      messagesWs = new WebSocket(wsUrl);
     } catch (e) {
       return;
     }
 
     messagesWs.onopen = () => {
-      msgRetry = 0;
       if (messagesPingInterval) clearInterval(messagesPingInterval);
       messagesPingInterval = setInterval(() => {
         if (messagesWs && messagesWs.readyState === WebSocket.OPEN) {
@@ -2063,8 +2069,7 @@ description: "View your chat history and messages with stranger friends and stay
           if (allMsgs && typeof allMsgs === 'object') {
             const list = Object.entries(allMsgs).map(([k, v]) => ({ key: k, ...v }));
             list.sort((a, b) => (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0));
-            const trimmed = list.slice(-MESSAGE_LIMIT);
-            trimmed.forEach(m => {
+            list.forEach(m => {
               if (!renderedMessageKeys.has(m.key)) {
                 renderedMessageKeys.add(m.key);
                 appendMessageToChat(m, m.nickname === myNickname);
@@ -2101,11 +2106,11 @@ description: "View your chat history and messages with stranger friends and stay
 
     messagesWs.onclose = () => {
       if (messagesPingInterval) clearInterval(messagesPingInterval);
-      if (currentChatId !== chatId) return;
-      const delay = Math.min(15000, 1000 * Math.pow(2, msgRetry++));
-      setTimeout(() => {
-        if (currentChatId === chatId) listenForMessages(chatId);
-      }, delay);
+      if (currentChatId === chatId && !document.hidden) {
+        messagesReconnectTimer = setTimeout(() => {
+          if (currentChatId === chatId) listenForMessages(chatId);
+        }, 2000);
+      }
     };
   }
 
@@ -2116,7 +2121,7 @@ description: "View your chat history and messages with stranger friends and stay
     if (!bubble) return;
 
     const textDiv = bubble.querySelector('.text-content');
-    if (textDiv && typeof msg.text === 'string') {
+    if (textDiv && msg.type === 'text') {
       textDiv.innerHTML = '';
       if (isSingleEmoji(msg.text)) {
         bubble.classList.add('msg-single-emoji');
@@ -2160,7 +2165,6 @@ description: "View your chat history and messages with stranger friends and stay
     }
 
     typingWs.onopen = () => {
-      typingRetry = 0;
       if (typingPingInterval) clearInterval(typingPingInterval);
       typingPingInterval = setInterval(() => {
         if (typingWs && typingWs.readyState === WebSocket.OPEN) {
@@ -2204,11 +2208,6 @@ description: "View your chat history and messages with stranger friends and stay
 
     typingWs.onclose = () => {
       if (typingPingInterval) clearInterval(typingPingInterval);
-      if (currentChatId !== chatId) return;
-      const delay = Math.min(15000, 1000 * Math.pow(2, typingRetry++));
-      setTimeout(() => {
-        if (currentChatId === chatId) listenForTyping(chatId);
-      }, delay);
     };
   }
 
@@ -2226,12 +2225,12 @@ description: "View your chat history and messages with stranger friends and stay
       if (entries.length > MESSAGE_LIMIT) {
         entries.sort((a, b) => (Number(a[1].timestamp) || 0) - (Number(b[1].timestamp) || 0));
         const toDelete = entries.slice(0, entries.length - MESSAGE_LIMIT);
-        for (const [mKey, mVal] of toDelete) {
-          fetch(`${baseUrl}/messages/${chatId}/${mKey}.json`, { method: "DELETE" }).catch(() => {});
+        await Promise.all(toDelete.map(([mKey, mVal]) => {
           if (mVal && (mVal.type === 'image' || mVal.type === 'audio')) {
             safeDeleteMedia(mVal.url);
           }
-        }
+          return fetch(`${baseUrl}/messages/${chatId}/${mKey}.json`, { method: "DELETE" }).catch(() => {});
+        }));
       }
     } catch (e) {
     } finally {
@@ -2251,7 +2250,7 @@ description: "View your chat history and messages with stranger friends and stay
       const ts = editingMsgTs;
       fetch(`${baseUrl}/messages/${chatId}/${key}.json`, {
         method: "PATCH",
-        headers: JSON_H,
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: content, edited: true })
       }).then(() => {
         const friend = myFriendsMap[chatId];
@@ -2259,7 +2258,7 @@ description: "View your chat history and messages with stranger friends and stay
           const preview = content.substring(0, 30) + (content.length > 30 ? '...' : '');
           touchFriend(chatId, preview, ts);
         }
-      }).catch((err) => console.error("edit error:", err));
+      }).catch(() => {});
       clearEdit();
     } else {
       const message = { nickname: myNickname, text: content, timestamp: now(), type: "text" };
@@ -2269,7 +2268,7 @@ description: "View your chat history and messages with stranger friends and stay
         clearReply();
       }
 
-      pushChatMessage(message).catch((err) => console.error("send error:", err));
+      pushChatMessage(message).catch(() => {});
     }
 
     stopTyping();
@@ -2281,7 +2280,7 @@ description: "View your chat history and messages with stranger friends and stay
     if (!file || !currentChatId) return;
 
     if (file.size > 10 * 1024 * 1024) {
-      AlertKit.error('File Too Large', 'Image size should be less than 10MB');
+      notifyError('File Too Large', 'Image size should be less than 10MB');
       e.target.value = '';
       return;
     }
@@ -2289,7 +2288,7 @@ description: "View your chat history and messages with stranger friends and stay
     const loadingBubble = showUploadingBubble();
 
     try {
-      const imageUrl = await window.uploadMediaToServer(file, file.name);
+      const imageUrl = await window.uploadMediaToServer(file, file.name, true);
 
       const message = { nickname: myNickname, url: imageUrl, timestamp: now(), type: "image" };
 
@@ -2300,7 +2299,7 @@ description: "View your chat history and messages with stranger friends and stay
 
       await pushChatMessage(message);
     } catch (err) {
-      AlertKit.error('Upload Failed', 'Failed to upload image. Please try again.');
+      notifyError('Upload Failed', 'Failed to upload image. Please try again.');
     } finally {
       loadingBubble.remove();
     }
@@ -2317,7 +2316,7 @@ description: "View your chat history and messages with stranger friends and stay
       clearReply();
     }
 
-    pushChatMessage(message).catch((err) => console.error("gif send error:", err));
+    pushChatMessage(message).catch(() => {});
   }
 
   function showUploadingBubble() {
@@ -2352,9 +2351,6 @@ description: "View your chat history and messages with stranger friends and stay
     if (fromPopstate !== true) history.replaceState(null, '', location.pathname);
     
     renderFriendsUI();
-    if (!friendsWs || friendsWs.readyState > 1) {
-      initFriendsWs();
-    }
   };
 
   function appendMessageToChat(msg, isMe) {
@@ -2395,8 +2391,8 @@ description: "View your chat history and messages with stranger friends and stay
       bubble.appendChild(replyDiv);
     }
 
-    if (msg.type === "audio" && window.MediaHub) {
-      const audioBubble = MediaHub.createAudioBubble(msg.url, msg.duration);
+    if (msg.type === "audio" && window.MediaHub && typeof window.MediaHub.createAudioBubble === 'function') {
+      const audioBubble = window.MediaHub.createAudioBubble(msg.url, msg.duration);
       bubble.appendChild(audioBubble);
     } else if (msg.type === 'image' || msg.type === 'gif') {
       const img = document.createElement("img");
@@ -2420,18 +2416,10 @@ description: "View your chat history and messages with stranger friends and stay
         };
         textDiv.appendChild(img);
       } else {
-        bubble.classList.remove('msg-single-emoji');
         textDiv.innerHTML = linkifyText(msg.text);
       }
-      if (msg.edited && !bubble.querySelector('.edited-label')) {
-        const editedSpan = document.createElement('span');
-        editedSpan.className = 'edited-label';
-        editedSpan.textContent = '(edited)';
-        const timeDiv = bubble.querySelector('.timestamp');
-        if (timeDiv) {
-          timeDiv.appendChild(editedSpan);
-        }
-      }
+
+      bubble.appendChild(textDiv);
     }
 
     const timeDiv = document.createElement("div");
@@ -2460,7 +2448,7 @@ description: "View your chat history and messages with stranger friends and stay
   }
 
   window.unfriend = async function (chatId) {
-    const isConfirmed = await AlertKit.confirm(
+    const isConfirmed = await confirmDialog(
       'Remove Friend?',
       'All chat history will be permanently deleted.',
       'Yes, remove',
@@ -2470,15 +2458,11 @@ description: "View your chat history and messages with stranger friends and stay
     if (isConfirmed) {
       if (currentChatId === chatId) window.closeChat();
       delete myFriendsMap[chatId];
-      delete myFriendsData[chatId];
-
-      const dels = [
+      await Promise.all([
+        fetch(`${baseUrl}/friends/${chatId}.json`, { method: "DELETE" }),
         fetch(`${baseUrl}/messages/${chatId}.json`, { method: "DELETE" }),
-        fetch(`${baseUrl}/typing/${chatId}.json`, { method: "DELETE" }),
-        fetch(`${baseUrl}/friends/${chatId}.json`, { method: "DELETE" })
-      ];
-
-      await Promise.all(dels).catch(() => {});
+        fetch(`${baseUrl}/typing/${chatId}.json`, { method: "DELETE" })
+      ]).catch(() => {});
       scheduleFriendsRender();
     }
   };
