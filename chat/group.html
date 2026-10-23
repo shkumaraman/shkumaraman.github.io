@@ -664,6 +664,8 @@ const pinnedModal = document.getElementById("pinnedModal");
 let myFriendsMap = {};
 let friendsWs = null;
 let friendsPingInterval = null;
+let reconnectTimer = null;
+let retryCount = 0;
 
 function safeMediaUrl(url) {
   if (typeof url !== 'string' || !url) return null;
@@ -736,7 +738,7 @@ window.forwardMessage = function(content) {
   } else if (navigator.clipboard) {
     const copyText = typeof content === 'object' ? (content.url || content.text || '') : content;
     navigator.clipboard.writeText(copyText).then(() => {
-       AlertKit.toast("Message copied to clipboard!", "success");
+       if (window.AlertKit && AlertKit.toast) AlertKit.toast("Message copied to clipboard!", "success");
     });
   }
 };
@@ -782,10 +784,10 @@ function updateAllFriendButtons() {
 }
 
 function processFriendsData(friendsObj) {
-  myFriendsMap = {};
   const myClean = cleanNick(myNickname);
+  if (!myClean) return;
 
-  if (friendsObj && typeof friendsObj === 'object' && myClean) {
+  if (friendsObj && typeof friendsObj === 'object') {
     Object.entries(friendsObj).forEach(([chatId, friendData]) => {
       if (!friendData) return;
       const u1Clean = cleanNick(friendData.nickname1);
@@ -803,7 +805,23 @@ function processFriendsData(friendsObj) {
   updateAllFriendButtons();
 }
 
+function fetchUserFriends() {
+  if (!myNickname || myNickname === 'Guest') return;
+  const encodedNick = encodeURIComponent(JSON.stringify(myNickname));
+  const p1 = fetch(`${baseUrl}/friends.json?orderBy=%22nickname1%22&equalTo=${encodedNick}`).then(r => r.json()).catch(() => ({}));
+  const p2 = fetch(`${baseUrl}/friends.json?orderBy=%22nickname2%22&equalTo=${encodedNick}`).then(r => r.json()).catch(() => ({}));
+
+  Promise.all([p1, p2]).then(([d1, d2]) => {
+    myFriendsMap = {};
+    processFriendsData({ ...(d1 || {}), ...(d2 || {}) });
+  }).catch(() => {});
+}
+
 function initFriendsListener() {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
   if (friendsPingInterval) {
     clearInterval(friendsPingInterval);
     friendsPingInterval = null;
@@ -813,12 +831,7 @@ function initFriendsListener() {
     friendsWs = null;
   }
 
-  fetch(`${baseUrl}/friends.json`)
-    .then(r => r.json())
-    .then(data => {
-      processFriendsData(data);
-    })
-    .catch(() => {});
+  fetchUserFriends();
 
   const wsProto = baseUrl.startsWith("https") ? "wss:" : "ws:";
   const wsHost = baseUrl.replace(/^https?:\/\//, "");
@@ -826,6 +839,7 @@ function initFriendsListener() {
   try {
     friendsWs = new WebSocket(`${wsProto}//${wsHost}/ws/friends`);
     friendsWs.onopen = () => {
+      retryCount = 0;
       friendsPingInterval = setInterval(() => {
         if (friendsWs && friendsWs.readyState === WebSocket.OPEN) {
           friendsWs.send(JSON.stringify({ type: 'ping' }));
@@ -837,11 +851,7 @@ function initFriendsListener() {
       try {
         const msg = JSON.parse(event.data);
         if (!msg || msg.event === 'ping' || msg.event === 'pong' || msg.event === 'time' || msg.event === 'onDisconnectAck') return;
-        if (msg.event === 'connected') {
-          processFriendsData(msg.data);
-          return;
-        }
-
+        
         const myClean = cleanNick(myNickname);
         const parts = (msg.path || '').split('/').filter(Boolean);
 
@@ -882,9 +892,23 @@ function initFriendsListener() {
 
     friendsWs.onclose = () => {
       if (friendsPingInterval) clearInterval(friendsPingInterval);
+      if (!document.hidden) {
+        const delay = Math.min(30000, 1000 * Math.pow(1.5, retryCount++));
+        reconnectTimer = setTimeout(initFriendsListener, delay);
+      }
     };
   } catch (e) {}
 }
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) {
+    if (!friendsWs || friendsWs.readyState === WebSocket.CLOSED) {
+      initFriendsListener();
+    } else {
+      fetchUserFriends();
+    }
+  }
+});
 
 window.addGroupFriend = async function(targetNickname) {
   if (!myNickname || myNickname === 'Guest') {
@@ -1032,7 +1056,7 @@ async function initializeChat() {
         if (!passwordVerified) return;
 
         if (typeof window.uploadMediaToServer !== 'function') {
-          AlertKit.error("Upload Error", "Upload service is not ready. Please refresh.");
+          if (window.AlertKit && AlertKit.error) AlertKit.error("Upload Error", "Upload service is not ready. Please refresh.");
           return;
         }
 
@@ -1048,7 +1072,7 @@ async function initializeChat() {
           }
           await pushMessageToDB(message);
         } catch (err) {
-          AlertKit.error("Failed", "Failed to upload voice note.");
+          if (window.AlertKit && AlertKit.error) AlertKit.error("Failed", "Failed to upload voice note.");
         } finally {
           loadingBubble.remove();
         }
@@ -1079,8 +1103,13 @@ async function checkGroupPassword() {
     const banSnapshot = await get(ref(db, `groups/${currentGroup}/banned/${safeKey}`));
     
     if (banSnapshot.exists() && banSnapshot.val() === true) {
-      AlertKit.error('Banned!', 'You have been banned from this room by the admin.')
-        .then(() => window.location.href = '/chat/rooms.html');
+      if (window.AlertKit && AlertKit.error) {
+        AlertKit.error('Banned!', 'You have been banned from this room by the admin.')
+          .then(() => window.location.href = '/chat/rooms.html');
+      } else {
+        alert('You have been banned from this room.');
+        window.location.href = '/chat/rooms.html';
+      }
       return;
     }
 
@@ -1093,8 +1122,13 @@ async function checkGroupPassword() {
     }
   } catch (error) {
     passwordVerified = false;
-    AlertKit.error('Connection Error', 'Could not verify this room. Please try again.')
-      .then(() => window.location.href = '/chat/rooms.html');
+    if (window.AlertKit && AlertKit.error) {
+      AlertKit.error('Connection Error', 'Could not verify this room. Please try again.')
+        .then(() => window.location.href = '/chat/rooms.html');
+    } else {
+      alert('Could not verify this room.');
+      window.location.href = '/chat/rooms.html';
+    }
   }
 }
 
@@ -1166,16 +1200,26 @@ function joinGroupChat() {
   const safeKey = myNickname.replace(/[.#$\[\]]/g, '_');
   onValue(ref(db, `groups/${currentGroup}/banned/${safeKey}`), (snapshot) => {
     if (snapshot.exists() && snapshot.val() === true) {
-      AlertKit.error('Banned!', 'The admin permanently banned you.')
-        .then(() => window.location.href = '/chat/rooms.html');
+      if (window.AlertKit && AlertKit.error) {
+        AlertKit.error('Banned!', 'The admin permanently banned you.')
+          .then(() => window.location.href = '/chat/rooms.html');
+      } else {
+        alert('You have been banned from the room.');
+        window.location.href = '/chat/rooms.html';
+      }
     }
   });
 
   onChildAdded(query(ref(db, `groups/${currentGroup}/commands`), limitToLast(1)), (snapshot) => {
     const cmd = snapshot.val();
     if (cmd && now() - cmd.timestamp < 10000 && cmd.target === myNickname && cmd.type === 'kick') {
-      AlertKit.warning('Kicked!', 'The admin kicked you from the room.')
-        .then(() => window.location.href = '/chat/rooms.html');
+      if (window.AlertKit && AlertKit.warning) {
+        AlertKit.warning('Kicked!', 'The admin kicked you from the room.')
+          .then(() => window.location.href = '/chat/rooms.html');
+      } else {
+        alert('The admin kicked you from the room.');
+        window.location.href = '/chat/rooms.html';
+      }
     }
   });
 }
@@ -1398,7 +1442,7 @@ function sendMessageToGroup(text) {
 
   if (editingMsgKey) {
     update(ref(db, `group_messages/${currentGroup}/${editingMsgKey}`), { text: text, edited: true })
-      .catch(() => AlertKit.error("Failed", "Could not edit the message."));
+      .catch(() => { if (window.AlertKit && AlertKit.error) AlertKit.error("Failed", "Could not edit the message."); });
     clearEdit();
   } else {
     const message = { text, timestamp: now(), nickname: myNickname, type: "text" };
@@ -1407,7 +1451,7 @@ function sendMessageToGroup(text) {
       message.replyTo = buildReplyPayload();
       clearReply();
     }
-    pushMessageToDB(message).catch(() => AlertKit.error("Failed", "Could not send the message."));
+    pushMessageToDB(message).catch(() => { if (window.AlertKit && AlertKit.error) AlertKit.error("Failed", "Could not send the message."); });
   }
   return true;
 }
@@ -1416,14 +1460,14 @@ async function sendImageToGroup(file) {
   if (!passwordVerified) return;
 
   if (typeof window.uploadMediaToServer !== 'function') {
-    AlertKit.error("Upload Error", "Upload service is not ready. Please refresh.");
+    if (window.AlertKit && AlertKit.error) AlertKit.error("Upload Error", "Upload service is not ready. Please refresh.");
     return;
   }
 
   if (typeof window.checkImageSafety === 'function') {
     const isSafe = await window.checkImageSafety(file);
     if (!isSafe) {
-      AlertKit.warning("Image Blocked", "Nudity or explicit content is not allowed in public rooms.");
+      if (window.AlertKit && AlertKit.warning) AlertKit.warning("Image Blocked", "Nudity or explicit content is not allowed in public rooms.");
       return;
     }
   }
@@ -1439,9 +1483,9 @@ async function sendImageToGroup(file) {
     await pushMessageToDB(message);
   } catch (err) {
     if (err && err.message === "NSFW_BLOCKED") {
-      AlertKit.warning("Image Blocked", "Nudity or explicit content is not allowed in public rooms.");
+      if (window.AlertKit && AlertKit.warning) AlertKit.warning("Image Blocked", "Nudity or explicit content is not allowed in public rooms.");
     } else {
-      AlertKit.error("Failed", "Failed to upload image. Please try again.");
+      if (window.AlertKit && AlertKit.error) AlertKit.error("Failed", "Failed to upload image. Please try again.");
     }
   } finally {
     loadingBubble.remove();
@@ -1464,7 +1508,7 @@ function sendGifToGroup(url) {
     message.replyTo = buildReplyPayload();
     clearReply();
   }
-  pushMessageToDB(message).catch(() => AlertKit.error("Failed", "Could not send the GIF."));
+  pushMessageToDB(message).catch(() => { if (window.AlertKit && AlertKit.error) AlertKit.error("Failed", "Could not send the GIF."); });
 }
 
 async function pinMessage(msg) {
@@ -1566,12 +1610,17 @@ document.getElementById('contextDeleteBtn').addEventListener('click', async () =
     const targetMsg = contextTargetMsg;
     hideContextMenu();
 
-    const isConfirmed = await AlertKit.confirm(
-      'Delete Message?',
-      'This message will be deleted for everyone.',
-      'Delete',
-      'Cancel'
-    );
+    let isConfirmed = false;
+    if (window.AlertKit && AlertKit.confirm) {
+      isConfirmed = await AlertKit.confirm(
+        'Delete Message?',
+        'This message will be deleted for everyone.',
+        'Delete',
+        'Cancel'
+      );
+    } else {
+      isConfirmed = confirm("Delete this message for everyone?");
+    }
     
     if (isConfirmed) {
       remove(ref(db, `group_messages/${groupName}/${msgKey}`)).catch(() => {});
@@ -1883,7 +1932,7 @@ document.getElementById("imgBtn").onclick = () => {
 document.getElementById("imgInput").onchange = async e => {
   if (!passwordVerified || !e.target.files[0]) return;
   if (e.target.files[0].size > 10 * 1024 * 1024) {
-    AlertKit.warning("Too Large", "Image size limit is 10MB.");
+    if (window.AlertKit && AlertKit.warning) AlertKit.warning("Too Large", "Image size limit is 10MB.");
   } else {
     await sendImageToGroup(e.target.files[0]);
   }
@@ -1995,7 +2044,7 @@ document.getElementById('shareRoomHeaderBtn').addEventListener('click', () => {
     window.openShareModal(shareUrl);
   } else if (navigator.clipboard) {
     navigator.clipboard.writeText(shareUrl).then(() => {
-      AlertKit.toast("Room link copied to clipboard!", "success");
+      if (window.AlertKit && AlertKit.toast) AlertKit.toast("Room link copied to clipboard!", "success");
     });
   }
 });
