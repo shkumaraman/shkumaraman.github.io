@@ -1064,7 +1064,7 @@ async function initializeChat() {
         try {
           const res = await fetch(base64Data);
           const audioBlob = await res.blob();
-          const audioUrl = await window.uploadMediaToServer(audioBlob, "voice.webm", false);
+          const audioUrl = await window.uploadMediaToServer(audioBlob, "voice.webm");
           const message = { type: "audio", timestamp: now(), url: audioUrl, duration: duration, nickname: myNickname };
           if (replyingTo) {
             message.replyTo = buildReplyPayload();
@@ -1464,17 +1464,9 @@ async function sendImageToGroup(file) {
     return;
   }
 
-  if (typeof window.checkImageSafety === 'function') {
-    const isSafe = await window.checkImageSafety(file);
-    if (!isSafe) {
-      if (window.AlertKit && AlertKit.warning) AlertKit.warning("Image Blocked", "Nudity or explicit content is not allowed in public rooms.");
-      return;
-    }
-  }
-
   const loadingBubble = showUploadingBubble();
   try {
-    const imageUrl = await window.uploadMediaToServer(file, file.name, true);
+    const imageUrl = await window.uploadMediaToServer(file, file.name);
     const message = { type: "image", timestamp: now(), url: imageUrl, nickname: myNickname };
     if (replyingTo) {
       message.replyTo = buildReplyPayload();
@@ -1482,11 +1474,7 @@ async function sendImageToGroup(file) {
     }
     await pushMessageToDB(message);
   } catch (err) {
-    if (err && err.message === "NSFW_BLOCKED") {
-      if (window.AlertKit && AlertKit.warning) AlertKit.warning("Image Blocked", "Nudity or explicit content is not allowed in public rooms.");
-    } else {
-      if (window.AlertKit && AlertKit.error) AlertKit.error("Failed", "Failed to upload image. Please try again.");
-    }
+    if (window.AlertKit && AlertKit.error) AlertKit.error("Failed", "Failed to upload image. Please try again.");
   } finally {
     loadingBubble.remove();
   }
