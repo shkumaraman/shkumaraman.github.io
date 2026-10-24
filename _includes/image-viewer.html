@@ -14,7 +14,6 @@
     justify-content: center;
     opacity: 0;
     transition: opacity 0.3s ease;
-    overflow: hidden;
     touch-action: none;
     user-select: none;
     -webkit-user-select: none;
@@ -36,7 +35,7 @@
   }
 
   .custom-image-viewer-img {
-    max-width: 90%;
+    max-width: 90vw;
     max-height: 85vh;
     border-radius: 12px;
     box-shadow: 0 25px 60px rgba(0, 0, 0, 0.8);
@@ -44,12 +43,7 @@
     border: 1px solid rgba(255, 255, 255, 0.1);
     transform-origin: center center;
     will-change: transform;
-    cursor: grab;
     pointer-events: auto;
-  }
-
-  .custom-image-viewer-img:active {
-    cursor: grabbing;
   }
 
   .custom-image-viewer-close-btn {
@@ -59,8 +53,8 @@
     background: rgba(255, 255, 255, 0.08);
     border: 1px solid rgba(255, 255, 255, 0.15);
     color: white;
-    width: 44px;
-    height: 44px;
+    width: 48px;
+    height: 48px;
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -74,14 +68,14 @@
   }
 
   .custom-image-viewer-close-btn:hover {
-    background: rgba(255, 59, 48, 0.25);
-    border-color: rgba(255, 59, 48, 0.45);
+    background: rgba(255, 59, 48, 0.2);
+    border-color: rgba(255, 59, 48, 0.4);
     color: #ff3b30;
-    transform: scale(1.08) rotate(90deg);
+    transform: scale(1.1) rotate(90deg);
   }
 
   .custom-image-viewer-close-btn:active {
-    transform: scale(0.92);
+    transform: scale(0.9);
   }
 </style>
 
@@ -90,42 +84,46 @@
     <i class="fa-solid fa-xmark"></i>
   </button>
   <div class="custom-image-viewer-content" id="customImageViewerContent">
-    <img id="customImageViewerImg" class="custom-image-viewer-img" src="" alt="Viewed Image" draggable="false" oncontextmenu="return false;">
+    <img id="customImageViewerImg" class="custom-image-viewer-img" src="" alt="Viewed Image">
   </div>
 </div>
 
 <script>
   let scale = 1;
-  let posX = 0;
-  let posY = 0;
+  let translateX = 0;
+  let translateY = 0;
+  let isDragging = false;
   let startX = 0;
   let startY = 0;
-  let isDragging = false;
-  let initialPinchDist = 0;
+  let initialDistance = 0;
   let initialScale = 1;
   let lastTapTime = 0;
+  let hasMoved = false;
 
   const overlay = document.getElementById('customImageViewerOverlay');
   const img = document.getElementById('customImageViewerImg');
   const content = document.getElementById('customImageViewerContent');
 
-  function updateTransform(animate = false) {
+  function updateTransform(smooth = false) {
     if (!img) return;
-    img.style.transition = animate ? 'transform 0.25s cubic-bezier(0.2, 0, 0.2, 1)' : 'none';
-    img.style.transform = `translate3d(${posX}px, ${posY}px, 0px) scale(${scale})`;
+    img.style.transition = smooth ? 'transform 0.25s cubic-bezier(0.2, 0, 0.2, 1)' : 'none';
+    img.style.transform = `translate3d(${translateX}px, ${translateY}px, 0) scale(${scale})`;
+    img.style.cursor = scale > 1 ? (isDragging ? 'grabbing' : 'grab') : 'default';
   }
 
   function resetZoom() {
     scale = 1;
-    posX = 0;
-    posY = 0;
-    updateTransform(true);
+    translateX = 0;
+    translateY = 0;
+    isDragging = false;
+    hasMoved = false;
+    updateTransform(false);
   }
 
   function openCustomImageViewer(src) {
     if (!overlay || !img) return;
-    img.src = src;
     resetZoom();
+    img.src = src;
     overlay.style.display = 'flex';
     overlay.offsetHeight;
     overlay.classList.add('show');
@@ -139,118 +137,170 @@
     setTimeout(() => {
       if (!overlay.classList.contains('show')) {
         overlay.style.display = 'none';
-        if (img) img.src = '';
         resetZoom();
+        if (img) img.src = '';
       }
     }, 300);
   }
 
-  function getDistance(touches) {
-    const dx = touches[0].clientX - touches[1].clientX;
-    const dy = touches[0].clientY - touches[1].clientY;
-    return Math.sqrt(dx * dx + dy * dy);
+  function handleWheel(e) {
+    e.preventDefault();
+    const zoomFactor = e.deltaY < 0 ? 1.25 : 0.8;
+    let targetScale = scale * zoomFactor;
+
+    if (targetScale < 1) targetScale = 1;
+    if (targetScale > 5) targetScale = 5;
+
+    if (targetScale === 1) {
+      translateX = 0;
+      translateY = 0;
+    } else {
+      const rect = img.getBoundingClientRect();
+      const mouseX = e.clientX - (rect.left + rect.width / 2);
+      const mouseY = e.clientY - (rect.top + rect.height / 2);
+      translateX -= mouseX * (zoomFactor - 1);
+      translateY -= mouseY * (zoomFactor - 1);
+    }
+
+    scale = targetScale;
+    updateTransform(true);
   }
 
-  if (content && img) {
-    content.addEventListener('click', (e) => {
-      if (e.target === content) {
-        closeCustomImageViewer();
-      }
-    });
-
-    content.addEventListener('touchstart', (e) => {
-      const now = Date.now();
-      if (e.touches.length === 1) {
-        if (now - lastTapTime < 300) {
-          if (scale > 1) {
-            resetZoom();
-          } else {
-            scale = 2.5;
-            posX = 0;
-            posY = 0;
-            updateTransform(true);
-          }
-          lastTapTime = 0;
-          return;
-        }
-        lastTapTime = now;
-
-        if (scale > 1) {
-          isDragging = true;
-          startX = e.touches[0].clientX - posX;
-          startY = e.touches[0].clientY - posY;
-        }
-      } else if (e.touches.length === 2) {
-        isDragging = false;
-        initialPinchDist = getDistance(e.touches);
-        initialScale = scale;
-      }
-    }, { passive: false });
-
-    content.addEventListener('touchmove', (e) => {
-      if (e.touches.length === 1 && isDragging && scale > 1) {
-        e.preventDefault();
-        posX = e.touches[0].clientX - startX;
-        posY = e.touches[0].clientY - startY;
-        updateTransform(false);
-      } else if (e.touches.length === 2) {
-        e.preventDefault();
-        const currentDist = getDistance(e.touches);
-        if (initialPinchDist > 0) {
-          const factor = currentDist / initialPinchDist;
-          scale = Math.min(Math.max(initialScale * factor, 1), 4);
-          updateTransform(false);
-        }
-      }
-    }, { passive: false });
-
-    content.addEventListener('touchend', (e) => {
-      if (e.touches.length === 0) {
-        isDragging = false;
-        if (scale < 1.05) {
-          resetZoom();
-        }
-      }
-    });
-
-    content.addEventListener('wheel', (e) => {
-      e.preventDefault();
-      const zoomFactor = e.deltaY < 0 ? 1.2 : 0.8;
-      const nextScale = Math.min(Math.max(scale * zoomFactor, 1), 4);
-      if (nextScale === 1) {
-        resetZoom();
-      } else {
-        scale = nextScale;
-        updateTransform(true);
-      }
-    }, { passive: false });
-
-    content.addEventListener('mousedown', (e) => {
-      if (e.target !== img || scale <= 1) return;
+  function handleMouseDown(e) {
+    if (e.button !== 0) return;
+    if (scale > 1) {
       isDragging = true;
-      startX = e.clientX - posX;
-      startY = e.clientY - posY;
-    });
+      hasMoved = false;
+      startX = e.clientX - translateX;
+      startY = e.clientY - translateY;
+      img.style.cursor = 'grabbing';
+      e.preventDefault();
+    }
+  }
 
-    window.addEventListener('mousemove', (e) => {
-      if (!isDragging || scale <= 1) return;
-      posX = e.clientX - startX;
-      posY = e.clientY - startY;
-      updateTransform(false);
-    });
+  function handleMouseMove(e) {
+    if (!isDragging) return;
+    hasMoved = true;
+    translateX = e.clientX - startX;
+    translateY = e.clientY - startY;
+    updateTransform(false);
+  }
 
-    window.addEventListener('mouseup', () => {
+  function handleMouseUp() {
+    if (isDragging) {
       isDragging = false;
-    });
+      if (img) img.style.cursor = scale > 1 ? 'grab' : 'default';
+    }
+  }
 
+  function getDistance(touches) {
+    return Math.hypot(
+      touches[0].clientX - touches[1].clientX,
+      touches[0].clientY - touches[1].clientY
+    );
+  }
+
+  function handleTouchStart(e) {
+    if (e.touches.length === 2) {
+      isDragging = false;
+      initialDistance = getDistance(e.touches);
+      initialScale = scale;
+    } else if (e.touches.length === 1) {
+      const currentTime = Date.now();
+      const tapGap = currentTime - lastTapTime;
+
+      if (tapGap < 300 && tapGap > 0) {
+        e.preventDefault();
+        if (scale > 1) {
+          resetZoom();
+          updateTransform(true);
+        } else {
+          scale = 2.5;
+          const touch = e.touches[0];
+          translateX = (window.innerWidth / 2 - touch.clientX) * 0.8;
+          translateY = (window.innerHeight / 2 - touch.clientY) * 0.8;
+          updateTransform(true);
+        }
+        lastTapTime = 0;
+        return;
+      }
+      lastTapTime = currentTime;
+
+      if (scale > 1) {
+        isDragging = true;
+        hasMoved = false;
+        startX = e.touches[0].clientX - translateX;
+        startY = e.touches[0].clientY - translateY;
+      }
+    }
+  }
+
+  function handleTouchMove(e) {
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      const currentDistance = getDistance(e.touches);
+      if (initialDistance > 0) {
+        let targetScale = initialScale * (currentDistance / initialDistance);
+        if (targetScale < 1) targetScale = 1;
+        if (targetScale > 5) targetScale = 5;
+        scale = targetScale;
+        if (scale === 1) {
+          translateX = 0;
+          translateY = 0;
+        }
+        updateTransform(false);
+      }
+    } else if (e.touches.length === 1 && isDragging && scale > 1) {
+      e.preventDefault();
+      hasMoved = true;
+      translateX = e.touches[0].clientX - startX;
+      translateY = e.touches[0].clientY - startY;
+      updateTransform(false);
+    }
+  }
+
+  function handleTouchEnd(e) {
+    if (e.touches.length < 2) {
+      initialDistance = 0;
+    }
+    if (e.touches.length === 0) {
+      isDragging = false;
+      if (scale <= 1) {
+        resetZoom();
+      }
+    }
+  }
+
+  if (overlay) {
+    overlay.addEventListener('wheel', handleWheel, { passive: false });
+    overlay.addEventListener('mousedown', handleMouseDown);
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    overlay.addEventListener('touchstart', handleTouchStart, { passive: false });
+    overlay.addEventListener('touchmove', handleTouchMove, { passive: false });
+    window.addEventListener('touchend', handleTouchEnd);
+
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay || e.target === content) {
+        if (!hasMoved) {
+          closeCustomImageViewer();
+        }
+      }
+    });
+  }
+
+  if (img) {
     img.addEventListener('dblclick', (e) => {
       e.stopPropagation();
       if (scale > 1) {
         resetZoom();
+        updateTransform(true);
       } else {
         scale = 2.5;
-        posX = 0;
-        posY = 0;
+        const rect = img.getBoundingClientRect();
+        translateX = (window.innerWidth / 2 - e.clientX);
+        translateY = (window.innerHeight / 2 - e.clientY);
         updateTransform(true);
       }
     });
@@ -259,7 +309,7 @@
   document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('click', (e) => {
       if (e.target.tagName === 'IMG') {
-        const shouldExclude = e.target.closest('.logo, .friend-avatar, .chat-avatar, .header-toggle, .menu-btn, .adsbygoogle, #customImageViewerOverlay');
+        const shouldExclude = e.target.closest('.logo, .friend-avatar, .chat-avatar, .header-toggle, .menu-btn, .adsbygoogle, .animated-emoji-img, .verify-badge');
         if (!shouldExclude) {
           openCustomImageViewer(e.target.src);
         }
@@ -268,8 +318,7 @@
 
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
-        const overlayEl = document.getElementById('customImageViewerOverlay');
-        if (overlayEl && (overlayEl.style.display === 'flex' || overlayEl.classList.contains('show'))) {
+        if (overlay && (overlay.style.display === 'flex' || overlay.classList.contains('show'))) {
           closeCustomImageViewer();
         }
       }
