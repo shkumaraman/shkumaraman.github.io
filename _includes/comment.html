@@ -8,7 +8,7 @@
   height: 100dvh;
   background: rgba(0, 0, 0, 0.72);
   backdrop-filter: blur(4px);
-  z-index: 20000;
+  z-index: 10005;
   display: flex;
   align-items: flex-end;
   justify-content: center;
@@ -425,6 +425,7 @@
   let unsubRemoved = null;
   let savedScrollY = 0;
   let isModalOpen = false;
+  let renderTimer = null;
 
   function lockBodyScroll() {
     savedScrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
@@ -515,73 +516,58 @@
     `;
   }
 
-  function appendComment(commentId, comment) {
-    const emptyMsg = bodyEl.querySelector('.comment-empty-state');
-    if (emptyMsg) emptyMsg.remove();
+  function renderAllComments() {
+    const allList = Object.values(comments);
+    if (allList.length === 0) {
+      bodyEl.innerHTML = emptyStateHtml();
+      return;
+    }
 
-    if (document.getElementById(`comment-${commentId}`)) return;
+    const roots = allList.filter(c => !c.parentId);
+    const replies = allList.filter(c => !!c.parentId);
 
-    const isNearBottom = (bodyEl.scrollHeight - bodyEl.scrollTop - bodyEl.clientHeight) < 90;
-    const isReply = !!comment.parentId;
+    roots.sort((a, b) => (Number(b.timestamp) || 0) - (Number(a.timestamp) || 0));
 
-    if (isReply) {
-      let repliesWrap = document.getElementById(`replies-wrap-${comment.parentId}`);
-      if (!repliesWrap) {
-        const threadDiv = document.getElementById(`thread-${comment.parentId}`);
-        if (threadDiv) {
-          repliesWrap = document.createElement('div');
-          repliesWrap.className = 'comment-replies-wrap';
-          repliesWrap.id = `replies-wrap-${comment.parentId}`;
-          threadDiv.appendChild(repliesWrap);
-        }
-      }
+    const replyMap = {};
+    replies.forEach(r => {
+      if (!replyMap[r.parentId]) replyMap[r.parentId] = [];
+      replyMap[r.parentId].push(r);
+    });
 
-      if (repliesWrap) {
-        repliesWrap.insertAdjacentHTML('beforeend', commentHtml(comment, true, comment.parentId));
-      } else {
-        const threadDiv = document.createElement('div');
-        threadDiv.className = 'comment-thread';
-        threadDiv.id = `thread-${commentId}`;
-        threadDiv.innerHTML = commentHtml(comment, false, null);
+    Object.keys(replyMap).forEach(pId => {
+      replyMap[pId].sort((a, b) => (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0));
+    });
 
-        const newRepliesWrap = document.createElement('div');
-        newRepliesWrap.className = 'comment-replies-wrap';
-        newRepliesWrap.id = `replies-wrap-${commentId}`;
-        threadDiv.appendChild(newRepliesWrap);
+    const frag = document.createDocumentFragment();
 
-        bodyEl.appendChild(threadDiv);
-      }
-    } else {
+    roots.forEach(rootComment => {
       const threadDiv = document.createElement('div');
       threadDiv.className = 'comment-thread';
-      threadDiv.id = `thread-${commentId}`;
-      threadDiv.innerHTML = commentHtml(comment, false, null);
+      threadDiv.id = `thread-${rootComment.id}`;
+      threadDiv.innerHTML = commentHtml(rootComment, false, null);
 
       const repliesWrap = document.createElement('div');
       repliesWrap.className = 'comment-replies-wrap';
-      repliesWrap.id = `replies-wrap-${commentId}`;
+      repliesWrap.id = `replies-wrap-${rootComment.id}`;
+
+      const threadReplies = replyMap[rootComment.id] || [];
+      threadReplies.forEach(reply => {
+        repliesWrap.insertAdjacentHTML('beforeend', commentHtml(reply, true, rootComment.id));
+      });
+
       threadDiv.appendChild(repliesWrap);
+      frag.appendChild(threadDiv);
+    });
 
-      bodyEl.appendChild(threadDiv);
-    }
-
-    if (isNearBottom) {
-      bodyEl.scrollTop = bodyEl.scrollHeight;
-    }
+    bodyEl.innerHTML = '';
+    bodyEl.appendChild(frag);
   }
 
-  function removeComment(commentId) {
-    const threadDiv = document.getElementById(`thread-${commentId}`);
-    if (threadDiv) {
-      threadDiv.remove();
-    } else {
-      const itemEl = document.getElementById(`comment-${commentId}`);
-      if (itemEl) itemEl.remove();
-    }
-
-    if (bodyEl.querySelectorAll('.comment-item').length === 0) {
-      bodyEl.innerHTML = emptyStateHtml();
-    }
+  function scheduleRender() {
+    if (renderTimer) cancelAnimationFrame(renderTimer);
+    renderTimer = requestAnimationFrame(() => {
+      renderAllComments();
+    });
   }
 
   function detachListeners() {
@@ -589,6 +575,8 @@
     if (unsubRemoved) unsubRemoved();
     unsubAdded = null;
     unsubRemoved = null;
+    if (renderTimer) cancelAnimationFrame(renderTimer);
+    renderTimer = null;
   }
 
   function attachListeners(postId) {
@@ -604,19 +592,15 @@
       const val = snapshot.val();
       if (!val) return;
       comments[commentId] = { id: commentId, ...val };
-      appendComment(commentId, comments[commentId]);
-    }, (error) => {
-      console.error("comments error:", error);
-    });
+      scheduleRender();
+    }, () => {});
 
     unsubRemoved = onChildRemoved(postCommentsRef, (snapshot) => {
       if (activePostId !== postId) return;
       const commentId = snapshot.key;
       delete comments[commentId];
-      removeComment(commentId);
-    }, (error) => {
-      console.error("comments error:", error);
-    });
+      scheduleRender();
+    }, () => {});
   }
 
   function cancelReply() {
@@ -761,7 +745,15 @@
 
       inputEl.value = '';
       cancelReply();
-      bodyEl.scrollTop = bodyEl.scrollHeight;
+
+      if (currentReply) {
+        setTimeout(() => {
+          const threadEl = document.getElementById(`thread-${currentReply.parentId}`);
+          if (threadEl) threadEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }, 120);
+      } else {
+        bodyEl.scrollTop = 0;
+      }
     } catch (err) {
       AlertKit.error("Failed", "Could not post reply. Please try again.");
     } finally {
