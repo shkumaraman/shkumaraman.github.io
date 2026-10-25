@@ -301,21 +301,20 @@
 .cancel-reply-btn {
   background: none;
   border: none;
-  color: var(--dark-text-dim);
+  color: var(--dark-text-muted);
   cursor: pointer;
-  font-size: 13px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  opacity: 0.85;
-  transition: color 0.15s, opacity 0.15s, background 0.15s;
+  font-size: 14px;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 50%;
+  transition: color 0.15s, background 0.15s;
 }
 .cancel-reply-btn:hover {
   color: var(--dark-text);
-  opacity: 1;
   background: var(--dark-icon-hover-bg);
 }
 .light-mode .cancel-reply-btn {
-  color: var(--light-text-dim);
+  color: var(--light-icon-color);
 }
 .light-mode .cancel-reply-btn:hover {
   color: var(--light-text);
@@ -437,7 +436,6 @@
   let unsubRemoved = null;
   let savedScrollY = 0;
   let isModalOpen = false;
-  let renderTimer = null;
 
   function lockBodyScroll() {
     savedScrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
@@ -528,58 +526,66 @@
     `;
   }
 
-  function renderAllComments() {
-    const allList = Object.values(comments);
-    if (allList.length === 0) {
-      bodyEl.innerHTML = emptyStateHtml();
-      return;
-    }
+  function appendComment(commentId, comment) {
+    const emptyMsg = bodyEl.querySelector('.comment-empty-state');
+    if (emptyMsg) emptyMsg.remove();
 
-    const roots = allList.filter(c => !c.parentId);
-    const replies = allList.filter(c => !!c.parentId);
+    if (document.getElementById(`comment-${commentId}`)) return;
 
-    roots.sort((a, b) => (Number(b.timestamp) || 0) - (Number(a.timestamp) || 0));
+    const isNearTop = bodyEl.scrollTop < 90;
+    const isReply = !!comment.parentId;
 
-    const replyMap = {};
-    replies.forEach(r => {
-      if (!replyMap[r.parentId]) replyMap[r.parentId] = [];
-      replyMap[r.parentId].push(r);
-    });
-
-    Object.keys(replyMap).forEach(pId => {
-      replyMap[pId].sort((a, b) => (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0));
-    });
-
-    const frag = document.createDocumentFragment();
-
-    roots.forEach(rootComment => {
+    const buildThread = () => {
       const threadDiv = document.createElement('div');
       threadDiv.className = 'comment-thread';
-      threadDiv.id = `thread-${rootComment.id}`;
-      threadDiv.innerHTML = commentHtml(rootComment, false, null);
+      threadDiv.id = `thread-${commentId}`;
+      threadDiv.innerHTML = commentHtml(comment, false, null);
 
       const repliesWrap = document.createElement('div');
       repliesWrap.className = 'comment-replies-wrap';
-      repliesWrap.id = `replies-wrap-${rootComment.id}`;
-
-      const threadReplies = replyMap[rootComment.id] || [];
-      threadReplies.forEach(reply => {
-        repliesWrap.insertAdjacentHTML('beforeend', commentHtml(reply, true, rootComment.id));
-      });
-
+      repliesWrap.id = `replies-wrap-${commentId}`;
       threadDiv.appendChild(repliesWrap);
-      frag.appendChild(threadDiv);
-    });
+      return threadDiv;
+    };
 
-    bodyEl.innerHTML = '';
-    bodyEl.appendChild(frag);
+    if (isReply) {
+      let repliesWrap = document.getElementById(`replies-wrap-${comment.parentId}`);
+      if (!repliesWrap) {
+        const parentThread = document.getElementById(`thread-${comment.parentId}`);
+        if (parentThread) {
+          repliesWrap = document.createElement('div');
+          repliesWrap.className = 'comment-replies-wrap';
+          repliesWrap.id = `replies-wrap-${comment.parentId}`;
+          parentThread.appendChild(repliesWrap);
+        }
+      }
+
+      if (repliesWrap) {
+        repliesWrap.insertAdjacentHTML('afterbegin', commentHtml(comment, true, comment.parentId));
+      } else {
+        bodyEl.prepend(buildThread());
+      }
+    } else {
+      bodyEl.prepend(buildThread());
+    }
+
+    if (isNearTop) {
+      bodyEl.scrollTop = 0;
+    }
   }
 
-  function scheduleRender() {
-    if (renderTimer) cancelAnimationFrame(renderTimer);
-    renderTimer = requestAnimationFrame(() => {
-      renderAllComments();
-    });
+  function removeComment(commentId) {
+    const threadDiv = document.getElementById(`thread-${commentId}`);
+    if (threadDiv) {
+      threadDiv.remove();
+    } else {
+      const itemEl = document.getElementById(`comment-${commentId}`);
+      if (itemEl) itemEl.remove();
+    }
+
+    if (bodyEl.querySelectorAll('.comment-item').length === 0) {
+      bodyEl.innerHTML = emptyStateHtml();
+    }
   }
 
   function detachListeners() {
@@ -587,8 +593,6 @@
     if (unsubRemoved) unsubRemoved();
     unsubAdded = null;
     unsubRemoved = null;
-    if (renderTimer) cancelAnimationFrame(renderTimer);
-    renderTimer = null;
   }
 
   function attachListeners(postId) {
@@ -604,15 +608,19 @@
       const val = snapshot.val();
       if (!val) return;
       comments[commentId] = { id: commentId, ...val };
-      scheduleRender();
-    }, () => {});
+      appendComment(commentId, comments[commentId]);
+    }, (error) => {
+      console.error("comments error:", error);
+    });
 
     unsubRemoved = onChildRemoved(postCommentsRef, (snapshot) => {
       if (activePostId !== postId) return;
       const commentId = snapshot.key;
       delete comments[commentId];
-      scheduleRender();
-    }, () => {});
+      removeComment(commentId);
+    }, (error) => {
+      console.error("comments error:", error);
+    });
   }
 
   function cancelReply() {
@@ -757,17 +765,9 @@
 
       inputEl.value = '';
       cancelReply();
-
-      if (currentReply) {
-        setTimeout(() => {
-          const threadEl = document.getElementById(`thread-${currentReply.parentId}`);
-          if (threadEl) threadEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        }, 120);
-      } else {
-        bodyEl.scrollTop = 0;
-      }
+      bodyEl.scrollTop = 0;
     } catch (err) {
-      AlertKit.error("Failed", "Could not post reply. Please try again.");
+      AlertKit.error("Failed", "Could not post comment. Please try again.");
     } finally {
       sendBtnEl.disabled = false;
     }
