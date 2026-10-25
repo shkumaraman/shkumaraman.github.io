@@ -257,17 +257,45 @@
 }
 .comment-del-btn:hover { opacity: 1; }
 
+.comment-replies-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  margin-left: 40px;
+  background: none;
+  border: none;
+  padding: 2px 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
+  opacity: 0.9;
+  transition: opacity 0.15s;
+}
+.comment-replies-toggle:hover { opacity: 1; }
+.comment-replies-toggle::before {
+  content: '';
+  width: 22px;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.5;
+}
+.comment-replies-toggle[hidden] {
+  display: none;
+}
+
 .comment-replies-wrap {
   margin-left: 32px;
   padding-left: 10px;
   border-left: 2px solid var(--dark-border2);
-  display: flex;
+  display: none;
   flex-direction: column;
   gap: 10px;
   margin-top: 4px;
 }
-.comment-replies-wrap:empty {
-  display: none;
+.comment-replies-wrap.open {
+  display: flex;
 }
 .light-mode .comment-replies-wrap {
   border-left-color: var(--light-border2);
@@ -526,6 +554,62 @@
     `;
   }
 
+  function updateRepliesToggle(parentId) {
+    const wrap = document.getElementById(`replies-wrap-${parentId}`);
+    const btn = document.getElementById(`replies-toggle-${parentId}`);
+    if (!wrap || !btn) return;
+
+    const count = wrap.querySelectorAll('.comment-item').length;
+
+    if (count === 0) {
+      btn.hidden = true;
+      wrap.classList.remove('open');
+      return;
+    }
+
+    const isOpen = wrap.classList.contains('open');
+    btn.hidden = false;
+    btn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    btn.textContent = isOpen ? 'Hide replies' : `View ${count} ${count === 1 ? 'reply' : 'replies'}`;
+  }
+
+  function toggleReplies(parentId) {
+    const wrap = document.getElementById(`replies-wrap-${parentId}`);
+    if (!wrap) return;
+    wrap.classList.toggle('open');
+    updateRepliesToggle(parentId);
+  }
+
+  function expandReplies(parentId) {
+    const wrap = document.getElementById(`replies-wrap-${parentId}`);
+    if (!wrap) return;
+    wrap.classList.add('open');
+    updateRepliesToggle(parentId);
+  }
+
+  function buildThread(commentId, comment) {
+    const threadDiv = document.createElement('div');
+    threadDiv.className = 'comment-thread';
+    threadDiv.id = `thread-${commentId}`;
+    threadDiv.innerHTML = commentHtml(comment, false, null);
+
+    const toggleBtn = document.createElement('button');
+    toggleBtn.type = 'button';
+    toggleBtn.className = 'comment-replies-toggle';
+    toggleBtn.id = `replies-toggle-${commentId}`;
+    toggleBtn.hidden = true;
+    toggleBtn.setAttribute('data-action', 'toggle-replies');
+    toggleBtn.setAttribute('data-parent-id', commentId);
+    threadDiv.appendChild(toggleBtn);
+
+    const repliesWrap = document.createElement('div');
+    repliesWrap.className = 'comment-replies-wrap';
+    repliesWrap.id = `replies-wrap-${commentId}`;
+    threadDiv.appendChild(repliesWrap);
+
+    return threadDiv;
+  }
+
   function appendComment(commentId, comment) {
     const emptyMsg = bodyEl.querySelector('.comment-empty-state');
     if (emptyMsg) emptyMsg.remove();
@@ -535,38 +619,17 @@
     const isNearTop = bodyEl.scrollTop < 90;
     const isReply = !!comment.parentId;
 
-    const buildThread = () => {
-      const threadDiv = document.createElement('div');
-      threadDiv.className = 'comment-thread';
-      threadDiv.id = `thread-${commentId}`;
-      threadDiv.innerHTML = commentHtml(comment, false, null);
-
-      const repliesWrap = document.createElement('div');
-      repliesWrap.className = 'comment-replies-wrap';
-      repliesWrap.id = `replies-wrap-${commentId}`;
-      threadDiv.appendChild(repliesWrap);
-      return threadDiv;
-    };
-
     if (isReply) {
-      let repliesWrap = document.getElementById(`replies-wrap-${comment.parentId}`);
-      if (!repliesWrap) {
-        const parentThread = document.getElementById(`thread-${comment.parentId}`);
-        if (parentThread) {
-          repliesWrap = document.createElement('div');
-          repliesWrap.className = 'comment-replies-wrap';
-          repliesWrap.id = `replies-wrap-${comment.parentId}`;
-          parentThread.appendChild(repliesWrap);
-        }
-      }
+      const repliesWrap = document.getElementById(`replies-wrap-${comment.parentId}`);
 
       if (repliesWrap) {
         repliesWrap.insertAdjacentHTML('afterbegin', commentHtml(comment, true, comment.parentId));
+        updateRepliesToggle(comment.parentId);
       } else {
-        bodyEl.prepend(buildThread());
+        bodyEl.prepend(buildThread(commentId, comment));
       }
     } else {
-      bodyEl.prepend(buildThread());
+      bodyEl.prepend(buildThread(commentId, comment));
     }
 
     if (isNearTop) {
@@ -576,11 +639,18 @@
 
   function removeComment(commentId) {
     const threadDiv = document.getElementById(`thread-${commentId}`);
+
     if (threadDiv) {
       threadDiv.remove();
     } else {
       const itemEl = document.getElementById(`comment-${commentId}`);
-      if (itemEl) itemEl.remove();
+      if (itemEl) {
+        const parentThread = itemEl.closest('.comment-thread');
+        itemEl.remove();
+        if (parentThread) {
+          updateRepliesToggle(parentThread.id.replace('thread-', ''));
+        }
+      }
     }
 
     if (bodyEl.querySelectorAll('.comment-item').length === 0) {
@@ -765,7 +835,12 @@
 
       inputEl.value = '';
       cancelReply();
-      bodyEl.scrollTop = 0;
+
+      if (currentReply) {
+        expandReplies(currentReply.parentId);
+      } else {
+        bodyEl.scrollTop = 0;
+      }
     } catch (err) {
       AlertKit.error("Failed", "Could not post comment. Please try again.");
     } finally {
@@ -828,6 +903,8 @@
 
     if (action === 'reply-comment') {
       setReply(actionEl.getAttribute('data-parent-id'), actionEl.getAttribute('data-nickname'));
+    } else if (action === 'toggle-replies') {
+      toggleReplies(actionEl.getAttribute('data-parent-id'));
     } else if (action === 'delete-comment') {
       deleteComment(actionEl.getAttribute('data-comment-id'), actionEl.getAttribute('data-nickname'));
     } else if (action === 'view-commenter-profile') {
