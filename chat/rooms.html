@@ -998,21 +998,21 @@ function colorFor(name) {
   return avatarColors[h % avatarColors.length];
 }
 
-function getMemberInitial(name, fallback = 'U') {
-  if (!name) return String(fallback).toUpperCase();
+function getMemberInitial(name) {
+  if (!name) return 'U';
   const clean = String(name)
     .replace(/[\u00A0\u200B-\u200D\uFEFF]/g, ' ')
     .replace(/^(\s*tr\|)+/i, '')
     .trim();
-  if (!clean) return String(fallback).toUpperCase();
+  if (!clean) return 'U';
   const match = clean.match(/[a-zA-Z0-9]/);
   if (match) return match[0].toUpperCase();
   const first = Array.from(clean)[0];
-  return (first && first.trim()) ? first.toUpperCase() : String(fallback).toUpperCase();
+  return (first && first.trim()) ? first.toUpperCase() : 'U';
 }
 
 function buildMembersRow(roomName, roomData) {
-  const count = Number(roomData && roomData.memberCount) || 0;
+  const count = Math.max(0, Number(roomData && roomData.memberCount) || 0);
   const rawPreview = (roomData && roomData.memberPreview) || {};
   let names = [];
 
@@ -1020,64 +1020,48 @@ function buildMembersRow(roomName, roomData) {
     names = rawPreview.map(v => typeof v === 'object' && v ? (v.name || v.nickname || '') : String(v));
   } else if (rawPreview && typeof rawPreview === 'object') {
     Object.entries(rawPreview).forEach(([k, v]) => {
-      if (typeof v === 'string' && v.trim() && v !== 'true' && isNaN(v)) {
+      if (typeof v === 'string' && v.trim() && v !== 'true') {
         names.push(v);
-      } else if (k && typeof k === 'string' && isNaN(k)) {
+      } else if (k && typeof k === 'string') {
         names.push(k);
       }
     });
   }
 
-  names = names
-    .map(n => String(n).replace(/^(\s*tr\|)+/i, '').trim())
+  const cleanNames = names
+    .map(n => String(n).replace(/^(\s*tr\|)+/i, '').replace(/_/g, ' ').trim())
     .filter(n => n.length > 0 && n.toLowerCase() !== 'true');
 
-  if (roomData && roomData.admin) {
-    const adminClean = String(roomData.admin).replace(/^(\s*tr\|)+/i, '').trim();
-    if (adminClean && !names.some(n => n.toLowerCase() === adminClean.toLowerCase())) {
-      names.unshift(adminClean);
+  const uniqueNames = [];
+  cleanNames.forEach(n => {
+    if (!uniqueNames.some(existing => existing.toLowerCase() === n.toLowerCase())) {
+      uniqueNames.push(n);
     }
+  });
+
+  const displayNames = uniqueNames.slice(0, 3);
+
+  if (count <= 0 || displayNames.length === 0) {
+    return `
+      <div class="room-members">
+        <span class="members-empty">No members yet. Be the first to join!</span>
+      </div>
+    `;
   }
 
-  const roomWords = String(roomName || 'TalkRush Chat Room')
-    .replace(/[^a-zA-Z0-9\s]/g, '')
-    .split(/\s+/)
-    .filter(w => w.length > 0);
-
-  const fallbackPool = [
-    roomWords[0] || 'Room',
-    roomWords[1] || roomWords[0] || 'User',
-    roomWords[2] || 'Chat',
-    'Talk',
-    'VIP'
-  ];
-
-  let poolIdx = 0;
-  while (names.length < 3) {
-    const cand = fallbackPool[poolIdx++] || ('Guest' + (names.length + 1));
-    if (!names.includes(cand)) {
-      names.push(cand);
-    }
-  }
-
-  const displayAvatars = names.slice(0, 3);
-  const avatarsHtml = displayAvatars.map((name, index) => {
+  const avatarsHtml = displayNames.map(name => {
     const safeName = escapeHtml(name);
-    const initial = escapeHtml(getMemberInitial(name, ['A', 'B', 'C'][index]));
+    const initial = escapeHtml(getMemberInitial(name));
     return `<span class="avatar" style="background:${colorFor(name)}" title="${safeName}">${initial}</span>`;
   }).join('');
 
-  const extra = count > 3 ? count - 3 : 0;
+  const extra = Math.max(0, count - displayNames.length);
   const moreChip = extra > 0 ? `<span class="avatar avatar-more" title="${extra} more">+${extra > 99 ? '99' : extra}</span>` : '';
-
-  const countDisplay = count <= 0 
-    ? `<div class="members-count"><strong>0</strong> members</div>`
-    : `<div class="members-count"><strong>${count}</strong> ${count === 1 ? 'member' : 'members'}</div>`;
 
   return `
     <div class="room-members">
       <div class="avatar-stack">${avatarsHtml}${moreChip}</div>
-      ${countDisplay}
+      <div class="members-count"><strong>${count}</strong> ${count === 1 ? 'member' : 'members'}</div>
     </div>
   `;
 }
