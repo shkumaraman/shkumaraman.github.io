@@ -625,7 +625,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
 <script type="module">
 import { initializeApp, getApps } from "firebase/app";
-import { getDatabase, ref, push, set, onChildAdded, onValue, query, orderByChild, limitToLast, get, update, remove, onChildChanged, onChildRemoved, increment, runTransaction, onDisconnect } from "firebase/database";
+import { getDatabase, ref, push, set, onChildAdded, onValue, query, orderByChild, limitToLast, get, update, remove, onChildChanged, onChildRemoved, increment, onDisconnect } from "firebase/database";
 
 const baseUrl = window.MEDIA_STORAGE_URL.replace(/\/$/, "");
 
@@ -1162,20 +1162,42 @@ document.getElementById('cancelPassword').addEventListener('click', () => {
   window.location.href = '/chat/rooms.html';
 });
 
+let isMemberRegistered = false;
+
 async function registerMember() {
+  if (isMemberRegistered || !currentGroup || !myNickname) return;
+  isMemberRegistered = true;
+
   const memberKey = myNickname.replace(/[.#$\[\]\/]/g, '_');
   const groupRef = ref(db, `groups/${currentGroup}`);
+
   try {
-    await onDisconnect(groupRef).update({
+    const onDisc = onDisconnect(groupRef);
+
+    await onDisc.update({
       memberCount: increment(-1),
       [`memberPreview/${memberKey}`]: null
     });
-    await update(groupRef, { memberCount: increment(1) });
-    await runTransaction(ref(db, `groups/${currentGroup}/memberPreview`), (list) => {
-      list = list || {};
-      if (Object.keys(list).length < 3) list[memberKey] = true;
-      return list;
+
+    await update(groupRef, {
+      memberCount: increment(1),
+      [`memberPreview/${memberKey}`]: true
     });
+
+    const handleLeave = () => {
+      if (!isMemberRegistered) return;
+      isMemberRegistered = false;
+      try {
+        onDisc.cancel();
+        update(groupRef, {
+          memberCount: increment(-1),
+          [`memberPreview/${memberKey}`]: null
+        });
+      } catch (e) {}
+    };
+
+    window.addEventListener("pagehide", handleLeave, { once: true });
+    window.addEventListener("beforeunload", handleLeave, { once: true });
   } catch (e) {}
 }
 
