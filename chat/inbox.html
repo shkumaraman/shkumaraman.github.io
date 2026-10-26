@@ -1187,12 +1187,15 @@ let myFriendsMap = {};
 let initialFriendsLoaded = false;
 let renderDebounceTimer = null;
 let serverOffset = 0;
+let lastTimeSync = 0;
 let isTyping = false;
 let typingTimeout = null;
 const renderedMessageKeys = new Set();
 
 let friendsWs = null;
 let friendsPing = null;
+let isFriendsWsConnecting = false;
+
 let chatWs = null;
 let chatPing = null;
 let chatReconnectTimer = null;
@@ -1205,8 +1208,11 @@ let editingMsgTs = null;
 let contextTargetMsg = null;
 
 function syncServerTime() {
-  const clientTime = Date.now();
-  fetch(`${baseUrl}/api/time?clientTime=${clientTime}`)
+  const nowMs = Date.now();
+  if (nowMs - lastTimeSync < 600000 && serverOffset !== 0) return;
+  lastTimeSync = nowMs;
+
+  fetch(`${baseUrl}/api/time?clientTime=${nowMs}`)
     .then(res => res.json())
     .then(data => {
       if (typeof data.serverTimeOffset === 'number') {
@@ -1235,7 +1241,7 @@ function markSeen(chatId) {
 
 setInterval(() => {
   if (currentChatId) markSeen(currentChatId);
-}, 3000);
+}, 5000);
 
 function getAvatarLetter(name) {
   if (!name) return "?";
@@ -1326,9 +1332,13 @@ function hideTypingIndicator() {
 }
 
 function stopTyping() {
-  clearTimeout(typingTimeout);
-  typingTimeout = null;
+  if (typingTimeout) {
+    clearTimeout(typingTimeout);
+    typingTimeout = null;
+  }
+  if (!isTyping) return;
   isTyping = false;
+
   if (currentChatId && currentUserId) {
     fetch(`${baseUrl}/typing/${currentChatId}/${currentUserId}.json`, {
       method: "DELETE"
@@ -1672,7 +1682,6 @@ document.addEventListener("visibilitychange", () => {
   if (!document.hidden) {
     syncServerTime();
     if (!currentChatId) {
-      fetchUserFriends();
       if (!friendsWs || friendsWs.readyState === WebSocket.CLOSED) {
         initFriendsWs();
       }
@@ -1721,7 +1730,6 @@ function setupEventListeners() {
   };
 
   document.getElementById('imgInput').addEventListener('change', handleImageUpload);
-
   document.getElementById('sendBtn').onclick = sendMessage;
 
   document.getElementById('callBtn').onclick = () => {
@@ -1757,19 +1765,28 @@ function detachFriendsWs() {
     try { friendsWs.onclose = null; friendsWs.close(); } catch (e) {}
     friendsWs = null;
   }
+  isFriendsWsConnecting = false;
 }
 
 function initFriendsWs() {
   if (currentChatId) return;
+  if (friendsWs && (friendsWs.readyState === WebSocket.OPEN || friendsWs.readyState === WebSocket.CONNECTING)) {
+    return;
+  }
+  if (isFriendsWsConnecting) return;
+  isFriendsWsConnecting = true;
+
   detachFriendsWs();
 
   try {
     friendsWs = new WebSocket(`${wsProto}//${wsHost}/ws/friends`);
   } catch (e) {
+    isFriendsWsConnecting = false;
     return;
   }
 
   friendsWs.onopen = () => {
+    isFriendsWsConnecting = false;
     if (friendsPing) clearInterval(friendsPing);
     friendsPing = setInterval(() => {
       if (friendsWs && friendsWs.readyState === WebSocket.OPEN) {
@@ -1820,6 +1837,7 @@ function initFriendsWs() {
   };
 
   friendsWs.onclose = () => {
+    isFriendsWsConnecting = false;
     if (friendsPing) clearInterval(friendsPing);
     setTimeout(() => {
       if (!currentChatId && !document.hidden) initFriendsWs();
@@ -1842,11 +1860,16 @@ function detachChatWs() {
 }
 
 function initChatWs(chatId) {
-  detachChatWs();
   if (!chatId) return;
+  if (chatWs && chatWs._chatId === chatId && (chatWs.readyState === WebSocket.OPEN || chatWs.readyState === WebSocket.CONNECTING)) {
+    return;
+  }
+
+  detachChatWs();
 
   try {
     chatWs = new WebSocket(`${wsProto}//${wsHost}/ws/messages/${chatId}?orderBy=%22timestamp%22&limitToLast=${MESSAGE_LIMIT}`);
+    chatWs._chatId = chatId;
   } catch (e) {
     return;
   }
@@ -2144,21 +2167,6 @@ function processFriendsPayload(data) {
   scheduleFriendsRender();
 }
 
-function fetchUserFriends() {
-  if (!myNickname || myNickname === 'Guest') return;
-  const encodedNick = encodeURIComponent(JSON.stringify(myNickname));
-  const p1 = fetch(`${baseUrl}/friends.json?orderBy=%22nickname1%22&equalTo=${encodedNick}`).then(r => r.json()).catch(() => ({}));
-  const p2 = fetch(`${baseUrl}/friends.json?orderBy=%22nickname2%22&equalTo=${encodedNick}`).then(r => r.json()).catch(() => ({}));
-
-  Promise.all([p1, p2]).then(([d1, d2]) => {
-    initialFriendsLoaded = true;
-    processFriendsPayload({ ...(d1 || {}), ...(d2 || {}) });
-  }).catch(() => {
-    initialFriendsLoaded = true;
-    scheduleFriendsRender();
-  });
-}
-
 function loadFriends(forceReload = false) {
   const list = document.getElementById("friendList");
   const loading = document.getElementById("loading");
@@ -2177,7 +2185,6 @@ function loadFriends(forceReload = false) {
     list.style.display = "none";
   }
 
-  fetchUserFriends();
   initFriendsWs();
 }
 
