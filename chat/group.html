@@ -1170,20 +1170,16 @@ async function registerMember() {
 
   const memberKey = myNickname.replace(/[.#$\[\]\/]/g, '_');
   const groupRef = ref(db, `groups/${currentGroup}`);
-
   try {
     await onDisconnect(groupRef).update({
       memberCount: increment(-1),
       [`memberPreview/${memberKey}`]: null
     });
-
-    await update(groupRef, {
-      [`memberPreview/${memberKey}`]: myNickname
-    });
-
-    await runTransaction(ref(db, `groups/${currentGroup}/memberCount`), (current) => {
-      const val = Number(current) || 0;
-      return val < 0 ? 1 : val + 1;
+    await update(groupRef, { memberCount: increment(1) });
+    await runTransaction(ref(db, `groups/${currentGroup}/memberPreview`), (list) => {
+      list = list || {};
+      if (Object.keys(list).length < 3) list[memberKey] = myNickname;
+      return list;
     });
   } catch (e) {
     isMemberRegistered = false;
