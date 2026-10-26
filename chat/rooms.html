@@ -358,11 +358,11 @@ main {
   height: 32px;
   margin-left: -10px;
   border-radius: 50%;
-  border: 2.5px solid var(--dark-card);
+  border: 2px solid var(--dark-card);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
   color: #fff;
   text-transform: uppercase;
@@ -370,9 +370,21 @@ main {
   box-shadow: 0 3px 8px rgba(0,0,0,0.35);
   transition: transform 0.2s ease;
   cursor: default;
+  position: relative;
+  flex-shrink: 0;
 }
-.light-mode .avatar { border-color: var(--light-card); box-shadow: 0 3px 8px rgba(0,0,0,0.15); }
-.avatar:hover { transform: translateY(-4px) scale(1.08); z-index: 5; }
+.light-mode .avatar { 
+  border-color: var(--light-card); 
+  box-shadow: 0 3px 8px rgba(0,0,0,0.15); 
+}
+.avatar:hover { 
+  transform: translateY(-4px) scale(1.08); 
+  z-index: 10 !important; 
+}
+
+.avatar:nth-child(1) { z-index: 3; }
+.avatar:nth-child(2) { z-index: 2; }
+.avatar:nth-child(3) { z-index: 1; }
 
 .avatar-more {
   background: var(--dark-input-bg);
@@ -380,8 +392,12 @@ main {
   font-size: 11px;
   backdrop-filter: blur(4px);
   border-color: var(--dark-border2);
+  z-index: 0;
 }
-.light-mode .avatar-more { background: var(--light-input-bg); color: var(--light-text); }
+.light-mode .avatar-more { 
+  background: var(--light-input-bg); 
+  color: var(--light-text); 
+}
 
 .members-count {
   display: flex;
@@ -689,7 +705,7 @@ main {
     onclick="document.getElementById('sticky-ad-wrapper').style.display='none';" 
     aria-label="Close Ad"
     style="background: rgba(0, 0, 0, 0.6); color: #fff; border: none; font-size: 13px; font-weight: bold; padding: 2px 8px; border-radius: 4px; cursor: pointer; margin-bottom: 4px; line-height: 1.2;">
-    ✕ Close
+    Close
   </button>
 
   <div style="width: 320px; height: 100px; margin: 0 auto; display: block; overflow: hidden;">
@@ -982,6 +998,17 @@ function colorFor(name) {
   return avatarColors[h % avatarColors.length];
 }
 
+function getMemberInitial(name) {
+  if (!name) return 'U';
+  const clean = String(name)
+    .replace(/[\u00A0\u200B-\u200D\uFEFF]/g, ' ')
+    .replace(/^(\s*tr\|)+/i, '')
+    .trim();
+  if (!clean) return 'U';
+  const match = clean.match(/[a-zA-Z0-9]/);
+  return match ? match[0].toUpperCase() : (Array.from(clean)[0] || 'U').toUpperCase();
+}
+
 function buildMembersRow(roomData) {
   const count = Number(roomData.memberCount) || 0;
   if (count <= 0) {
@@ -989,16 +1016,35 @@ function buildMembersRow(roomData) {
   }
 
   const rawPreview = roomData.memberPreview || {};
-  const names = (Array.isArray(rawPreview) ? rawPreview : Object.keys(rawPreview))
-    .map(n => String(n).replace(/^tr\|/i, ''))
+  let names = [];
+
+  if (Array.isArray(rawPreview)) {
+    names = rawPreview;
+  } else if (rawPreview && typeof rawPreview === 'object') {
+    const values = Object.values(rawPreview);
+    if (values.length > 0 && values.every(v => typeof v === 'string' && v.trim().length > 0)) {
+      names = values;
+    } else {
+      names = Object.keys(rawPreview);
+    }
+  }
+
+  const validNames = names
+    .map(n => String(n).replace(/^(\s*tr\|)+/i, '').trim())
+    .filter(n => n.length > 0)
     .slice(0, 3);
 
-  const avatars = names.map(name => {
+  if (validNames.length === 0 && roomData.admin) {
+    validNames.push(String(roomData.admin).replace(/^(\s*tr\|)+/i, '').trim());
+  }
+
+  const avatars = validNames.map(name => {
     const safeName = escapeHtml(name);
-    return `<span class="avatar" style="background:${colorFor(name)}" title="${safeName}">${escapeHtml(name.trim().charAt(0) || '?')}</span>`;
+    const initial = escapeHtml(getMemberInitial(name));
+    return `<span class="avatar" style="background:${colorFor(name)}" title="${safeName}">${initial}</span>`;
   }).join('');
 
-  const extra = count - names.length;
+  const extra = count - validNames.length;
   const moreChip = extra > 0 ? `<span class="avatar avatar-more" title="${extra} more">+${extra > 99 ? '99' : extra}</span>` : '';
 
   return `
