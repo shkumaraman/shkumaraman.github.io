@@ -625,7 +625,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
 <script type="module">
 import { initializeApp, getApps } from "firebase/app";
-import { getDatabase, ref, push, set, onChildAdded, onValue, query, orderByChild, limitToLast, get, update, remove, onChildChanged, onChildRemoved, increment, onDisconnect } from "firebase/database";
+import { getDatabase, ref, push, set, onChildAdded, onValue, query, orderByChild, limitToLast, get, update, remove, onChildChanged, onChildRemoved, increment, runTransaction, onDisconnect } from "firebase/database";
 
 const baseUrl = window.MEDIA_STORAGE_URL.replace(/\/$/, "");
 
@@ -1172,33 +1172,22 @@ async function registerMember() {
   const groupRef = ref(db, `groups/${currentGroup}`);
 
   try {
-    const onDisc = onDisconnect(groupRef);
-
-    await onDisc.update({
+    await onDisconnect(groupRef).update({
       memberCount: increment(-1),
       [`memberPreview/${memberKey}`]: null
     });
 
     await update(groupRef, {
-      memberCount: increment(1),
-      [`memberPreview/${memberKey}`]: true
+      [`memberPreview/${memberKey}`]: myNickname
     });
 
-    const handleLeave = () => {
-      if (!isMemberRegistered) return;
-      isMemberRegistered = false;
-      try {
-        onDisc.cancel();
-        update(groupRef, {
-          memberCount: increment(-1),
-          [`memberPreview/${memberKey}`]: null
-        });
-      } catch (e) {}
-    };
-
-    window.addEventListener("pagehide", handleLeave, { once: true });
-    window.addEventListener("beforeunload", handleLeave, { once: true });
-  } catch (e) {}
+    await runTransaction(ref(db, `groups/${currentGroup}/memberCount`), (current) => {
+      const val = Number(current) || 0;
+      return (val < 0 ? 0 : val) + 1;
+    });
+  } catch (e) {
+    isMemberRegistered = false;
+  }
 }
 
 function joinGroupChat() {
