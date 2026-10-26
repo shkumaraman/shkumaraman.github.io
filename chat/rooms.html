@@ -338,6 +338,69 @@ main {
 }
 .light-mode .room-description { color: var(--light-text-muted); }
 
+.room-members {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 14px 0;
+}
+
+.avatar-stack {
+  display: flex;
+  align-items: center;
+  padding-left: 10px;
+}
+
+.avatar {
+  width: 32px;
+  height: 32px;
+  margin-left: -10px;
+  border-radius: 50%;
+  border: 2.5px solid var(--dark-card);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  text-transform: uppercase;
+  box-sizing: border-box;
+  box-shadow: 0 3px 8px rgba(0,0,0,0.35);
+  transition: transform 0.2s ease;
+  cursor: default;
+}
+.light-mode .avatar { border-color: var(--light-card); box-shadow: 0 3px 8px rgba(0,0,0,0.15); }
+.avatar:hover { transform: translateY(-4px) scale(1.08); z-index: 5; }
+
+.avatar-more {
+  background: var(--dark-input-bg);
+  color: var(--dark-text);
+  font-size: 11px;
+  backdrop-filter: blur(4px);
+  border-color: var(--dark-border2);
+}
+.light-mode .avatar-more { background: var(--light-input-bg); color: var(--light-text); }
+
+.members-count {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dark-text-muted);
+}
+.light-mode .members-count { color: var(--light-text-muted); }
+.members-count strong { color: var(--accent); font-size: 14px; font-weight: 800; }
+
+.members-empty {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--dark-text-dim);
+}
+.light-mode .members-empty { color: var(--light-text-dim); }
+
 .room-actions { display: flex; gap: 8px; margin-top: auto; }
 
 .btn {
@@ -907,6 +970,44 @@ let currentRepliesData = null;
 let replyListenerUnsubscribe = null;
 let currentSearchTerm = '';
 
+const avatarColors = ['#ff6b4a', '#6c5ce7', '#00b894', '#0984e3', '#e84393', '#fdcb6e', '#00cec9', '#d63031'];
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function colorFor(name) {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return avatarColors[h % avatarColors.length];
+}
+
+function buildMembersRow(roomData) {
+  const count = Number(roomData.memberCount) || 0;
+  if (count <= 0) {
+    return `<div class="room-members"><span class="members-empty">No members yet. Be the first to join!</span></div>`;
+  }
+
+  const names = Object.values(roomData.memberPreview || {})
+    .map(n => (typeof n === 'string' ? n : (n && n.name) || '?'))
+    .slice(0, 3);
+
+  const avatars = names.map(name => {
+    const safeName = escapeHtml(name);
+    return `<span class="avatar" style="background:${colorFor(name)}" title="${safeName}">${escapeHtml(name.trim().charAt(0) || '?')}</span>`;
+  }).join('');
+
+  const extra = count - names.length;
+  const moreChip = extra > 0 ? `<span class="avatar avatar-more" title="${extra} more">+${extra > 99 ? '99' : extra}</span>` : '';
+
+  return `
+    <div class="room-members">
+      <div class="avatar-stack">${avatars}${moreChip}</div>
+      <div class="members-count"><strong>${count}</strong> ${count === 1 ? 'member' : 'members'}</div>
+    </div>
+  `;
+}
+
 async function loadCloudinaryConfig() {
   try {
     const res = await fetch('/key.json');
@@ -1199,6 +1300,7 @@ document.addEventListener('DOMContentLoaded', async function() {
           <p class="room-description" title="${desc}">${displayDesc}</p>
         </div>
       </div>
+      ${buildMembersRow(roomData)}
       <div class="room-actions">
         <a href="/chat/group.html?group=${encodeURIComponent(roomName)}" class="btn btn-primary">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path><polyline points="10 17 15 12 10 7"></polyline><line x1="15" y1="12" x2="3" y2="12"></line></svg> Join Room
@@ -1386,7 +1488,9 @@ document.addEventListener('DOMContentLoaded', async function() {
         description: description,
         admin: myNickname,
         createdAt: Date.now(),
-        lastActivity: Date.now()
+        lastActivity: Date.now(),
+        memberCount: 0,
+        memberPreview: {}
       };
 
       if (imageUrl) {
