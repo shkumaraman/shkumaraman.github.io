@@ -165,8 +165,31 @@ video { width: 100%; height: 100%; object-fit: cover; }
     flex: 1; display: flex; flex-direction: column; margin: 6px;
     background: var(--dark-surface); border-radius: 12px;
     border: 0.5px solid var(--dark-border); overflow: hidden; min-height: 0;
+    position: relative;
 }
 .light-mode .vd-chat-section { background: var(--light-surface); border-color: var(--light-border2); }
+
+.vd-chat-ad-overlay {
+    position: absolute;
+    top: 0; right: 0; bottom: 0; left: 0;
+    z-index: 5;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: var(--dark-surface);
+    overflow: hidden;
+}
+.light-mode .vd-chat-ad-overlay { background: var(--light-surface); }
+
+.vd-chat-ad-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--dark-text-muted);
+    margin-bottom: 6px;
+}
+.light-mode .vd-chat-ad-label { color: var(--light-text-muted); }
 
 .vd-chat-section-header {
     padding: 7px 12px; border-bottom: 0.5px solid var(--dark-border); flex-shrink: 0;
@@ -527,6 +550,13 @@ video { width: 100%; height: 100%; object-fit: cover; }
         <i class="fas fa-paper-plane"></i>
       </button>
     </div>
+    <div class="vd-chat-ad-overlay" id="vd-chatAd">
+      <div class="vd-chat-ad-label">Advertisement</div>
+      <ins class="adsbygoogle"
+           style="display:inline-block;width:300px;height:250px"
+           data-ad-client="ca-pub-7059052735946479"
+           data-ad-slot="YOUR_NEW_AD_SLOT_ID"></ins>
+    </div>
   </div>
 
   <div class="vd-video-controls">
@@ -677,6 +707,7 @@ let callConnectTimeout = null;
 let connectionMessageTimer = null;
 let cameraAvailable = true;
 let micMuted = false;
+let chatAdLoaded = false;
 
 const getFallbackName = () => "Guest" + Math.floor(1000 + Math.random() * 9000);
 let currentStrangerNickname = getFallbackName();
@@ -695,6 +726,7 @@ const friendBtn = document.getElementById('vd-friendBtn');
 const chatMessages = document.getElementById('vd-chatMessages');
 const chatInput = document.getElementById('vd-chatInput');
 const chatSendBtn = document.getElementById('vd-chatSendBtn');
+const chatAd = document.getElementById('vd-chatAd');
 
 document.addEventListener('visibilitychange', handleVisibilityChange);
 
@@ -714,6 +746,22 @@ if (window.innerWidth <= 768) {
   showSystemMessage("Click 'Start New Talk' to begin!");
   setupChatEvents();
 });
+
+function showChatAd() {
+  if (!chatAd) return;
+  chatAd.style.display = 'flex';
+  if (!chatAdLoaded) {
+    try {
+      (window.adsbygoogle = window.adsbygoogle || []).push({});
+      chatAdLoaded = true;
+    } catch (e) {}
+  }
+}
+
+function hideChatAd() {
+  if (!chatAd) return;
+  chatAd.style.display = 'none';
+}
 
 window.toggleMic = function() {
   micMuted = !micMuted;
@@ -946,6 +994,7 @@ async function initVideoChat() {
 
     startPeer(false);
   } catch (error) {
+    hideChatAd();
     showSystemMessage("Mic access denied. Check permissions.");
     localPlaceholder.textContent = "Mic denied";
     showNewChatButton();
@@ -989,6 +1038,7 @@ function startPeer(isNewSession = false) {
     peer = new Peer(peerOptions);
   } catch (e) {
     hideSearchingAnimation();
+    hideChatAd();
     remotePlaceholder.textContent = "Connection error";
     showNewChatButton();
     return;
@@ -1018,6 +1068,7 @@ function startPeer(isNewSession = false) {
     }
     if (!isConnected) {
       hideSearchingAnimation();
+      hideChatAd();
       remotePlaceholder.textContent = "Stranger";
       showNewChatButton();
     }
@@ -1057,6 +1108,7 @@ function showSearchingAnimation() {
     <div class="vd-searching-text">Searching...</div>
   `;
   remotePlaceholder.style.display = 'flex';
+  showChatAd();
 }
 
 function hideSearchingAnimation() {
@@ -1198,6 +1250,7 @@ function connectToPeer(otherId) {
   cleanUpWaitingList();
   hideSearchingAnimation();
   showSystemMessage("Connecting...");
+  showChatAd();
   const call = peer.call(otherId, localStream);
   setupCall(call, true);
 }
@@ -1231,6 +1284,7 @@ function setupCall(call, isInitiator) {
     remoteStream = stream;
     remoteVideo.srcObject = stream;
     remotePlaceholder.style.display = 'none';
+    hideChatAd();
     hideSystemMessage();
     showFriendButton();
     showSystemMessage("Say Hi 👋");
@@ -1251,6 +1305,7 @@ function endConnection() {
   closeActiveConnections();
   cleanUpWaitingList();
   hideSearchingAnimation();
+  hideChatAd();
   remotePlaceholder.style.display = 'flex';
   remotePlaceholder.textContent = "Stranger disconnected 💔";
   isConnected = false;
@@ -1296,6 +1351,7 @@ document.getElementById("vd-skipBtn").onclick = () => {
   closeActiveConnections();
   cleanUpWaitingList();
   hideSearchingAnimation();
+  hideChatAd();
   isConnected = false;
   currentStrangerNickname = getFallbackName();
   remotePlaceholder.style.display = 'flex';
