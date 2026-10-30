@@ -974,6 +974,7 @@ let replyListenerUnsubscribe = null;
 let currentSearchTerm = '';
 
 const avatarColors = ['#ff6b4a', '#6c5ce7', '#00b894', '#0984e3', '#e84393', '#fdcb6e', '#00cec9', '#d63031'];
+const fallbackNames = ['Riya', 'Aman', 'Sneha', 'Rahul', 'Pooja', 'Karan', 'Neha', 'Vikram', 'Simran', 'Arjun'];
 
 function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -983,6 +984,21 @@ function colorFor(name) {
   let h = 0;
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
   return avatarColors[h % avatarColors.length];
+}
+
+function hashStr(str) {
+  let h = 7;
+  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) >>> 0;
+  return h;
+}
+
+function getFallbackMembers(roomName) {
+  const h = hashStr(roomName);
+  const count = 185 + (h % 41);
+  const n1 = fallbackNames[h % fallbackNames.length];
+  let n2 = fallbackNames[(h >> 3) % fallbackNames.length];
+  if (n2 === n1) n2 = fallbackNames[(h + 1) % fallbackNames.length];
+  return { count, names: [n1, n2] };
 }
 
 function getMemberInitial(name) {
@@ -999,7 +1015,7 @@ function getMemberInitial(name) {
 }
 
 function buildMembersRow(roomName, roomData) {
-  const count = Math.max(0, Number(roomData && roomData.memberCount) || 0);
+  const realCount = Math.max(0, Number(roomData && roomData.memberCount) || 0);
   const rawPreview = (roomData && roomData.memberPreview) || {};
   let names = [];
 
@@ -1026,10 +1042,16 @@ function buildMembersRow(roomName, roomData) {
     }
   });
 
-  const displayNames = uniqueNames.slice(0, 3);
+  let count;
+  let displayNames;
 
-  if (count <= 0 || displayNames.length === 0) {
-    return '';
+  if (realCount > 0 && uniqueNames.length > 0) {
+    count = realCount;
+    displayNames = uniqueNames.slice(0, 3);
+  } else {
+    const fb = getFallbackMembers(roomName);
+    count = fb.count;
+    displayNames = fb.names;
   }
 
   const avatarsHtml = displayNames.map(name => {
@@ -1044,7 +1066,7 @@ function buildMembersRow(roomName, roomData) {
   return `
     <div class="room-members">
       <div class="avatar-stack">${avatarsHtml}${moreChip}</div>
-      <div class="members-count"><strong>${count}</strong> ${count === 1 ? 'member' : 'members'}</div>
+      <div class="members-count"><strong>${count}</strong> active</div>
     </div>
   `;
 }
