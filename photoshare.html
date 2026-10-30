@@ -41,6 +41,7 @@ description: "PhotoShare - Share photos privately with a unique code. Upload pho
   --light-input-focus: rgba(0,0,0,0.08);
 
   --error: #dc3545;
+  --success: #10b981;
 }
 
 html, body { overflow-x: hidden; }
@@ -90,7 +91,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 .light-mode .tab-bar { background: var(--light-surface); border-color: var(--light-border2); }
 
 .tab-btn {
-  flex: 1; padding: 12px 0; text-align: center; font-size: 14px; font-weight: 700;
+  flex: 1; padding: 12px 0; text-align: center; font-size: 13px; font-weight: 700;
   background: transparent; border: none;
   color: var(--dark-text-muted); cursor: pointer; transition: all 0.2s;
   border-bottom: 2px solid transparent;
@@ -230,6 +231,45 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 .share-buttons { display: flex; gap: 12px; justify-content: center; margin: 20px 0; }
 .share-buttons .btn-secondary { flex: 1; max-width: 200px; }
 
+.status-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600;
+  background: var(--dark-input-bg); border: 0.5px solid var(--dark-border2);
+  margin-bottom: 15px;
+}
+.light-mode .status-badge { background: var(--light-input-bg); border-color: var(--light-border2); }
+.status-indicator { width: 8px; height: 8px; border-radius: 50%; background: var(--success); }
+
+.explorer-list {
+  display: flex; flex-direction: column; gap: 8px;
+  width: 100%; max-height: 250px; overflow-y: auto; margin-bottom: 20px;
+}
+.explorer-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 14px; border-radius: 10px;
+  background: var(--dark-input-bg); border: 0.5px solid var(--dark-border2);
+}
+.light-mode .explorer-item { background: var(--light-input-bg); border-color: var(--light-border2); }
+.explorer-filename {
+  font-size: 13px; color: var(--dark-text); truncate; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.light-mode .explorer-filename { color: var(--light-text); }
+.explorer-play-btn {
+  background: var(--accent); color: white; border: none;
+  padding: 6px 14px; border-radius: 8px; font-size: 11px; font-weight: 700;
+  cursor: pointer; shrink: 0;
+}
+.explorer-play-btn:hover { background: var(--accent-hover); }
+
+.media-stage {
+  width: 100%; min-height: 180px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: var(--dark-bg); border-radius: 12px; border: 0.5px solid var(--dark-border2);
+  padding: 12px; box-sizing: border-box;
+}
+.light-mode .media-stage { background: var(--light-bg); border-color: var(--light-border2); }
+.media-stage img, .media-stage video { max-width: 100%; max-height: 380px; border-radius: 8px; object-fit: contain; }
+.media-stage audio { width: 100%; }
+
 @media (max-width: 600px) {
   .photo-grid { grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); }
   .code-display { font-size: 26px; padding: 15px; }
@@ -259,6 +299,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 <main class="container">
   <nav class="tab-bar" aria-label="PhotoShare Modes">
     <button class="tab-btn active" id="tabUpload">Upload Photos</button>
+    <button class="tab-btn" id="tabStream">Live Folder</button>
     <button class="tab-btn" id="tabView">View Photos</button>
   </nav>
 
@@ -305,6 +346,37 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     </div>
   </section>
 
+  <section class="tab-content" id="stream-tab" aria-label="Live Stream Area">
+    <label class="upload-area" id="streamFolderArea" for="folderInput">
+      <i class="fas fa-folder-open"></i>
+      <h3 id="streamFolderTitle">Select Media Folder</h3>
+      <p id="streamFolderDesc">Select a folder containing photos, audio, or video</p>
+      <input type="file" id="folderInput" webkitdirectory directory multiple style="display: none;">
+    </label>
+
+    <div id="streamStats" style="display: none; margin-bottom: 20px; text-align: center;">
+      <span class="status-badge">
+        <span class="status-indicator"></span>
+        <span id="streamStatsText">0 files ready</span>
+      </span>
+    </div>
+
+    <button type="button" class="btn-primary" id="startStreamBtn" style="display: none; width: 100%;">
+      <i class="fas fa-satellite-dish"></i> Start Live Streaming
+    </button>
+
+    <output class="code-display" id="streamCodeDisplay" style="display: none;"></output>
+
+    <div id="streamActiveNotice" style="display: none; text-align: center; margin-bottom: 20px;">
+      <p style="font-size: 12px; color: var(--accent); font-weight: 600;">Keep this tab open while sharing. Closing the tab ends the stream immediately.</p>
+    </div>
+
+    <div class="share-buttons" id="streamShareButtons" style="display: none;">
+      <button type="button" class="btn-secondary" id="streamCopyBtn"><i class="fas fa-copy"></i> Copy Code</button>
+      <button type="button" class="btn-secondary" id="streamShareBtn"><i class="fa-solid fa-arrow-up-from-bracket"></i> Share</button>
+    </div>
+  </section>
+
   <section class="tab-content" id="view-tab" aria-label="Viewer Area">
     <div class="viewer-container">
       <form class="viewer-input" id="viewForm" onsubmit="return false;">
@@ -313,7 +385,24 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
           <i class="fas fa-eye"></i> View
         </button>
       </form>
+
       <div class="photo-grid" id="viewerGallery" style="width: 100%;"></div>
+
+      <div id="liveStreamViewer" style="display: none; width: 100%;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <span class="status-badge">
+            <span class="status-indicator"></span>
+            <span>Live Connected</span>
+          </span>
+          <span id="liveFileCount" style="font-size: 12px; color: var(--dark-text-muted);">0 Files</span>
+        </div>
+
+        <div class="explorer-list" id="explorerList"></div>
+
+        <div class="media-stage" id="mediaStage">
+          <span style="font-size: 13px; color: var(--dark-text-dim);">Select a file to play or view</span>
+        </div>
+      </div>
     </div>
   </section>
 </main>
@@ -327,40 +416,9 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       <script>
            (adsbygoogle = window.adsbygoogle || []).push({});
       </script>
-    </div>
-  <h2>Private Photo Sharing – Auto Delete in 24 Hours</h2>
-  <p>Upload your photos securely and receive a unique <strong>5-digit code</strong>. Share this code with your friends or send it via WhatsApp. Only the person who enters the code can view your photos. For your privacy, photos will be <strong>automatically deleted after 24 hours</strong>.</p>
-
-  <h2>How It Works</h2>
-  <ol>
-    <li><strong>Upload</strong> – Choose up to 10 photos from your device. No sign-up or registration required.</li>
-    <li><strong>Get a Code</strong> – A unique 5-digit code is generated instantly (e.g., 48291).</li>
-    <li><strong>Share</strong> – Copy the code or send it directly via WhatsApp or any other messenger.</li>
-    <li><strong>View</strong> – Only people with the code can see your photos.</li>
-    <li><strong>Auto-Delete</strong> – Your photos will be permanently removed after 24 hours.</li>
-  </ol>
-
-  <h2>Why Choose This Service?</h2>
-  <ul>
-    <li>No account or personal information required</li>
-    <li>Fast and easy photo sharing</li>
-    <li>Secure and private – you control who sees your photos</li>
-    <li>Automatic deletion after 24 hours for extra privacy</li>
-    <li>Works on any device – phone, tablet, or computer</li>
-  </ul>
-
-  <p style="font-size:0.9em; color:var(--dark-text-muted);">
-    <strong>Note:</strong> Share your code only with people you trust. We never store your photos beyond 24 hours.
-  </p>
-  <div style="width: 300px; height: 250px; margin: 16px auto; display: flex; justify-content: center; align-items: center; overflow: hidden;">
-      <ins class="adsbygoogle"
-           style="display:inline-block;width:300px;height:250px"
-           data-ad-client="ca-pub-7059052735946479"
-           data-ad-slot="8592327962"></ins>
-      <script>
-           (adsbygoogle = window.adsbygoogle || []).push({});
-      </script>
   </div>
+  <h2>Private Photo Sharing & Live Folder Streaming</h2>
+  <p>Share photos securely using a unique <strong>5-digit code</strong>. You can upload images with auto-deletion or live stream an entire folder of photos, videos, and music directly from your device without uploading to any server.</p>
 </article>
 
 {% include menu.html %}
@@ -381,16 +439,56 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   const viewForm = document.getElementById('viewForm');
   const viewerGallery = document.getElementById('viewerGallery');
   const tabUpload = document.getElementById('tabUpload');
+  const tabStream = document.getElementById('tabStream');
   const tabView = document.getElementById('tabView');
   const uploadTab = document.getElementById('upload-tab');
+  const streamTab = document.getElementById('stream-tab');
   const viewTab = document.getElementById('view-tab');
   const progressWrap = document.getElementById('progressWrap');
   const progressLabel = document.getElementById('progressLabel');
   const progressFill = document.getElementById('progressFill');
 
+  const streamFolderArea = document.getElementById('streamFolderArea');
+  const folderInput = document.getElementById('folderInput');
+  const streamFolderTitle = document.getElementById('streamFolderTitle');
+  const streamFolderDesc = document.getElementById('streamFolderDesc');
+  const streamStats = document.getElementById('streamStats');
+  const streamStatsText = document.getElementById('streamStatsText');
+  const startStreamBtn = document.getElementById('startStreamBtn');
+  const streamCodeDisplay = document.getElementById('streamCodeDisplay');
+  const streamActiveNotice = document.getElementById('streamActiveNotice');
+  const streamShareButtons = document.getElementById('streamShareButtons');
+  const streamCopyBtn = document.getElementById('streamCopyBtn');
+  const streamShareBtn = document.getElementById('streamShareBtn');
+
+  const liveStreamViewer = document.getElementById('liveStreamViewer');
+  const liveFileCount = document.getElementById('liveFileCount');
+  const explorerList = document.getElementById('explorerList');
+  const mediaStage = document.getElementById('mediaStage');
+
   const MAX_IMAGES = 10;
   let uploadedFiles = [];
   let shareCode = '';
+
+  let hostPeer = null;
+  let hostConn = null;
+  let streamCode = '';
+  let folderFilesMap = new Map();
+  let folderFilesMeta = [];
+
+  let viewerPeer = null;
+  let viewerConn = null;
+
+  function switchTab(activeBtn, activeContent) {
+    [tabUpload, tabStream, tabView].forEach(btn => btn.classList.remove('active'));
+    [uploadTab, streamTab, viewTab].forEach(content => content.classList.remove('active'));
+    activeBtn.classList.add('active');
+    activeContent.classList.add('active');
+  }
+
+  tabUpload.addEventListener('click', () => switchTab(tabUpload, uploadTab));
+  tabStream.addEventListener('click', () => switchTab(tabStream, streamTab));
+  tabView.addEventListener('click', () => switchTab(tabView, viewTab));
 
   function dataURLtoBlob(dataurl) {
     const arr = dataurl.split(',');
@@ -409,49 +507,18 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   });
   fileInput.addEventListener('change', (e) => processFiles(Array.from(e.target.files)));
   generateBtn.addEventListener('click', generateShareCode);
-  copyBtn.addEventListener('click', copyCode);
-  shareBtn.addEventListener('click', shareCodeViaAPI);
-  viewBtn.addEventListener('click', viewPhotos);
-
-  if (viewForm) {
-    viewForm.addEventListener('submit', (e) => {
-      e.preventDefault();
-      viewPhotos();
-    });
-  }
-
-  codeInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      viewPhotos();
-    }
-  });
-
-  tabUpload.addEventListener('click', () => {
-    tabUpload.classList.add('active');
-    tabView.classList.remove('active');
-    uploadTab.classList.add('active');
-    viewTab.classList.remove('active');
-  });
-
-  tabView.addEventListener('click', () => {
-    tabView.classList.add('active');
-    tabUpload.classList.remove('active');
-    viewTab.classList.add('active');
-    uploadTab.classList.remove('active');
-  });
+  copyBtn.addEventListener('click', () => copyToClipboard(shareCode));
+  shareBtn.addEventListener('click', () => shareCodeViaUrl(shareCode));
 
   uploadArea.addEventListener('dragover', (e) => {
     e.preventDefault();
     uploadArea.style.borderColor = 'var(--accent)';
     uploadArea.style.backgroundColor = 'var(--dark-input-focus)';
   });
-
   uploadArea.addEventListener('dragleave', () => {
     uploadArea.style.borderColor = '';
     uploadArea.style.backgroundColor = '';
   });
-
   uploadArea.addEventListener('drop', (e) => {
     e.preventDefault();
     uploadArea.style.borderColor = '';
@@ -628,20 +695,126 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     }
   }
 
-  function copyCode() {
-    navigator.clipboard.writeText(shareCode)
+  streamFolderArea.addEventListener('click', (e) => {
+    if (e.target !== folderInput) folderInput.click();
+  });
+
+  folderInput.addEventListener('change', (e) => {
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
+
+    folderFilesMeta = [];
+    folderFilesMap.clear();
+
+    const allowed = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'mp4', 'mkv', 'webm', 'mp3', 'wav', 'ogg', 'm4a'];
+
+    files.forEach((file, index) => {
+      const ext = file.name.split('.').pop().toLowerCase();
+      if (allowed.includes(ext)) {
+        const id = 'f_' + index;
+        folderFilesMap.set(id, file);
+        folderFilesMeta.push({
+          id: id,
+          name: file.webkitRelativePath || file.name,
+          type: file.type
+        });
+      }
+    });
+
+    if (folderFilesMeta.length === 0) {
+      AlertKit.toast('No media files found in selected folder', 'warning');
+      return;
+    }
+
+    streamFolderTitle.textContent = 'Folder Loaded';
+    streamFolderDesc.textContent = `${folderFilesMeta.length} media files found`;
+    streamStatsText.textContent = `${folderFilesMeta.length} files ready to stream`;
+    streamStats.style.display = 'block';
+    startStreamBtn.style.display = 'flex';
+  });
+
+  startStreamBtn.addEventListener('click', initHostStreaming);
+  streamCopyBtn.addEventListener('click', () => copyToClipboard(streamCode));
+  streamShareBtn.addEventListener('click', () => shareCodeViaUrl(streamCode));
+
+  function initHostStreaming() {
+    startStreamBtn.disabled = true;
+    startStreamBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Initializing Peer...';
+
+    streamCode = Math.floor(10000 + Math.random() * 90000).toString();
+    hostPeer = new Peer('ps_' + streamCode);
+
+    hostPeer.on('open', (id) => {
+      startStreamBtn.style.display = 'none';
+      streamCodeDisplay.textContent = streamCode;
+      streamCodeDisplay.style.display = 'block';
+      streamActiveNotice.style.display = 'block';
+      streamShareButtons.style.display = 'flex';
+      AlertKit.success('Streaming Active', 'Share the 5-digit code. Keep this tab open.');
+    });
+
+    hostPeer.on('connection', (connection) => {
+      hostConn = connection;
+      hostConn.on('open', () => {
+        hostConn.send({ type: 'FILE_LIST', files: folderFilesMeta });
+      });
+
+      hostConn.on('data', async (data) => {
+        if (data.type === 'REQUEST_FILE') {
+          const file = folderFilesMap.get(data.id);
+          if (file) {
+            const buffer = await file.arrayBuffer();
+            hostConn.send({
+              type: 'FILE_DATA',
+              id: data.id,
+              buffer: buffer,
+              fileType: file.type,
+              fileName: file.name
+            });
+          }
+        }
+      });
+    });
+
+    hostPeer.on('error', (err) => {
+      if (err.type === 'unavailable-id') {
+        initHostStreaming();
+      } else {
+        startStreamBtn.disabled = false;
+        startStreamBtn.innerHTML = '<i class="fas fa-satellite-dish"></i> Start Live Streaming';
+        AlertKit.error('Connection Error', 'Failed to initialize P2P server.');
+      }
+    });
+  }
+
+  function copyToClipboard(code) {
+    navigator.clipboard.writeText(code)
       .then(() => AlertKit.toast('Code copied!', 'success'))
       .catch(() => AlertKit.toast('Failed to copy', 'error'));
   }
 
-  function shareCodeViaAPI() {
-    const shareUrl = `${window.location.href.split('?')[0]}?code=${shareCode}`;
+  function shareCodeViaUrl(code) {
+    const shareUrl = `${window.location.href.split('?')[0]}?code=${code}`;
     if (typeof window.openShareModal === 'function') {
       window.openShareModal(shareUrl);
     } else {
-      copyCode();
+      copyToClipboard(code);
     }
   }
+
+  viewBtn.addEventListener('click', viewPhotos);
+  if (viewForm) {
+    viewForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      viewPhotos();
+    });
+  }
+  codeInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      viewPhotos();
+    }
+  });
 
   async function viewPhotos() {
     const code = codeInput.value.trim();
@@ -651,59 +824,148 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     }
 
     viewerGallery.innerHTML = '';
+    explorerList.innerHTML = '';
+    mediaStage.innerHTML = '<span style="font-size: 13px; color: var(--dark-text-dim);">Select a file to play or view</span>';
+    liveStreamViewer.style.display = 'none';
+
     viewBtn.disabled = true;
-    viewBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+    viewBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Checking...';
+
+    let foundInStorage = false;
 
     try {
       const res = await fetch(`${window.MEDIA_STORAGE_URL}/photos/${code}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.images && data.images.length > 0) {
+          if (data.expires && data.expires < Date.now()) {
+            AlertKit.error('Expired', 'This share code has expired.');
+            viewBtn.disabled = false;
+            viewBtn.innerHTML = '<i class="fas fa-eye"></i> View';
+            return;
+          }
+          foundInStorage = true;
+          viewBtn.disabled = false;
+          viewBtn.innerHTML = '<i class="fas fa-eye"></i> View';
 
-      viewBtn.disabled = false;
-      viewBtn.innerHTML = '<i class="fas fa-eye"></i> View';
-
-      if (res.status === 404) {
-        AlertKit.toast('No photos found for this code', 'error');
-        return;
+          data.images.forEach((src, idx) => {
+            const item = document.createElement('div');
+            item.className = 'grid-item';
+            const img = document.createElement('img');
+            img.src = src;
+            img.alt = `Photo ${idx + 1}`;
+            img.loading = 'lazy';
+            item.appendChild(img);
+            viewerGallery.appendChild(item);
+          });
+          return;
+        }
       }
+    } catch (e) {}
 
-      if (!res.ok) {
-        AlertKit.toast('Unable to fetch photos from server', 'error');
-        return;
+    if (!foundInStorage) {
+      viewBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Connecting Live...';
+      connectToLivePeer(code);
+    }
+  }
+
+  function connectToLivePeer(code) {
+    if (viewerPeer) viewerPeer.destroy();
+    viewerPeer = new Peer();
+
+    let hasResponded = false;
+    const timeout = setTimeout(() => {
+      if (!hasResponded) {
+        viewBtn.disabled = false;
+        viewBtn.innerHTML = '<i class="fas fa-eye"></i> View';
+        AlertKit.toast('No active upload or live stream found for this code', 'error');
+        if (viewerConn) viewerConn.close();
       }
+    }, 6000);
 
-      const data = await res.json();
+    viewerPeer.on('open', () => {
+      viewerConn = viewerPeer.connect('ps_' + code, { reliable: true });
 
-      if (!data) { 
-        AlertKit.toast('No photos found for this code', 'error'); 
-        return; 
-      }
-
-      if (data.expires && data.expires < Date.now()) {
-        AlertKit.error('Expired', 'This share code has expired and is no longer available.');
-        return;
-      }
-
-      const images = Array.isArray(data.images) ? data.images : [];
-      if (images.length === 0) { 
-        AlertKit.toast('No photos found for this code', 'error'); 
-        return; 
-      }
-
-      images.forEach((src, idx) => {
-        const item = document.createElement('div');
-        item.className = 'grid-item';
-
-        const img = document.createElement('img');
-        img.src = src;
-        img.alt = `Photo ${idx + 1}`;
-        img.loading = 'lazy';
-
-        item.appendChild(img);
-        viewerGallery.appendChild(item);
+      viewerConn.on('open', () => {
+        hasResponded = true;
+        clearTimeout(timeout);
+        viewBtn.disabled = false;
+        viewBtn.innerHTML = '<i class="fas fa-eye"></i> View';
+        viewerGallery.innerHTML = '';
+        liveStreamViewer.style.display = 'block';
       });
-    } catch (error) {
+
+      viewerConn.on('data', (data) => {
+        if (data.type === 'FILE_LIST') {
+          renderStreamExplorer(data.files);
+        } else if (data.type === 'FILE_DATA') {
+          renderActiveMedia(data);
+        }
+      });
+
+      viewerConn.on('close', () => {
+        AlertKit.toast('Host closed connection or went offline', 'warning');
+      });
+    });
+
+    viewerPeer.on('error', (err) => {
+      hasResponded = true;
+      clearTimeout(timeout);
       viewBtn.disabled = false;
       viewBtn.innerHTML = '<i class="fas fa-eye"></i> View';
-      AlertKit.toast('Error loading photos', 'error');
+      AlertKit.toast('No active upload or live stream found for this code', 'error');
+    });
+  }
+
+  function renderStreamExplorer(files) {
+    liveFileCount.textContent = `${files.length} Files`;
+    explorerList.innerHTML = '';
+
+    files.forEach(file => {
+      const item = document.createElement('div');
+      item.className = 'explorer-item';
+
+      const name = document.createElement('span');
+      name.className = 'explorer-filename';
+      name.textContent = file.name;
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'explorer-play-btn';
+      btn.textContent = 'View';
+      btn.onclick = () => {
+        mediaStage.innerHTML = '<i class="fas fa-spinner fa-spin" style="font-size: 24px; color: var(--accent);"></i>';
+        viewerConn.send({ type: 'REQUEST_FILE', id: file.id });
+      };
+
+      item.appendChild(name);
+      item.appendChild(btn);
+      explorerList.appendChild(item);
+    });
+  }
+
+  function renderActiveMedia(data) {
+    mediaStage.innerHTML = '';
+    const blob = new Blob([data.buffer], { type: data.fileType });
+    const url = URL.createObjectURL(blob);
+
+    if (data.fileType.startsWith('image/')) {
+      const img = document.createElement('img');
+      img.src = url;
+      img.alt = data.fileName;
+      mediaStage.appendChild(img);
+    } else if (data.fileType.startsWith('video/')) {
+      const video = document.createElement('video');
+      video.src = url;
+      video.controls = true;
+      video.autoplay = true;
+      mediaStage.appendChild(video);
+    } else if (data.fileType.startsWith('audio/')) {
+      const audio = document.createElement('audio');
+      audio.src = url;
+      audio.controls = true;
+      audio.autoplay = true;
+      mediaStage.appendChild(audio);
     }
   }
 
@@ -711,10 +973,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     const urlParams = new URLSearchParams(window.location.search);
     const code = urlParams.get('code');
     if (code && code.length === 5 && /^\d+$/.test(code)) {
-      tabUpload.classList.remove('active');
-      tabView.classList.add('active');
-      uploadTab.classList.remove('active');
-      viewTab.classList.add('active');
+      switchTab(tabView, viewTab);
       codeInput.value = code;
       viewPhotos();
     }
