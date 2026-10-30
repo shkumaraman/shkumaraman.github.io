@@ -291,8 +291,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   width: 8px; height: 8px; background: #10b981; border-radius: 50%;
   box-shadow: 0 0 10px #10b981; animation: livePulse 1.2s infinite;
 }
-.current-viewing-text { font-size: 14px; font-weight: 600; word-break: break-all; }
-.viewing-time { font-size: 11px; margin-left: 6px; }
 
 .media-stream-box {
   margin-top: 15px; border-radius: 12px; overflow: hidden;
@@ -461,8 +459,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
             <span class="live-pulse-badge"><span class="pulse-circle"></span> Live Sync Monitor</span>
             <span id="liveClients" class="muted" style="font-size: 11px;">Waiting for viewer...</span>
           </div>
-          <div class="muted" style="font-size: 12px; margin-top: 4px;">Viewer is currently watching:</div>
-          <div id="liveCurrentViewing" class="current-viewing-text">No file opened yet.</div>
         </div>
 
         <div class="media-stream-box" id="hostPreviewBox"></div>
@@ -841,8 +837,8 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   const MEDIA_EXTS = [...IMAGE_EXTS, ...VIDEO_EXTS, ...AUDIO_EXTS];
   const CHUNK_SIZE = 64 * 1024;
   const MAX_BUFFERED = 4 * 1024 * 1024;
+  const RENDER_BATCH = 100;
   const START_LABEL = '<i class="fas fa-tower-broadcast"></i> Start Live Broadcast';
-  const NO_FILE_TEXT = 'No file opened yet.';
 
   const getExt = (name) => (name.split('.').pop() || '').toLowerCase();
   const iconFor = (ext) =>
@@ -874,6 +870,29 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     return row;
   }
 
+  function renderInBatches(container, items, makeRow) {
+    container.innerHTML = '';
+    let shown = 0;
+    const more = document.createElement('button');
+    more.type = 'button';
+    more.className = 'btn-secondary';
+    more.style.cssText = 'width:100%; padding:8px; font-size:12px;';
+    const next = () => {
+      const frag = document.createDocumentFragment();
+      items.slice(shown, shown + RENDER_BATCH).forEach(item => frag.appendChild(makeRow(item)));
+      shown = Math.min(shown + RENDER_BATCH, items.length);
+      container.insertBefore(frag, more);
+      if (shown >= items.length) {
+        more.remove();
+      } else {
+        more.textContent = `Show more (${items.length - shown} left)`;
+      }
+    };
+    more.addEventListener('click', next);
+    container.appendChild(more);
+    next();
+  }
+
   const liveSetup = document.getElementById('liveSetup');
   const liveFolderInput = document.getElementById('liveFolderInput');
   const liveFilesInput = document.getElementById('liveFilesInput');
@@ -889,7 +908,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
   const liveCopyBtn = document.getElementById('liveCopyBtn');
   const liveShareBtn = document.getElementById('liveShareBtn');
   const liveClients = document.getElementById('liveClients');
-  const liveCurrentViewing = document.getElementById('liveCurrentViewing');
   const hostPreviewBox = document.getElementById('hostPreviewBox');
   const hostedFilesCount = document.getElementById('hostedFilesCount');
   const hostedFilesList = document.getElementById('hostedFilesList');
@@ -948,6 +966,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
     liveStartBtn.disabled = true;
     liveStartBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Starting...';
+    await sleep(30);
 
     hostFileMap.clear();
     hostFileListMeta = [];
@@ -957,20 +976,21 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       const ext = getExt(file.name);
       const id = 'm_' + idx + '_' + Math.random().toString(36).substring(2, 6);
       hostFileMap.set(id, file);
-      const meta = {
+      hostFileListMeta.push({
         id,
         name: file.webkitRelativePath || file.name,
         size: formatMB(file.size),
         type: file.type || ('media/' + ext)
-      };
-      hostFileListMeta.push(meta);
+      });
+    });
 
+    hostedFilesCount.textContent = hostFileListMeta.length;
+    renderInBatches(hostedFilesList, hostFileListMeta, (meta) => {
       const sizeEl = document.createElement('span');
       sizeEl.className = 'file-size';
       sizeEl.textContent = meta.size;
-      hostedFilesList.appendChild(buildFileRow(meta.name, ext, sizeEl));
+      return buildFileRow(meta.name, getExt(meta.name), sizeEl);
     });
-    hostedFilesCount.textContent = hostFileListMeta.length;
 
     liveCode = await getAvailableShareCode();
     initHostPeer();
@@ -1052,21 +1072,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     else if (payload.action === 'pause') m.pause();
   }
 
-  function showViewing(fileId, time) {
-    const meta = hostFileListMeta.find(m => m.id === fileId);
-    if (!meta) return;
-    liveCurrentViewing.textContent = '';
-    const name = document.createElement('span');
-    name.style.color = 'var(--accent)';
-    name.innerHTML = '<i class="fas fa-eye"></i> ';
-    name.append(meta.name);
-    const when = document.createElement('span');
-    when.className = 'viewing-time muted';
-    when.textContent = `(${String(time || '').slice(0, 20)})`;
-    liveCurrentViewing.append(name, when);
-    showHostPreview(fileId);
-  }
-
   async function streamFileToViewer(conn, id) {
     const file = hostFileMap.get(id);
     if (!file) return;
@@ -1100,7 +1105,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       liveSetup.style.display = 'none';
       liveHostDetails.style.display = 'block';
       liveCodeDisplay.textContent = liveCode;
-      liveCurrentViewing.textContent = NO_FILE_TEXT;
       clearHostPreview();
       updateClientCount();
       AlertKit.success('Broadcast Started', 'Share the code below with your viewer.');
@@ -1116,7 +1120,7 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       conn.on('data', (payload) => {
         if (!payload || typeof payload !== 'object') return;
         if (payload.type === 'VIEWING_NOW') {
-          showViewing(payload.id, payload.time);
+          showHostPreview(payload.id);
         } else if (payload.type === 'PLAYBACK') {
           applyPlayback(payload);
         } else if (payload.type === 'REQUEST_STREAM') {
@@ -1128,7 +1132,6 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
         hostConnections.delete(conn);
         updateClientCount();
         if (hostConnections.size === 0) {
-          liveCurrentViewing.textContent = NO_FILE_TEXT;
           clearHostPreview();
         }
       };
@@ -1330,15 +1333,13 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
   function renderLiveFileList(files) {
     liveViewerCount.textContent = `${files.length} items`;
-    liveViewerFileList.innerHTML = '';
-
-    files.forEach(file => {
+    renderInBatches(liveViewerFileList, files, (file) => {
       const openBtn = document.createElement('button');
       openBtn.type = 'button';
       openBtn.className = 'btn-primary open-btn';
       openBtn.innerHTML = '<i class="fas fa-play"></i> Open';
       openBtn.addEventListener('click', () => openLiveFile(file));
-      liveViewerFileList.appendChild(buildFileRow(file.name, getExt(file.name), openBtn));
+      return buildFileRow(file.name, getExt(file.name), openBtn);
     });
   }
 
