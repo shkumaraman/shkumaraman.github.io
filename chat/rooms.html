@@ -697,14 +697,14 @@ main {
 
   <section id="roomsSection" class="content-section">
     <div id="sticky-ad-wrapper" style="position: sticky; top: 50px; z-index: 999; width: 320px; height: 100px; margin: 0 auto; overflow: hidden;">
-  <ins class="adsbygoogle"
-       style="display:inline-block;width:320px;height:100px"
-       data-ad-client="ca-pub-7059052735946479"
-       data-ad-slot="8592327962"></ins>
-  <script>
-       (adsbygoogle = window.adsbygoogle || []).push({});
-  </script>
-</div>
+      <ins class="adsbygoogle"
+           style="display:inline-block;width:320px;height:100px"
+           data-ad-client="ca-pub-7059052735946479"
+           data-ad-slot="8592327962"></ins>
+      <script>
+           (adsbygoogle = window.adsbygoogle || []).push({});
+      </script>
+    </div>
     
     <search class="search-section">
       <form class="search-box" role="search" onsubmit="return false;">
@@ -860,7 +860,7 @@ main {
          data-ad-slot="8592327962"></ins>
     <script>
          (adsbygoogle = window.adsbygoogle || []).push({});
-    </script>
+      </script>
  </div>
   
   <div id="comprehensive-keywords" style="margin: 20px auto 0 auto; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;">
@@ -974,7 +974,7 @@ let replyListenerUnsubscribe = null;
 let currentSearchTerm = '';
 
 const avatarColors = ['#ff6b4a', '#6c5ce7', '#00b894', '#0984e3', '#e84393', '#fdcb6e', '#00cec9', '#d63031'];
-const fallbackNames = ['Riya', 'Aman', 'Sneha', 'Rahul', 'Pooja', 'Karan', 'Neha', 'Vikram', 'Simran', 'Arjun'];
+const fallbackPool = ['Alex', 'Sam', 'Rahul', 'Priya', 'Leo', 'Chris', 'Neha', 'Max', 'Kabir', 'Maya', 'Jordan', 'Dev', 'Tara', 'Aryan', 'Zoya'];
 
 function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -984,21 +984,6 @@ function colorFor(name) {
   let h = 0;
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
   return avatarColors[h % avatarColors.length];
-}
-
-function hashStr(str) {
-  let h = 7;
-  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) >>> 0;
-  return h;
-}
-
-function getFallbackMembers(roomName) {
-  const h = hashStr(roomName);
-  const count = 185 + (h % 41);
-  const n1 = fallbackNames[h % fallbackNames.length];
-  let n2 = fallbackNames[(h >> 3) % fallbackNames.length];
-  if (n2 === n1) n2 = fallbackNames[(h + 1) % fallbackNames.length];
-  return { count, names: [n1, n2] };
 }
 
 function getMemberInitial(name) {
@@ -1014,8 +999,21 @@ function getMemberInitial(name) {
   return (first && first.trim()) ? first.toUpperCase() : 'U';
 }
 
+function getRoomSeed(name) {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) {
+    h = ((h << 5) - h) + name.charCodeAt(i);
+    h |= 0;
+  }
+  return Math.abs(h);
+}
+
 function buildMembersRow(roomName, roomData) {
   const realCount = Math.max(0, Number(roomData && roomData.memberCount) || 0);
+  const seed = getRoomSeed(roomName || 'TalkRush');
+  const baseCount = 120 + (seed % 81);
+  const totalCount = baseCount + realCount;
+
   const rawPreview = (roomData && roomData.memberPreview) || {};
   let names = [];
 
@@ -1042,17 +1040,16 @@ function buildMembersRow(roomName, roomData) {
     }
   });
 
-  let count;
-  let displayNames;
-
-  if (realCount > 0 && uniqueNames.length > 0) {
-    count = realCount;
-    displayNames = uniqueNames.slice(0, 3);
-  } else {
-    const fb = getFallbackMembers(roomName);
-    count = fb.count;
-    displayNames = fb.names;
+  let poolIdx = 0;
+  while (uniqueNames.length < 3) {
+    const candidate = fallbackPool[(seed + poolIdx * 5) % fallbackPool.length];
+    if (!uniqueNames.some(existing => existing.toLowerCase() === candidate.toLowerCase())) {
+      uniqueNames.push(candidate);
+    }
+    poolIdx++;
   }
+
+  const displayNames = uniqueNames.slice(0, 3);
 
   const avatarsHtml = displayNames.map(name => {
     const safeName = escapeHtml(name);
@@ -1060,13 +1057,13 @@ function buildMembersRow(roomName, roomData) {
     return `<span class="avatar" style="background:${colorFor(name)}" title="${safeName}">${initial}</span>`;
   }).join('');
 
-  const extra = Math.max(0, count - displayNames.length);
+  const extra = Math.max(0, totalCount - displayNames.length);
   const moreChip = extra > 0 ? `<span class="avatar avatar-more" title="${extra} more">+${extra > 99 ? '99' : extra}</span>` : '';
 
   return `
     <div class="room-members">
       <div class="avatar-stack">${avatarsHtml}${moreChip}</div>
-      <div class="members-count"><strong>${count}</strong> active</div>
+      <div class="members-count"><strong>${totalCount}</strong> online</div>
     </div>
   `;
 }
