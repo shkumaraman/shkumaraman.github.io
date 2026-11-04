@@ -667,6 +667,29 @@ let friendsPingInterval = null;
 let reconnectTimer = null;
 let retryCount = 0;
 
+async function compressImage(file, maxSize = 1280, quality = 0.75) {
+  if (file.type === 'image/gif') return file;
+  try {
+    const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    const scale = Math.min(1, maxSize / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+
+    const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', quality));
+    if (!blob || blob.size >= file.size) return file;
+
+    return new File([blob], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' });
+  } catch (err) {
+    return file;
+  }
+}
+
 function safeMediaUrl(url) {
   if (typeof url !== 'string' || !url) return null;
   try {
@@ -1387,6 +1410,7 @@ pinnedBar.addEventListener('click', () => {
     } else {
       const img = document.createElement('img');
       img.src = url;
+      img.loading = "lazy";
       img.alt = `Pinned ${data.type}`;
       body.appendChild(img);
     }
@@ -1491,7 +1515,8 @@ async function sendImageToGroup(file) {
 
   const loadingBubble = showUploadingBubble();
   try {
-    const imageUrl = await window.uploadMediaToServer(file, file.name);
+    const fileToUpload = await compressImage(file);
+    const imageUrl = await window.uploadMediaToServer(fileToUpload, fileToUpload.name);
     const message = { type: "image", timestamp: now(), url: imageUrl, nickname: myNickname };
     if (replyingTo) {
       message.replyTo = buildReplyPayload();
