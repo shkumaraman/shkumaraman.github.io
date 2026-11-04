@@ -556,15 +556,22 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
   }
 
   .pr-modal {
-    border: none;
-    padding: 0;
-    background: transparent;
-    margin: auto;
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(2px);
     z-index: 999;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
   }
 
-  .pr-modal::backdrop {
-    background-color: rgba(0, 0, 0, 0.6);
+  .pr-modal.open {
+    display: flex;
   }
 
   .pr-modal-content {
@@ -797,7 +804,7 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
   }
 </style>
 
-<dialog id="prRoomModal" class="pr-modal">
+<div id="prRoomModal" class="pr-modal">
   <div class="pr-modal-content">
     <div id="prCreateRoomSection">
       <p>Create a new 2 person private room and share the code with someone:</p>
@@ -819,7 +826,7 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
       </div>
     </form>
   </div>
-</dialog>
+</div>
 
 <dialog id="callTypeModal" class="custom-type-modal">
   <div class="custom-type-box">
@@ -887,11 +894,17 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
   <li class="context-menu-item" id="contextDeleteBtn" style="color: #ff4d4d;">🗑 Delete</li>
 </menu>
 
-<ins class="adsbygoogle" style="display:block" data-ad-client="ca-pub-7059052735946479" data-ad-slot="8592327962"
-  data-ad-format="auto" data-full-width-responsive="true"></ins>
-<script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
-
 <article class="info-section" style="padding: 20px; max-width: 600px; margin: 0 auto; box-sizing: border-box;">
+  <div style="width: 300px; height: 250px; margin: 16px auto; display: flex; justify-content: center; align-items: center; overflow: hidden;">
+    <ins class="adsbygoogle"
+         style="display:inline-block;width:300px;height:250px"
+         data-ad-client="ca-pub-7059052735946479"
+         data-ad-slot="8592327962"></ins>
+    <script>
+         (adsbygoogle = window.adsbygoogle || []).push({});
+    </script>
+ </div>
+  
   <h1>Private 1v1 Chat – Invite a Friend & Connect Instantly</h1>
   <p>Create a private room and invite exactly who you want. No random strangers — just you and the person you choose. Share a room code or a direct invite link and start chatting in a secure, private space.</p>
 
@@ -914,12 +927,6 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
   <h2>Is TalkRush Private Chat Secure</h2>
   <p>Yes. All communication happens directly between the two participants using <strong>peer-to-peer (WebRTC)</strong> technology — messages and video never pass through a central server. Your room automatically closes when either participant leaves, and no chat history is stored.</p>
   <p>Never share your room code publicly if you want to keep the conversation private. Rooms support a maximum of 2 people, so no one can silently join in the background.</p>
-
-  <ins class="adsbygoogle" style="display:block" data-ad-client="ca-pub-7059052735946479" data-ad-slot="8592327962"
-    data-ad-format="auto" data-full-width-responsive="true"></ins>
-  <script>
-    (adsbygoogle = window.adsbygoogle || []).push({});
-  </script>
 
   <div id="comprehensive-keywords"
     style="padding: 20px; margin: 20px auto 0 auto; display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;">
@@ -1359,7 +1366,7 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
         storage.saveRoomCode();
         AlertKit.success("Room Created!", "Share this code with someone to chat.");
         msg.system("Room created! Room code: " + code);
-        el.prRoomModal.close();
+        el.prRoomModal.classList.remove('open');
         room.setupListener(code);
       } catch (err) {
         AlertKit.error("Failed", "Error creating room. Please try again.");
@@ -1410,7 +1417,7 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
         for (const id of cleanParticipants) {
           if (id !== state.myId) await conn.connectTo(id);
         }
-        el.prRoomModal.close();
+        el.prRoomModal.classList.remove('open');
         room.setupListener(code);
       } catch (e) {
         AlertKit.error("Join Failed", e.message === "Room is full" ? "Room is full. Only 2 participants allowed." : "Room not found. Please check the code.");
@@ -1439,7 +1446,7 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
     },
 
     autoRejoin: async () => {
-      if (!state.currentRoomCode || !state.myId) { el.prRoomModal.showModal(); return; }
+      if (!state.currentRoomCode || !state.myId) { el.prRoomModal.classList.add('open'); return; }
       try {
         const snap = await new Promise((res) => onValue(ref(db, "rooms/" + state.currentRoomCode), res, { onlyOnce: true }));
         if (!snap.exists()) throw new Error("Room no longer exists");
@@ -1470,7 +1477,7 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
       } catch (err) {
         storage.clearRoomCode();
         AlertKit.info("Room Closed", "Please create or join a new room.");
-        el.prRoomModal.showModal();
+        el.prRoomModal.classList.add('open');
       }
     },
 
@@ -1618,11 +1625,11 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
 
   function setupEvents() {
     el.roomBtn.onclick = () => {
-      if (el.prRoomModal.open) {
-        el.prRoomModal.close();
+      if (el.prRoomModal.classList.contains('open')) {
+        el.prRoomModal.classList.remove('open');
       } else {
         if (state.currentRoomCode) el.prRoomCodeInput.value = state.currentRoomCode;
-        el.prRoomModal.showModal();
+        el.prRoomModal.classList.add('open');
       }
     };
 
@@ -1714,7 +1721,7 @@ description: "Create a secure 2-person private chat room. Share a code, enjoy sa
     });
 
     el.prRoomModal.addEventListener("click", (e) => {
-      if (e.target === el.prRoomModal) el.prRoomModal.close();
+      if (e.target === el.prRoomModal) el.prRoomModal.classList.remove('open');
     });
 
     el.callTypeModal.addEventListener("click", (e) => {
