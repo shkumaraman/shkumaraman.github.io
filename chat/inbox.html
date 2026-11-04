@@ -1518,6 +1518,29 @@ const editBar = document.getElementById("editBar");
 const msgInput = document.getElementById('msgInput');
 const contextMenu = document.getElementById('contextMenu');
 
+async function compressImage(file, maxSize = 1280, quality = 0.75) {
+  if (file.type === 'image/gif') return file;
+  try {
+    const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    const scale = Math.min(1, maxSize / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+
+    const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', quality));
+    if (!blob || blob.size >= file.size) return file;
+
+    return new File([blob], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' });
+  } catch (err) {
+    return file;
+  }
+}
+
 function markSeen(chatId) {
   if (!chatId) return;
   let lastSeenMap = {};
@@ -2627,7 +2650,8 @@ async function handleImageUpload(e) {
   const loadingBubble = showUploadingBubble();
 
   try {
-    const imageUrl = await window.uploadMediaToServer(file, file.name);
+    const fileToUpload = await compressImage(file);
+    const imageUrl = await window.uploadMediaToServer(fileToUpload, fileToUpload.name);
 
     const message = { nickname: myNickname, url: imageUrl, timestamp: now(), type: "image" };
 
@@ -2743,6 +2767,7 @@ function appendMessageToChat(msg, isMe) {
     bubble.appendChild(audioBubble);
   } else if (msg.type === 'image' || msg.type === 'gif') {
     const img = document.createElement("img");
+    img.loading = "lazy";
     img.src = msg.url;
     bubble.appendChild(img);
   } else {
