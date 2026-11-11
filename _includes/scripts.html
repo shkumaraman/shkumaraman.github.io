@@ -1,123 +1,134 @@
 <script>
+// ---------- Service Worker ----------
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', function() {
+  window.addEventListener('load', function () {
     navigator.serviceWorker.register('{{ "/service-worker.js" | relative_url }}')
       .then(() => console.log('Service Worker registered'))
       .catch(err => console.log('Service Worker failed:', err));
   });
 }
-</script>
 
-<script>
-(function() {
-    let maxVh = window.innerHeight;
-    let currentWidth = window.innerWidth;
+// ---------- Theme toggle ----------
+document.addEventListener('DOMContentLoaded', function () {
+  const themeToggle = document.getElementById('themeToggle');
+  if (!themeToggle) return;
 
-    if (window.visualViewport) {
+  const body = document.body;
+  const savedTheme = localStorage.getItem('theme') ||
+    (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+
+  function applyTheme(theme) {
+    body.classList.toggle('light-mode', theme === 'light');
+    themeToggle.innerHTML = theme === 'light'
+      ? '<i class="fas fa-sun"></i>'
+      : '<i class="fas fa-moon"></i>';
+  }
+
+  applyTheme(savedTheme);
+
+  themeToggle.addEventListener('click', () => {
+    const next = body.classList.contains('light-mode') ? 'dark' : 'light';
+    localStorage.setItem('theme', next);
+    applyTheme(next);
+  });
+});
+
+// ---------- Mobile keyboard / viewport fix ----------
+(function () {
+  let maxVh = window.innerHeight;
+  let currentWidth = window.innerWidth;
+
+  if (window.visualViewport) {
+    maxVh = window.visualViewport.height;
+
+    window.visualViewport.addEventListener('resize', function () {
+      const chatContainer = document.querySelector('.chat-container');
+      if (window.visualViewport.scale > 1.05) return;
+
+      if (window.innerWidth !== currentWidth) {
+        currentWidth = window.innerWidth;
         maxVh = window.visualViewport.height;
-
-        window.visualViewport.addEventListener('resize', function() {
-            const chatContainer = document.querySelector('.chat-container');
-            const isZoomed = window.visualViewport.scale > 1.05;
-            if (isZoomed) {
-                return;
-            }
-
-            if (window.innerWidth !== currentWidth) {
-                currentWidth = window.innerWidth;
-                maxVh = window.visualViewport.height;
-            }
-
-            if (window.visualViewport.height > maxVh) {
-                maxVh = window.visualViewport.height;
-            }
-
-            const isKeyboardOpen = window.visualViewport.height < (maxVh - 150);
-
-            if (isKeyboardOpen) {
-                document.documentElement.style.overflow = 'hidden';
-                document.body.style.overflow = 'hidden';
-                if (chatContainer) chatContainer.style.height = window.visualViewport.height + 'px';
-                window.scrollTo(0, 0);
-            } else {
-                document.documentElement.style.overflow = '';
-                document.body.style.overflow = '';
-                if (chatContainer) chatContainer.style.height = '';
-            }
-
-            const chatLog = document.getElementById("chatLog");
-            if (chatLog) {
-                chatLog.scrollTop = chatLog.scrollHeight;
-            }
-        });
-    }
-
-    document.addEventListener('focusin', function(e) {
-        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
-            setTimeout(function() { window.scrollTo(0, 0); }, 50);
-        }
-    });
-})();
-</script>
-
-<script>
-  window.MEDIA_STORAGE_URL = "https://rtdb-0jsd.onrender.com";
-
-  window.rtdbPush = async function(path, data) {
-    const cleanPath = String(path || '').replace(/^\/+|\/+$/g, '');
-    const res = await fetch(`${window.MEDIA_STORAGE_URL}/${cleanPath}.json`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data)
-    });
-    if (!res.ok) throw new Error(`Push failed (${res.status})`);
-    return await res.json();
-  };
-
-  window.uploadMediaToServer = async function(fileOrBlob, originalName = "file") {
-    return new Promise((resolve, reject) => {
-      const formData = new FormData();
-      formData.append("file", fileOrBlob, originalName);
-      formData.append("target_path", "uploads");
-
-      const xhr = new XMLHttpRequest();
-      xhr.open("POST", `${window.MEDIA_STORAGE_URL}/api/upload`, true);
-
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            const result = JSON.parse(xhr.responseText);
-            const secureUrl = (result.data && result.data.url ? result.data.url : '').replace(/^http:\/\//i, 'https://');
-            resolve(secureUrl);
-          } catch (e) {
-            reject(new Error("Invalid JSON response from server"));
-          }
-        } else {
-          reject(new Error(`Upload failed (${xhr.status})`));
-        }
-      };
-
-      xhr.onerror = () => {
-        reject(new Error("Network error or CORS policy blocked the upload"));
-      };
-
-      xhr.send(formData);
-    });
-  };
-
-  window.deleteMediaFromServer = async function(fileUrl) {
-    if (!fileUrl || !window.MEDIA_STORAGE_URL) return;
-
-    try {
-      const urlObj = new URL(fileUrl);
-      const filename = urlObj.pathname.split('/').filter(Boolean).pop();
-
-      if (filename) {
-        await fetch(`${window.MEDIA_STORAGE_URL}/uploads/${encodeURIComponent(filename)}`, {
-          method: "DELETE",
-          mode: "cors"
-        });
       }
-    } catch (e) {}
-  };
+      if (window.visualViewport.height > maxVh) {
+        maxVh = window.visualViewport.height;
+      }
+
+      const isKeyboardOpen = window.visualViewport.height < (maxVh - 150);
+
+      if (isKeyboardOpen) {
+        document.documentElement.style.overflow = 'hidden';
+        document.body.style.overflow = 'hidden';
+        if (chatContainer) chatContainer.style.height = window.visualViewport.height + 'px';
+        window.scrollTo(0, 0);
+      } else {
+        document.documentElement.style.overflow = '';
+        document.body.style.overflow = '';
+        if (chatContainer) chatContainer.style.height = '';
+      }
+
+      const chatLog = document.getElementById('chatLog');
+      if (chatLog) chatLog.scrollTop = chatLog.scrollHeight;
+    });
+  }
+
+  document.addEventListener('focusin', function (e) {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+      setTimeout(() => window.scrollTo(0, 0), 50);
+    }
+  });
+})();
+
+// ---------- Media storage helpers ----------
+window.MEDIA_STORAGE_URL = "https://rtdb-0jsd.onrender.com";
+
+window.rtdbPush = async function (path, data) {
+  const cleanPath = String(path || '').replace(/^\/+|\/+$/g, '');
+  const res = await fetch(`${window.MEDIA_STORAGE_URL}/${cleanPath}.json`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data)
+  });
+  if (!res.ok) throw new Error(`Push failed (${res.status})`);
+  return await res.json();
+};
+
+window.uploadMediaToServer = function (fileOrBlob, originalName = "file") {
+  return new Promise((resolve, reject) => {
+    const formData = new FormData();
+    formData.append("file", fileOrBlob, originalName);
+    formData.append("target_path", "uploads");
+
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${window.MEDIA_STORAGE_URL}/api/upload`, true);
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const result = JSON.parse(xhr.responseText);
+          const url = (result.data && result.data.url) ? result.data.url : '';
+          resolve(url.replace(/^http:\/\//i, 'https://'));
+        } catch (e) {
+          reject(new Error("Invalid JSON response from server"));
+        }
+      } else {
+        reject(new Error(`Upload failed (${xhr.status})`));
+      }
+    };
+    xhr.onerror = () => reject(new Error("Network error or CORS policy blocked the upload"));
+    xhr.send(formData);
+  });
+};
+
+window.deleteMediaFromServer = async function (fileUrl) {
+  if (!fileUrl || !window.MEDIA_STORAGE_URL) return;
+  try {
+    const filename = new URL(fileUrl).pathname.split('/').filter(Boolean).pop();
+    if (filename) {
+      await fetch(`${window.MEDIA_STORAGE_URL}/uploads/${encodeURIComponent(filename)}`, {
+        method: "DELETE",
+        mode: "cors"
+      });
+    }
+  } catch (e) {}
+};
 </script>
