@@ -838,7 +838,7 @@ body.light-mode {
   </div>
 
   <search class="search-section">
-    <form class="search-box" role="search" onsubmit="return false;">
+    <form class="search-box" id="activeSearchForm" role="search">
       <input type="search" id="activeSearchInput" class="search-input" placeholder="Search active users..." autocomplete="off" enterkeyhint="search">
       <button type="button" id="clearActiveSearch" class="clear-search-btn" title="Clear search" aria-label="Clear search">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -981,20 +981,30 @@ import { getDatabase, ref, onChildAdded, onChildChanged, onChildRemoved } from "
 
 const baseUrl = window.MEDIA_STORAGE_URL.replace(/\/$/, "");
 
-const apps = getApps();
-
-const firebaseConfigUsers = {
-  databaseURL: "https://talkrush4-default-rtdb.asia-southeast1.firebasedatabase.app"
-};
 const targetAppUsers = "TalkRushUsersApp";
-const appUsers = apps.find(a => a.name === targetAppUsers) || initializeApp(firebaseConfigUsers, targetAppUsers);
-const dbUsers = getDatabase(appUsers);
+const appUsers = getApps().find(a => a.name === targetAppUsers) || initializeApp({
+  databaseURL: "https://talkrush4-default-rtdb.asia-southeast1.firebasedatabase.app"
+}, targetAppUsers);
+const usersRef = ref(getDatabase(appUsers), 'users');
 
 const usersGrid = document.getElementById('usersGrid');
 const onlineCount = document.getElementById('onlineCount');
+const activeSearchForm = document.getElementById('activeSearchForm');
 const activeSearchInput = document.getElementById('activeSearchInput');
 const clearActiveSearch = document.getElementById('clearActiveSearch');
+
 const HOURS_MS = 3 * 60 * 60 * 1000;
+const SEARCHED_CARD_ID = 'searched-user-card';
+const ONLINE_CARD_SELECTOR = '.user-card:not(.searched-user-card)';
+
+const ICONS = {
+  message: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+  add: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>',
+  male: '<svg viewBox="0 0 24 24" width="11" height="11" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="14" r="5"></circle><line x1="13.5" y1="10.5" x2="19" y2="5"></line><polyline points="14 5 19 5 19 10"></polyline></svg>',
+  female: '<svg viewBox="0 0 24 24" width="11" height="11" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="5"></circle><line x1="12" y1="14" x2="12" y2="21"></line><line x1="9" y1="18" x2="15" y2="18"></line></svg>',
+  search: '<svg viewBox="0 0 24 24" width="32" height="32" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 12px; opacity: 0.4;"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>',
+  ghost: '<i class="fas fa-ghost" style="font-size:30px; margin-bottom:10px;"></i><br>'
+};
 
 let currentNickname = localStorage.getItem("talkrush_nickname");
 let isInitialLoaded = false;
@@ -1003,8 +1013,21 @@ let friendsWs = null;
 let friendsPingInterval = null;
 let reconnectTimer = null;
 let retryCount = 0;
+let searchedTerm = '';
+let gridRefreshQueued = false;
 
 const cleanNick = (name) => (name || '').replace(/^tr\|/i, '').trim().toLowerCase();
+const displayNick = (name) => (name || '').replace(/^tr\|/i, '');
+const getMyNick = () => currentNickname || localStorage.getItem("talkrush_nickname");
+const getMyClean = () => cleanNick(getMyNick());
+
+const parseSearchTerm = (input) => {
+  const raw = String(input || '')
+    .replace(/[\u00A0\u200B-\u200D\uFEFF]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return raw.replace(/^(\s*TR\|)+/i, '').trim();
+};
 
 const timeAgo = (timestamp) => {
   if (!timestamp) return "Just now";
@@ -1012,234 +1035,180 @@ const timeAgo = (timestamp) => {
   if (seconds < 60) return "Just now";
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  return `${hours}h ago`;
+  return `${Math.floor(minutes / 60)}h ago`;
 };
 
-const isWithinHours = (timestamp) => {
-  if (!timestamp) return true;
-  return (Date.now() - timestamp) <= HOURS_MS;
+const isWithinHours = (timestamp) => !timestamp || (Date.now() - timestamp) <= HOURS_MS;
+
+const ui = {
+  warning: async (title, text) => window.AlertKit?.warning ? window.AlertKit.warning(title, text) : alert(text),
+  error: (title, text) => window.AlertKit?.error ? window.AlertKit.error(title, text) : alert(text),
+  confirm: async (title, text, yes, no) => window.AlertKit?.confirm ? window.AlertKit.confirm(title, text, yes, no) : confirm(text),
+  toast: (text, type) => window.AlertKit?.toast?.(text, type)
 };
 
-function handleSearchFilter() {
-  const searchTerm = activeSearchInput.value.toLowerCase().trim();
-  
-  if (clearActiveSearch) {
-    if (searchTerm) {
-      clearActiveSearch.classList.add('visible');
-    } else {
-      clearActiveSearch.classList.remove('visible');
-    }
+function setGridNotice(id, html) {
+  let el = document.getElementById(id);
+  if (!html) {
+    if (el) el.remove();
+    return;
   }
-
-  const allCards = usersGrid.querySelectorAll('.user-card');
-  let visibleCount = 0;
-
-  allCards.forEach(card => {
-    const nickname = (card.dataset.nickname || '').toLowerCase();
-    const cleanName = nickname.startsWith('tr|') ? nickname.substring(3) : nickname;
-    
-    if (nickname.includes(searchTerm) || cleanName.includes(searchTerm)) {
-      card.style.display = 'flex';
-      visibleCount++;
-    } else {
-      card.style.display = 'none';
-    }
-  });
-
-  let noResultsMsg = document.getElementById('noResultsMsg');
-  if (visibleCount === 0 && allCards.length > 0 && searchTerm !== '') {
-    if (!noResultsMsg) {
-      noResultsMsg = document.createElement('div');
-      noResultsMsg.className = 'empty-state';
-      noResultsMsg.id = 'noResultsMsg';
-      noResultsMsg.innerHTML = '<svg viewBox="0 0 24 24" width="32" height="32" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 12px; opacity: 0.4;"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg><p style="margin: 0; font-size: 15px;">No matching users found.</p>';
-      usersGrid.appendChild(noResultsMsg);
-    }
-  } else if (noResultsMsg) {
-    noResultsMsg.remove();
+  if (!el) {
+    el = document.createElement('div');
+    el.className = 'empty-state';
+    el.id = id;
+    usersGrid.appendChild(el);
   }
+  el.innerHTML = html;
 }
 
-if (activeSearchInput) {
-  activeSearchInput.addEventListener('input', handleSearchFilter);
-}
-
-if (clearActiveSearch) {
-  clearActiveSearch.addEventListener('click', () => {
-    activeSearchInput.value = '';
-    handleSearchFilter();
-  });
-}
-
-function updateGridState() {
-  const cards = usersGrid.querySelectorAll('.user-card');
-  onlineCount.textContent = cards.length;
-  const emptyMsg = document.getElementById('emptyStateMsg');
-  
-  if (cards.length === 0 && isInitialLoaded) {
-    if (!emptyMsg) {
-      usersGrid.innerHTML = '<div class="empty-state" id="emptyStateMsg"><i class="fas fa-ghost" style="font-size:30px; margin-bottom:10px;"></i><br>No one is online right now.</div>';
-    }
-  } else if (cards.length > 0 && emptyMsg) {
-    emptyMsg.remove();
-  }
-
-  if (activeSearchInput && activeSearchInput.value) {
-    handleSearchFilter();
-  }
+function updateStatusTime(el, timestamp) {
+  el.textContent = `Active · ${timeAgo(timestamp)}`;
+  el.setAttribute('datetime', new Date(timestamp).toISOString());
 }
 
 function renderActionButtons(card, nickname) {
-  const myClean = cleanNick(currentNickname || localStorage.getItem("talkrush_nickname"));
   const targetClean = cleanNick(nickname);
+  let group = card.querySelector('.action-group');
 
-  if (!nickname || myClean === targetClean) {
-    const ag = card.querySelector('.action-group');
-    if (ag) ag.remove();
+  if (!nickname || getMyClean() === targetClean) {
+    if (group) group.remove();
     return;
   }
 
-  let ag = card.querySelector('.action-group');
-  if (!ag) {
-    ag = document.createElement('div');
-    ag.className = 'action-group';
-    card.appendChild(ag);
+  const action = (myFriendsMap[nickname] || myFriendsMap[targetClean]) ? 'message' : 'add';
+  const current = group && group.firstElementChild;
+  if (current && current.dataset.action === action && current.dataset.nickname === nickname) return;
+
+  if (!group) {
+    group = document.createElement('div');
+    group.className = 'action-group';
+    card.appendChild(group);
   }
 
-  const isFriend = !!(myFriendsMap[nickname] || myFriendsMap[targetClean]);
-  const cleanName = nickname.startsWith('TR|') ? nickname.substring(3) : nickname;
-
-  ag.innerHTML = '';
+  const label = `${action === 'message' ? 'Message' : 'Add'} ${displayNick(nickname)}`;
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'action-btn';
   btn.dataset.nickname = nickname;
+  btn.dataset.action = action;
+  btn.title = label;
+  btn.setAttribute('aria-label', label);
+  btn.innerHTML = ICONS[action];
+  group.replaceChildren(btn);
+}
 
-  if (isFriend) {
-    btn.dataset.action = 'message';
-    btn.title = `Message ${cleanName}`;
-    btn.setAttribute('aria-label', `Message ${cleanName}`);
-    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`;
-  } else {
-    btn.dataset.action = 'add';
-    btn.title = `Add ${cleanName}`;
-    btn.setAttribute('aria-label', `Add ${cleanName}`);
-    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>`;
+function syncCardIdentity(card) {
+  const myClean = getMyClean();
+  const isMe = !!myClean && cleanNick(card.dataset.nickname) === myClean;
+  const badge = card.querySelector('.you-badge');
+
+  if (isMe && !badge) {
+    const youBadge = document.createElement('span');
+    youBadge.className = 'you-badge';
+    youBadge.textContent = 'You';
+    const nameRow = card.querySelector('.user-name');
+    if (nameRow) nameRow.appendChild(youBadge);
+  } else if (!isMe && badge) {
+    badge.remove();
   }
 
-  ag.appendChild(btn);
+  renderActionButtons(card, card.dataset.nickname);
 }
 
 function updateAllFriendButtons() {
-  const cards = usersGrid.querySelectorAll('.user-card');
-  cards.forEach(card => {
-    const nickname = card.dataset.nickname;
-    if (nickname) {
-      renderActionButtons(card, nickname);
-    }
+  usersGrid.querySelectorAll('.user-card').forEach(card => {
+    if (card.dataset.nickname) renderActionButtons(card, card.dataset.nickname);
   });
+}
+
+function fillUserCard(card, nickname, { gender = '', country = '', timestamp = 0 } = {}) {
+  const displayName = displayNick(nickname);
+
+  const avatar = document.createElement('div');
+  avatar.className = 'user-avatar';
+  avatar.textContent = displayName.charAt(0).toUpperCase() || '?';
+
+  const nameText = document.createElement('span');
+  nameText.className = 'name-text';
+  nameText.textContent = displayName;
+
+  const userName = document.createElement('div');
+  userName.className = 'user-name';
+  userName.appendChild(nameText);
+
+  const userInfo = document.createElement('div');
+  userInfo.className = 'user-info';
+  userInfo.appendChild(userName);
+
+  const hasGender = gender === 'male' || gender === 'female';
+  if (hasGender || country) {
+    const metaRow = document.createElement('div');
+    metaRow.className = 'user-meta-row';
+
+    if (hasGender) {
+      const genderIcon = document.createElement('span');
+      genderIcon.className = `gender-icon ${gender}`;
+      genderIcon.title = gender === 'male' ? 'Male' : 'Female';
+      genderIcon.innerHTML = ICONS[gender];
+      metaRow.appendChild(genderIcon);
+    }
+
+    if (country) {
+      const countryBadge = document.createElement('span');
+      countryBadge.className = 'user-country';
+      countryBadge.textContent = country;
+      metaRow.appendChild(countryBadge);
+    }
+
+    userInfo.appendChild(metaRow);
+  }
+
+  const statusEl = document.createElement(timestamp ? 'time' : 'span');
+  statusEl.className = 'status-time-text';
+  if (timestamp) {
+    updateStatusTime(statusEl, timestamp);
+  } else {
+    statusEl.textContent = `ID: ${nickname}`;
+  }
+
+  const userStatus = document.createElement('div');
+  userStatus.className = 'user-status';
+  userStatus.appendChild(statusEl);
+  userInfo.appendChild(userStatus);
+
+  card.dataset.nickname = nickname;
+  card.replaceChildren(avatar, userInfo);
+  syncCardIdentity(card);
 }
 
 function upsertUserCard(safeKey, userData) {
   const nickname = userData.nickname;
   const timestamp = userData.timestamp || Date.now();
-  const country = userData.country || "";
-  const gender = userData.gender || ""; 
+  const cardId = `user-card-${safeKey}`;
+  let card = document.getElementById(cardId);
 
   if (!isWithinHours(timestamp)) {
-    const staleCard = document.getElementById(`user-card-${safeKey}`);
-    if (staleCard) staleCard.remove();
+    if (card) card.remove();
     updateGridState();
     return;
   }
 
-  const myClean = cleanNick(currentNickname || localStorage.getItem("talkrush_nickname"));
-  const userClean = cleanNick(nickname);
-  const isMe = myClean && userClean && (myClean === userClean);
-
-  let displayName = nickname.startsWith("TR|") ? nickname.substring(3) : nickname;
-  const initial = displayName ? displayName.charAt(0).toUpperCase() : '?';
-
-  let card = document.getElementById(`user-card-${safeKey}`);
   if (!card) {
     card = document.createElement('article');
     card.className = 'user-card';
-    card.id = `user-card-${safeKey}`;
+    card.id = cardId;
   }
 
-  card.dataset.nickname = nickname;
   card.dataset.timestamp = timestamp;
-  card.innerHTML = '';
+  fillUserCard(card, nickname, {
+    gender: userData.gender || '',
+    country: userData.country || '',
+    timestamp
+  });
 
-  const avatar = document.createElement('div');
-  avatar.className = 'user-avatar';
-  avatar.textContent = initial;
-
-  const userInfo = document.createElement('div');
-  userInfo.className = 'user-info';
-
-  const userName = document.createElement('div');
-  userName.className = 'user-name';
-
-  const nameText = document.createElement('span');
-  nameText.className = 'name-text';
-  nameText.textContent = displayName;
-  userName.appendChild(nameText);
-
-  if (isMe) {
-    const youBadge = document.createElement('span');
-    youBadge.className = 'you-badge';
-    youBadge.textContent = 'You';
-    userName.appendChild(youBadge);
-  }
-
-  const userMetaRow = document.createElement('div');
-  userMetaRow.className = 'user-meta-row';
-
-  if (gender === 'male') {
-    const genderIcon = document.createElement('span');
-    genderIcon.className = 'gender-icon male';
-    genderIcon.title = 'Male';
-    genderIcon.innerHTML = `<svg viewBox="0 0 24 24" width="11" height="11" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="14" r="5"></circle><line x1="13.5" y1="10.5" x2="19" y2="5"></line><polyline points="14 5 19 5 19 10"></polyline></svg>`;
-    userMetaRow.appendChild(genderIcon);
-  } else if (gender === 'female') {
-    const genderIcon = document.createElement('span');
-    genderIcon.className = 'gender-icon female';
-    genderIcon.title = 'Female';
-    genderIcon.innerHTML = `<svg viewBox="0 0 24 24" width="11" height="11" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="5"></circle><line x1="12" y1="14" x2="12" y2="21"></line><line x1="9" y1="18" x2="15" y2="18"></line></svg>`;
-    userMetaRow.appendChild(genderIcon);
-  }
-
-  if (country) {
-    const countryBadge = document.createElement('span');
-    countryBadge.className = 'user-country';
-    countryBadge.textContent = country;
-    userMetaRow.appendChild(countryBadge);
-  }
-
-  const userStatus = document.createElement('div');
-  userStatus.className = 'user-status';
-
-  const statusTimeText = document.createElement('time');
-  statusTimeText.className = 'status-time-text';
-  statusTimeText.setAttribute('datetime', new Date(timestamp).toISOString());
-  statusTimeText.textContent = `Active · ${timeAgo(timestamp)}`;
-  userStatus.appendChild(statusTimeText);
-
-  userInfo.appendChild(userName);
-  if (gender || country) {
-    userInfo.appendChild(userMetaRow);
-  }
-  userInfo.appendChild(userStatus);
-
-  card.appendChild(avatar);
-  card.appendChild(userInfo);
-
-  renderActionButtons(card, nickname);
-
-  const existingCards = Array.from(usersGrid.querySelectorAll('.user-card')).filter(c => c !== card);
-  const nextCard = existingCards.find(c => parseInt(c.dataset.timestamp || 0, 10) < timestamp);
+  const nextCard = Array.from(usersGrid.querySelectorAll(ONLINE_CARD_SELECTOR))
+    .find(c => c !== card && parseInt(c.dataset.timestamp || 0, 10) < timestamp);
   if (nextCard) {
     usersGrid.insertBefore(card, nextCard);
   } else {
@@ -1249,122 +1218,194 @@ function upsertUserCard(safeKey, userData) {
   updateGridState();
 }
 
-function extractUserData(nodeValue) {
-  if (!nodeValue || !nodeValue.nickname) return null;
-  return nodeValue;
+function renderSearchedUserCard() {
+  const oldCard = document.getElementById(SEARCHED_CARD_ID);
+  if (oldCard) oldCard.remove();
+
+  if (!searchedTerm || !activeSearchInput.value.trim()) return;
+
+  const termClean = cleanNick(searchedTerm);
+  const alreadyOnline = Array.from(usersGrid.querySelectorAll(ONLINE_CARD_SELECTOR))
+    .some(c => cleanNick(c.dataset.nickname) === termClean);
+  if (alreadyOnline) return;
+
+  const card = document.createElement('article');
+  card.className = 'user-card searched-user-card';
+  card.id = SEARCHED_CARD_ID;
+  fillUserCard(card, `TR|${searchedTerm}`);
+  usersGrid.prepend(card);
 }
 
-const loadBotUsers = async () => {
-  try {
-    const res = await fetch('/botusers.json');
-    if (!res.ok) return;
-    const data = await res.json();
-    const list = Array.isArray(data) ? data : Object.values(data);
-    const now = Date.now();
-    const threeHoursInMs = 3 * 60 * 60 * 1000;
+function handleSearchFilter() {
+  const searchTerm = activeSearchInput.value.toLowerCase().trim();
+  let visibleOnline = 0;
 
-    list.forEach((bot, index) => {
-      const botData = {
-        nickname: bot.nickname,
-        gender: bot.gender,
-        country: bot.country,
-        timestamp: now - Math.floor(Math.random() * threeHoursInMs)
-      };
-      const safeKey = `bot_${index}_${bot.nickname.replace(/[^a-zA-Z0-9]/g, '_')}`;
-      upsertUserCard(safeKey, botData);
-    });
+  clearActiveSearch.classList.toggle('visible', !!searchTerm);
 
-    isInitialLoaded = true;
-    updateGridState();
-  } catch (_) {}
-};
+  usersGrid.querySelectorAll(ONLINE_CARD_SELECTOR).forEach(card => {
+    const nickname = (card.dataset.nickname || '').toLowerCase();
+    const match = nickname.includes(searchTerm) || cleanNick(nickname).includes(searchTerm);
+    card.style.display = match ? 'flex' : 'none';
+    if (match) visibleOnline++;
+  });
 
-loadBotUsers();
+  renderSearchedUserCard();
 
-const usersRef = ref(dbUsers, 'users');
+  const emptyMsg = document.getElementById('emptyStateMsg');
+  if (emptyMsg) emptyMsg.style.display = searchTerm ? 'none' : '';
 
-setTimeout(() => {
-  if (!isInitialLoaded) {
-    isInitialLoaded = true;
-    updateGridState();
+  const needsHint = searchTerm && !visibleOnline && !document.getElementById(SEARCHED_CARD_ID);
+  setGridNotice('noResultsMsg', needsHint ? `${ICONS.search}<p style="margin: 0; font-size: 15px;">Press search to look up this user.</p>` : null);
+}
+
+function refreshGrid() {
+  gridRefreshQueued = false;
+  const count = usersGrid.querySelectorAll(ONLINE_CARD_SELECTOR).length;
+  onlineCount.textContent = count;
+
+  if (count === 0 && isInitialLoaded) {
+    setGridNotice('emptyStateMsg', `${ICONS.ghost}No one is online right now.`);
+  } else if (count > 0) {
+    setGridNotice('emptyStateMsg', null);
   }
-}, 1500);
 
-onChildAdded(usersRef, (snapshot) => {
-  isInitialLoaded = true;
-  const userData = extractUserData(snapshot.val());
-  if (userData) {
-    upsertUserCard(snapshot.key, userData);
-  }
+  if (activeSearchInput.value) handleSearchFilter();
+}
+
+function updateGridState() {
+  if (gridRefreshQueued) return;
+  gridRefreshQueued = true;
+  requestAnimationFrame(refreshGrid);
+}
+
+function setSearchUrl(term, push) {
+  const path = window.location.pathname;
+  const url = term ? `${path}?id=${encodeURIComponent(`TR|${term}`)}` : path;
+  if (url === path + window.location.search) return;
+  window.history[push ? 'pushState' : 'replaceState']({}, '', url);
+}
+
+function setSearchedTerm(term, { fill = false, urlMode = null } = {}) {
+  searchedTerm = term;
+  if (fill) activeSearchInput.value = term;
+  if (urlMode) setSearchUrl(term, urlMode === 'push');
+  handleSearchFilter();
+}
+
+activeSearchForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  setSearchedTerm(parseSearchTerm(activeSearchInput.value), { urlMode: 'push' });
+  activeSearchInput.blur();
 });
 
-onChildChanged(usersRef, (snapshot) => {
-  const userData = extractUserData(snapshot.val());
-  if (userData) {
-    upsertUserCard(snapshot.key, userData);
+activeSearchInput.addEventListener('input', () => {
+  const typed = parseSearchTerm(activeSearchInput.value);
+  if (typed && cleanNick(typed) === cleanNick(searchedTerm)) {
+    handleSearchFilter();
   } else {
-    const card = document.getElementById(`user-card-${snapshot.key}`);
-    if (card) {
-      card.remove();
-      updateGridState();
-    }
+    setSearchedTerm('', { urlMode: 'replace' });
   }
 });
 
-onChildRemoved(usersRef, (snapshot) => {
-  const card = document.getElementById(`user-card-${snapshot.key}`);
-  if (card) {
-    card.remove();
-    updateGridState();
+clearActiveSearch.addEventListener('click', () => {
+  activeSearchInput.value = '';
+  setSearchedTerm('', { urlMode: 'replace' });
+});
+
+usersGrid.addEventListener('click', (e) => {
+  const btn = e.target.closest('.action-btn');
+  if (!btn) return;
+  const { nickname, action } = btn.dataset;
+  if (action === 'message') {
+    window.messageUser(nickname);
+  } else if (action === 'add') {
+    window.addFriend(nickname);
   }
 });
+
+function registerFriend(chatId, data, myClean) {
+  const u1Clean = cleanNick(data.nickname1);
+  const u2Clean = cleanNick(data.nickname2);
+
+  if (u1Clean === myClean) {
+    myFriendsMap[data.nickname2] = chatId;
+    myFriendsMap[u2Clean] = chatId;
+    return true;
+  }
+  if (u2Clean === myClean) {
+    myFriendsMap[data.nickname1] = chatId;
+    myFriendsMap[u1Clean] = chatId;
+    return true;
+  }
+  return false;
+}
 
 function processFriendsData(friendsObj) {
-  const myClean = cleanNick(currentNickname || localStorage.getItem("talkrush_nickname"));
+  const myClean = getMyClean();
   if (!myClean) return;
 
   if (friendsObj && typeof friendsObj === 'object') {
     Object.entries(friendsObj).forEach(([chatId, friendData]) => {
-      if (!friendData) return;
-
-      const u1Clean = cleanNick(friendData.nickname1);
-      const u2Clean = cleanNick(friendData.nickname2);
-
-      if (u1Clean === myClean) {
-        myFriendsMap[friendData.nickname2] = chatId;
-        myFriendsMap[u2Clean] = chatId;
-      } else if (u2Clean === myClean) {
-        myFriendsMap[friendData.nickname1] = chatId;
-        myFriendsMap[u1Clean] = chatId;
-      }
+      if (friendData) registerFriend(chatId, friendData, myClean);
     });
   }
   updateAllFriendButtons();
 }
 
 function fetchUserFriends() {
-  const myNick = currentNickname || localStorage.getItem("talkrush_nickname");
+  const myNick = getMyNick();
   if (!myNick || myNick === 'Guest') return;
 
   const encodedNick = encodeURIComponent(JSON.stringify(myNick));
-  const p1 = fetch(`${baseUrl}/friends.json?orderBy=%22nickname1%22&equalTo=${encodedNick}`).then(r => r.json()).catch(() => ({}));
-  const p2 = fetch(`${baseUrl}/friends.json?orderBy=%22nickname2%22&equalTo=${encodedNick}`).then(r => r.json()).catch(() => ({}));
+  const query = (field) => fetch(`${baseUrl}/friends.json?orderBy=%22${field}%22&equalTo=${encodedNick}`)
+    .then(r => r.json())
+    .catch(() => ({}));
 
-  Promise.all([p1, p2]).then(([d1, d2]) => {
+  Promise.all([query('nickname1'), query('nickname2')]).then(([d1, d2]) => {
     myFriendsMap = {};
     processFriendsData({ ...(d1 || {}), ...(d2 || {}) });
   }).catch(() => {});
 }
 
+function handleFriendsMessage(event) {
+  try {
+    const msg = JSON.parse(event.data);
+    if (!msg || ['ping', 'pong', 'time', 'onDisconnectAck'].includes(msg.event)) return;
+
+    const parts = (msg.path || '').split('/').filter(Boolean);
+    const isDelete = msg.event === 'delete' || msg.data === null;
+
+    if (parts.length === 0) {
+      if (isDelete) {
+        myFriendsMap = {};
+        updateAllFriendButtons();
+      } else if (typeof msg.data === 'object') {
+        processFriendsData(msg.data);
+      }
+      return;
+    }
+
+    const chatId = parts[0];
+    if (isDelete) {
+      Object.keys(myFriendsMap).forEach(key => {
+        if (myFriendsMap[key] === chatId) delete myFriendsMap[key];
+      });
+      updateAllFriendButtons();
+    } else if (msg.event === 'put' || msg.event === 'patch') {
+      const myClean = getMyClean();
+      if (msg.data && typeof msg.data === 'object' && myClean && registerFriend(chatId, msg.data, myClean)) {
+        updateAllFriendButtons();
+      }
+    }
+  } catch (e) {}
+}
+
 function initFriendsListener() {
-  if (reconnectTimer) {
-    clearTimeout(reconnectTimer);
-    reconnectTimer = null;
-  }
-  if (friendsPingInterval) {
-    clearInterval(friendsPingInterval);
-    friendsPingInterval = null;
-  }
+  clearTimeout(reconnectTimer);
+  clearInterval(friendsPingInterval);
+  reconnectTimer = null;
+  friendsPingInterval = null;
+
   if (friendsWs) {
     try {
       friendsWs.onclose = null;
@@ -1386,7 +1427,7 @@ function initFriendsListener() {
 
   friendsWs.onopen = () => {
     retryCount = 0;
-    if (friendsPingInterval) clearInterval(friendsPingInterval);
+    clearInterval(friendsPingInterval);
     friendsPingInterval = setInterval(() => {
       if (friendsWs && friendsWs.readyState === WebSocket.OPEN) {
         friendsWs.send(JSON.stringify({ type: 'ping' }));
@@ -1394,52 +1435,10 @@ function initFriendsListener() {
     }, 25000);
   };
 
-  friendsWs.onmessage = (event) => {
-    try {
-      const msg = JSON.parse(event.data);
-      if (!msg || msg.event === 'ping' || msg.event === 'pong' || msg.event === 'time' || msg.event === 'onDisconnectAck') return;
-
-      const myClean = cleanNick(currentNickname || localStorage.getItem("talkrush_nickname"));
-      const parts = (msg.path || '').split('/').filter(Boolean);
-
-      if (parts.length === 0) {
-        if (msg.event === 'delete' || msg.data === null) {
-          myFriendsMap = {};
-          updateAllFriendButtons();
-        } else if (typeof msg.data === 'object' && msg.data) {
-          processFriendsData(msg.data);
-        }
-        return;
-      }
-
-      const chatId = parts[0];
-      if (msg.event === 'delete' || msg.data === null) {
-        Object.keys(myFriendsMap).forEach(key => {
-          if (myFriendsMap[key] === chatId) delete myFriendsMap[key];
-        });
-        updateAllFriendButtons();
-      } else if (msg.event === 'put' || msg.event === 'patch') {
-        const val = msg.data;
-        if (val && typeof val === 'object' && myClean) {
-          const u1Clean = cleanNick(val.nickname1);
-          const u2Clean = cleanNick(val.nickname2);
-
-          if (u1Clean === myClean) {
-            myFriendsMap[val.nickname2] = chatId;
-            myFriendsMap[u2Clean] = chatId;
-            updateAllFriendButtons();
-          } else if (u2Clean === myClean) {
-            myFriendsMap[val.nickname1] = chatId;
-            myFriendsMap[u1Clean] = chatId;
-            updateAllFriendButtons();
-          }
-        }
-      }
-    } catch (e) {}
-  };
+  friendsWs.onmessage = handleFriendsMessage;
 
   friendsWs.onclose = () => {
-    if (friendsPingInterval) clearInterval(friendsPingInterval);
+    clearInterval(friendsPingInterval);
     if (!document.hidden) {
       const delay = Math.min(30000, 1000 * Math.pow(1.5, retryCount++));
       reconnectTimer = setTimeout(initFriendsListener, delay);
@@ -1447,74 +1446,10 @@ function initFriendsListener() {
   };
 }
 
-initFriendsListener();
-
-document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) {
-    if (!friendsWs || friendsWs.readyState === WebSocket.CLOSED) {
-      initFriendsListener();
-    } else {
-      fetchUserFriends();
-    }
-  }
-});
-
-setInterval(() => {
-  const allCards = usersGrid.querySelectorAll('.user-card');
-  allCards.forEach(card => {
-    const ts = parseInt(card.dataset.timestamp, 10);
-    if (ts && !isWithinHours(ts)) {
-      card.remove();
-    } else if (ts) {
-      const statusEl = card.querySelector('.status-time-text');
-      if (statusEl) {
-        statusEl.textContent = `Active · ${timeAgo(ts)}`;
-        statusEl.setAttribute('datetime', new Date(ts).toISOString());
-      }
-    }
-  });
-  updateGridState();
-}, 60000);
-
-usersGrid.addEventListener('click', (e) => {
-  const btn = e.target.closest('.action-btn');
-  if (!btn) return;
-  const targetNickname = btn.dataset.nickname;
-  const action = btn.dataset.action;
-  if (action === 'message') {
-    window.messageUser(targetNickname);
-  } else if (action === 'add') {
-    window.addFriend(targetNickname);
-  }
-});
-
-window.addEventListener('nicknameUpdated', (e) => {
-  currentNickname = e.detail?.nickname;
-  initFriendsListener();
-  const myClean = cleanNick(currentNickname);
-  const allCards = usersGrid.querySelectorAll('.user-card');
-  allCards.forEach(card => {
-    const isMe = cleanNick(card.dataset.nickname) === myClean;
-    const youBadge = card.querySelector('.you-badge');
-    if (isMe && !youBadge) {
-      const badge = document.createElement('span');
-      badge.className = 'you-badge';
-      badge.textContent = 'You';
-      card.querySelector('.user-name')?.appendChild(badge);
-    } else if (!isMe && youBadge) {
-      youBadge.remove();
-    }
-  });
-});
-
 window.addFriend = async (targetNickname) => {
-  const myNick = currentNickname || localStorage.getItem("talkrush_nickname");
+  const myNick = getMyNick();
   if (!myNick || myNick === 'Guest') {
-    if (window.AlertKit && window.AlertKit.warning) {
-      await window.AlertKit.warning("Nickname Required", "Please set your nickname first to add friends.");
-    } else {
-      alert("Please set your nickname first to add friends.");
-    }
+    await ui.warning("Nickname Required", "Please set your nickname first to add friends.");
     return;
   }
 
@@ -1524,18 +1459,12 @@ window.addFriend = async (targetNickname) => {
     return;
   }
 
-  let isConfirmed = false;
-  if (window.AlertKit && window.AlertKit.confirm) {
-    isConfirmed = await window.AlertKit.confirm(
-      'Add Friend',
-      `Do you want to add ${targetNickname} to your friends list?`,
-      'Yes, Add',
-      'Cancel'
-    );
-  } else {
-    isConfirmed = confirm(`Add ${targetNickname} as a friend?`);
-  }
-
+  const isConfirmed = await ui.confirm(
+    'Add Friend',
+    `Do you want to add ${targetNickname} to your friends list?`,
+    'Yes, Add',
+    'Cancel'
+  );
   if (!isConfirmed) return;
 
   try {
@@ -1553,26 +1482,13 @@ window.addFriend = async (targetNickname) => {
 
     if (!res.ok) throw new Error("Failed to save friend");
     const resData = await res.json();
-    const newChatId = resData.name;
 
-    myFriendsMap[targetNickname] = newChatId;
-    myFriendsMap[tClean] = newChatId;
-
-    const targetCard = Array.from(usersGrid.querySelectorAll('.user-card'))
-      .find(c => cleanNick(c.dataset.nickname) === tClean);
-    if (targetCard) {
-      renderActionButtons(targetCard, targetCard.dataset.nickname);
-    }
-
-    if (window.AlertKit && window.AlertKit.toast) {
-      window.AlertKit.toast(`Added ${targetNickname} as a friend!`, 'success');
-    }
+    myFriendsMap[targetNickname] = resData.name;
+    myFriendsMap[tClean] = resData.name;
+    updateAllFriendButtons();
+    ui.toast(`Added ${targetNickname} as a friend!`, 'success');
   } catch (error) {
-    if (window.AlertKit && window.AlertKit.error) {
-      window.AlertKit.error("Error", "Failed to add friend. Please try again.");
-    } else {
-      alert("Failed to add friend. Please try again.");
-    }
+    ui.error("Error", "Failed to add friend. Please try again.");
   }
 };
 
@@ -1582,4 +1498,106 @@ window.messageUser = (targetNickname) => {
     window.location.href = `inbox.html?chatId=${encodeURIComponent(chatId)}&friend=${encodeURIComponent(targetNickname)}`;
   }
 };
+
+window.addEventListener('nicknameUpdated', (e) => {
+  currentNickname = e.detail?.nickname;
+  initFriendsListener();
+  usersGrid.querySelectorAll('.user-card').forEach(syncCardIdentity);
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) return;
+  if (!friendsWs || friendsWs.readyState === WebSocket.CLOSED) {
+    initFriendsListener();
+  } else {
+    fetchUserFriends();
+  }
+});
+
+setInterval(() => {
+  usersGrid.querySelectorAll(ONLINE_CARD_SELECTOR).forEach(card => {
+    const ts = parseInt(card.dataset.timestamp, 10);
+    if (!ts) return;
+    if (!isWithinHours(ts)) {
+      card.remove();
+      return;
+    }
+    const statusEl = card.querySelector('.status-time-text');
+    if (statusEl) updateStatusTime(statusEl, ts);
+  });
+  updateGridState();
+}, 60000);
+
+const extractUserData = (value) => (value && value.nickname ? value : null);
+
+const loadBotUsers = async () => {
+  try {
+    const res = await fetch('/botusers.json');
+    if (!res.ok) return;
+    const data = await res.json();
+    const list = Array.isArray(data) ? data : Object.values(data);
+    const now = Date.now();
+
+    list.forEach((bot, index) => {
+      upsertUserCard(`bot_${index}_${bot.nickname.replace(/[^a-zA-Z0-9]/g, '_')}`, {
+        nickname: bot.nickname,
+        gender: bot.gender,
+        country: bot.country,
+        timestamp: now - Math.floor(Math.random() * HOURS_MS)
+      });
+    });
+
+    isInitialLoaded = true;
+    updateGridState();
+  } catch (_) {}
+};
+
+onChildAdded(usersRef, (snapshot) => {
+  isInitialLoaded = true;
+  const userData = extractUserData(snapshot.val());
+  if (userData) upsertUserCard(snapshot.key, userData);
+});
+
+onChildChanged(usersRef, (snapshot) => {
+  const userData = extractUserData(snapshot.val());
+  if (userData) {
+    upsertUserCard(snapshot.key, userData);
+    return;
+  }
+  const card = document.getElementById(`user-card-${snapshot.key}`);
+  if (card) {
+    card.remove();
+    updateGridState();
+  }
+});
+
+onChildRemoved(usersRef, (snapshot) => {
+  const card = document.getElementById(`user-card-${snapshot.key}`);
+  if (card) {
+    card.remove();
+    updateGridState();
+  }
+});
+
+setTimeout(() => {
+  if (!isInitialLoaded) {
+    isInitialLoaded = true;
+    updateGridState();
+  }
+}, 1500);
+
+loadBotUsers();
+initFriendsListener();
+
+const urlParams = new URLSearchParams(window.location.search);
+const idParam = urlParams.get('id') || urlParams.get('name') || urlParams.get('user');
+
+if (idParam) {
+  let decodedParam = idParam;
+  try {
+    decodedParam = decodeURIComponent(idParam);
+  } catch (_) {}
+  const parsedParam = parseSearchTerm(decodedParam);
+  if (parsedParam) setSearchedTerm(parsedParam, { fill: true });
+}
 </script>
