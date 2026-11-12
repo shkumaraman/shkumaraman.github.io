@@ -141,7 +141,7 @@ document.body.classList.add('arena-page');
 
 const APP_NAME = 'TalkRushGameApp';
 const firebaseConfig = { databaseURL: 'https://talkrush3-default-rtdb.asia-southeast1.firebasedatabase.app' };
-const W = 5000, H = 5000, R = 20, MAX_HUMANS = 5, NCOINS = 90;
+const W = 5000, H = 5000, R = 20, MAX_HUMANS = 5, NCOINS = 160;
 const ROOMS_PATH = 'games/racing/rooms';
 const NICK_KEY = 'talkrush_nickname';
 const COLORS = ['#ff6b4a', '#ffd54a', '#4ade80', '#38bdf8', '#a78bfa', '#f472b6', '#fb923c', '#e5e7eb'];
@@ -159,12 +159,11 @@ const cleanNick = s => String(s || '').replace(/[\u200B-\u200D\uFEFF]/g, '').rep
 const colorFor = name => { let h = 0; for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) | 0; return COLORS[Math.abs(h) % COLORS.length]; };
 const szOf = p => 1 + 2.6 * (1 - Math.exp(-Math.min(p.score, 100) / 30));
 
-/* Obstacle boxes: seeded, so every player gets the identical map without any network sync */
 const boxes = (() => {
   let s = 20260;
   const rnd = () => { s |= 0; s = s + 0x6D2B79F5 | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
   const out = [];
-  for (let i = 0; i < 1500 && out.length < 80; i++){
+  for (let i = 0; i < 1500 && out.length < 50; i++){
     const w = 60 + rnd() * 150, h = 60 + rnd() * 150, x = 200 + rnd() * (W - 400 - w), y = 200 + rnd() * (H - 400 - h);
     if (out.some(b => x < b.x + b.w + 200 && x + w + 200 > b.x && y < b.y + b.h + 200 && y + h + 200 > b.y)) continue;
     out.push({ x, y, w, h });
@@ -189,7 +188,6 @@ function maskBanned(s){
   return s;
 }
 
-/* ---------- Audio (Web Audio sfx) ---------- */
 let actx = null;
 const getCtx = () => {
   actx = actx || new (window.AudioContext || window.webkitAudioContext)();
@@ -223,9 +221,8 @@ const sfx = {
   respawn: () => { beep(300, 600, .15, 'sine', .06); beep(600, 900, .15, 'sine', .05, .12); }
 };
 
-/* ---------- Game state ---------- */
 const players = new Map();
-let coins = [], dirty = false, nextCid = 1, myPid = null, isHost = false, nextPid = 1;
+let coins = [], cops = [], nextCid = 1, myPid = null, isHost = false, nextPid = 1;
 const evq = [];
 
 function mkPlayer(pid, n, c){
@@ -300,15 +297,15 @@ function collide(list, now){
   }
 }
 function place(p, now){
-  let best = { x: W / 2, y: H / 2 }, bd = -1;
-  for (let k = 0; k < 8; k++){
+  let best = freeSpot(), bd = -1;
+  for (let k = 0; k < 20; k++){
     const x = rand(250, W - 250), y = rand(250, H - 250);
     if (inBox(x, y, 80)) continue;
     let m = 1e9;
     for (const q of players.values()) if (q !== p) m = Math.min(m, Math.hypot(q.x - x, q.y - y));
     if (m > bd){ bd = m; best = { x, y }; }
   }
-  Object.assign(p, { x: best.x, y: best.y, a: rand(0, 6.28), vx: 0, vy: 0, hp: 100, nitro: 100, inv: now + 3000, lastDmg: now, lastHit: 0 });
+  Object.assign(p, { x: best.x, y: best.y, a: rand(0, 6.28), vx: 0, vy: 0, hp: 100, nitro: 100, inv: now + 3000, lastDmg: now, lastHit: 0, lastHitT: 0 });
 }
 function kill(p, now){
   const kl = now - (p.lastHitT || 0) < 5000 ? players.get(p.lastHit) : null;
@@ -317,10 +314,11 @@ function kill(p, now){
     const a = i / n * 6.283 + rand(-.3, .3), d = rand(30, 60 + szOf(p) * 50);
     let cx = clamp(p.x + Math.cos(a) * d, 60, W - 60), cy = clamp(p.y + Math.sin(a) * d, 60, H - 60);
     if (inBox(cx, cy, 12)){ cx = p.x; cy = p.y; }
-    coins.push({ id: nextCid++, x: cx, y: cy, v, exp: now + 30000 });
+    const nc = { id: nextCid++, x: cx, y: cy, v, exp: now + 30000 };
+    coins.push(nc);
+    cops.push([nc.id, Math.round(nc.x), Math.round(nc.y), nc.v]);
   }
-  while (coins.length > 240){ const k = coins.findIndex(c => !c.base); if (k < 0) break; coins.splice(k, 1); }
-  dirty = true;
+  while (coins.length > 320){ const k = coins.findIndex(c => !c.base); if (k < 0) break; cops.push([coins[k].id]); coins.splice(k, 1); }
   evq.push(['k', Math.round(p.x), Math.round(p.y), p.pid]);
   if (kl && kl !== p){ kl.hp = Math.min(100, kl.hp + 25); sys(kl.n + ' smashed ' + p.n); }
   else sys(p.n + ' crashed');
@@ -370,12 +368,12 @@ function simStep(dt){
         p.score += c.v;
         p.nitro = Math.min(100, p.nitro + 18);
         evq.push(['c', Math.round(c.x), Math.round(c.y), p.pid, c.v]);
-        if (c.base){ const f = freeSpot(); c.x = f.x; c.y = f.y; } else coins.splice(k, 1);
-        dirty = true;
+        if (c.base){ const f = freeSpot(); c.x = f.x; c.y = f.y; cops.push([c.id, Math.round(c.x), Math.round(c.y), c.v]); }
+        else { cops.push([c.id]); coins.splice(k, 1); }
       }
     }
   }
-  for (let k = coins.length - 1; k >= 0; k--) if (coins[k].exp && now > coins[k].exp){ coins.splice(k, 1); dirty = true; }
+  for (let k = coins.length - 1; k >= 0; k--) if (coins[k].exp && now > coins[k].exp){ cops.push([coins[k].id]); coins.splice(k, 1); }
   for (const p of list) p.st = now;
 }
 function initCoins(){
@@ -383,7 +381,6 @@ function initCoins(){
 }
 const packCoins = () => coins.map(c => [c.id, Math.round(c.x), Math.round(c.y), c.v]);
 
-/* ---------- Network ---------- */
 const NET = { peer: null, conns: new Map(), hostConn: null, retry: null, inputTimer: null, simTimer: null, hb: null, vt: null, watch: null, roomRef: null, beat: null, lastSnap: 0 };
 let GEN = 0, roomLabel = '';
 function setStatus(t, ok){ const el = $('status'); el.textContent = t; el.classList.toggle('ok', !!ok); }
@@ -395,7 +392,6 @@ try {
   db = getDatabase(app);
 } catch { db = null; }
 
-/* RTDB layout (only one node type): games/racing/rooms/{rid} = { h: hostPeerId, n: humanCount, t: heartbeat } */
 function findRooms(){
   return get(ref(db, ROOMS_PATH)).then(snap => {
     const now = Date.now(), out = [];
@@ -512,10 +508,10 @@ function startHost(peer){
       snapAcc = 0;
       const s = snapshot();
       broadcast(s);
-      if (dirty){ dirty = false; broadcast({ t: 'coins', c: packCoins() }); }
+      if (cops.length) broadcast({ t: 'cu', o: cops.splice(0) });
       applyEvents(s.ev);
     }
-    if (chk >= 1){ /* offline / ghost player cleanup */
+    if (chk >= 1){
       chk = 0;
       for (const [id, c] of [...NET.conns]){
         const p = players.get(id);
@@ -525,6 +521,14 @@ function startHost(peer){
   }, 16);
 }
 
+function applyCoinOps(o){
+  for (const op of o){
+    const i = coins.findIndex(c => c.id === op[0]);
+    if (op.length === 1){ if (i >= 0) coins.splice(i, 1); }
+    else if (i >= 0){ coins[i].x = op[1]; coins[i].y = op[2]; coins[i].v = op[3]; }
+    else coins.push({ id: op[0], x: op[1], y: op[2], v: op[3] });
+  }
+}
 function applySnapshot(d){
   const now = performance.now();
   NET.lastSnap = now;
@@ -637,12 +641,11 @@ function joinClient(p, hostId, onFull, onFail){
       onFull();
     } else if (d.t === 'roster') setRoster(d.list);
     else if (d.t === 's') applySnapshot(d);
-    else if (d.t === 'coins') coins = d.c.map(c => ({ id: c[0], x: c[1], y: c[2], v: c[3] }));
+    else if (d.t === 'cu') applyCoinOps(d.o);
     else if (d.t === 'chat') showChat(d);
   });
 }
 
-/* ---------- Voice chat (PeerJS media calls, full mesh, max 5) ---------- */
 const VOICE = { mic: null, track: null, dummy: null, calls: new Map(), audios: new Map(), micOn: false, spkOn: true };
 function localStream(){
   if (VOICE.mic) return VOICE.mic;
@@ -673,7 +676,7 @@ function closeVoice(){
   VOICE.calls.clear();
   for (const id of [...VOICE.audios.keys()]) dropAudio(id);
 }
-function syncCalls(){ /* lower pid calls higher pid -> exactly one call per pair; stale/offline calls removed */
+function syncCalls(){
   const peer = NET.peer;
   if (!peer || !peer.open || myPid == null) return;
   const want = new Set(), now = performance.now();
@@ -730,7 +733,6 @@ $('btnSfx').addEventListener('click', () => { store.set('soundMuted', muted() ? 
 }, { passive: true }));
 syncTools();
 
-/* ---------- Input ---------- */
 const joy = { id: null, ax: 0, ay: 0 }, btn = { n: 0, b: 0 }, keys = new Set();
 let chatOpen = false;
 function readInput(){
@@ -783,16 +785,13 @@ function readInput(){
   addEventListener('blur', () => keys.clear());
 })();
 
-/* ---------- Chat ---------- */
 let unread = 0;
 function showChat(msg){
   addHistRow(msg);
   if (!msg.sys && msg.pid !== myPid) sfx.chat();
   if (msg.sys && /joined/.test(msg.m)) sfx.join();
-  if (!chatOpen){
-    if (!msg.sys && msg.pid !== myPid){ unread++; updateBadge(); }
-    if (store.get('notificationOff') !== 'true') popup(msg);
-  }
+  if (!chatOpen && !msg.sys && msg.pid !== myPid){ unread++; updateBadge(); }
+  popup(msg);
 }
 function mkRow(msg, cls){
   const d = document.createElement('div');
@@ -839,7 +838,11 @@ function closeChat(){
 }
 $('btnChat').addEventListener('click', openChat);
 $('chatSheet').addEventListener('click', e => { if (e.target === $('chatSheet')) closeChat(); });
-$('chatSend').addEventListener('click', () => { sendChat($('chatInput').value); $('chatInput').value = ''; $('chatInput').focus(); });
+$('chatSend').addEventListener('click', () => {
+  const v = $('chatInput').value;
+  $('chatInput').value = '';
+  if (v.trim()){ sendChat(v); closeChat(); }
+});
 $('chatInput').addEventListener('keydown', e => {
   if (e.key === 'Enter'){ e.preventDefault(); $('chatSend').click(); }
   if (e.key === 'Escape') closeChat();
@@ -847,11 +850,10 @@ $('chatInput').addEventListener('keydown', e => {
 ['GG 👏', '😂', 'Watch out!', 'Race me!', 'Nice drift 🔥', 'Help 😵', 'Hello 👋'].forEach(t => {
   const q = document.createElement('div');
   q.className = 'q'; q.textContent = t;
-  q.addEventListener('click', () => sendChat(t));
+  q.addEventListener('click', () => { sendChat(t); closeChat(); });
   $('quick').appendChild(q);
 });
 
-/* ---------- Rendering ---------- */
 const cv = $('game'), ctx = cv.getContext('2d'), mini = $('mini'), mctx = mini.getContext('2d');
 let cw = 0, ch = 0, dpr = 1;
 function resize(){ dpr = Math.min(2, devicePixelRatio || 1); cw = innerWidth; ch = innerHeight; cv.width = cw * dpr; cv.height = ch * dpr; }
@@ -922,7 +924,7 @@ function drawWorld(dt, now){
   if (mp && mp.rx !== null){
     const inp = readInput(), sp = Math.hypot(mp.vx, mp.vy);
     const braking = (inp.b || inp.t < 0) && sp > 90;
-    const tm = mp.boost ? .8 : braking ? 1.16 : 1;   /* boost = zoom out, brake = zoom in */
+    const tm = mp.boost ? .8 : braking ? 1.16 : 1;
     cam.m += (tm - cam.m) * (1 - Math.exp(-dt * 2.6));
     cam.x += (mp.rx + mp.vx * .25 - cam.x) * (1 - Math.exp(-dt * 6));
     cam.y += (mp.ry + mp.vy * .25 - cam.y) * (1 - Math.exp(-dt * 6));
@@ -949,7 +951,7 @@ function drawWorld(dt, now){
     ctx.strokeStyle = 'rgba(255,255,255,.06)'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(b.x + 8, b.y + 8); ctx.lineTo(b.x + b.w - 8, b.y + b.h - 8); ctx.moveTo(b.x + b.w - 8, b.y + 8); ctx.lineTo(b.x + 8, b.y + b.h - 8); ctx.stroke();
   }
-  /* skid marks */
+
   ctx.fillStyle = 'rgba(0,0,0,.5)';
   for (let i = skids.length - 1; i >= 0; i--){
     const s = skids[i]; s.l -= dt;
