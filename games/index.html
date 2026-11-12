@@ -15,7 +15,7 @@ body.arena-page{overflow:hidden!important;overscroll-behavior:none}
 #hud{position:absolute;left:0;right:0;top:0;padding:calc(var(--sat) + 10px) 12px 0;display:flex;justify-content:space-between;align-items:flex-start;pointer-events:none;z-index:5}
 .col{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
 .chip{background:rgba(26,26,30,.8);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border:.5px solid var(--bd);border-radius:20px;padding:6px 12px;font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:6px}
-.mid{flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;padding-top:3px}
+.mid{position:absolute;left:50%;transform:translateX(-50%);top:calc(var(--sat) + 13px);display:flex;flex-direction:column;align-items:center;gap:5px}
 #status{font-size:11px;color:var(--mut)}
 #status.ok{color:var(--ok)}
 .bar{width:min(34vw,150px);height:7px;border-radius:7px;background:rgba(255,255,255,.1);overflow:hidden}
@@ -28,11 +28,10 @@ body.arena-page{overflow:hidden!important;overscroll-behavior:none}
 .tb.off{color:var(--err)}
 .tb.off .slash{display:inline}
 .tb.on{color:var(--ok);border-color:var(--ok)}
-#lb{background:rgba(26,26,30,.8);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border:.5px solid var(--bd);border-radius:12px;padding:8px 10px;min-width:118px;font-size:11px}
-#lb h4{margin:0 0 5px;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);font-weight:600}
+#lb{width:min(34vw,150px);font-size:11px;text-shadow:0 1px 3px rgba(0,0,0,.9)}
 .lbrow{display:flex;gap:6px;align-items:center;padding:1.5px 0;white-space:nowrap}
 .lbrow .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
-.lbrow .nm{flex:1;max-width:80px;overflow:hidden;text-overflow:ellipsis}
+.lbrow .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
 .lbrow.me{color:var(--accent);font-weight:700}
 .lbrow .sc{color:var(--mut);font-variant-numeric:tabular-nums}
 #hint{position:absolute;bottom:calc(var(--sab) + 8px);width:100%;text-align:center;font-size:11px;color:var(--mut);pointer-events:none;z-index:4}
@@ -90,17 +89,14 @@ body.arena-page{overflow:hidden!important;overscroll-behavior:none}
         <button class="tb" id="btnSfx" aria-label="Game sounds" title="Game sounds">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/><line class="slash" x1="3" y1="3" x2="21" y2="21" stroke-width="2.6"/></svg>
         </button>
-        <button class="tb" id="btnExit" aria-label="Exit" title="Exit">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
-        </button>
       </div>
     </div>
     <div class="mid">
       <span id="status">Finding match…</span>
       <div class="bar"><i id="hpBar"></i></div>
       <div class="bar"><i id="nitroBar"></i></div>
+      <div id="lb"><div id="lbRows"></div></div>
     </div>
-    <div id="lb"><h4>Top Racers</h4><div id="lbRows"></div></div>
   </div>
 
   <div id="chatLog"></div>
@@ -142,7 +138,7 @@ document.body.classList.add('arena-page');
 
 const APP_NAME = 'TalkRushGameApp';
 const firebaseConfig = { databaseURL: 'https://talkrush3-default-rtdb.asia-southeast1.firebasedatabase.app' };
-const W = 3000, H = 3000, R = 20, MAX_HUMANS = 5, NCOINS = 36;
+const W = 5000, H = 5000, R = 20, MAX_HUMANS = 5, NCOINS = 90;
 const ROOMS_PATH = 'games/racing/rooms';
 const NICK_KEY = 'talkrush_nickname';
 const COLORS = ['#ff6b4a', '#ffd54a', '#4ade80', '#38bdf8', '#a78bfa', '#f472b6', '#fb923c', '#e5e7eb'];
@@ -158,7 +154,26 @@ const angDiff = (a, b) => { let d = a - b; while (d > Math.PI) d -= 2 * Math.PI;
 const safeColor = c => /^#[0-9a-f]{6}$/i.test(c || '') ? c : COLORS[0];
 const cleanNick = s => String(s || '').replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/\s+/g, ' ').trim().slice(0, 20) || 'Racer';
 const colorFor = name => { let h = 0; for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) | 0; return COLORS[Math.abs(h) % COLORS.length]; };
-const szOf = p => 1 + Math.min(p.score, 120) / 120 * .9;
+const szOf = p => 1 + 1.4 * (1 - Math.exp(-Math.min(p.score, 80) / 25));
+
+/* Obstacle boxes: seeded, so every player gets the identical map without any network sync */
+const boxes = (() => {
+  let s = 20260;
+  const rnd = () => { s |= 0; s = s + 0x6D2B79F5 | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  const out = [];
+  for (let i = 0; i < 1500 && out.length < 80; i++){
+    const w = 60 + rnd() * 150, h = 60 + rnd() * 150, x = 200 + rnd() * (W - 400 - w), y = 200 + rnd() * (H - 400 - h);
+    if (out.some(b => x < b.x + b.w + 130 && x + w + 130 > b.x && y < b.y + b.h + 130 && y + h + 130 > b.y)) continue;
+    out.push({ x, y, w, h });
+  }
+  return out;
+})();
+const inBox = (x, y, m) => boxes.some(b => x > b.x - m && x < b.x + b.w + m && y > b.y - m && y < b.y + b.h + m);
+function freeSpot(){
+  let x = 0, y = 0;
+  for (let i = 0; i < 30; i++){ x = rand(150, W - 150); y = rand(150, H - 150); if (!inBox(x, y, 30)) break; }
+  return { x, y };
+}
 
 const me = { nick: cleanNick(stripTR(store.get(NICK_KEY))) };
 if (!stripTR(store.get(NICK_KEY)).trim()) me.nick = 'Guest' + Math.floor(100 + Math.random() * 900);
@@ -255,7 +270,8 @@ function stepCar(p, dt){
 }
 function hurt(p, amt, src, now){
   if (p.hp <= 0) return;
-  p.hp -= Math.min(70, amt); p.lastDmg = now; p.lastHit = src;
+  p.hp -= Math.min(70, amt); p.lastDmg = now;
+  if (src){ p.lastHit = src; p.lastHitT = now; }
 }
 function collide(list, now){
   for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++){
@@ -284,6 +300,7 @@ function place(p, now){
   let best = { x: W / 2, y: H / 2 }, bd = -1;
   for (let k = 0; k < 8; k++){
     const x = rand(250, W - 250), y = rand(250, H - 250);
+    if (inBox(x, y, 80)) continue;
     let m = 1e9;
     for (const q of players.values()) if (q !== p) m = Math.min(m, Math.hypot(q.x - x, q.y - y));
     if (m > bd){ bd = m; best = { x, y }; }
@@ -291,13 +308,15 @@ function place(p, now){
   Object.assign(p, { x: best.x, y: best.y, a: rand(0, 6.28), vx: 0, vy: 0, hp: 100, nitro: 100, inv: now + 3000, lastDmg: now, lastHit: 0 });
 }
 function kill(p, now){
-  const kl = players.get(p.lastHit);
+  const kl = now - (p.lastHitT || 0) < 5000 ? players.get(p.lastHit) : null;
   const n = clamp(Math.round(6 + p.score * .5), 6, 30), v = Math.max(1, Math.round(p.score * .7 / n));
   for (let i = 0; i < n; i++){
     const a = i / n * 6.283 + rand(-.3, .3), d = rand(30, 60 + szOf(p) * 50);
-    coins.push({ id: nextCid++, x: clamp(p.x + Math.cos(a) * d, 60, W - 60), y: clamp(p.y + Math.sin(a) * d, 60, H - 60), v, exp: now + 30000 });
+    let cx = clamp(p.x + Math.cos(a) * d, 60, W - 60), cy = clamp(p.y + Math.sin(a) * d, 60, H - 60);
+    if (inBox(cx, cy, 12)){ cx = p.x; cy = p.y; }
+    coins.push({ id: nextCid++, x: cx, y: cy, v, exp: now + 30000 });
   }
-  while (coins.length > 180){ const k = coins.findIndex(c => !c.base); if (k < 0) break; coins.splice(k, 1); }
+  while (coins.length > 240){ const k = coins.findIndex(c => !c.base); if (k < 0) break; coins.splice(k, 1); }
   dirty = true;
   evq.push(['k', Math.round(p.x), Math.round(p.y), p.pid]);
   if (kl && kl !== p){ kl.hp = Math.min(100, kl.hp + 25); sys('💥 ' + kl.n + ' smashed ' + p.n); }
@@ -306,10 +325,36 @@ function kill(p, now){
   place(p, now);
   evq.push(['r', p.pid]);
 }
+function boxCollide(p, now){
+  const rad = R * szOf(p);
+  for (const b of boxes){
+    if (p.x < b.x - rad || p.x > b.x + b.w + rad || p.y < b.y - rad || p.y > b.y + b.h + rad) continue;
+    const cx = clamp(p.x, b.x, b.x + b.w), cy = clamp(p.y, b.y, b.y + b.h);
+    const dx = p.x - cx, dy = p.y - cy, d = Math.hypot(dx, dy);
+    let nx, ny, ov;
+    if (d > .001){ if (d >= rad) continue; nx = dx / d; ny = dy / d; ov = rad - d; }
+    else {
+      const l = p.x - b.x, r = b.x + b.w - p.x, t = p.y - b.y, bt = b.y + b.h - p.y, m = Math.min(l, r, t, bt);
+      if (m === l){ nx = -1; ny = 0; ov = l + rad; } else if (m === r){ nx = 1; ny = 0; ov = r + rad; }
+      else if (m === t){ nx = 0; ny = -1; ov = t + rad; } else { nx = 0; ny = 1; ov = bt + rad; }
+    }
+    p.x += nx * ov; p.y += ny * ov;
+    const vn = p.vx * nx + p.vy * ny;
+    if (vn < 0){
+      p.vx -= 1.4 * vn * nx; p.vy -= 1.4 * vn * ny;
+      const imp = -vn;
+      if (imp > 110){
+        evq.push(['b', Math.round(cx), Math.round(cy), +Math.min(1, imp / 500).toFixed(2)]);
+        if (p.inv < now) hurt(p, (imp - 100) * .05, 0, now);
+      }
+    }
+  }
+}
 function simStep(dt){
   const now = performance.now(), list = humans();
-  for (const p of list) stepCar(p, dt);
+  for (const p of list){ stepCar(p, dt); boxCollide(p, now); }
   collide(list, now);
+  for (const p of list) boxCollide(p, now);
   for (const p of list){
     if (p.hp <= 0) kill(p, now);
     else if (now - p.lastDmg > 3000 && p.hp < 100) p.hp = Math.min(100, p.hp + 6 * dt);
@@ -322,7 +367,7 @@ function simStep(dt){
         p.score += c.v;
         p.nitro = Math.min(100, p.nitro + 18);
         evq.push(['c', Math.round(c.x), Math.round(c.y), p.pid, c.v]);
-        if (c.base){ c.x = rand(150, W - 150); c.y = rand(150, H - 150); } else coins.splice(k, 1);
+        if (c.base){ const f = freeSpot(); c.x = f.x; c.y = f.y; } else coins.splice(k, 1);
         dirty = true;
       }
     }
@@ -331,7 +376,7 @@ function simStep(dt){
   for (const p of list) p.st = now;
 }
 function initCoins(){
-  coins = Array.from({ length: NCOINS }, () => ({ id: nextCid++, x: rand(150, W - 150), y: rand(150, H - 150), v: 1, base: 1 }));
+  coins = Array.from({ length: NCOINS }, () => { const f = freeSpot(); return { id: nextCid++, x: f.x, y: f.y, v: 1, base: 1 }; });
 }
 const packCoins = () => coins.map(c => [c.id, Math.round(c.x), Math.round(c.y), c.v]);
 
@@ -676,7 +721,6 @@ function syncTools(){
 $('btnMic').addEventListener('click', toggleMic);
 $('btnSpk').addEventListener('click', toggleSpk);
 $('btnSfx').addEventListener('click', () => { store.set('soundMuted', muted() ? 'false' : 'true'); syncTools(); });
-$('btnExit').addEventListener('click', () => { cleanupNet(); if (history.length > 1) history.back(); else location.href = '/'; });
 ['pointerdown', 'keydown'].forEach(ev => addEventListener(ev, () => {
   if (actx && actx.state === 'suspended') actx.resume();
   VOICE.audios.forEach(a => { if (a.paused) a.play().catch(() => {}); });
@@ -895,6 +939,13 @@ function drawWorld(dt, now){
   for (let y = Math.max(0, Math.floor(vy0 / 100) * 100); y <= Math.min(H, vy1); y += 100){ ctx.moveTo(Math.max(0, vx0), y); ctx.lineTo(Math.min(W, vx1), y); }
   ctx.stroke();
   ctx.strokeStyle = '#ff6b4a'; ctx.lineWidth = 8; ctx.shadowColor = '#ff6b4a'; ctx.shadowBlur = 24; ctx.strokeRect(0, 0, W, H); ctx.shadowBlur = 0;
+  for (const b of boxes){
+    if (b.x > vx1 || b.x + b.w < vx0 || b.y > vy1 || b.y + b.h < vy0) continue;
+    ctx.fillStyle = '#1f1f26'; ctx.fillRect(b.x, b.y, b.w, b.h);
+    ctx.strokeStyle = 'rgba(255,107,74,.55)'; ctx.lineWidth = 3; ctx.strokeRect(b.x, b.y, b.w, b.h);
+    ctx.strokeStyle = 'rgba(255,255,255,.06)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(b.x + 8, b.y + 8); ctx.lineTo(b.x + b.w - 8, b.y + b.h - 8); ctx.moveTo(b.x + b.w - 8, b.y + 8); ctx.lineTo(b.x + 8, b.y + b.h - 8); ctx.stroke();
+  }
   /* skid marks */
   ctx.fillStyle = 'rgba(0,0,0,.5)';
   for (let i = skids.length - 1; i >= 0; i--){
@@ -939,6 +990,8 @@ function drawWorld(dt, now){
 function drawMini(){
   const s = mini.width / W;
   mctx.clearRect(0, 0, mini.width, mini.height);
+  mctx.fillStyle = 'rgba(255,255,255,.18)';
+  for (const b of boxes) mctx.fillRect(b.x * s, b.y * s, Math.max(2, b.w * s), Math.max(2, b.h * s));
   mctx.fillStyle = '#ffd54a';
   for (const c of coins) mctx.fillRect(c.x * s - 1, c.y * s - 1, 3, 3);
   for (const p of players.values()){
