@@ -170,7 +170,7 @@ const angDiff = (a, b) => { let d = a - b; while (d > Math.PI) d -= 2 * Math.PI;
 const safeColor = c => /^#[0-9a-f]{6}$/i.test(c || '') ? c : COLORS[0];
 const cleanNick = s => String(s || '').replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/\s+/g, ' ').trim().slice(0, 20) || 'Racer';
 const colorFor = name => { let h = 0; for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) | 0; return COLORS[Math.abs(h) % COLORS.length]; };
-const szOf = p => 1 + 2.6 * (1 - Math.exp(-Math.min(p.score, 100) / 30));
+const szOf = p => 1 + 2.6 * (1 - Math.exp(-Math.min(p.sc, 100) / 30));
 
 const boxes = (() => {
   let s = 20260;
@@ -239,7 +239,7 @@ let coins = [], cops = [], nextCid = 1, myPid = null, isHost = false, nextPid = 
 const evq = [];
 
 function mkPlayer(pid, n, c){
-  return { pid, n, c, peerId: '', x: 0, y: 0, a: 0, vx: 0, vy: 0, score: 0, nitro: 100, boost: 0, hp: 100, sh: 0, inv: 0, lastDmg: 0, lastHit: 0,
+  return { pid, n, c, peerId: '', x: 0, y: 0, a: 0, vx: 0, vy: 0, score: 0, sc: 0, nitro: 100, boost: 0, hp: 100, sh: 0, inv: 0, lastDmg: 0, lastHit: 0,
     in: { ax: 0, ay: 0, s: 0, t: 0, n: 0, b: 0 }, rx: null, ry: 0, ra: 0, rs: 1, st: 0, lastChat: 0, seen: 0 };
 }
 const humans = () => [...players.values()];
@@ -283,7 +283,7 @@ function stepCar(p, dt){
 }
 function hurt(p, amt, src, now){
   if (p.hp <= 0) return;
-  p.hp -= Math.min(70, amt); p.lastDmg = now;
+  p.hp -= Math.min(70, amt); p.sc = Math.max(0, p.sc - Math.min(70, amt) * 1.5); p.lastDmg = now;
   if (src){ p.lastHit = src; p.lastHitT = now; }
 }
 function collide(list, now){
@@ -335,7 +335,7 @@ function kill(p, now){
   evq.push(['k', Math.round(p.x), Math.round(p.y), p.pid]);
   if (kl && kl !== p){ kl.hp = Math.min(100, kl.hp + 25); sys(kl.n + ' smashed ' + p.n); }
   else sys(p.n + ' crashed');
-  p.score = 0;
+  p.score = 0; p.sc = 0;
   place(p, now);
   evq.push(['r', p.pid]);
 }
@@ -378,7 +378,7 @@ function simStep(dt){
     for (let k = coins.length - 1; k >= 0; k--){
       const c = coins[k];
       if (Math.hypot(c.x - p.x, c.y - p.y) < rad){
-        p.score += c.v;
+        p.score += c.v; p.sc += c.v;
         p.nitro = Math.min(100, p.nitro + 18);
         evq.push(['c', Math.round(c.x), Math.round(c.y), p.pid, c.v]);
         if (c.base){ const f = freeSpot(); c.x = f.x; c.y = f.y; cops.push([c.id, Math.round(c.x), Math.round(c.y), c.v]); }
@@ -410,8 +410,8 @@ function findRooms(){
     const now = Date.now(), out = [];
     snap.forEach(ch => {
       const r = ch.val(), age = now - ((r && r.t) || now);
-      if (!r || !r.h || age > 45000){ remove(ch.ref); return; }
-      if (age < 20000 && r.n < MAX_HUMANS) out.push({ host: r.h, n: r.n });
+      if (!r || !r.h || age > 90000){ remove(ch.ref); return; }
+      if (age < 35000 && r.n < MAX_HUMANS) out.push({ host: r.h, n: r.n });
     });
     return out.sort((a, b) => b.n - a.n);
   });
@@ -422,7 +422,7 @@ function registerRoom(peerId){
   NET.beat = () => set(r, { h: peerId, n: humans().length, t: serverTimestamp() });
   onDisconnect(r).remove();
   NET.beat();
-  NET.hb = setInterval(NET.beat, 5000);
+  NET.hb = setInterval(NET.beat, 15000);
 }
 
 const rosterList = () => humans().map(p => ({ pid: p.pid, n: p.n, c: p.c, pi: p.peerId }));
@@ -456,7 +456,7 @@ function snapshot(){
   const now = performance.now(), r1 = v => Math.round(v * 10) / 10;
   return {
     t: 's',
-    p: humans().map(p => [p.pid, r1(p.x), r1(p.y), Math.round(p.a * 100) / 100, Math.round(p.vx), Math.round(p.vy), p.score, Math.round(p.nitro), p.boost, Math.round(p.hp), p.inv > now ? 1 : 0]),
+    p: humans().map(p => [p.pid, r1(p.x), r1(p.y), Math.round(p.a * 100) / 100, Math.round(p.vx), Math.round(p.vy), p.score, Math.round(p.nitro), p.boost, Math.round(p.hp), p.inv > now ? 1 : 0, Math.round(p.sc)]),
     ev: evq.splice(0)
   };
 }
@@ -548,7 +548,7 @@ function applySnapshot(d){
   for (const a of d.p){
     const p = players.get(a[0]);
     if (!p) continue;
-    p.x = a[1]; p.y = a[2]; p.a = a[3]; p.vx = a[4]; p.vy = a[5]; p.score = a[6]; p.nitro = a[7]; p.boost = a[8]; p.hp = a[9]; p.sh = a[10]; p.st = now;
+    p.x = a[1]; p.y = a[2]; p.a = a[3]; p.vx = a[4]; p.vy = a[5]; p.score = a[6]; p.nitro = a[7]; p.boost = a[8]; p.hp = a[9]; p.sh = a[10]; p.sc = a[11]; p.st = now;
   }
   applyEvents(d.ev);
 }
