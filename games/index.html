@@ -177,6 +177,7 @@ const APP_NAME = 'TalkRushGameApp';
 const firebaseConfig = { databaseURL: 'https://talkrush3-default-rtdb.asia-southeast1.firebasedatabase.app' };
 const W = 5000, H = 5000, R = 20, MAX_HUMANS = 5, NCOINS = 160;
 const ROOMS_PATH = 'games/racing/rooms';
+const SCORES_PATH = 'games/racing/scores';
 const NICK_KEY = 'talkrush_nickname';
 const COLORS = ['#ff6b4a', '#ffd54a', '#4ade80', '#38bdf8', '#a78bfa', '#f472b6', '#fb923c', '#e5e7eb'];
 
@@ -391,6 +392,7 @@ function kill(p, now){
   p.score = 0; p.sc = 0;
   place(p, now);
   evq.push(['r', p.pid]);
+  if (NET.syncScores) NET.syncScores();
 }
 function boxCollide(p, now){
   const rad = R * szOf(p);
@@ -447,7 +449,29 @@ function initCoins(){
 }
 const packCoins = () => coins.map(c => [c.id, Math.round(c.x), Math.round(c.y), c.v]);
 
-const NET = { peer: null, conns: new Map(), hostConn: null, retry: null, inputTimer: null, simTimer: null, hb: null, vt: null, watch: null, roomRef: null, beat: null, lastSnap: 0, lastSeq: 0, snapSeq: 0, resetSimClock: null };
+const NET = {
+  peer: null,
+  conns: new Map(),
+  hostConn: null,
+  retry: null,
+  inputTimer: null,
+  simTimer: null,
+  hb: null,
+  scoreTimer: null,
+  vt: null,
+  watch: null,
+  roomRef: null,
+  scoreRef: null,
+  myScoreRef: null,
+  beat: null,
+  syncScores: null,
+  lastSnap: 0,
+  lastSeq: 0,
+  snapSeq: 0,
+  resetSimClock: null,
+  roomKey: '',
+  hostPid: 1
+};
 let GEN = 0, roomLabel = '', msgSeq = 0;
 const seenMsgs = new Set();
 function setStatus(t, ok){ const el = $('status'); el.textContent = t || ''; el.classList.toggle('ok', !!ok); }
@@ -459,24 +483,63 @@ try {
   db = getDatabase(app);
 } catch { db = null; }
 
+function cleanStaleScores(){
+  if (!db) return;
+  get(ref(db, SCORES_PATH)).then(snap => {
+    const now = Date.now();
+    snap.forEach(ch => {
+      const s = ch.val();
+      if (!s || !s.t || !s.p || now - s.t > 45000) remove(ch.ref).catch(() => {});
+    });
+  }).catch(() => {});
+}
+
 function findRooms(){
+  cleanStaleScores();
   return get(ref(db, ROOMS_PATH)).then(snap => {
     const now = Date.now(), out = [];
     snap.forEach(ch => {
       const r = ch.val(), age = now - ((r && r.t) || now);
-      if (!r || !r.h || age > 45000){ remove(ch.ref); return; }
-      if (age < 22000 && r.n < MAX_HUMANS) out.push({ host: r.h, n: r.n });
+      if (!r || !r.h || age > 45000){ remove(ch.ref).catch(() => {}); return; }
+      if (age < 22000 && r.n < MAX_HUMANS) out.push({ key: ch.key, host: r.h, n: r.n });
     });
     return out.sort((a, b) => b.n - a.n);
   });
 }
-function registerRoom(peerId){
-  const r = push(ref(db, ROOMS_PATH));
+
+function setupHostRoom(peerId, existingKey){
+  const r = existingKey ? ref(db, ROOMS_PATH + '/' + existingKey) : push(ref(db, ROOMS_PATH));
+  const rk = r.key;
   NET.roomRef = r;
-  NET.beat = () => set(r, { h: peerId, n: humans().length, t: serverTimestamp() });
-  onDisconnect(r).remove();
+  NET.roomKey = rk;
+  NET.scoreRef = ref(db, SCORES_PATH + '/' + rk);
+  NET.myScoreRef = ref(db, SCORES_PATH + '/' + rk + '/p/' + peerId);
+  onDisconnect(r).remove().catch(() => {});
+  onDisconnect(NET.myScoreRef).remove().catch(() => {});
+  NET.beat = () => set(r, { h: peerId, n: humans().length, t: serverTimestamp() }).catch(() => {});
   NET.beat();
   NET.hb = setInterval(NET.beat, 8000);
+  NET.syncScores = () => {
+    if (!db || !isHost || !NET.scoreRef) return;
+    const pObj = {};
+    for (const p of players.values()){
+      if (!p.peerId) continue;
+      pObj[p.peerId] = {
+        pid: p.pid,
+        n: p.n,
+        c: p.c,
+        score: p.score,
+        sc: Math.round(p.sc),
+        hp: Math.round(p.hp),
+        nitro: Math.round(p.nitro)
+      };
+    }
+    set(NET.scoreRef, { t: serverTimestamp(), p: pObj }).catch(() => {});
+    if (players.size <= 1) onDisconnect(NET.scoreRef).remove().catch(() => {});
+    else onDisconnect(NET.scoreRef).cancel().catch(() => {});
+  };
+  NET.syncScores();
+  NET.scoreTimer = setInterval(NET.syncScores, 4000);
 }
 
 const rosterList = () => humans().map(p => ({ pid: p.pid, n: p.n, c: p.c, pi: p.peerId }));
@@ -487,7 +550,13 @@ function broadcast(obj, skipBackpressure){
     try { c.send(obj); } catch {}
   }
 }
-function broadcastRoster(){ broadcast({ t: 'roster', list: rosterList() }); updateOnline(); syncCalls(); if (NET.beat) NET.beat(); }
+function broadcastRoster(){
+  broadcast({ t: 'roster', list: rosterList() });
+  updateOnline();
+  syncCalls();
+  if (NET.beat) NET.beat();
+  if (NET.syncScores) NET.syncScores();
+}
 function addPlayer(n, c){
   const p = mkPlayer(nextPid++, n, c), now = performance.now();
   players.set(p.pid, p);
@@ -537,18 +606,34 @@ function snapshot(){
   };
 }
 
-function startHost(peer){
+function applySavedStats(p, sv){
+  if (!p || !sv) return;
+  p.score = Math.max(0, Number(sv.score) || 0);
+  p.sc = Math.max(0, Number(sv.sc) || 0);
+  p.hp = clamp(Number(sv.hp) || 100, 25, 100);
+  p.nitro = clamp(Number(sv.nitro) || 100, 0, 100);
+}
+
+function startHost(peer, existingRoomKey, restoredScores){
   isHost = true;
   NET.peer = peer;
   NET.snapSeq = 0;
+  NET.hostPid = 1;
+  const savedByPeer = restoredScores || new Map();
   players.clear(); nextPid = 1; nextCid = 1;
   myPid = addPlayer(me.nick, me.color);
-  players.get(myPid).peerId = peer.id;
+  const myPl = players.get(myPid);
+  myPl.peerId = peer.id;
+  if (savedByPeer.has(peer.id)){
+    applySavedStats(myPl, savedByPeer.get(peer.id));
+    savedByPeer.delete(peer.id);
+  }
   initCoins();
   roomLabel = 'Arena';
+  setupHostRoom(peer.id, existingRoomKey);
   updateOnline(); rebuildLB(); hideLoader();
-  registerRoom(peer.id);
 
+  peer.removeAllListeners('connection');
   peer.on('connection', conn => {
     let pid = null, acked = false, wTimer = null;
     const drop = () => {
@@ -556,6 +641,9 @@ function startHost(peer){
       if (pid == null) return;
       const p = players.get(pid), id = pid;
       pid = null;
+      if (p && p.peerId && db && NET.roomKey){
+        remove(ref(db, SCORES_PATH + '/' + NET.roomKey + '/p/' + p.peerId)).catch(() => {});
+      }
       players.delete(id); NET.conns.delete(id);
       broadcastRoster();
       if (p) sys(p.n + ' left');
@@ -571,16 +659,21 @@ function startHost(peer){
           return;
         }
         pid = addPlayer(cleanNick(d.n), safeColor(d.c));
-        players.get(pid).peerId = conn.peer;
+        const joinedP = players.get(pid);
+        joinedP.peerId = conn.peer;
+        if (savedByPeer.has(conn.peer)){
+          applySavedStats(joinedP, savedByPeer.get(conn.peer));
+          savedByPeer.delete(conn.peer);
+        }
         NET.conns.set(pid, conn);
-        const wPayload = { t: 'welcome', pid, roster: rosterList(), coins: packCoins() };
+        const wPayload = { t: 'welcome', pid, hostPid: myPid, rk: NET.roomKey, roster: rosterList(), coins: packCoins() };
         try { conn.send(wPayload); } catch {}
         wTimer = setInterval(() => {
           if (acked || !conn.open){ clearInterval(wTimer); return; }
           try { conn.send(wPayload); } catch {}
         }, 350);
         broadcastRoster();
-        sys(players.get(pid).n + ' joined');
+        sys(joinedP.n + ' joined');
       } else if (pid == null) return;
       else {
         acked = true;
@@ -660,23 +753,71 @@ function setRoster(list){
   for (const pid of [...players.keys()]) if (!ids.has(pid)) players.delete(pid);
   updateOnline(); rebuildLB(); syncCalls();
 }
-function cleanupNet(){
-  clearInterval(NET.inputTimer); clearInterval(NET.simTimer); clearInterval(NET.hb); clearInterval(NET.vt); clearInterval(NET.watch); clearTimeout(NET.retry);
-  closeVoice();
-  try { NET.roomRef && remove(NET.roomRef); } catch {}
-  try { NET.peer && NET.peer.destroy(); } catch {}
-  NET.peer = null; NET.hostConn = null; NET.roomRef = null; NET.beat = null; NET.resetSimClock = null; NET.conns.clear();
+function cleanupNet(keepPeer){
+  clearInterval(NET.inputTimer); clearInterval(NET.simTimer); clearInterval(NET.hb); clearInterval(NET.scoreTimer); clearInterval(NET.vt); clearInterval(NET.watch); clearTimeout(NET.retry);
+  if (!keepPeer) closeVoice();
+  if (isHost){
+    try { NET.roomRef && remove(NET.roomRef); } catch {}
+    if (players.size <= 1){
+      try { NET.scoreRef && remove(NET.scoreRef); } catch {}
+    } else {
+      try { NET.myScoreRef && remove(NET.myScoreRef); } catch {}
+    }
+  } else if (!keepPeer){
+    try { NET.myScoreRef && remove(NET.myScoreRef); } catch {}
+  }
+  try { NET.hostConn && NET.hostConn.close(); } catch {}
+  for (const c of NET.conns.values()){ try { c.close(); } catch {} }
+  if (!keepPeer){
+    try { NET.peer && NET.peer.destroy(); } catch {}
+    NET.peer = null;
+    NET.roomKey = '';
+  }
+  NET.hostConn = null; NET.roomRef = null; NET.scoreRef = null; NET.myScoreRef = null; NET.beat = null; NET.syncScores = null; NET.resetSimClock = null; NET.conns.clear();
   NET.lastSeq = 0; NET.snapSeq = 0;
   isHost = false;
 }
 function resetWorld(){ players.clear(); coins = []; myPid = null; roomLabel = ''; }
 function retryLater(){ clearTimeout(NET.retry); NET.retry = setTimeout(connectFlow, 600 + Math.random() * 1200); }
-function onHostLost(){
-  GEN++;
-  setStatus('Host left — reconnecting…');
-  showLoader('Reconnecting to arena…');
-  cleanupNet(); resetWorld(); retryLater();
+
+async function onHostLost(){
+  const gen = ++GEN;
+  const oldRoomKey = NET.roomKey;
+  const existingPeer = NET.peer && !NET.peer.destroyed && NET.peer.open ? NET.peer : null;
+  const remaining = [...players.values()].filter(p => p.pid !== NET.hostPid && p.peerId).sort((a, b) => a.pid - b.pid);
+  const amNextHost = remaining.length > 0 && remaining[0].pid === myPid;
+  const nextHostPeerId = remaining.length > 0 ? remaining[0].peerId : '';
+
+  setStatus('Host left — migrating…');
+  showLoader('Restoring arena & scores…');
+  cleanupNet(!!existingPeer);
+  resetWorld();
+
+  if (existingPeer && oldRoomKey && db){
+    if (amNextHost){
+      try {
+        const snap = await get(ref(db, SCORES_PATH + '/' + oldRoomKey + '/p'));
+        if (gen !== GEN) return;
+        const restored = new Map();
+        if (snap.exists()){
+          snap.forEach(ch => {
+            const v = ch.val();
+            if (v && ch.key) restored.set(ch.key, v);
+          });
+        }
+        startHost(existingPeer, oldRoomKey, restored);
+        return;
+      } catch {}
+    } else if (nextHostPeerId){
+      await new Promise(r => setTimeout(r, 650));
+      if (gen !== GEN) return;
+      joinClient(existingPeer, nextHostPeerId, () => connectFlow(), () => connectFlow());
+      return;
+    }
+  }
+  retryLater();
 }
+
 function whenPeer(cb){
   if (window.Peer){ cb(); return; }
   if (!document.querySelector('script[data-peerjs]')){
@@ -689,7 +830,7 @@ function whenPeer(cb){
 }
 function connectFlow(){
   GEN++;
-  cleanupNet(); resetWorld();
+  cleanupNet(false); resetWorld();
   setStatus('Finding match…');
   showLoader('Finding arena match…');
   if (!db){ retryLater(); return; }
@@ -745,6 +886,12 @@ function joinClient(p, hostId, onFull, onFail){
       clearTimeout(to); clearInterval(helloTimer); p.off('error', onErr);
       joined = true; done = true;
       NET.lastSeq = 0;
+      NET.hostPid = d.hostPid || 1;
+      NET.roomKey = d.rk || '';
+      if (db && NET.roomKey && p.id){
+        NET.myScoreRef = ref(db, SCORES_PATH + '/' + NET.roomKey + '/p/' + p.id);
+        onDisconnect(NET.myScoreRef).remove().catch(() => {});
+      }
       myPid = d.pid;
       coins = d.coins.map(c => ({ id: c[0], x: c[1], y: c[2], v: c[3] }));
       setRoster(d.roster);
@@ -1303,8 +1450,8 @@ function frame(now){
 requestAnimationFrame(frame);
 
 connectFlow();
-addEventListener('pagehide', cleanupNet);
-addEventListener('beforeunload', cleanupNet);
+addEventListener('pagehide', () => cleanupNet(false));
+addEventListener('beforeunload', () => cleanupNet(false));
 })();
 </script>
 {% endraw %}
