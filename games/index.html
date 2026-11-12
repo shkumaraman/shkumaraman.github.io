@@ -49,8 +49,8 @@ body.arena-page{overflow:hidden!important;overscroll-behavior:none}
 .lbrow .sc{color:var(--mut);font-variant-numeric:tabular-nums}
 #hint{position:absolute;bottom:calc(var(--sab) + 8px);width:100%;text-align:center;font-size:11px;color:var(--mut);pointer-events:none;z-index:4}
 @media (pointer:coarse){#hint{display:none}}
-#joy{position:absolute;left:18px;bottom:calc(var(--sab) + 26px);width:140px;height:140px;border-radius:50%;background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.14);z-index:6;touch-action:none}
-#stick{position:absolute;left:50%;top:50%;width:60px;height:60px;margin:-30px 0 0 -30px;border-radius:50%;background:var(--accent);opacity:.85;box-shadow:0 4px 14px rgba(0,0,0,.5);pointer-events:none}
+#joy{position:absolute;left:18px;bottom:calc(var(--sab) + 26px);width:110px;height:110px;border-radius:50%;background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.14);z-index:6;touch-action:none}
+#stick{position:absolute;left:50%;top:50%;width:48px;height:48px;margin:-24px 0 0 -24px;border-radius:50%;background:var(--accent);opacity:.85;box-shadow:0 4px 14px rgba(0,0,0,.5);pointer-events:none}
 .pad{position:absolute;border-radius:50%;display:flex;align-items:center;justify-content:center;z-index:6;touch-action:none;border:.5px solid rgba(255,255,255,.18);color:#fff;cursor:pointer}
 #btnNitro{right:20px;bottom:calc(var(--sab) + 44px);width:84px;height:84px;background:var(--accent);box-shadow:0 6px 20px rgba(255,107,74,.35)}
 #btnBrake{right:114px;bottom:calc(var(--sab) + 28px);width:62px;height:62px;background:rgba(255,255,255,.1)}
@@ -166,7 +166,7 @@ body.arena-page{overflow:hidden!important;overscroll-behavior:none}
 
 <script type="module">
 import { initializeApp, getApps } from "firebase/app";
-import { getDatabase, ref, push, set, get, remove, onDisconnect, serverTimestamp } from "firebase/database";
+import { getDatabase, ref, push, get, remove, update, onDisconnect, onValue, serverTimestamp } from "firebase/database";
 
 (() => {
 'use strict';
@@ -177,8 +177,9 @@ const APP_NAME = 'TalkRushGameApp';
 const firebaseConfig = { databaseURL: 'https://talkrush3-default-rtdb.asia-southeast1.firebasedatabase.app' };
 const W = 5000, H = 5000, R = 20, MAX_HUMANS = 5, NCOINS = 160;
 const ROOMS_PATH = 'games/racing/rooms';
-const SCORES_PATH = 'games/racing/scores';
 const NICK_KEY = 'talkrush_nickname';
+const UID_KEY = 'talkrush_uid';
+const UID_RE = /^[a-z0-9]{8,32}$/i;
 const COLORS = ['#ff6b4a', '#ffd54a', '#4ade80', '#38bdf8', '#a78bfa', '#f472b6', '#fb923c', '#e5e7eb'];
 
 const store = {
@@ -193,6 +194,12 @@ const safeColor = c => /^#[0-9a-f]{6}$/i.test(c || '') ? c : COLORS[0];
 const cleanNick = s => String(s || '').replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/\s+/g, ' ').trim().slice(0, 20) || 'Racer';
 const colorFor = name => { let h = 0; for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) | 0; return COLORS[Math.abs(h) % COLORS.length]; };
 const szOf = p => 1 + 2.6 * (1 - Math.exp(-Math.min(p.sc, 100) / 30));
+const remember = (set, id) => {
+  if (set.has(id)) return false;
+  set.add(id);
+  if (set.size > 200) set.delete(set.values().next().value);
+  return true;
+};
 
 function showLoader(sub){
   $('loaderText').textContent = 'Loading...';
@@ -221,16 +228,22 @@ function freeSpot(){
   return { x, y };
 }
 
-const me = { nick: cleanNick(stripTR(store.get(NICK_KEY))) };
-if (!stripTR(store.get(NICK_KEY)).trim()) me.nick = 'Guest' + Math.floor(100 + Math.random() * 900);
+const rawNick = stripTR(store.get(NICK_KEY)).trim();
+const me = { nick: rawNick ? cleanNick(rawNick) : 'Guest' + Math.floor(100 + Math.random() * 900) };
 me.color = colorFor(me.nick);
-
-let banned = [];
-fetch('/chat/filter.txt').then(r => r.text()).then(t => { banned = t.split('\n').map(w => w.trim().toLowerCase()).filter(w => w.length > 1); }).catch(() => {});
-function maskBanned(s){
-  banned.forEach(w => { s = s.replace(new RegExp('\\b' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'gi'), m => '*'.repeat(m.length)); });
-  return s;
+let savedUid = store.get(UID_KEY);
+if (!UID_RE.test(savedUid || '')){
+  savedUid = (window.crypto && crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '') : Math.random().toString(36).slice(2) + Date.now().toString(36)).slice(0, 24);
+  store.set(UID_KEY, savedUid);
 }
+me.uid = savedUid;
+
+let bannedRe = null;
+fetch('/chat/filter.txt').then(r => r.ok ? r.text() : '').then(t => {
+  const words = String(t).split('\n').map(w => w.trim().toLowerCase()).filter(w => w.length > 1).map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  if (words.length) bannedRe = new RegExp('\\b(?:' + words.join('|') + ')\\b', 'gi');
+}).catch(() => {});
+const maskBanned = s => bannedRe ? s.replace(bannedRe, m => '*'.repeat(m.length)) : s;
 
 let actx = null;
 const getCtx = () => {
@@ -292,10 +305,11 @@ let coins = [], cops = [], nextCid = 1, myPid = null, isHost = false, nextPid = 
 const evq = [];
 
 function mkPlayer(pid, n, c){
-  return { pid, n, c, peerId: '', x: 0, y: 0, a: 0, vx: 0, vy: 0, score: 0, sc: 0, nitro: 100, boost: 0, hp: 100, sh: 0, inv: 0, lastDmg: 0, lastHit: 0,
+  return { pid, n, c, peerId: '', uid: '', x: 0, y: 0, a: 0, vx: 0, vy: 0, score: 0, sc: 0, nitro: 100, boost: 0, hp: 100, sh: 0, inv: 0, lastDmg: 0, lastHit: 0, lastHitT: 0,
     in: { ax: 0, ay: 0, s: 0, t: 0, n: 0, b: 0 }, rx: null, ry: 0, ra: 0, rs: 1, st: 0, lastChat: 0, lastHorn: 0, seen: 0 };
 }
 const humans = () => [...players.values()];
+const unpackCoins = a => a.map(c => ({ id: c[0], x: c[1], y: c[2], v: c[3] }));
 
 function stepCar(p, dt){
   const i = p.in, sz = szOf(p), rad = R * sz, heavy = 1 - (sz - 1) * .08;
@@ -392,7 +406,7 @@ function kill(p, now){
   p.score = 0; p.sc = 0;
   place(p, now);
   evq.push(['r', p.pid]);
-  if (NET.syncScores) NET.syncScores();
+  if (NET.sync) NET.sync();
 }
 function boxCollide(p, now){
   const rad = R * szOf(p);
@@ -442,7 +456,7 @@ function simStep(dt){
     }
   }
   for (let k = coins.length - 1; k >= 0; k--) if (coins[k].exp && now > coins[k].exp){ cops.push([coins[k].id]); coins.splice(k, 1); }
-  for (const p of list) p.st = now;
+  for (const p of list){ p.st = now; p.sh = p.inv > now ? 1 : 0; }
 }
 function initCoins(){
   coins = Array.from({ length: NCOINS }, () => { const f = freeSpot(); return { id: nextCid++, x: f.x, y: f.y, v: 1, base: 1 }; });
@@ -456,15 +470,11 @@ const NET = {
   retry: null,
   inputTimer: null,
   simTimer: null,
-  hb: null,
-  scoreTimer: null,
+  syncTimer: null,
   vt: null,
   watch: null,
   roomRef: null,
-  scoreRef: null,
-  myScoreRef: null,
-  beat: null,
-  syncScores: null,
+  sync: null,
   lastSnap: 0,
   lastSeq: 0,
   snapSeq: 0,
@@ -473,73 +483,51 @@ const NET = {
   hostPid: 1
 };
 let GEN = 0, roomLabel = '', msgSeq = 0;
-const seenMsgs = new Set();
+const seenMsgs = new Set(), hostSeen = new Set();
 function setStatus(t, ok){ const el = $('status'); el.textContent = t || ''; el.classList.toggle('ok', !!ok); }
 function updateOnline(){ if (roomLabel) setStatus(''); }
 
-let db = null;
+let db = null, tOff = 0;
 try {
   const app = getApps().find(x => x.name === APP_NAME) || initializeApp(firebaseConfig, APP_NAME);
   db = getDatabase(app);
+  onValue(ref(db, '.info/serverTimeOffset'), s => { tOff = Number(s.val()) || 0; });
 } catch { db = null; }
-
-function cleanStaleScores(){
-  if (!db) return;
-  get(ref(db, SCORES_PATH)).then(snap => {
-    const now = Date.now();
-    snap.forEach(ch => {
-      const s = ch.val();
-      if (!s || !s.t || !s.p || now - s.t > 45000) remove(ch.ref).catch(() => {});
-    });
-  }).catch(() => {});
-}
+const srvNow = () => Date.now() + tOff;
 
 function findRooms(){
-  cleanStaleScores();
   return get(ref(db, ROOMS_PATH)).then(snap => {
-    const now = Date.now(), out = [];
+    const now = srvNow(), out = [];
+    let mine = null;
     snap.forEach(ch => {
-      const r = ch.val(), age = now - ((r && r.t) || now);
-      if (!r || !r.h || age > 45000){ remove(ch.ref).catch(() => {}); return; }
-      if (age < 22000 && r.n < MAX_HUMANS) out.push({ key: ch.key, host: r.h, n: r.n });
+      const r = ch.val(), age = now - ((r && r.t) || 0);
+      if (!r || age > 45000){ remove(ch.ref).catch(() => {}); return; }
+      if (r.h){
+        if (age < 22000 && r.n < MAX_HUMANS) out.push({ key: ch.key, host: r.h, n: r.n });
+      } else if (!mine && r.p && r.p[me.uid]) mine = { key: ch.key, p: r.p };
     });
-    return out.sort((a, b) => b.n - a.n);
+    out.sort((a, b) => b.n - a.n);
+    return { list: out, mine };
   });
 }
+const toMap = o => new Map(Object.entries(o || {}));
 
 function setupHostRoom(peerId, existingKey){
   const r = existingKey ? ref(db, ROOMS_PATH + '/' + existingKey) : push(ref(db, ROOMS_PATH));
-  const rk = r.key;
   NET.roomRef = r;
-  NET.roomKey = rk;
-  NET.scoreRef = ref(db, SCORES_PATH + '/' + rk);
-  NET.myScoreRef = ref(db, SCORES_PATH + '/' + rk + '/p/' + peerId);
-  onDisconnect(r).remove().catch(() => {});
-  onDisconnect(NET.myScoreRef).remove().catch(() => {});
-  NET.beat = () => set(r, { h: peerId, n: humans().length, t: serverTimestamp() }).catch(() => {});
-  NET.beat();
-  NET.hb = setInterval(NET.beat, 8000);
-  NET.syncScores = () => {
-    if (!db || !isHost || !NET.scoreRef) return;
+  NET.roomKey = r.key;
+  onDisconnect(r).update({ h: null, n: 0 }).catch(() => {});
+  NET.sync = () => {
+    if (!db || !isHost || !NET.roomRef) return;
     const pObj = {};
     for (const p of players.values()){
-      if (!p.peerId) continue;
-      pObj[p.peerId] = {
-        pid: p.pid,
-        n: p.n,
-        c: p.c,
-        score: p.score,
-        sc: Math.round(p.sc),
-        hp: Math.round(p.hp),
-        nitro: Math.round(p.nitro)
-      };
+      if (!p.uid) continue;
+      pObj[p.uid] = { pid: p.pid, n: p.n, c: p.c, score: p.score, sc: Math.round(p.sc), hp: Math.round(p.hp), nitro: Math.round(p.nitro) };
     }
-    set(NET.scoreRef, { t: serverTimestamp(), p: pObj }).catch(() => {});
-    if (players.size <= 1) onDisconnect(NET.scoreRef).remove().catch(() => {});
-    else onDisconnect(NET.scoreRef).cancel().catch(() => {});
+    update(r, { h: peerId, n: players.size, t: serverTimestamp(), p: pObj }).catch(() => {});
   };
-  NET.syncScores();
-  NET.scoreTimer = setInterval(NET.syncScores, 4000);
+  NET.sync();
+  NET.syncTimer = setInterval(NET.sync, 4000);
 }
 
 const rosterList = () => humans().map(p => ({ pid: p.pid, n: p.n, c: p.c, pi: p.peerId }));
@@ -554,8 +542,7 @@ function broadcastRoster(){
   broadcast({ t: 'roster', list: rosterList() });
   updateOnline();
   syncCalls();
-  if (NET.beat) NET.beat();
-  if (NET.syncScores) NET.syncScores();
+  if (NET.sync) NET.sync();
 }
 function addPlayer(n, c){
   const p = mkPlayer(nextPid++, n, c), now = performance.now();
@@ -572,8 +559,7 @@ function sys(m){
 function hostChat(pid, text, mid){
   const p = players.get(pid);
   if (!p) return;
-  if (mid && seenMsgs.has(mid)) return;
-  if (mid) seenMsgs.add(mid);
+  if (mid && !remember(hostSeen, mid)) return;
   const now = Date.now();
   if (now - p.lastChat < 600) return;
   p.lastChat = now;
@@ -618,16 +604,29 @@ function startHost(peer, existingRoomKey, restoredScores){
   isHost = true;
   NET.peer = peer;
   NET.snapSeq = 0;
+  NET.lastSeq = 0;
   NET.hostPid = 1;
-  const savedByPeer = restoredScores || new Map();
+  const saved = restoredScores || new Map(), recent = new Map();
+  const claim = (p, u) => {
+    if (!u) return;
+    const old = humans().find(q => q !== p && q.uid === u);
+    if (old){
+      if (old.pid === myPid || performance.now() - old.seen < 1500) return;
+      const oc = NET.conns.get(old.pid);
+      if (oc){ try { oc.close(); } catch {} if (oc.__drop) oc.__drop(); }
+    }
+    p.uid = u;
+    const rc = recent.get(u);
+    applySavedStats(p, saved.get(u) || (rc && rc.s));
+    saved.delete(u); recent.delete(u);
+  };
   players.clear(); nextPid = 1; nextCid = 1;
   myPid = addPlayer(me.nick, me.color);
   const myPl = players.get(myPid);
   myPl.peerId = peer.id;
-  if (savedByPeer.has(peer.id)){
-    applySavedStats(myPl, savedByPeer.get(peer.id));
-    savedByPeer.delete(peer.id);
-  }
+  myPl.uid = me.uid;
+  applySavedStats(myPl, saved.get(me.uid));
+  saved.delete(me.uid);
   initCoins();
   roomLabel = 'Arena';
   setupHostRoom(peer.id, existingRoomKey);
@@ -641,9 +640,7 @@ function startHost(peer, existingRoomKey, restoredScores){
       if (pid == null) return;
       const p = players.get(pid), id = pid;
       pid = null;
-      if (p && p.peerId && db && NET.roomKey){
-        remove(ref(db, SCORES_PATH + '/' + NET.roomKey + '/p/' + p.peerId)).catch(() => {});
-      }
+      if (p && p.uid) recent.set(p.uid, { s: { score: p.score, sc: p.sc, hp: p.hp, nitro: p.nitro }, t: performance.now() });
       players.delete(id); NET.conns.delete(id);
       broadcastRoster();
       if (p) sys(p.n + ' left');
@@ -661,10 +658,7 @@ function startHost(peer, existingRoomKey, restoredScores){
         pid = addPlayer(cleanNick(d.n), safeColor(d.c));
         const joinedP = players.get(pid);
         joinedP.peerId = conn.peer;
-        if (savedByPeer.has(conn.peer)){
-          applySavedStats(joinedP, savedByPeer.get(conn.peer));
-          savedByPeer.delete(conn.peer);
-        }
+        claim(joinedP, UID_RE.test(d.u || '') ? d.u : '');
         NET.conns.set(pid, conn);
         const wPayload = { t: 'welcome', pid, hostPid: myPid, rk: NET.roomKey, roster: rosterList(), coins: packCoins() };
         try { conn.send(wPayload); } catch {}
@@ -690,14 +684,14 @@ function startHost(peer, existingRoomKey, restoredScores){
   });
   NET.vt = setInterval(syncCalls, 4000);
 
-  let simLast = performance.now(), acc = 0, snapAcc = 0, chk = 0;
+  let simLast = performance.now(), acc = 0, snapAcc = 0, chk = 0, resync = 0;
   NET.resetSimClock = () => { simLast = performance.now(); acc = 0; snapAcc = 0; };
   NET.simTimer = setInterval(() => {
     const now = performance.now();
     let el = (now - simLast) / 1000;
     simLast = now;
     if (el > .12){ el = 1 / 60; acc = 0; }
-    acc += el; snapAcc += el; chk += el;
+    acc += el; snapAcc += el; chk += el; resync += el;
     setInput(players.get(myPid), readInput());
     let steps = 0;
     while (acc >= 1 / 60 && steps < 4){ simStep(1 / 60); acc -= 1 / 60; steps++; }
@@ -709,8 +703,14 @@ function startHost(peer, existingRoomKey, restoredScores){
       if (cops.length) broadcast({ t: 'cu', o: cops.splice(0) });
       applyEvents(s.ev);
     }
+    if (resync >= 4){
+      resync = 0;
+      broadcast({ t: 'cs', c: packCoins() });
+      broadcast({ t: 'roster', list: rosterList() });
+    }
     if (chk >= 1){
       chk = 0;
+      for (const [k, v] of recent) if (now - v.t > 60000) recent.delete(k);
       for (const [id, c] of [...NET.conns]){
         const p = players.get(id);
         if (!p || now - p.seen > 5000){ try { c.close(); } catch {} if (c.__drop) c.__drop(); }
@@ -754,17 +754,10 @@ function setRoster(list){
   updateOnline(); rebuildLB(); syncCalls();
 }
 function cleanupNet(keepPeer){
-  clearInterval(NET.inputTimer); clearInterval(NET.simTimer); clearInterval(NET.hb); clearInterval(NET.scoreTimer); clearInterval(NET.vt); clearInterval(NET.watch); clearTimeout(NET.retry);
+  clearInterval(NET.inputTimer); clearInterval(NET.simTimer); clearInterval(NET.syncTimer); clearInterval(NET.vt); clearInterval(NET.watch); clearTimeout(NET.retry);
   if (!keepPeer) closeVoice();
-  if (isHost){
-    try { NET.roomRef && remove(NET.roomRef); } catch {}
-    if (players.size <= 1){
-      try { NET.scoreRef && remove(NET.scoreRef); } catch {}
-    } else {
-      try { NET.myScoreRef && remove(NET.myScoreRef); } catch {}
-    }
-  } else if (!keepPeer){
-    try { NET.myScoreRef && remove(NET.myScoreRef); } catch {}
+  if (isHost && db && NET.roomRef){
+    try { update(NET.roomRef, { h: null, n: 0 }); } catch {}
   }
   try { NET.hostConn && NET.hostConn.close(); } catch {}
   for (const c of NET.conns.values()){ try { c.close(); } catch {} }
@@ -773,12 +766,20 @@ function cleanupNet(keepPeer){
     NET.peer = null;
     NET.roomKey = '';
   }
-  NET.hostConn = null; NET.roomRef = null; NET.scoreRef = null; NET.myScoreRef = null; NET.beat = null; NET.syncScores = null; NET.resetSimClock = null; NET.conns.clear();
+  NET.hostConn = null; NET.roomRef = null; NET.sync = null; NET.resetSimClock = null; NET.conns.clear();
   NET.lastSeq = 0; NET.snapSeq = 0;
   isHost = false;
 }
 function resetWorld(){ players.clear(); coins = []; myPid = null; roomLabel = ''; }
 function retryLater(){ clearTimeout(NET.retry); NET.retry = setTimeout(connectFlow, 600 + Math.random() * 1200); }
+
+function joinRetry(peer, hostId, gen, left){
+  if (gen !== GEN) return;
+  joinClient(peer, hostId, () => connectFlow(), () => {
+    if (left > 0) setTimeout(() => joinRetry(peer, hostId, gen, left - 1), 700);
+    else connectFlow();
+  });
+}
 
 async function onHostLost(){
   const gen = ++GEN;
@@ -795,68 +796,73 @@ async function onHostLost(){
 
   if (existingPeer && oldRoomKey && db){
     if (amNextHost){
+      const restored = new Map();
       try {
-        const snap = await get(ref(db, SCORES_PATH + '/' + oldRoomKey + '/p'));
+        const snap = await get(ref(db, ROOMS_PATH + '/' + oldRoomKey + '/p'));
         if (gen !== GEN) return;
-        const restored = new Map();
         if (snap.exists()){
           snap.forEach(ch => {
             const v = ch.val();
             if (v && ch.key) restored.set(ch.key, v);
           });
         }
-        startHost(existingPeer, oldRoomKey, restored);
-        return;
       } catch {}
+      if (gen !== GEN) return;
+      startHost(existingPeer, oldRoomKey, restored);
+      return;
     } else if (nextHostPeerId){
       await new Promise(r => setTimeout(r, 650));
-      if (gen !== GEN) return;
-      joinClient(existingPeer, nextHostPeerId, () => connectFlow(), () => connectFlow());
+      joinRetry(existingPeer, nextHostPeerId, gen, 3);
       return;
     }
   }
   retryLater();
 }
 
-function whenPeer(cb){
+function whenPeer(cb, gen){
   if (window.Peer){ cb(); return; }
   if (!document.querySelector('script[data-peerjs]')){
     const s = document.createElement('script');
     s.src = 'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js';
     s.dataset.peerjs = '1';
+    s.onerror = () => s.remove();
     document.head.appendChild(s);
   }
-  const t = setInterval(() => { if (window.Peer){ clearInterval(t); cb(); } }, 80);
+  const t0 = performance.now();
+  const t = setInterval(() => {
+    if (gen !== GEN){ clearInterval(t); return; }
+    if (window.Peer){ clearInterval(t); cb(); }
+    else if (performance.now() - t0 > 15000){ clearInterval(t); retryLater(); }
+  }, 80);
 }
 function connectFlow(){
-  GEN++;
+  const gen = ++GEN;
   cleanupNet(false); resetWorld();
   setStatus('Finding match…');
   showLoader('Finding arena match…');
   if (!db){ retryLater(); return; }
   whenPeer(() => {
-    const gen = GEN, p = new Peer();
+    const p = new Peer();
     NET.peer = p;
     let opened = false;
     p.on('error', e => {
       if (opened){ console.warn('peer error', e.type); return; }
-      if (gen !== GEN) return;
       try { p.destroy(); } catch {}
-      retryLater();
+      if (gen === GEN) retryLater();
     });
     p.on('disconnected', () => { setTimeout(() => { if (!p.destroyed && p.disconnected){ try { p.reconnect(); } catch {} } }, 2000); });
     p.on('call', c => { c.__t = performance.now(); try { c.answer(localStream()); } catch {} attachCall(c); });
     p.on('open', () => {
       opened = true;
       if (gen !== GEN) return;
-      const tryNext = (list, i) => {
+      const tryNext = (list, i, mine) => {
         if (gen !== GEN) return;
-        if (i >= list.length){ startHost(p); return; }
-        joinClient(p, list[i].host, () => tryNext(list, i + 1), () => tryNext(list, i + 1));
+        if (i >= list.length){ startHost(p, mine && mine.key, mine ? toMap(mine.p) : null); return; }
+        joinClient(p, list[i].host, () => tryNext(list, i + 1, mine), () => tryNext(list, i + 1, mine));
       };
-      findRooms().then(list => tryNext(list, 0)).catch(() => { if (gen === GEN) startHost(p); });
+      findRooms().then(r => tryNext(r.list, 0, r.mine)).catch(() => { if (gen === GEN) startHost(p); });
     });
-  });
+  }, gen);
 }
 function joinClient(p, hostId, onFull, onFail){
   const gen = GEN;
@@ -864,16 +870,17 @@ function joinClient(p, hostId, onFull, onFail){
   const conn = p.connect(hostId, { reliable: false, serialization: 'json' });
   NET.hostConn = conn;
   const onErr = e => { if (!joined && e && e.type === 'peer-unavailable') fail(); };
+  const settle = () => { done = true; clearTimeout(to); clearInterval(helloTimer); p.off('error', onErr); };
   const fail = () => {
     if (done) return;
-    done = true; clearTimeout(to); clearInterval(helloTimer); p.off('error', onErr);
+    settle();
     try { conn.close(); } catch {}
     if (gen === GEN) onFail();
   };
   p.on('error', onErr);
   to = setTimeout(fail, 3800);
   conn.on('open', () => {
-    const sendHello = () => { if (!joined && conn.open) try { conn.send({ t: 'hello', n: me.nick, c: me.color }); } catch {} };
+    const sendHello = () => { if (!joined && conn.open) try { conn.send({ t: 'hello', n: me.nick, c: me.color, u: me.uid }); } catch {} };
     sendHello();
     helloTimer = setInterval(sendHello, 400);
   });
@@ -883,17 +890,13 @@ function joinClient(p, hostId, onFull, onFail){
     if (!d || typeof d !== 'object' || gen !== GEN) return;
     if (d.t === 'welcome'){
       if (joined) return;
-      clearTimeout(to); clearInterval(helloTimer); p.off('error', onErr);
-      joined = true; done = true;
+      settle();
+      joined = true;
       NET.lastSeq = 0;
       NET.hostPid = d.hostPid || 1;
       NET.roomKey = d.rk || '';
-      if (db && NET.roomKey && p.id){
-        NET.myScoreRef = ref(db, SCORES_PATH + '/' + NET.roomKey + '/p/' + p.id);
-        onDisconnect(NET.myScoreRef).remove().catch(() => {});
-      }
       myPid = d.pid;
-      coins = d.coins.map(c => ({ id: c[0], x: c[1], y: c[2], v: c[3] }));
+      coins = unpackCoins(d.coins);
       setRoster(d.roster);
       roomLabel = 'Arena';
       updateOnline();
@@ -907,18 +910,18 @@ function joinClient(p, hostId, onFull, onFail){
         if (k !== lastIn || t - lastT > 120){ lastIn = k; lastT = t; try { conn.send({ t: 'in', i: inp }); } catch {} }
       }, 33);
     } else if (d.t === 'full'){
-      clearTimeout(to); clearInterval(helloTimer); p.off('error', onErr);
-      done = true;
+      settle();
       try { conn.close(); } catch {}
       onFull();
     } else if (d.t === 'roster') setRoster(d.list);
     else if (d.t === 's') applySnapshot(d);
     else if (d.t === 'cu') applyCoinOps(d.o);
+    else if (d.t === 'cs') coins = unpackCoins(d.c);
     else if (d.t === 'chat') showChat(d);
   });
 }
 
-const VOICE = { mic: null, track: null, dummy: null, calls: new Map(), audios: new Map(), micOn: false, spkOn: true };
+const VOICE = { mic: null, track: null, dummy: null, calls: new Map(), audios: new Map(), micOn: false, spkOn: true, busy: false };
 function localStream(){
   if (VOICE.mic) return VOICE.mic;
   if (!VOICE.dummy){
@@ -973,12 +976,14 @@ function syncCalls(){
   }
 }
 async function toggleMic(){
+  if (VOICE.busy) return;
   if (VOICE.micOn){
     VOICE.micOn = false;
     if (VOICE.track) VOICE.track.enabled = false;
   } else {
     if (!VOICE.track){
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ popup({ sys: 1, m: 'Mic not supported (HTTPS needed)' }); return; }
+      VOICE.busy = true;
       try {
         const s = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
         VOICE.mic = s; VOICE.track = s.getAudioTracks()[0];
@@ -988,7 +993,8 @@ async function toggleMic(){
             if (sn) sn.replaceTrack(VOICE.track);
           } catch {}
         }
-      } catch { popup({ sys: 1, m: 'Mic permission blocked' }); return; }
+      } catch { VOICE.busy = false; popup({ sys: 1, m: 'Mic permission blocked' }); return; }
+      VOICE.busy = false;
     }
     VOICE.track.enabled = true; VOICE.micOn = true;
   }
@@ -1081,14 +1087,15 @@ function readInput(){
   };
   hold($('btnNitro'), 'n'); hold($('btnBrake'), 'b');
   const hornEl = $('btnHorn');
+  const hornOff = () => hornEl.classList.remove('down');
   hornEl.addEventListener('pointerdown', e => { e.preventDefault(); hornEl.classList.add('down'); triggerHorn(); });
-  hornEl.addEventListener('pointerup', () => hornEl.classList.remove('down'));
-  hornEl.addEventListener('pointercancel', () => hornEl.classList.remove('down'));
+  hornEl.addEventListener('pointerup', hornOff);
+  hornEl.addEventListener('pointercancel', hornOff);
   const typing = () => document.activeElement && /INPUT|TEXTAREA/.test(document.activeElement.tagName);
   addEventListener('keydown', e => {
     if (typing()) return;
-    if (e.code === 'Enter'){ e.preventDefault(); openChat(); return; }
-    if (e.code === 'KeyM'){ toggleMic(); return; }
+    if (e.code === 'Enter'){ e.preventDefault(); if (!e.repeat && !chatOpen) openChat(); return; }
+    if (e.code === 'KeyM'){ if (!e.repeat) toggleMic(); return; }
     if (e.code === 'KeyH'){ triggerHorn(); return; }
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
     keys.add(e.code);
@@ -1099,11 +1106,7 @@ function readInput(){
 
 let unread = 0;
 function showChat(msg){
-  if (msg.mid){
-    if (seenMsgs.has(msg.mid)) return;
-    seenMsgs.add(msg.mid);
-    if (seenMsgs.size > 200) seenMsgs.delete(seenMsgs.values().next().value);
-  }
+  if (msg.mid && !remember(seenMsgs, msg.mid)) return;
   addHistRow(msg);
   if (!msg.sys && msg.pid !== myPid) sfx.chat();
   if (msg.sys && /joined/.test(msg.m)) sfx.join();
@@ -1451,7 +1454,6 @@ requestAnimationFrame(frame);
 
 connectFlow();
 addEventListener('pagehide', () => cleanupNet(false));
-addEventListener('beforeunload', () => cleanupNet(false));
 })();
 </script>
 {% endraw %}
