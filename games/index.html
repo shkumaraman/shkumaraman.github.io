@@ -15,12 +15,15 @@ body.arena-page{overflow:hidden!important;overscroll-behavior:none}
 #hud{position:absolute;left:0;right:0;top:0;padding:calc(var(--sat) + 10px) 12px 0;display:flex;justify-content:space-between;align-items:flex-start;pointer-events:none;z-index:5}
 .col{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
 .chip{background:rgba(26,26,30,.8);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border:.5px solid var(--bd);border-radius:20px;padding:6px 12px;font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:6px}
-.mid{position:absolute;left:112px;top:calc(var(--sat) + 13px);display:flex;flex-direction:column;align-items:flex-start;gap:6px}
-.row{display:flex;align-items:flex-start;gap:10px}
-.bars{display:flex;flex-direction:column;gap:5px;padding-top:2px}
+.mid{position:absolute;left:112px;right:12px;top:calc(var(--sat) + 13px);display:flex;flex-direction:column;align-items:flex-start;gap:6px;min-width:0}
+.row{display:flex;align-items:flex-start;gap:10px;max-width:100%;min-width:0}
+.bars{display:flex;flex-direction:column;gap:6px;padding-top:2px;flex-shrink:0}
+.brow{display:flex;align-items:center;gap:5px}
+.brow svg{flex-shrink:0}
 #status{font-size:11px;color:var(--mut)}
+#status:empty{display:none}
 #status.ok{color:var(--ok)}
-.bar{width:min(24vw,100px);height:7px;border-radius:7px;background:rgba(255,255,255,.1);overflow:hidden}
+.bar{width:min(22vw,100px);height:7px;border-radius:7px;background:rgba(255,255,255,.1);overflow:hidden}
 .bar i{display:block;height:100%;width:100%;border-radius:7px}
 #nitroBar{background:linear-gradient(90deg,#ff6b4a,#ffd54a)}
 #mini{width:90px;height:90px;border-radius:12px;border:.5px solid var(--bd);background:rgba(17,17,20,.7)}
@@ -30,10 +33,11 @@ body.arena-page{overflow:hidden!important;overscroll-behavior:none}
 .tb.off{color:var(--err)}
 .tb.off .slash{display:inline}
 .tb.on{color:var(--ok);border-color:var(--ok)}
-#lb{font-size:11px;text-shadow:0 1px 3px rgba(0,0,0,.9)}
-.lbrow{display:flex;gap:6px;align-items:center;padding:1.5px 0;white-space:nowrap}
+#lb{font-size:11px;text-shadow:0 1px 3px rgba(0,0,0,.9);min-width:0;flex:1 1 auto;overflow:hidden}
+#lbRows{min-width:0}
+.lbrow{display:flex;gap:6px;align-items:center;padding:1.5px 0;white-space:nowrap;min-width:0;overflow:hidden}
 .lbrow .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
-.lbrow .nm{max-width:90px;overflow:hidden;text-overflow:ellipsis}
+.lbrow .nm{min-width:0;max-width:min(90px,26vw);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lbrow.me{color:var(--accent);font-weight:700}
 .lbrow .sc{color:var(--mut);font-variant-numeric:tabular-nums}
 #hint{position:absolute;bottom:calc(var(--sab) + 8px);width:100%;text-align:center;font-size:11px;color:var(--mut);pointer-events:none;z-index:4}
@@ -96,7 +100,16 @@ body.arena-page{overflow:hidden!important;overscroll-behavior:none}
     <div class="mid">
       <span id="status">Finding match…</span>
       <div class="row">
-        <div class="bars"><div class="bar"><i id="hpBar"></i></div><div class="bar"><i id="nitroBar"></i></div></div>
+        <div class="bars">
+          <div class="brow">
+            <svg width="13" height="13" viewBox="0 0 24 24" aria-label="Health"><path d="M12 21s-7.5-4.6-9.6-9.2C.8 8.3 2.6 4.5 6.3 4.5c2.1 0 3.8 1.1 5.7 3.3 1.9-2.2 3.6-3.3 5.7-3.3 3.7 0 5.5 3.8 3.9 7.3C19.5 16.4 12 21 12 21z" fill="#ff4d5e"/></svg>
+            <div class="bar"><i id="hpBar"></i></div>
+          </div>
+          <div class="brow">
+            <svg width="13" height="13" viewBox="0 0 24 24" aria-label="Nitro"><path d="M13.5 2 5 13.5h5.2L9 22l9-12h-5.4z" fill="#ffd54a"/></svg>
+            <div class="bar"><i id="nitroBar"></i></div>
+          </div>
+        </div>
         <div id="lb"><div id="lbRows"></div></div>
       </div>
     </div>
@@ -383,8 +396,8 @@ const packCoins = () => coins.map(c => [c.id, Math.round(c.x), Math.round(c.y), 
 
 const NET = { peer: null, conns: new Map(), hostConn: null, retry: null, inputTimer: null, simTimer: null, hb: null, vt: null, watch: null, roomRef: null, beat: null, lastSnap: 0 };
 let GEN = 0, roomLabel = '';
-function setStatus(t, ok){ const el = $('status'); el.textContent = t; el.classList.toggle('ok', !!ok); }
-function updateOnline(){ if (roomLabel) setStatus('● ' + roomLabel + ' · ' + humans().length + '/' + MAX_HUMANS + ' online', true); }
+function setStatus(t, ok){ const el = $('status'); el.textContent = t || ''; el.classList.toggle('ok', !!ok); }
+function updateOnline(){ if (roomLabel) setStatus(''); }
 
 let db = null;
 try {
@@ -913,10 +926,16 @@ function drawName(p, isMe){
   ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillRect(p.rx - bw / 2 - 1, by - 1, bw + 2, bh + 2);
   ctx.fillStyle = 'hsl(' + clamp(p.hp, 0, 100) * 1.2 + ',80%,50%)'; ctx.fillRect(p.rx - bw / 2, by, bw * clamp(p.hp, 0, 100) / 100, bh);
   ctx.font = '600 ' + size + 'px system-ui,sans-serif';
-  const w = ctx.measureText(p.n).width + 12, h = size + 6, x = p.rx - w / 2, y = by - 3 - h;
+  const maxW = Math.min(cw / cam.z * .5, 220 / cam.z);
+  let label = p.n;
+  if (ctx.measureText(label).width + 12 > maxW){
+    while (label.length > 1 && ctx.measureText(label + '…').width + 12 > maxW) label = label.slice(0, -1);
+    label += '…';
+  }
+  const w = ctx.measureText(label).width + 12, h = size + 6, x = p.rx - w / 2, y = by - 3 - h;
   ctx.fillStyle = 'rgba(8,8,10,.62)'; rr(x, y, w, h, h / 2); ctx.fill();
   ctx.fillStyle = isMe ? '#ff6b4a' : '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(p.n, p.rx, y + h / 2 + .5);
+  ctx.fillText(label, p.rx, y + h / 2 + .5);
 }
 function drawWorld(dt, now){
   const mp = players.get(myPid);
