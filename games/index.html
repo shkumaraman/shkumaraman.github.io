@@ -15,10 +15,12 @@ body.arena-page{overflow:hidden!important;overscroll-behavior:none}
 #hud{position:absolute;left:0;right:0;top:0;padding:calc(var(--sat) + 10px) 12px 0;display:flex;justify-content:space-between;align-items:flex-start;pointer-events:none;z-index:5}
 .col{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
 .chip{background:rgba(26,26,30,.8);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border:.5px solid var(--bd);border-radius:20px;padding:6px 12px;font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:6px}
-.mid{position:absolute;left:50%;transform:translateX(-50%);top:calc(var(--sat) + 13px);display:flex;flex-direction:column;align-items:center;gap:5px}
+.mid{position:absolute;left:112px;top:calc(var(--sat) + 13px);display:flex;flex-direction:column;align-items:flex-start;gap:6px}
+.row{display:flex;align-items:flex-start;gap:10px}
+.bars{display:flex;flex-direction:column;gap:5px;padding-top:2px}
 #status{font-size:11px;color:var(--mut)}
 #status.ok{color:var(--ok)}
-.bar{width:min(34vw,150px);height:7px;border-radius:7px;background:rgba(255,255,255,.1);overflow:hidden}
+.bar{width:min(24vw,100px);height:7px;border-radius:7px;background:rgba(255,255,255,.1);overflow:hidden}
 .bar i{display:block;height:100%;width:100%;border-radius:7px}
 #nitroBar{background:linear-gradient(90deg,#ff6b4a,#ffd54a)}
 #mini{width:90px;height:90px;border-radius:12px;border:.5px solid var(--bd);background:rgba(17,17,20,.7)}
@@ -28,10 +30,10 @@ body.arena-page{overflow:hidden!important;overscroll-behavior:none}
 .tb.off{color:var(--err)}
 .tb.off .slash{display:inline}
 .tb.on{color:var(--ok);border-color:var(--ok)}
-#lb{width:min(34vw,150px);font-size:11px;text-shadow:0 1px 3px rgba(0,0,0,.9)}
+#lb{font-size:11px;text-shadow:0 1px 3px rgba(0,0,0,.9)}
 .lbrow{display:flex;gap:6px;align-items:center;padding:1.5px 0;white-space:nowrap}
 .lbrow .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
-.lbrow .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.lbrow .nm{max-width:90px;overflow:hidden;text-overflow:ellipsis}
 .lbrow.me{color:var(--accent);font-weight:700}
 .lbrow .sc{color:var(--mut);font-variant-numeric:tabular-nums}
 #hint{position:absolute;bottom:calc(var(--sab) + 8px);width:100%;text-align:center;font-size:11px;color:var(--mut);pointer-events:none;z-index:4}
@@ -93,9 +95,10 @@ body.arena-page{overflow:hidden!important;overscroll-behavior:none}
     </div>
     <div class="mid">
       <span id="status">Finding match…</span>
-      <div class="bar"><i id="hpBar"></i></div>
-      <div class="bar"><i id="nitroBar"></i></div>
-      <div id="lb"><div id="lbRows"></div></div>
+      <div class="row">
+        <div class="bars"><div class="bar"><i id="hpBar"></i></div><div class="bar"><i id="nitroBar"></i></div></div>
+        <div id="lb"><div id="lbRows"></div></div>
+      </div>
     </div>
   </div>
 
@@ -154,7 +157,7 @@ const angDiff = (a, b) => { let d = a - b; while (d > Math.PI) d -= 2 * Math.PI;
 const safeColor = c => /^#[0-9a-f]{6}$/i.test(c || '') ? c : COLORS[0];
 const cleanNick = s => String(s || '').replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/\s+/g, ' ').trim().slice(0, 20) || 'Racer';
 const colorFor = name => { let h = 0; for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) | 0; return COLORS[Math.abs(h) % COLORS.length]; };
-const szOf = p => 1 + 1.4 * (1 - Math.exp(-Math.min(p.score, 80) / 25));
+const szOf = p => 1 + 2.6 * (1 - Math.exp(-Math.min(p.score, 100) / 30));
 
 /* Obstacle boxes: seeded, so every player gets the identical map without any network sync */
 const boxes = (() => {
@@ -163,7 +166,7 @@ const boxes = (() => {
   const out = [];
   for (let i = 0; i < 1500 && out.length < 80; i++){
     const w = 60 + rnd() * 150, h = 60 + rnd() * 150, x = 200 + rnd() * (W - 400 - w), y = 200 + rnd() * (H - 400 - h);
-    if (out.some(b => x < b.x + b.w + 130 && x + w + 130 > b.x && y < b.y + b.h + 130 && y + h + 130 > b.y)) continue;
+    if (out.some(b => x < b.x + b.w + 200 && x + w + 200 > b.x && y < b.y + b.h + 200 && y + h + 200 > b.y)) continue;
     out.push({ x, y, w, h });
   }
   return out;
@@ -319,8 +322,8 @@ function kill(p, now){
   while (coins.length > 240){ const k = coins.findIndex(c => !c.base); if (k < 0) break; coins.splice(k, 1); }
   dirty = true;
   evq.push(['k', Math.round(p.x), Math.round(p.y), p.pid]);
-  if (kl && kl !== p){ kl.hp = Math.min(100, kl.hp + 25); sys('💥 ' + kl.n + ' smashed ' + p.n); }
-  else sys('💥 ' + p.n + ' crashed');
+  if (kl && kl !== p){ kl.hp = Math.min(100, kl.hp + 25); sys(kl.n + ' smashed ' + p.n); }
+  else sys(p.n + ' crashed');
   p.score = 0;
   place(p, now);
   evq.push(['r', p.pid]);
@@ -923,7 +926,7 @@ function drawWorld(dt, now){
     cam.m += (tm - cam.m) * (1 - Math.exp(-dt * 2.6));
     cam.x += (mp.rx + mp.vx * .25 - cam.x) * (1 - Math.exp(-dt * 6));
     cam.y += (mp.ry + mp.vy * .25 - cam.y) * (1 - Math.exp(-dt * 6));
-    const zt = clamp(Math.min(cw, ch) / 620, .45, 1.1) / (1 + (mp.rs - 1) * .4) * (1 - Math.min(sp, 620) / 2200) * cam.m;
+    const zt = clamp(Math.min(cw, ch) / 620, .45, 1.1) / (1 + (mp.rs - 1) * .45) * (1 - Math.min(sp, 620) / 2200) * cam.m;
     cam.z += (zt - cam.z) * (1 - Math.exp(-dt * 3));
   }
   shake *= Math.exp(-dt * 9);
@@ -1010,10 +1013,8 @@ function rebuildLB(){
   rows.forEach((p, i) => {
     const r = document.createElement('div');
     r.className = 'lbrow' + (p.pid === myPid ? ' me' : '');
-    const d = document.createElement('span'); d.className = 'dot'; d.style.background = p.c;
     const n = document.createElement('span'); n.className = 'nm'; n.textContent = (i + 1) + '. ' + p.n;
-    const sc = document.createElement('span'); sc.className = 'sc'; sc.textContent = p.score;
-    r.append(d, n, sc);
+    r.append(n);
     box.appendChild(r);
   });
 }
