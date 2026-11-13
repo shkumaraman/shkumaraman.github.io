@@ -243,8 +243,12 @@
   } from "firebase/database";
 
   const baseUrl = window.MEDIA_STORAGE_URL.replace(/\/$/, "");
+  const wsProto = baseUrl.startsWith("https") ? "wss:" : "ws:";
+  const wsHost = baseUrl.replace(/^https?:\/\//, "");
   const DURATION = 5000;
   const HISTORY_LIMIT = 50;
+
+  const nowMs = () => (typeof window.getServerNow === "function" ? window.getServerNow() : Date.now());
 
   const ICONS = {
     dm: "M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z",
@@ -294,10 +298,18 @@
   const countEl = document.getElementById("nfCount");
   const barEl = document.getElementById("nfBar");
 
-  const notifySound = new Audio("/assets/notify.mp3");
-  const ringtone = new Audio("/assets/ringtone.mp3");
+  let notifySound = null;
+  const ringtone = new Audio();
+  ringtone.preload = "none";
+  ringtone.src = "/assets/ringtone.mp3";
   ringtone.loop = true;
   window.callRingtone = ringtone;
+
+  function playNotifySound() {
+    if (!notifySound) notifySound = new Audio("/assets/notify.mp3");
+    notifySound.currentTime = 0;
+    notifySound.play().catch(() => {});
+  }
 
   let queue = [];
   let current = null;
@@ -362,10 +374,7 @@
     } else {
       barEl.classList.add("run");
       timer = setTimeout(hide, DURATION);
-      if (!item.silent && !flag("soundMuted")) {
-        notifySound.currentTime = 0;
-        notifySound.play().catch(() => {});
-      }
+      if (!item.silent && !flag("soundMuted")) playNotifySound();
     }
 
     updateCount();
@@ -491,30 +500,27 @@
   let myNickname = localStorage.getItem("talkrush_nickname");
   let lastNotified = read("lastNotifiedMessages", {});
   let userFriendsMap = {};
-  let friendsInitialLoaded = false;
   let listenersAttached = false;
   let ringing = false;
   let unsubs = [];
-  let friendsWs = null;
-  let friendsPing = null;
 
-  function detachListeners() {
-    if (friendsPing) {
-      clearInterval(friendsPing);
-      friendsPing = null;
-    }
-    if (friendsWs) {
-      try {
-        friendsWs.onclose = null;
-        friendsWs.close();
-      } catch (e) {}
-      friendsWs = null;
-    }
-    unsubs.forEach(u => {
-      try { if (typeof u === "function") u(); } catch (e) {}
-    });
-    unsubs = [];
-    listenersAttached = false;
+  window.friendsMap = userFriendsMap;
+  window.friendsReady = false;
+
+  let notifiedTimer = null;
+  function saveNotified() {
+    if (notifiedTimer) return;
+    notifiedTimer = setTimeout(() => {
+      notifiedTimer = null;
+      const keys = Object.keys(lastNotified);
+      if (keys.length > 200) {
+        keys.forEach(k => {
+          const isGroup = String(lastNotified[k]).startsWith("group_reply_");
+          if (!isGroup && !userFriendsMap[k]) delete lastNotified[k];
+        });
+      }
+      write("lastNotifiedMessages", lastNotified);
+    }, 500);
   }
 
   function isChatActive(chatId) {
@@ -539,41 +545,59 @@
     const lastSeen = read("inbox_last_seen", {});
     const onInbox = location.pathname.includes("/chat/inbox");
     const activeChatId = onInbox ? new URLSearchParams(location.search).get("chatId") : null;
-    if (activeChatId) lastSeen[activeChatId] = Date.now();
 
     let unread = 0;
     Object.entries(userFriendsMap).forEach(([chatId, friend]) => {
+      if (chatId === activeChatId && !document.hidden) return;
       const seen = lastSeen[chatId] || 0;
       const ts = friend.lastTimestamp || 0;
-      if (friend.lastSender && friend.lastSender !== myNickname && ts > seen && chatId !== activeChatId) {
-        unread++;
-      }
+      if (friend.lastSender && friend.lastSender !== myNickname && ts > seen) unread++;
     });
 
     window._lastInboxBadgeCount = unread;
     window.dispatchEvent(new CustomEvent("updateInboxBadge", { detail: unread }));
   }
 
+  const friendSockets = {};
+  let pubTimer = null;
+
+  function publishFriends() {
+    if (pubTimer) return;
+    pubTimer = setTimeout(() => {
+      pubTimer = null;
+      const socks = Object.values(friendSockets);
+      window.friendsMap = userFriendsMap;
+      window.friendsReady = socks.length > 0 && socks.every(s => s.loaded);
+      updateFriendsBadge();
+      window.dispatchEvent(new CustomEvent("friendsMapUpdated"));
+    }, 30);
+  }
+
+  function resetFriends() {
+    userFriendsMap = {};
+    window.friendsMap = userFriendsMap;
+    window.friendsReady = false;
+  }
+
   function handleFriendRecord(chatId, friend, allowToast) {
     if (!friend || (friend.nickname1 !== myNickname && friend.nickname2 !== myNickname)) return;
 
     userFriendsMap[chatId] = friend;
-    updateFriendsBadge();
-
-    if (!allowToast) return;
+    publishFriends();
 
     const friendNick = getFriendNickname(friend);
     if (!friendNick || !friend.lastMessageText || friend.lastSender === myNickname) return;
 
     const key = chatId + "_" + friend.lastTimestamp;
-    if (lastNotified[chatId] === key || flag("notificationOff")) return;
+    if (lastNotified[chatId] === key) return;
 
     lastNotified[chatId] = key;
-    write("lastNotifiedMessages", lastNotified);
+    saveNotified();
+    if (!allowToast || flag("notificationOff")) return;
 
     if (isChatActive(chatId)) {
       const lastSeen = read("inbox_last_seen", {});
-      lastSeen[chatId] = Date.now();
+      lastSeen[chatId] = nowMs();
       write("inbox_last_seen", lastSeen);
       return;
     }
@@ -588,69 +612,87 @@
     });
   }
 
-  function initFriendsWebSocket() {
+  function connectFriends(field) {
     if (!myNickname || myNickname === "Guest") return;
+    const st = friendSockets[field] || (friendSockets[field] = { retry: 0, loaded: false, ids: new Set(), last: 0 });
+    if (st.ws && st.ws.readyState <= 1) return;
+    clearTimeout(st.timer);
 
-    const proto = baseUrl.startsWith("https") ? "wss:" : "ws:";
-    const host = baseUrl.replace(/^https?:\/\//, "");
+    const q = `orderBy=${encodeURIComponent(JSON.stringify(field))}&equalTo=${encodeURIComponent(JSON.stringify(myNickname))}`;
+    let ws;
+    try { ws = new WebSocket(`${wsProto}//${wsHost}/ws/friends?${q}`); } catch (e) { return; }
+    st.ws = ws;
 
-    try {
-      friendsWs = new WebSocket(`${proto}//${host}/ws/friends`);
-    } catch (e) {
-      return;
-    }
-
-    friendsWs.onopen = () => {
-      if (friendsPing) clearInterval(friendsPing);
-      friendsPing = setInterval(() => {
-        if (friendsWs && friendsWs.readyState === WebSocket.OPEN) {
-          friendsWs.send(JSON.stringify({ type: "ping" }));
-        }
+    ws.onopen = () => {
+      st.retry = 0;
+      st.last = Date.now();
+      clearInterval(st.ping);
+      st.ping = setInterval(() => {
+        if (ws.readyState !== 1) return;
+        if (Date.now() - st.last > 70000) { ws.close(); return; }
+        ws.send('{"type":"ping"}');
       }, 25000);
     };
 
-    friendsWs.onmessage = event => {
-      try {
-        const msg = JSON.parse(event.data);
-        if (!msg || ["ping", "pong", "time", "onDisconnectAck"].includes(msg.event)) return;
+    ws.onmessage = ev => {
+      st.last = Date.now();
+      let msg;
+      try { msg = JSON.parse(ev.data); } catch (e) { return; }
+      if (!msg || ["ping", "pong", "time", "onDisconnectAck", "writeAck"].includes(msg.event)) return;
 
-        if (msg.event === "connected") {
-          if (msg.data && typeof msg.data === "object") {
-            Object.entries(msg.data).forEach(([id, friend]) => handleFriendRecord(id, friend, friendsInitialLoaded));
-          }
-          friendsInitialLoaded = true;
-          return;
-        }
+      if (msg.event === "connected") {
+        const data = msg.data && typeof msg.data === "object" ? msg.data : {};
+        const fresh = new Set(Object.keys(data));
+        st.ids.forEach(id => { if (!fresh.has(id)) delete userFriendsMap[id]; });
+        st.ids = fresh;
+        Object.entries(data).forEach(([id, f]) => handleFriendRecord(id, f, st.loaded));
+        st.loaded = true;
+        publishFriends();
+        return;
+      }
 
-        const parts = (msg.path || "").split("/").filter(Boolean);
+      const chatId = (msg.path || "").split("/").filter(Boolean)[0];
+      if (!chatId) return;
 
-        if (!parts.length) {
-          if (msg.event === "delete" || msg.data === null) {
-            userFriendsMap = {};
-            updateFriendsBadge();
-          } else if (typeof msg.data === "object" && msg.data) {
-            Object.entries(msg.data).forEach(([id, friend]) => handleFriendRecord(id, friend, true));
-          }
-          return;
-        }
-
-        const chatId = parts[0];
-
-        if (msg.event === "delete" || msg.data === null) {
-          delete userFriendsMap[chatId];
-          updateFriendsBadge();
-        } else if (msg.event === "patch") {
-          handleFriendRecord(chatId, { ...(userFriendsMap[chatId] || {}), ...(msg.data || {}) }, true);
-        } else if (msg.event === "put") {
-          handleFriendRecord(chatId, msg.data, true);
-        }
-      } catch (e) {}
+      if (msg.event === "delete" || msg.data === null) {
+        st.ids.delete(chatId);
+        delete userFriendsMap[chatId];
+        publishFriends();
+      } else if (msg.data && typeof msg.data === "object") {
+        st.ids.add(chatId);
+        handleFriendRecord(chatId, { ...(userFriendsMap[chatId] || {}), ...msg.data }, true);
+      }
     };
 
-    friendsWs.onclose = () => {
-      if (friendsPing) clearInterval(friendsPing);
-      if (listenersAttached) setTimeout(initFriendsWebSocket, 3000);
+    ws.onclose = () => {
+      clearInterval(st.ping);
+      if (!listenersAttached || st.ws !== ws) return;
+      const delay = Math.min(30000, 1000 * 2 ** st.retry++) + Math.random() * 500;
+      st.timer = setTimeout(() => connectFriends(field), delay);
     };
+  }
+
+  function ensureFriends() {
+    if (!listenersAttached) return;
+    ["nickname1", "nickname2"].forEach(connectFriends);
+  }
+
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) ensureFriends(); });
+  window.addEventListener("online", ensureFriends);
+
+  function detachListeners() {
+    Object.values(friendSockets).forEach(st => {
+      clearInterval(st.ping);
+      clearTimeout(st.timer);
+      try { if (st.ws) { st.ws.onclose = null; st.ws.close(); } } catch (e) {}
+    });
+    Object.keys(friendSockets).forEach(k => delete friendSockets[k]);
+
+    unsubs.forEach(u => {
+      try { if (typeof u === "function") u(); } catch (e) {}
+    });
+    unsubs = [];
+    listenersAttached = false;
   }
 
   function listenPosts() {
@@ -687,7 +729,7 @@
           changed = true;
         }
       });
-      if (changed) write("lastNotifiedMessages", lastNotified);
+      if (changed) saveNotified();
 
       if (!data) {
         window._lastRoomBadgeCount = 0;
@@ -706,7 +748,7 @@
         if (lastNotified[groupName] === key || flag("notificationOff")) return;
 
         lastNotified[groupName] = key;
-        write("lastNotifiedMessages", lastNotified);
+        saveNotified();
 
         notify({
           type: "group_mention",
@@ -767,25 +809,15 @@
     if (!myNickname || myNickname === "Guest") return;
     listenersAttached = true;
 
-    fetch(`${baseUrl}/friends.json`)
-      .then(r => r.json())
-      .then(data => {
-        if (data && typeof data === "object") {
-          Object.entries(data).forEach(([id, friend]) => handleFriendRecord(id, friend, friendsInitialLoaded));
-        }
-        friendsInitialLoaded = true;
-      })
-      .catch(() => {});
-
-    initFriendsWebSocket();
+    connectFriends("nickname1");
+    connectFriends("nickname2");
 
     unsubs.push(listenPosts(), listenGroups(), listenCalls());
   }
 
   window.addEventListener("nicknameUpdated", e => {
     myNickname = e.detail.nickname;
-    userFriendsMap = {};
-    friendsInitialLoaded = false;
+    resetFriends();
     startListeners();
   });
 
