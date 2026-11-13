@@ -54,6 +54,8 @@ body.arena-page{overflow:hidden!important;overscroll-behavior:none}
 #btnNitro{right:20px;bottom:calc(var(--sab) + 44px);width:84px;height:84px;background:var(--accent);box-shadow:0 6px 20px rgba(255,107,74,.35)}
 #btnBrake{right:114px;bottom:calc(var(--sab) + 28px);width:62px;height:62px;background:rgba(255,255,255,.1)}
 #btnHorn{right:78px;bottom:calc(var(--sab) + 138px);width:48px;height:48px;background:rgba(255,213,74,.16);border-color:rgba(255,213,74,.4);color:#ffd54a}
+#btnFire{right:22px;bottom:calc(var(--sab) + 206px);width:64px;height:64px;background:rgba(255,46,59,.88);border-color:rgba(255,255,255,.3);box-shadow:0 6px 18px rgba(255,46,59,.35)}
+#btnFire.hide{display:none}
 .pad.down{transform:scale(.92);filter:brightness(1.25)}
 #btnChat{position:absolute;right:20px;bottom:calc(var(--sab) + 146px);z-index:6;width:46px;height:46px;border-radius:50%;background:rgba(26,26,30,.9);border:.5px solid var(--bd);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;touch-action:manipulation;padding:0}
 #badge{position:absolute;top:-4px;right:-4px;background:var(--err);color:#fff;font-size:10px;font-weight:700;min-width:17px;height:17px;border-radius:9px;display:none;align-items:center;justify-content:center;padding:0 4px}
@@ -98,6 +100,10 @@ body.arena-page{overflow:hidden!important;overscroll-behavior:none}
         <svg width="14" height="14" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#ffd54a"/><circle cx="12" cy="12" r="5" fill="#c99a10"/></svg>
         <b id="score">0</b>
       </div>
+      <div class="chip">
+        <svg width="14" height="14" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="14" rx="2" fill="#ffd54a"/><rect x="9" y="3" width="6" height="4" rx="2" fill="#ff6b4a"/><rect x="7" y="18" width="10" height="3" rx="1" fill="#9ca3af"/></svg>
+        <b id="ammoN">0</b>
+      </div>
       <canvas id="mini" width="180" height="180"></canvas>
       <div class="tools">
         <button class="tb" id="btnSfx" aria-label="Game sounds" title="Game sounds">
@@ -127,7 +133,7 @@ body.arena-page{overflow:hidden!important;overscroll-behavior:none}
   </div>
 
   <div id="chatLog"></div>
-  <div id="hint">WASD / Arrows drive · Space nitro · Shift drift · H horn · Enter chat · Hide in grass</div>
+  <div id="hint">WASD / Arrows drive · Space nitro · F fire · Shift drift · H horn · Enter chat · Hide in grass</div>
 
   <div id="joy"><div id="stick"></div></div>
   <div class="pad" id="btnBrake" aria-label="Drift">
@@ -135,6 +141,9 @@ body.arena-page{overflow:hidden!important;overscroll-behavior:none}
   </div>
   <div class="pad" id="btnHorn" aria-label="Horn" title="Horn (H)">
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10v4h4l5 4V6L7 10H3z" fill="currentColor"/><path d="M16 9a4 4 0 0 1 0 6"/><path d="M19 6.5a7.5 7.5 0 0 1 0 11"/></svg>
+  </div>
+  <div class="pad hide" id="btnFire" aria-label="Fire" title="Fire (F)">
+    <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2.5" fill="currentColor"/><line x1="12" y1="1" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="1" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="23" y2="12"/></svg>
   </div>
   <div class="pad" id="btnNitro" aria-label="Nitro">
     <svg width="42" height="42" viewBox="0 0 24 24" fill="currentColor"><path d="M13.5 2 5 13.5h5.2L9 22l9-12h-5.4z"/></svg>
@@ -169,6 +178,7 @@ document.body.classList.add('arena-page');
 const APP_NAME = 'TalkRushGameApp';
 const firebaseConfig = { databaseURL: 'https://talkrush3-default-rtdb.asia-southeast1.firebasedatabase.app' };
 const W = 7000, H = 7000, R = 20, MAX_HUMANS = 5, NCOINS = 310, NBOXES = 100, BOMB_R = 95;
+const AMMO_N = 10, AMMO_PACK = 50, BSPD = 1100, BLIFE = .7, BDMG = 5, FIRE_MS = 100, BCAP = 120;
 const ZONE = { first: 25, gapMin: 35, gapMax: 55, warn: 7, dur: 24, every: .38, fuse: 1.1, rMin: 650, rMax: 950 };
 const ROOMS_PATH = 'games/racing/rooms';
 const NICK_KEY = 'talkrush_nickname';
@@ -315,7 +325,9 @@ const sfx = {
   join: () => beep(440, 660, .12, 'sine', .05),
   boom: v => { beep(220, 30, .5, 'sawtooth', .1 * v); beep(120, 30, .4, 'square', .06 * v, .05); },
   respawn: () => { beep(300, 600, .15, 'sine', .06); beep(600, 900, .15, 'sine', .05, .12); },
-  horn: v => playHornTone(v)
+  horn: v => playHornTone(v),
+  shot: v => beep(520, 120, .06, 'square', .015 + .035 * v),
+  reload: () => { beep(300, 500, .08, 'triangle', .07); beep(500, 800, .08, 'triangle', .06, .07); }
 };
 
 const players = new Map();
@@ -323,6 +335,8 @@ let coins = [], cops = [], nextCid = 1, myPid = null, isHost = false, nextPid = 
 let zone = null, zoneWait = 0, bombs = [], bombAcc = 0, zoneView = null;
 const bombView = [];
 const evq = [];
+let ammos = [], localFcd = 0;
+const bullets = [], bview = [];
 
 let inSeq = 0, predAcc = 0, predReady = false, lastInSig = '', lastInSend = 0;
 const pendingInputs = [];
@@ -341,7 +355,7 @@ function resetPrediction(){
 
 function mkPlayer(pid, n, c){
   return { pid, n, c, peerId: '', uid: '', ack: 0, x: 0, y: 0, a: 0, px: 0, py: 0, pa: 0, vx: 0, vy: 0, score: 0, sc: 0, nitro: 100, boost: 0, hp: 100, sh: 0, inv: 0, lastDmg: 0, lastHit: 0, lastHitT: 0, bombed: 0,
-    in: { ax: 0, ay: 0, s: 0, t: 0, n: 0, b: 0 }, rx: null, ry: 0, ra: 0, rs: 1.25, st: 0, lastChat: 0, lastHorn: 0, seen: 0, rev: 0, rvf: 0, buf: [] };
+    in: { ax: 0, ay: 0, s: 0, t: 0, n: 0, b: 0, f: 0 }, rx: null, ry: 0, ra: 0, rs: 1.25, st: 0, lastChat: 0, lastHorn: 0, seen: 0, rev: 0, rvf: 0, buf: [], ammo: 0, fcd: 0, mf: 0 };
 }
 const humans = () => [...players.values()];
 const packCoinsFlat = () => {
@@ -457,7 +471,7 @@ function kill(p, now){
   if (kl && kl !== p){ kl.hp = Math.min(100, kl.hp + 25); sys(kl.n + ' smashed ' + p.n); }
   else if (now - p.bombed < 1200) sys(p.n + ' got bombed');
   else sys(p.n + ' crashed');
-  p.score = 0; p.sc = 0;
+  p.score = 0; p.sc = 0; p.ammo = 0;
   place(p, now);
   evq.push(['r', p.pid]);
   if (NET.sync) NET.sync();
@@ -531,6 +545,46 @@ function zoneStep(dt, now){
   }
 }
 
+function initAmmo(){ ammos = []; for (let i = 0; i < AMMO_N; i++){ const f = freeSpot(); ammos.push({ x: f.x, y: f.y }); } }
+function respawnAmmo(a){
+  let f = freeSpot();
+  for (let i = 0; i < 8 && Math.hypot(f.x - a.x, f.y - a.y) < 800; i++) f = freeSpot();
+  a.x = f.x; a.y = f.y;
+}
+const packAmmo = () => { const o = []; for (const a of ammos) o.push(Math.round(a.x), Math.round(a.y)); return o; };
+const unpackAmmo = a => { const o = []; if (Array.isArray(a)) for (let i = 0; i + 1 < a.length; i += 2) o.push({ x: a[i], y: a[i + 1] }); return o; };
+
+function fireStep(list, now){
+  for (const p of list){
+    if (!p.in.f || p.ammo < 1 || p.hp <= 0 || now < p.fcd) continue;
+    p.fcd = now + FIRE_MS; p.ammo--;
+    const sz = szOf(p), a = p.a + rand(-.03, .03);
+    const x = p.x + Math.cos(p.a) * 30 * sz, y = p.y + Math.sin(p.a) * 30 * sz;
+    bullets.push({ x, y, vx: Math.cos(a) * BSPD, vy: Math.sin(a) * BSPD, life: BLIFE, o: p.pid });
+    p.rev = Math.max(p.rev, now + 400);
+    evq.push(['f', p.pid, Math.round(x), Math.round(y), +a.toFixed(3)]);
+  }
+  if (bullets.length > BCAP) bullets.splice(0, bullets.length - BCAP);
+}
+function bulletStep(dt, now){
+  for (let i = bullets.length - 1; i >= 0; i--){
+    const b = bullets[i];
+    b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
+    if (b.life <= 0 || b.x < 0 || b.x > W || b.y < 0 || b.y > H){ bullets.splice(i, 1); continue; }
+    if (inBox(b.x, b.y, 0)){ evq.push(['g', Math.round(b.x), Math.round(b.y)]); bullets.splice(i, 1); continue; }
+    for (const q of players.values()){
+      if (q.pid === b.o || q.hp <= 0 || q.inv > now) continue;
+      if (Math.hypot(q.x - b.x, q.y - b.y) < R * szOf(q) + 4){
+        hurt(q, BDMG, b.o, now);
+        q.vx += b.vx * .012; q.vy += b.vy * .012;
+        evq.push(['g', Math.round(b.x), Math.round(b.y)]);
+        bullets.splice(i, 1);
+        break;
+      }
+    }
+  }
+}
+
 function simStep(dt){
   const now = performance.now(), list = humans();
   for (const p of list){ p.px = p.x; p.py = p.y; p.pa = p.a; }
@@ -538,9 +592,21 @@ function simStep(dt){
   for (const p of list){ stepCar(p, dt); boxCollide(p, now, false); }
   collide(list, now);
   for (const p of list) boxCollide(p, now, false);
+  fireStep(list, now); bulletStep(dt, now);
   for (const p of list){
     if (p.hp <= 0) kill(p, now);
     else if (now - p.lastDmg > 3000 && p.hp < 100) p.hp = Math.min(100, p.hp + 6 * dt);
+  }
+  for (const p of list){
+    if (p.hp <= 0) continue;
+    const rad = R * szOf(p) + 16;
+    for (const a of ammos){
+      if (Math.hypot(a.x - p.x, a.y - p.y) < rad){
+        p.ammo += AMMO_PACK;
+        evq.push(['a', Math.round(a.x), Math.round(a.y), p.pid]);
+        respawnAmmo(a);
+      }
+    }
   }
   for (const p of list){
     const rad = R * szOf(p) + 14;
@@ -620,7 +686,7 @@ function setupHostRoom(peerId, existingKey){
     const pObj = {};
     for (const p of players.values()){
       if (!p.uid) continue;
-      pObj[p.uid] = { pid: p.pid, n: p.n, c: p.c, score: p.score, sc: Math.round(p.sc), hp: Math.round(p.hp), nitro: Math.round(p.nitro) };
+      pObj[p.uid] = { pid: p.pid, n: p.n, c: p.c, score: p.score, sc: Math.round(p.sc), hp: Math.round(p.hp), nitro: Math.round(p.nitro), ammo: p.ammo | 0 };
     }
     update(r, { h: peerId, n: players.size, t: serverTimestamp(), p: pObj }).catch(() => {});
   };
@@ -677,7 +743,7 @@ function hostHorn(pid){
 function setInput(p, d, q){
   if (!p || !d) return;
   const f = v => clamp(+v || 0, -1, 1);
-  p.in = { ax: f(d.ax), ay: f(d.ay), s: f(d.s), t: f(d.t), n: d.n ? 1 : 0, b: d.b ? 1 : 0 };
+  p.in = { ax: f(d.ax), ay: f(d.ay), s: f(d.s), t: f(d.t), n: d.n ? 1 : 0, b: d.b ? 1 : 0, f: d.f ? 1 : 0 };
   if (typeof q === 'number' && q > p.ack) p.ack = q | 0;
 }
 function snapshot(){
@@ -686,8 +752,9 @@ function snapshot(){
   return {
     t: 's',
     seq: NET.snapSeq,
-    p: humans().map(p => [p.pid, r1(p.x), r1(p.y), Math.round(p.a * 100) / 100, Math.round(p.vx), Math.round(p.vy), p.score, Math.round(p.nitro), p.boost, Math.round(p.hp), p.inv > now ? 1 : 0, Math.round(p.sc), p.rvf | 0, p.ack | 0]),
+    p: humans().map(p => [p.pid, r1(p.x), r1(p.y), Math.round(p.a * 100) / 100, Math.round(p.vx), Math.round(p.vy), p.score, Math.round(p.nitro), p.boost, Math.round(p.hp), p.inv > now ? 1 : 0, Math.round(p.sc), p.rvf | 0, p.ack | 0, Math.round(p.ammo)]),
     z: zone ? [zone.ph, Math.round(zone.x), Math.round(zone.y), Math.round(zone.r), Math.round(zone.left * 10) / 10] : 0,
+    am: packAmmo(),
     ev: evq.splice(0)
   };
 }
@@ -701,6 +768,7 @@ function applySavedStats(p, sv){
   p.sc = Math.max(0, Number(sv.sc) || 0);
   p.hp = clamp(Number(sv.hp) || 100, 25, 100);
   p.nitro = clamp(Number(sv.nitro) || 100, 0, 100);
+  p.ammo = clamp(Number(sv.ammo) || 0, 0, 5000);
 }
 
 function startHost(peer, existingRoomKey, restoredScores){
@@ -735,6 +803,8 @@ function startHost(peer, existingRoomKey, restoredScores){
   applySavedStats(myPl, saved.get(me.uid));
   saved.delete(me.uid);
   initCoins();
+  initAmmo();
+  bullets.length = 0;
   roomLabel = 'Arena';
   setupHostRoom(peer.id, existingRoomKey);
   updateOnline(); rebuildLB(); hideLoader();
@@ -747,7 +817,7 @@ function startHost(peer, existingRoomKey, restoredScores){
       if (pid == null) return;
       const p = players.get(pid), id = pid;
       pid = null;
-      if (p && p.uid) recent.set(p.uid, { s: { score: p.score, sc: p.sc, hp: p.hp, nitro: p.nitro }, t: performance.now() });
+      if (p && p.uid) recent.set(p.uid, { s: { score: p.score, sc: p.sc, hp: p.hp, nitro: p.nitro, ammo: p.ammo }, t: performance.now() });
       players.delete(id); NET.conns.delete(id);
       broadcastRoster();
       if (p) sys(p.n + ' left');
@@ -849,7 +919,7 @@ function applySnapshot(d){
       const oldX = (p.rx !== null ? p.rx : p.x) + predErr.x;
       const oldY = (p.ry !== null ? p.ry : p.y) + predErr.y;
       const oldA = (p.rx !== null ? p.ra : p.a) + predErr.a;
-      p.x = a[1]; p.y = a[2]; p.a = a[3]; p.vx = a[4]; p.vy = a[5]; p.score = a[6]; p.nitro = a[7]; p.boost = a[8]; p.hp = a[9]; p.sh = a[10]; p.sc = a[11]; p.rvf = a[12] | 0; p.st = now;
+      p.x = a[1]; p.y = a[2]; p.a = a[3]; p.vx = a[4]; p.vy = a[5]; p.score = a[6]; p.nitro = a[7]; p.boost = a[8]; p.hp = a[9]; p.sh = a[10]; p.sc = a[11]; p.rvf = a[12] | 0; p.ammo = a[14] | 0; p.st = now;
       const ack = a[13] | 0;
       while (pendingInputs.length && pendingInputs[0].q <= ack) pendingInputs.shift();
       for (let k = 0; k < pendingInputs.length; k++){
@@ -866,7 +936,7 @@ function applySnapshot(d){
         predErr.a = angDiff(oldA, p.a);
       }
     } else {
-      p.x = a[1]; p.y = a[2]; p.a = a[3]; p.vx = a[4]; p.vy = a[5]; p.score = a[6]; p.nitro = a[7]; p.boost = a[8]; p.hp = a[9]; p.sh = a[10]; p.sc = a[11]; p.rvf = a[12] | 0; p.st = now;
+      p.x = a[1]; p.y = a[2]; p.a = a[3]; p.vx = a[4]; p.vy = a[5]; p.score = a[6]; p.nitro = a[7]; p.boost = a[8]; p.hp = a[9]; p.sh = a[10]; p.sc = a[11]; p.rvf = a[12] | 0; p.ammo = a[14] | 0; p.st = now;
       p.buf.push({ t: now, x: p.x, y: p.y, a: p.a, vx: p.vx, vy: p.vy });
       if (p.buf.length > 6) p.buf.shift();
       if (p.buf.length > 1){
@@ -879,6 +949,7 @@ function applySnapshot(d){
     }
   }
   setZoneView(d.z, now);
+  ammos = unpackAmmo(d.am);
   applyEvents(d.ev);
   if (myPid != null && players.get(myPid) && players.get(myPid).x > -5000) hideLoader();
 }
@@ -909,7 +980,7 @@ function cleanupNet(keepPeer){
   NET.lastSeq = 0; NET.snapSeq = 0;
   isHost = false;
 }
-function resetWorld(){ players.clear(); coins = []; bombView.length = 0; zoneView = null; myPid = null; roomLabel = ''; resetPrediction(); }
+function resetWorld(){ players.clear(); coins = []; ammos = []; bview.length = 0; bullets.length = 0; bombView.length = 0; zoneView = null; myPid = null; roomLabel = ''; resetPrediction(); }
 function retryLater(){ clearTimeout(NET.retry); NET.retry = setTimeout(connectFlow, 600 + Math.random() * 1200); }
 
 function joinRetry(peer, hostId, gen, left){
@@ -1078,16 +1149,16 @@ $('btnShare').addEventListener('click', () => {
 }, { passive: true }));
 syncTools();
 
-const joy = { id: null, ax: 0, ay: 0 }, btn = { n: 0, b: 0 }, keys = new Set();
+const joy = { id: null, ax: 0, ay: 0 }, btn = { n: 0, b: 0, f: 0 }, keys = new Set();
 let chatOpen = false, lastHornPress = 0;
 
 function resetAllInputs(){
   keys.clear();
   joy.id = null; joy.ax = 0; joy.ay = 0;
-  btn.n = 0; btn.b = 0;
+  btn.n = 0; btn.b = 0; btn.f = 0;
   const st = $('stick');
   if (st) st.style.transform = '';
-  ['btnNitro', 'btnBrake', 'btnHorn'].forEach(id => { const el = $(id); if (el) el.classList.remove('down'); });
+  ['btnNitro', 'btnBrake', 'btnHorn', 'btnFire'].forEach(id => { const el = $(id); if (el) el.classList.remove('down'); });
 }
 
 function triggerHorn(){
@@ -1102,7 +1173,7 @@ function triggerHorn(){
 }
 
 function readInput(){
-  if (chatOpen || document.hidden) return { ax: 0, ay: 0, s: 0, t: 0, n: 0, b: 0 };
+  if (chatOpen || document.hidden) return { ax: 0, ay: 0, s: 0, t: 0, n: 0, b: 0, f: 0 };
   let s = 0, t = 0;
   if (keys.has('ArrowLeft') || keys.has('KeyA')) s -= 1;
   if (keys.has('ArrowRight') || keys.has('KeyD')) s += 1;
@@ -1112,7 +1183,8 @@ function readInput(){
   return {
     ax: useJoy ? r2(joy.ax) : 0, ay: useJoy ? r2(joy.ay) : 0, s, t,
     n: (btn.n || keys.has('Space')) ? 1 : 0,
-    b: (btn.b || keys.has('ShiftLeft') || keys.has('ShiftRight')) ? 1 : 0
+    b: (btn.b || keys.has('ShiftLeft') || keys.has('ShiftRight')) ? 1 : 0,
+    f: (btn.f || keys.has('KeyF')) ? 1 : 0
   };
 }
 (function bindControls(){
@@ -1138,7 +1210,7 @@ function readInput(){
     el.addEventListener('pointercancel', off);
     el.addEventListener('lostpointercapture', off);
   };
-  hold($('btnNitro'), 'n'); hold($('btnBrake'), 'b');
+  hold($('btnNitro'), 'n'); hold($('btnBrake'), 'b'); hold($('btnFire'), 'f');
   const hornEl = $('btnHorn');
   const hornOff = () => hornEl.classList.remove('down');
   hornEl.addEventListener('pointerdown', e => { e.preventDefault(); hornEl.classList.add('down'); triggerHorn(); });
@@ -1273,6 +1345,19 @@ function applyEvents(evs){
       for (let i = 0; i < 26; i++){ const a = rand(0, 6.28), s = rand(80, 380); spawn(e[1], e[2], Math.cos(a) * s, Math.sin(a) * s, rand(.3, .7), rand(3, 7), Math.random() < .5 ? '#ff6b4a' : '#ffd54a', 'dot'); }
       spawn(e[1], e[2], 0, 0, .45, e[3] * .3, '#ff6b4a', 'ring');
       if (mp && mp.rx !== null){ const d = Math.hypot(e[1] - mp.rx, e[2] - mp.ry); if (d < 800){ sfx.boom(.6 * (1 - d / 800)); shake = Math.max(shake, 9 * (1 - d / 800)); } }
+    } else if (e[0] === 'f'){
+      if (e[1] === myPid) continue;
+      const fp = players.get(e[1]); if (fp) fp.mf = performance.now() + 60;
+      bview.push({ x: e[2], y: e[3], vx: Math.cos(e[4]) * BSPD, vy: Math.sin(e[4]) * BSPD, life: BLIFE });
+      if (mp && mp.rx !== null){ const d = Math.hypot(e[2] - mp.rx, e[3] - mp.ry); if (d < 700) sfx.shot(1 - d / 700); }
+    } else if (e[0] === 'g'){
+      for (let i = 0; i < 5; i++){ const a = rand(0, 6.28), s = rand(40, 180); spawn(e[1], e[2], Math.cos(a) * s, Math.sin(a) * s, rand(.15, .3), rand(1.5, 3), '#ffb03a', 'dot'); }
+      let bi = -1, bd = 90;
+      for (let i = 0; i < bview.length; i++){ const d = Math.hypot(bview[i].x - e[1], bview[i].y - e[2]); if (d < bd){ bd = d; bi = i; } }
+      if (bi >= 0) bview.splice(bi, 1);
+    } else if (e[0] === 'a'){
+      for (let i = 0; i < 14; i++){ const a = rand(0, 6.28), s = rand(40, 160); spawn(e[1], e[2], Math.cos(a) * s, Math.sin(a) * s, rand(.3, .6), rand(2, 3.5), Math.random() < .5 ? '#38bdf8' : '#ffd54a', 'dot'); }
+      if (e[3] === myPid) sfx.reload();
     }
   }
 }
@@ -1282,7 +1367,7 @@ function predictClient(dt, now){
   if (!mp || !predReady || mp.x < -5000) return;
   predAcc = Math.min(.1, predAcc + dt);
   const inp = readInput();
-  const sig = inp.ax + ',' + inp.ay + ',' + inp.s + ',' + inp.t + ',' + inp.n + ',' + inp.b;
+  const sig = inp.ax + ',' + inp.ay + ',' + inp.s + ',' + inp.t + ',' + inp.n + ',' + inp.b + ',' + inp.f;
   let stepped = false;
   while (predAcc >= 1 / 60){
     predAcc -= 1 / 60;
@@ -1354,6 +1439,15 @@ function drawCar(p, isMe, now){
   ctx.fillStyle = 'rgba(10,10,14,.8)'; rr(-6, -8, 17, 16, 4); ctx.fill();
   ctx.fillStyle = '#fff6c2'; ctx.fillRect(19, -10, 3, 5); ctx.fillRect(19, 5, 3, 5);
   ctx.fillStyle = '#ff3b3b'; ctx.fillRect(-22, -10, 2, 5); ctx.fillRect(-22, 5, 2, 5);
+  if (p.ammo > 0){
+    ctx.fillStyle = '#2b2b33'; rr(2, -5, 10, 10, 3); ctx.fill();
+    ctx.fillStyle = '#5b5b68'; ctx.fillRect(12, -9, 19, 3); ctx.fillRect(12, 6, 19, 3);
+    if (p.mf > now){
+      ctx.fillStyle = '#ffe066';
+      ctx.beginPath(); ctx.arc(33, -7.5, 5, 0, 6.283); ctx.fill();
+      ctx.beginPath(); ctx.arc(33, 7.5, 5, 0, 6.283); ctx.fill();
+    }
+  }
   if (isMe){ ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; rr(-22, -12, 44, 24, 7); ctx.stroke(); }
   else { ctx.strokeStyle = 'rgba(255,46,59,.7)'; ctx.lineWidth = 1.6; rr(-23, -13, 46, 26, 7.5); ctx.stroke(); }
   ctx.globalAlpha = 1;
@@ -1494,6 +1588,25 @@ function drawWorld(dt, now){
     ctx.fillStyle = c.v > 1 ? '#ffb03a' : '#ffd54a'; ctx.beginPath(); ctx.arc(c.x, c.y, 10 * pulse * big, 0, 6.283); ctx.fill();
     ctx.fillStyle = '#c99a10'; ctx.beginPath(); ctx.arc(c.x, c.y, 5 * big, 0, 6.283); ctx.fill();
   }
+  for (const a of ammos){
+    if (a.x < vx0 || a.x > vx1 || a.y < vy0 || a.y > vy1) continue;
+    const bob = 1 + Math.sin(now / 220) * .08;
+    ctx.fillStyle = 'rgba(56,189,248,.18)'; ctx.beginPath(); ctx.arc(a.x, a.y, 28 * bob, 0, 6.283); ctx.fill();
+    ctx.fillStyle = '#2a3a52'; rr(a.x - 13, a.y - 13, 26, 26, 5); ctx.fill();
+    ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = '#ffd54a';
+    for (let k = -1; k <= 1; k++) ctx.fillRect(a.x + k * 7 - 2, a.y - 7, 4, 13);
+    ctx.fillStyle = '#ff6b4a';
+    for (let k = -1; k <= 1; k++) ctx.fillRect(a.x + k * 7 - 2, a.y - 9, 4, 3);
+  }
+  ctx.lineCap = 'round'; ctx.strokeStyle = '#ffe066'; ctx.lineWidth = 3;
+  for (let i = bview.length - 1; i >= 0; i--){
+    const b = bview[i];
+    b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
+    if (b.life <= 0 || inBox(b.x, b.y, 0)){ bview.splice(i, 1); continue; }
+    ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(b.x - b.vx * .022, b.y - b.vy * .022); ctx.stroke();
+  }
+  if (bview.length > BCAP) bview.splice(0, bview.length - BCAP);
   drawBombs(now, vx0, vx1, vy0, vy1);
   skidT++;
   for (const p of players.values()){
@@ -1532,6 +1645,8 @@ function drawMini(now){
   for (const b of boxes) mctx.fillRect(b.x * s, b.y * s, Math.max(2, b.w * s), Math.max(2, b.h * s));
   mctx.fillStyle = 'rgba(34,197,94,.22)';
   for (const g of grass){ mctx.beginPath(); mctx.arc(g.x * s, g.y * s, Math.max(2, g.r * s), 0, 6.283); mctx.fill(); }
+  mctx.fillStyle = '#38bdf8';
+  for (const a of ammos){ mctx.beginPath(); mctx.arc(a.x * s, a.y * s, 3, 0, 6.283); mctx.fill(); }
   const zv = zoneView;
   if (zv){
     const pl = .5 + .5 * Math.sin(now / (zv.ph === 1 ? 140 : 260));
@@ -1599,6 +1714,16 @@ function frame(now){
   const mp = players.get(myPid);
   if (mp){
     $('score').textContent = mp.score;
+    const hasAmmo = mp.ammo > 0;
+    $('ammoN').textContent = mp.ammo | 0;
+    $('btnFire').classList.toggle('hide', !hasAmmo);
+    if (!hasAmmo && btn.f){ btn.f = 0; $('btnFire').classList.remove('down'); }
+    if (hasAmmo && mp.rx !== null && mp.rx > -5000 && readInput().f && now >= localFcd){
+      localFcd = now + FIRE_MS; mp.mf = now + 60;
+      const fa = mp.ra + rand(-.03, .03);
+      bview.push({ x: mp.rx + Math.cos(mp.ra) * 30 * mp.rs, y: mp.ry + Math.sin(mp.ra) * 30 * mp.rs, vx: Math.cos(fa) * BSPD, vy: Math.sin(fa) * BSPD, life: BLIFE });
+      sfx.shot(1);
+    }
     $('nitroBar').style.width = clamp(mp.nitro, 0, 100) + '%';
     const hb = $('hpBar'); hb.style.width = clamp(mp.hp, 0, 100) + '%'; hb.style.background = 'hsl(' + clamp(mp.hp, 0, 100) * 1.2 + ',80%,50%)';
     if (prevHp - mp.hp > 3) flash = Math.max(flash, .8);
