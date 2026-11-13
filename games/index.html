@@ -134,7 +134,7 @@ body.arena-page{overflow:hidden!important;overscroll-behavior:none}
   </div>
 
   <div id="chatLog"></div>
-  <div id="hint">WASD / Arrows drive · Space nitro · Shift drift · H horn · Enter chat · M mic</div>
+  <div id="hint">WASD / Arrows drive · Space nitro · Shift drift · H horn · Enter chat · M mic · Hide in grass</div>
 
   <div id="joy"><div id="stick"></div></div>
   <div class="pad" id="btnBrake" aria-label="Drift">
@@ -194,7 +194,7 @@ const angDiff = (a, b) => { let d = a - b; while (d > Math.PI) d -= 2 * Math.PI;
 const safeColor = c => /^#[0-9a-f]{6}$/i.test(c || '') ? c : COLORS[0];
 const cleanNick = s => String(s || '').replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/\s+/g, ' ').trim().slice(0, 20) || 'Racer';
 const colorFor = name => { let h = 0; for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) | 0; return COLORS[Math.abs(h) % COLORS.length]; };
-const szOf = p => 1 + 2.6 * (1 - Math.exp(-Math.min(p.sc, 100) / 30));
+const szOf = p => 1.25 + 2.7 * (1 - Math.exp(-Math.min(p.sc, 100) / 30));
 const remember = (set, id) => {
   if (set.has(id)) return false;
   set.add(id);
@@ -217,11 +217,37 @@ const boxes = (() => {
   const out = [];
   for (let i = 0; i < 4000 && out.length < NBOXES; i++){
     const w = 60 + rnd() * 150, h = 60 + rnd() * 150, x = 200 + rnd() * (W - 400 - w), y = 200 + rnd() * (H - 400 - h);
-    if (out.some(b => x < b.x + b.w + 200 && x + w + 200 > b.x && y < b.y + b.h + 200 && y + h + 200 > b.y)) continue;
+    if (out.some(b => x < b.x + b.w + 240 && x + w + 240 > b.x && y < b.y + b.h + 240 && y + h + 240 > b.y)) continue;
     out.push({ x, y, w, h });
   }
   return out;
 })();
+const grass = (() => {
+  let s = 90417;
+  const rnd = () => { s |= 0; s = s + 0x6D2B79F5 | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  const out = [];
+  for (let i = 0; i < 6000 && out.length < 44; i++){
+    const r = 170 + rnd() * 130, x = 320 + rnd() * (W - 640), y = 320 + rnd() * (H - 640);
+    if (boxes.some(b => Math.hypot(x - clamp(x, b.x, b.x + b.w), y - clamp(y, b.y, b.y + b.h)) < r + 30)) continue;
+    if (out.some(g => Math.hypot(g.x - x, g.y - y) < g.r + r + 80)) continue;
+    const t = [];
+    for (let k = 0; k < 70; k++){ const a = rnd() * 6.283, d = r * Math.sqrt(rnd()) * .96; t.push({ x: Math.cos(a) * d, y: Math.sin(a) * d, h: 14 + rnd() * 16, l: rnd() * 2 - 1, ph: rnd() * 6.28 }); }
+    out.push({ x, y, r, t });
+  }
+  return out;
+})();
+function grassAt(x, y){
+  for (let i = 0; i < grass.length; i++){ const g = grass[i], dx = x - g.x, dy = y - g.y; if (dx * dx + dy * dy < g.r * g.r) return i; }
+  return -1;
+}
+function canSee(p, mp){
+  if (!mp || p.pid === myPid) return true;
+  const g = grassAt(p.rx, p.ry);
+  if (g < 0 || p.rvf) return true;
+  if (mp.rx === null || mp.rx < -5000) return true;
+  if (grassAt(mp.rx, mp.ry) === g) return true;
+  return Math.hypot(p.rx - mp.rx, p.ry - mp.ry) < 150;
+}
 const inBox = (x, y, m) => boxes.some(b => x > b.x - m && x < b.x + b.w + m && y > b.y - m && y < b.y + b.h + m);
 function freeSpot(){
   let x = 0, y = 0;
@@ -309,13 +335,13 @@ const evq = [];
 
 function mkPlayer(pid, n, c){
   return { pid, n, c, peerId: '', uid: '', x: 0, y: 0, a: 0, vx: 0, vy: 0, score: 0, sc: 0, nitro: 100, boost: 0, hp: 100, sh: 0, inv: 0, lastDmg: 0, lastHit: 0, lastHitT: 0, bombed: 0,
-    in: { ax: 0, ay: 0, s: 0, t: 0, n: 0, b: 0 }, rx: null, ry: 0, ra: 0, rs: 1, st: 0, lastChat: 0, lastHorn: 0, seen: 0 };
+    in: { ax: 0, ay: 0, s: 0, t: 0, n: 0, b: 0 }, rx: null, ry: 0, ra: 0, rs: 1.25, st: 0, lastChat: 0, lastHorn: 0, seen: 0, rev: 0, rvf: 0 };
 }
 const humans = () => [...players.values()];
 const unpackCoins = a => a.map(c => ({ id: c[0], x: c[1], y: c[2], v: c[3] }));
 
 function stepCar(p, dt){
-  const i = p.in, sz = szOf(p), rad = R * sz, heavy = 1 - (sz - 1) * .08;
+  const i = p.in, sz = szOf(p), rad = R * sz, heavy = 1 - (sz - 1.25) * .08;
   let s = i.s, t = i.t;
   const m = Math.hypot(i.ax, i.ay);
   let fx = Math.cos(p.a), fy = Math.sin(p.a);
@@ -333,6 +359,7 @@ function stepCar(p, dt){
   else p.nitro = Math.min(100, p.nitro + 9 * dt);
   fs += acc * dt;
   fs -= fs * .9 * dt;
+  if (grassAt(p.x, p.y) >= 0) fs -= fs * .25 * dt;
   if (i.b) fs -= fs * 2.2 * dt;
   const cap = (boost ? 620 : 360) * heavy;
   if (fs > cap) fs -= (fs - cap) * Math.min(1, 6 * dt);
@@ -354,7 +381,7 @@ function stepCar(p, dt){
 function hurt(p, amt, src, now){
   if (p.hp <= 0) return;
   const dmg = Math.min(100, amt);
-  p.hp -= dmg; p.sc = Math.max(0, p.sc - dmg * 1.5); p.lastDmg = now;
+  p.hp -= dmg; p.sc = Math.max(0, p.sc - dmg * 1.5); p.lastDmg = now; p.rev = now + 1800;
   if (src){ p.lastHit = src; p.lastHitT = now; }
 }
 function collide(list, now){
@@ -374,9 +401,10 @@ function collide(list, now){
     const imp = -rv;
     if (imp > 70) evq.push(['b', Math.round((a.x + b.x) / 2), Math.round((a.y + b.y) / 2), +Math.min(1, imp / 500).toFixed(2)]);
     if (imp > 75 && a.inv < now && b.inv < now){
-      const toB = Math.max(0, van) * .11 * (a.boost ? 1.6 : 1) * Math.sqrt(ma / mb);
-      const toA = Math.max(0, -vbn) * .11 * (b.boost ? 1.6 : 1) * Math.sqrt(mb / ma);
-      hurt(b, toB + 5, a.pid, now); hurt(a, toA + 5, b.pid, now);
+      const rA = Math.pow(sa / sb, 1.3), armA = 1 + (sa - 1.25) * .15, armB = 1 + (sb - 1.25) * .15;
+      const toB = Math.max(0, van) * .11 * (a.boost ? 1.6 : 1) * rA;
+      const toA = Math.max(0, -vbn) * .11 * (b.boost ? 1.6 : 1) / rA;
+      hurt(b, (toB + 3 + 1.5 * sa) / armB, a.pid, now); hurt(a, (toA + 3 + 1.5 * sb) / armA, b.pid, now);
     }
   }
 }
@@ -506,7 +534,7 @@ function simStep(dt){
     }
   }
   for (let k = coins.length - 1; k >= 0; k--) if (coins[k].exp && now > coins[k].exp){ cops.push([coins[k].id]); coins.splice(k, 1); }
-  for (const p of list){ p.st = now; p.sh = p.inv > now ? 1 : 0; }
+  for (const p of list){ p.st = now; p.sh = p.inv > now ? 1 : 0; if (p.boost) p.rev = Math.max(p.rev, now + 500); p.rvf = p.rev > now ? 1 : 0; }
 }
 function initCoins(){
   coins = Array.from({ length: NCOINS }, () => { const f = freeSpot(); return { id: nextCid++, x: f.x, y: f.y, v: 1, base: 1 }; });
@@ -624,7 +652,7 @@ function hostHorn(pid){
   if (!p) return;
   const now = performance.now();
   if (now - p.lastHorn < 650) return;
-  p.lastHorn = now;
+  p.lastHorn = now; p.rev = Math.max(p.rev, now + 1500);
   evq.push(['h', pid, Math.round(p.x), Math.round(p.y)]);
 }
 function setInput(p, d){
@@ -638,7 +666,7 @@ function snapshot(){
   return {
     t: 's',
     seq: NET.snapSeq,
-    p: humans().map(p => [p.pid, r1(p.x), r1(p.y), Math.round(p.a * 100) / 100, Math.round(p.vx), Math.round(p.vy), p.score, Math.round(p.nitro), p.boost, Math.round(p.hp), p.inv > now ? 1 : 0, Math.round(p.sc)]),
+    p: humans().map(p => [p.pid, r1(p.x), r1(p.y), Math.round(p.a * 100) / 100, Math.round(p.vx), Math.round(p.vy), p.score, Math.round(p.nitro), p.boost, Math.round(p.hp), p.inv > now ? 1 : 0, Math.round(p.sc), p.rvf | 0]),
     z: zone ? [zone.ph, Math.round(zone.x), Math.round(zone.y), Math.round(zone.r), Math.round(zone.left * 10) / 10] : 0,
     ev: evq.splice(0)
   };
@@ -795,7 +823,7 @@ function applySnapshot(d){
   for (const a of d.p){
     const p = players.get(a[0]);
     if (!p) continue;
-    p.x = a[1]; p.y = a[2]; p.a = a[3]; p.vx = a[4]; p.vy = a[5]; p.score = a[6]; p.nitro = a[7]; p.boost = a[8]; p.hp = a[9]; p.sh = a[10]; p.sc = a[11]; p.st = now;
+    p.x = a[1]; p.y = a[2]; p.a = a[3]; p.vx = a[4]; p.vy = a[5]; p.score = a[6]; p.nitro = a[7]; p.boost = a[8]; p.hp = a[9]; p.sh = a[10]; p.sc = a[11]; p.rvf = a[12] | 0; p.st = now;
   }
   setZoneView(d.z, now);
   applyEvents(d.ev);
@@ -1399,6 +1427,23 @@ function drawBombs(now, vx0, vx1, vy0, vy1){
     }
   }
 }
+function drawGrass(now, vx0, vx1, vy0, vy1){
+  ctx.lineCap = 'round';
+  for (const g of grass){
+    if (g.x + g.r < vx0 || g.x - g.r > vx1 || g.y + g.r < vy0 || g.y - g.r > vy1) continue;
+    ctx.fillStyle = 'rgba(21,101,52,.5)'; ctx.beginPath(); ctx.arc(g.x, g.y, g.r, 0, 6.283); ctx.fill();
+    ctx.strokeStyle = 'rgba(74,222,128,.3)'; ctx.lineWidth = 3; ctx.stroke();
+    for (let pass = 0; pass < 2; pass++){
+      ctx.strokeStyle = pass ? '#4ade80' : '#16a34a'; ctx.lineWidth = pass ? 2.5 : 3.5; ctx.beginPath();
+      for (let k = pass; k < g.t.length; k += 2){
+        const t = g.t[k], sw = Math.sin(now / 500 + t.ph) * 3, bx = g.x + t.x, by = g.y + t.y;
+        ctx.moveTo(bx, by); ctx.lineTo(bx + t.l * 6 + sw, by - t.h);
+      }
+      ctx.stroke();
+    }
+  }
+  ctx.lineCap = 'butt';
+}
 function drawWorld(dt, now){
   const mp = players.get(myPid);
   for (const p of players.values()) smooth(p, dt, now);
@@ -1409,7 +1454,7 @@ function drawWorld(dt, now){
     cam.m += (tm - cam.m) * (1 - Math.exp(-dt * 2.6));
     cam.x += (mp.rx + mp.vx * .25 - cam.x) * (1 - Math.exp(-dt * 6));
     cam.y += (mp.ry + mp.vy * .25 - cam.y) * (1 - Math.exp(-dt * 6));
-    const zt = clamp(Math.min(cw, ch) / 620, .45, 1.1) / (1 + (mp.rs - 1) * .45) * (1 - Math.min(sp, 620) / 2200) * cam.m;
+    const zt = clamp(Math.min(cw, ch) / 620, .45, 1.1) / (1 + (mp.rs - 1.25) * .45) * (1 - Math.min(sp, 620) / 2200) * cam.m;
     cam.z += (zt - cam.z) * (1 - Math.exp(-dt * 3));
   }
   shake *= Math.exp(-dt * 9);
@@ -1452,11 +1497,13 @@ function drawWorld(dt, now){
   skidT++;
   for (const p of players.values()){
     if (p.rx === null || p.rx < -5000) continue;
+    if (!canSee(p, mp)) continue;
     const fx = Math.cos(p.ra), fy = Math.sin(p.ra), fs = p.vx * fx + p.vy * fy, ls = -p.vx * fy + p.vy * fx;
     const bx = p.rx - fx * 18 * p.rs, by = p.ry - fy * 18 * p.rs;
     if (Math.abs(ls) > 100 && Math.abs(fs) > 40 && skidT % 2 === 0 && skids.length < 500){
       skids.push({ x: bx - fy * 9 * p.rs, y: by + fx * 9 * p.rs, l: 2.5 }, { x: bx + fy * 9 * p.rs, y: by - fx * 9 * p.rs, l: 2.5 });
     }
+    if (Math.hypot(p.vx, p.vy) > 120 && grassAt(p.rx, p.ry) >= 0 && Math.random() < .35) spawn(p.rx, p.ry, rand(-60, 60), rand(-90, -20), rand(.35, .7), rand(2, 4), Math.random() < .5 ? '#4ade80' : '#16a34a', 'dot');
     if (p.boost) spawn(bx, by, -fx * 160 + rand(-30, 30), -fy * 160 + rand(-30, 30), rand(.15, .3), rand(3, 6) * p.rs, Math.random() < .5 ? '#ff6b4a' : '#ffd54a', 'dot');
   }
   for (let i = parts.length - 1; i >= 0; i--){
@@ -1470,8 +1517,10 @@ function drawWorld(dt, now){
   }
   ctx.globalAlpha = 1;
   const list = [...players.values()].filter(p => p.rx !== null && p.rx > -5000).sort((a, b) => (a.pid === myPid) - (b.pid === myPid));
-  for (const p of list) drawCar(p, p.pid === myPid, now);
-  for (const p of list) drawName(p, p.pid === myPid);
+  const vis = list.filter(p => canSee(p, mp));
+  for (const p of vis) drawCar(p, p.pid === myPid, now);
+  drawGrass(now, vx0, vx1, vy0, vy1);
+  for (const p of vis) drawName(p, p.pid === myPid);
   ctx.restore();
   drawHornEdges(dt);
 }
@@ -1480,6 +1529,8 @@ function drawMini(now){
   mctx.clearRect(0, 0, mini.width, mini.height);
   mctx.fillStyle = 'rgba(255,255,255,.15)';
   for (const b of boxes) mctx.fillRect(b.x * s, b.y * s, Math.max(2, b.w * s), Math.max(2, b.h * s));
+  mctx.fillStyle = 'rgba(34,197,94,.22)';
+  for (const g of grass){ mctx.beginPath(); mctx.arc(g.x * s, g.y * s, Math.max(2, g.r * s), 0, 6.283); mctx.fill(); }
   const zv = zoneView;
   if (zv){
     const pl = .5 + .5 * Math.sin(now / (zv.ph === 1 ? 140 : 260));
@@ -1493,7 +1544,7 @@ function drawMini(now){
     }
   }
   for (const p of players.values()){
-    if (p.rx === null || p.rx < -5000 || p.pid === myPid) continue;
+    if (p.rx === null || p.rx < -5000 || p.pid === myPid || !canSee(p, players.get(myPid))) continue;
     mctx.fillStyle = 'rgba(255,46,59,.28)';
     mctx.beginPath(); mctx.arc(p.rx * s, p.ry * s, 8, 0, 6.283); mctx.fill();
     mctx.fillStyle = '#ff2e3b';
@@ -1510,7 +1561,7 @@ function drawMini(now){
   mctx.strokeStyle = 'rgba(255,255,255,.25)'; mctx.lineWidth = 1;
   mctx.strokeRect((cam.x - cw / 2 / z) * s, (cam.y - ch / 2 / z) * s, cw / z * s, ch / z * s);
 }
-let lbTimer = 0;
+let lbTimer = 0, wasHid = '';
 function rebuildLB(){
   const rows = [...players.values()].sort((a, b) => b.score - a.score).slice(0, 5), box = $('lbRows');
   box.innerHTML = '';
@@ -1549,6 +1600,9 @@ function frame(now){
     if (prevHp - mp.hp > 3) flash = Math.max(flash, .8);
     prevHp = mp.hp;
   }
+  const hidNow = mp && mp.rx !== null && grassAt(mp.rx, mp.ry) >= 0;
+  const hs = hidNow ? (mp.rvf ? 'Spotted!' : 'Hidden in grass') : '';
+  if (hs !== wasHid){ wasHid = hs; setStatus(hs, hidNow && !mp.rvf); }
   flash *= Math.exp(-dt * 3);
   $('flash').style.opacity = flash.toFixed(2);
   lbTimer += dt;
