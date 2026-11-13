@@ -745,10 +745,60 @@ window.MediaHub = (function () {
     return card;
   }
 
+  function isInternal(url) {
+    try {
+      return new URL(url).hostname === SITE_HOST;
+    } catch {
+      return false;
+    }
+  }
+
+  function linkifyInternal(holder) {
+    const walker = document.createTreeWalker(holder, NodeFilter.SHOW_TEXT, {
+      acceptNode: (n) =>
+        n.parentElement && n.parentElement.closest("a, .link-card")
+          ? NodeFilter.FILTER_REJECT
+          : NodeFilter.FILTER_ACCEPT
+    });
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+
+    nodes.forEach((node) => {
+      const text = node.nodeValue;
+      const re = /https?:\/\/[^\s<>"']+/g;
+      const frag = document.createDocumentFragment();
+      let last = 0;
+      let m;
+      let changed = false;
+
+      while ((m = re.exec(text))) {
+        if (!isInternal(m[0])) continue;
+        changed = true;
+        frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+        const a = document.createElement("a");
+        a.href = m[0];
+        a.textContent = m[0];
+        a.style.cssText = "color:inherit;text-decoration:underline;word-break:break-all;";
+        frag.appendChild(a);
+        last = m.index + m[0].length;
+      }
+
+      if (!changed) return;
+      frag.appendChild(document.createTextNode(text.slice(last)));
+      node.parentNode.replaceChild(frag, node);
+    });
+  }
+
   function scanLinks() {
     scanQueued = false;
     document.querySelectorAll(".text-content").forEach((holder) => {
-      const a = holder.querySelector('a[href^="http"]');
+      holder.querySelectorAll("a:not(.link-card-btn)").forEach((el) => {
+        if (!isInternal(el.href)) el.replaceWith(document.createTextNode(el.textContent));
+      });
+
+      linkifyInternal(holder);
+
+      const a = holder.querySelector("a:not(.link-card-btn)");
       const old = holder.querySelector(":scope > .link-card");
 
       if (!a) {
