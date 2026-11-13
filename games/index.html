@@ -1,7 +1,7 @@
 ---
 layout: default
-title: "TalkRush Arena – Multiplayer Racing Game with Voice Chat"
-description: "Play free multiplayer car arena with real players. Collect coins, grow your car, smash rivals and talk with voice chat. No login."
+title: "TalkRush Arena – Multiplayer Racing Game with Live Chat"
+description: "Play free multiplayer car arena with real players. Collect coins, grow your car, smash rivals and chat live. No login."
 ---
 {% raw %}
 <style>
@@ -38,7 +38,6 @@ body.arena-page{overflow:hidden!important;overscroll-behavior:none}
 .tb .slash{display:none}
 .tb.off{color:var(--err)}
 .tb.off .slash{display:inline}
-.tb.on{color:var(--ok);border-color:var(--ok)}
 #lb{font-size:11px;text-shadow:0 1px 3px rgba(0,0,0,.9);min-width:0;flex:1 1 auto;overflow:hidden}
 #lbRows{min-width:0}
 .lbrow{display:flex;gap:6px;align-items:center;padding:1.5px 0;white-space:nowrap;min-width:0;overflow:hidden}
@@ -101,12 +100,6 @@ body.arena-page{overflow:hidden!important;overscroll-behavior:none}
       </div>
       <canvas id="mini" width="180" height="180"></canvas>
       <div class="tools">
-        <button class="tb off" id="btnMic" aria-label="Mic" title="Mic (M)">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v4"/><line class="slash" x1="3" y1="3" x2="21" y2="21" stroke-width="2.6"/></svg>
-        </button>
-        <button class="tb" id="btnSpk" aria-label="Speaker" title="Voice speaker">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z" fill="currentColor"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/><line class="slash" x1="3" y1="3" x2="21" y2="21" stroke-width="2.6"/></svg>
-        </button>
         <button class="tb" id="btnSfx" aria-label="Game sounds" title="Game sounds">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/><line class="slash" x1="3" y1="3" x2="21" y2="21" stroke-width="2.6"/></svg>
         </button>
@@ -134,7 +127,7 @@ body.arena-page{overflow:hidden!important;overscroll-behavior:none}
   </div>
 
   <div id="chatLog"></div>
-  <div id="hint">WASD / Arrows drive · Space nitro · Shift drift · H horn · Enter chat · M mic · Hide in grass</div>
+  <div id="hint">WASD / Arrows drive · Space nitro · Shift drift · H horn · Enter chat · Hide in grass</div>
 
   <div id="joy"><div id="stick"></div></div>
   <div class="pad" id="btnBrake" aria-label="Drift">
@@ -347,7 +340,7 @@ function resetPrediction(){
 }
 
 function mkPlayer(pid, n, c){
-  return { pid, n, c, peerId: '', uid: '', mic: 0, ack: 0, x: 0, y: 0, a: 0, px: 0, py: 0, pa: 0, vx: 0, vy: 0, score: 0, sc: 0, nitro: 100, boost: 0, hp: 100, sh: 0, inv: 0, lastDmg: 0, lastHit: 0, lastHitT: 0, bombed: 0,
+  return { pid, n, c, peerId: '', uid: '', ack: 0, x: 0, y: 0, a: 0, px: 0, py: 0, pa: 0, vx: 0, vy: 0, score: 0, sc: 0, nitro: 100, boost: 0, hp: 100, sh: 0, inv: 0, lastDmg: 0, lastHit: 0, lastHitT: 0, bombed: 0,
     in: { ax: 0, ay: 0, s: 0, t: 0, n: 0, b: 0 }, rx: null, ry: 0, ra: 0, rs: 1.25, st: 0, lastChat: 0, lastHorn: 0, seen: 0, rev: 0, rvf: 0, buf: [] };
 }
 const humans = () => [...players.values()];
@@ -576,7 +569,6 @@ const NET = {
   retry: null,
   simTimer: null,
   syncTimer: null,
-  vt: null,
   watch: null,
   roomRef: null,
   sync: null,
@@ -637,7 +629,7 @@ function setupHostRoom(peerId, existingKey){
   NET.syncTimer = setInterval(NET.sync, 4000);
 }
 
-const rosterList = () => humans().map(p => ({ pid: p.pid, n: p.n, c: p.c, pi: p.peerId, v: p.mic ? 1 : 0 }));
+const rosterList = () => humans().map(p => ({ pid: p.pid, n: p.n, c: p.c, pi: p.peerId }));
 function broadcast(obj, skipBackpressure){
   for (const c of NET.conns.values()){
     if (!c.open) continue;
@@ -648,7 +640,6 @@ function broadcast(obj, skipBackpressure){
 function broadcastRoster(){
   broadcast({ t: 'roster', list: rosterList() });
   updateOnline();
-  syncCalls();
   if (NET.sync) NET.sync();
 }
 function addPlayer(n, c){
@@ -713,7 +704,7 @@ function applySavedStats(p, sv){
 }
 
 function startHost(peer, existingRoomKey, restoredScores){
-  clearInterval(NET.simTimer); clearInterval(NET.syncTimer); clearInterval(NET.vt);
+  clearInterval(NET.simTimer); clearInterval(NET.syncTimer);
   resetPrediction();
   isHost = true;
   NET.peer = peer;
@@ -741,7 +732,6 @@ function startHost(peer, existingRoomKey, restoredScores){
   const myPl = players.get(myPid);
   myPl.peerId = peer.id;
   myPl.uid = me.uid;
-  myPl.mic = VOICE.micOn ? 1 : 0;
   applySavedStats(myPl, saved.get(me.uid));
   saved.delete(me.uid);
   initCoins();
@@ -775,7 +765,6 @@ function startHost(peer, existingRoomKey, restoredScores){
         pid = addPlayer(cleanNick(d.n), safeColor(d.c));
         const joinedP = players.get(pid);
         joinedP.peerId = conn.peer;
-        joinedP.mic = d.v ? 1 : 0;
         claim(joinedP, UID_RE.test(d.u || '') ? d.u : '');
         NET.conns.set(pid, conn);
         const wPayload = { t: 'welcome', pid, hostPid: myPid, rk: NET.roomKey, cq: coinSeq, roster: rosterList(), coins: packCoinsFlat() };
@@ -795,14 +784,12 @@ function startHost(peer, existingRoomKey, restoredScores){
         if (d.t === 'in') setInput(p, d.i, d.q);
         else if (d.t === 'chat') hostChat(pid, d.m, d.mid);
         else if (d.t === 'horn') hostHorn(pid);
-        else if (d.t === 'mic'){ if (p){ p.mic = d.v ? 1 : 0; broadcastRoster(); } }
         else if (d.t === 'reqC'){ try { conn.send({ t: 'cs', cq: coinSeq, c: packCoinsFlat() }); } catch {} }
       }
     });
     conn.on('close', drop);
     conn.on('error', drop);
   });
-  NET.vt = setInterval(syncCalls, 4000);
 
   let simLast = performance.now(), acc = 0, snapAcc = 0, chk = 0;
   NET.simTime = simLast;
@@ -901,14 +888,13 @@ function setRoster(list){
     ids.add(r.pid);
     let p = players.get(r.pid);
     if (!p){ p = mkPlayer(r.pid, r.n, r.c); p.x = p.y = -9999; players.set(r.pid, p); }
-    p.n = r.n; p.c = r.c; p.peerId = r.pi || ''; p.mic = r.v ? 1 : 0;
+    p.n = r.n; p.c = r.c; p.peerId = r.pi || '';
   }
   for (const pid of [...players.keys()]) if (!ids.has(pid)) players.delete(pid);
-  updateOnline(); rebuildLB(); syncCalls();
+  updateOnline(); rebuildLB();
 }
 function cleanupNet(keepPeer){
-  clearInterval(NET.simTimer); clearInterval(NET.syncTimer); clearInterval(NET.vt); clearInterval(NET.watch); clearTimeout(NET.retry);
-  if (!keepPeer) closeVoice();
+  clearInterval(NET.simTimer); clearInterval(NET.syncTimer); clearInterval(NET.watch); clearTimeout(NET.retry);
   if (isHost && db && NET.roomRef){
     try { update(NET.roomRef, { h: null, n: 0 }); } catch {}
   }
@@ -1004,7 +990,6 @@ function connectFlow(){
       if (gen === GEN) retryLater();
     });
     p.on('disconnected', () => { setTimeout(() => { if (!p.destroyed && p.disconnected){ try { p.reconnect(); } catch {} } }, 2000); });
-    p.on('call', c => { c.__t = performance.now(); try { c.answer(localStream()); } catch {} attachCall(c); });
     p.on('open', () => {
       if (opened) return;
       opened = true;
@@ -1034,7 +1019,7 @@ function joinClient(p, hostId, onFull, onFail){
   p.on('error', onErr);
   to = setTimeout(fail, 3800);
   conn.on('open', () => {
-    const sendHello = () => { if (!joined && conn.open) try { conn.send({ t: 'hello', n: me.nick, c: me.color, u: me.uid, v: VOICE.micOn ? 1 : 0 }); } catch {} };
+    const sendHello = () => { if (!joined && conn.open) try { conn.send({ t: 'hello', n: me.nick, c: me.color, u: me.uid }); } catch {} };
     sendHello();
     helloTimer = setInterval(sendHello, 400);
   });
@@ -1061,8 +1046,6 @@ function joinClient(p, hostId, onFull, onFail){
       NET.lastSnap = performance.now();
       clearInterval(NET.watch);
       NET.watch = setInterval(() => { if (performance.now() - NET.lastSnap > 5000) onHostLost(); }, 1200);
-      clearInterval(NET.vt);
-      NET.vt = setInterval(syncCalls, 4000);
     } else if (d.t === 'full'){
       settle();
       try { conn.close(); } catch {}
@@ -1081,120 +1064,17 @@ function joinClient(p, hostId, onFull, onFail){
   });
 }
 
-const VOICE = { mic: null, track: null, dummy: null, calls: new Map(), audios: new Map(), micOn: false, spkOn: true, busy: false };
-function localStream(){
-  if (VOICE.mic) return VOICE.mic;
-  if (!VOICE.dummy){
-    try {
-      const c = getCtx(), dest = c.createMediaStreamDestination(), osc = c.createOscillator(), g = c.createGain();
-      g.gain.value = 0;
-      osc.connect(g).connect(dest);
-      osc.start();
-      VOICE.dummy = dest.stream;
-    } catch { VOICE.dummy = new MediaStream(); }
-  }
-  return VOICE.dummy;
-}
-function attachCall(call){
-  const id = call.peer, old = VOICE.calls.get(id);
-  if (old && old !== call){ try { old.close(); } catch {} }
-  VOICE.calls.set(id, call);
-  call.on('stream', rs => {
-    let a = VOICE.audios.get(id);
-    if (!a){ a = document.createElement('audio'); a.autoplay = true; a.playsInline = true; a.style.display = 'none'; $('arena').appendChild(a); VOICE.audios.set(id, a); }
-    a.srcObject = rs; a.muted = !VOICE.spkOn;
-    a.play().catch(() => {});
-  });
-  const gone = () => { if (VOICE.calls.get(id) === call){ VOICE.calls.delete(id); dropAudio(id); } };
-  call.on('close', gone); call.on('error', gone);
-}
-function dropAudio(id){
-  const a = VOICE.audios.get(id);
-  if (a){ a.srcObject = null; a.remove(); VOICE.audios.delete(id); }
-}
-function closeVoice(){
-  for (const c of VOICE.calls.values()){ try { c.close(); } catch {} }
-  VOICE.calls.clear();
-  for (const id of [...VOICE.audios.keys()]) dropAudio(id);
-}
-function syncCalls(){
-  const peer = NET.peer;
-  if (!peer || !peer.open || myPid == null) return;
-  const want = new Set(), now = performance.now();
-  for (const p of players.values()){
-    if (p.pid === myPid || !p.peerId) continue;
-    const needVoice = VOICE.micOn || !!p.mic;
-    if (!needVoice) continue;
-    want.add(p.peerId);
-    if (myPid < p.pid && !VOICE.calls.has(p.peerId)){
-      try { const c = peer.call(p.peerId, localStream()); if (c){ c.__t = now; attachCall(c); } } catch {}
-    }
-  }
-  for (const [id, c] of [...VOICE.calls]){
-    if (!want.has(id) || (!c.open && now - (c.__t || 0) > 12000)){
-      try { c.close(); } catch {}
-      VOICE.calls.delete(id); dropAudio(id);
-    }
-  }
-}
-function notifyMicState(){
-  const v = VOICE.micOn ? 1 : 0;
-  if (isHost){
-    const mp = players.get(myPid);
-    if (mp){ mp.mic = v; broadcastRoster(); }
-  } else if (NET.hostConn && NET.hostConn.open){
-    try { NET.hostConn.send({ t: 'mic', v }); } catch {}
-  }
-  syncCalls();
-}
-async function toggleMic(){
-  if (VOICE.busy) return;
-  if (VOICE.micOn){
-    VOICE.micOn = false;
-    if (VOICE.track) VOICE.track.enabled = false;
-  } else {
-    if (!VOICE.track){
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ popup({ sys: 1, m: 'Mic not supported (HTTPS needed)' }); return; }
-      VOICE.busy = true;
-      try {
-        const s = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-        VOICE.mic = s; VOICE.track = s.getAudioTracks()[0];
-        for (const c of VOICE.calls.values()){
-          try {
-            const sn = c.peerConnection.getSenders().find(x => (x.track && x.track.kind === 'audio') || (!x.track && x.dtmf !== undefined));
-            if (sn) sn.replaceTrack(VOICE.track);
-          } catch {}
-        }
-      } catch { VOICE.busy = false; popup({ sys: 1, m: 'Mic permission blocked' }); return; }
-      VOICE.busy = false;
-    }
-    VOICE.track.enabled = true; VOICE.micOn = true;
-  }
-  syncTools();
-  notifyMicState();
-}
-function toggleSpk(){
-  VOICE.spkOn = !VOICE.spkOn;
-  VOICE.audios.forEach(a => { a.muted = !VOICE.spkOn; if (VOICE.spkOn) a.play().catch(() => {}); });
-  syncTools();
-}
 function syncTools(){
-  $('btnMic').classList.toggle('off', !VOICE.micOn);
-  $('btnMic').classList.toggle('on', VOICE.micOn);
-  $('btnSpk').classList.toggle('off', !VOICE.spkOn);
   $('btnSfx').classList.toggle('off', muted());
 }
-$('btnMic').addEventListener('click', toggleMic);
-$('btnSpk').addEventListener('click', toggleSpk);
 $('btnSfx').addEventListener('click', () => { store.set('soundMuted', muted() ? 'false' : 'true'); syncTools(); });
 $('btnShare').addEventListener('click', () => {
-  const data = { type: 'text', text: 'Join me in TalkRush Arena – race, collect coins and talk with voice chat!', postUrl: location.origin + location.pathname };
+  const data = { type: 'text', text: 'Join me in TalkRush Arena – race, collect coins and chat live!', postUrl: location.origin + location.pathname };
   if (typeof window.openShareModal === 'function') window.openShareModal(data);
   else if (navigator.share) navigator.share({ title: document.title, text: data.text, url: data.postUrl }).catch(() => {});
 });
 ['pointerdown', 'keydown'].forEach(ev => addEventListener(ev, () => {
   if (actx && actx.state === 'suspended') actx.resume();
-  VOICE.audios.forEach(a => { if (a.paused) a.play().catch(() => {}); });
 }, { passive: true }));
 syncTools();
 
@@ -1268,7 +1148,6 @@ function readInput(){
   addEventListener('keydown', e => {
     if (typing()) return;
     if (e.code === 'Enter'){ e.preventDefault(); if (!e.repeat && !chatOpen) openChat(); return; }
-    if (e.code === 'KeyM'){ if (!e.repeat) toggleMic(); return; }
     if (e.code === 'KeyH'){ triggerHorn(); return; }
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
     keys.add(e.code);
