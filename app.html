@@ -1,0 +1,1005 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>3D Interactive Girl Portrait</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #0b0d13;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      outline: none;
+    }
+  </style>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+      }
+    }
+  </script>
+</head>
+<body class="bg-[#0b0d13] w-screen h-screen overflow-hidden">
+
+  <script type="module">
+    import * as THREE from 'three';
+
+    // =========================================================================
+    // 1. SCENE, CAMERA & RENDERER SETUP (CLEAN DARK STUDIO BACKDROP)
+    // =========================================================================
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0b0d13);
+    scene.fog = new THREE.FogExp2(0x0b0d13, 0.14);
+
+    const camera = new THREE.PerspectiveCamera(
+      27,
+      window.innerWidth / window.innerHeight,
+      0.1,
+      30
+    );
+
+    function updateCameraFraming() {
+      const aspect = window.innerWidth / window.innerHeight;
+      const dist = aspect < 0.75 ? 3.25 : 2.65;
+      camera.position.set(0, 0.16, dist);
+      camera.lookAt(0, 0.11, 0);
+    }
+    updateCameraFraming();
+
+    const renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      powerPreference: 'high-performance'
+    });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.08;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    document.body.appendChild(renderer.domElement);
+
+    // =========================================================================
+    // 2. THREE-POINT PORTRAIT STUDIO LIGHTING
+    // =========================================================================
+    const hemiLight = new THREE.HemisphereLight(0xfff6ee, 0x181c28, 0.72);
+    hemiLight.position.set(0, 4, 0);
+    scene.add(hemiLight);
+
+    // Soft Warm Key Light
+    const keyLight = new THREE.DirectionalLight(0xfff1e4, 1.85);
+    keyLight.position.set(1.6, 2.1, 2.8);
+    keyLight.castShadow = true;
+    keyLight.shadow.mapSize.width = 1024;
+    keyLight.shadow.mapSize.height = 1024;
+    keyLight.shadow.bias = -0.0005;
+    scene.add(keyLight);
+
+    // Cool Soft Fill Light
+    const fillLight = new THREE.DirectionalLight(0xd4e3ff, 0.78);
+    fillLight.position.set(-2.1, 0.9, 2.2);
+    scene.add(fillLight);
+
+    // Warm Rim / Hair Separation Light
+    const rimLight = new THREE.DirectionalLight(0xffcfa6, 1.35);
+    rimLight.position.set(-1.1, 2.4, -2.2);
+    scene.add(rimLight);
+
+    // Subtle Under-Chin Bounce Light
+    const bounceLight = new THREE.PointLight(0xffdec8, 0.35, 4);
+    bounceLight.position.set(0, -0.7, 1.3);
+    scene.add(bounceLight);
+
+    // =========================================================================
+    // 3. PROCEDURAL TEXTURES & MATERIALS (NO GLASSES, CLEAN SKIN & IRIS)
+    // =========================================================================
+    function createIrisTexture() {
+      const size = 256;
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      const cx = size / 2;
+      const cy = size / 2;
+
+      // Deep warm amber-hazel & chestnut gradient
+      const baseGrad = ctx.createRadialGradient(cx, cy, size * 0.14, cx, cy, size * 0.48);
+      baseGrad.addColorStop(0.0, '#7c4724');
+      baseGrad.addColorStop(0.35, '#593018');
+      baseGrad.addColorStop(0.75, '#361b0d');
+      baseGrad.addColorStop(1.0, '#140905');
+      ctx.fillStyle = baseGrad;
+      ctx.fillRect(0, 0, size, size);
+
+      // Fine radial iris fibers
+      ctx.save();
+      ctx.translate(cx, cy);
+      for (let i = 0; i < 160; i++) {
+        const angle = (i / 160) * Math.PI * 2;
+        const innerR = size * (0.17 + (i % 3) * 0.015);
+        const outerR = size * (0.42 + (i % 4) * 0.012);
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(angle) * innerR, Math.sin(angle) * innerR);
+        ctx.lineTo(Math.cos(angle + 0.015) * outerR, Math.sin(angle + 0.015) * outerR);
+        ctx.strokeStyle = i % 2 === 0 ? 'rgba(218, 152, 92, 0.24)' : 'rgba(28, 12, 6, 0.28)';
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      // Golden inner ring around pupil
+      ctx.beginPath();
+      ctx.arc(cx, cy, size * 0.21, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(235, 175, 110, 0.35)';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      // Dark limbal outer ring
+      ctx.beginPath();
+      ctx.arc(cx, cy, size * 0.46, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(12, 6, 4, 0.85)';
+      ctx.lineWidth = 9;
+      ctx.stroke();
+
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      return tex;
+    }
+
+    function createSkinTexture() {
+      const size = 256;
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+
+      ctx.fillStyle = '#f3c3aa';
+      ctx.fillRect(0, 0, size, size);
+
+      // Soft warm cheek & nose blush undertone
+      const blushGrad = ctx.createRadialGradient(size * 0.5, size * 0.52, 10, size * 0.5, size * 0.52, size * 0.48);
+      blushGrad.addColorStop(0, 'rgba(235, 145, 132, 0.22)');
+      blushGrad.addColorStop(1, 'rgba(243, 195, 170, 0.0)');
+      ctx.fillStyle = blushGrad;
+      ctx.fillRect(0, 0, size, size);
+
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      return tex;
+    }
+
+    const skinMat = new THREE.MeshPhysicalMaterial({
+      map: createSkinTexture(),
+      color: 0xf7cbb4,
+      roughness: 0.48,
+      metalness: 0.0,
+      sheen: 0.35,
+      sheenRoughness: 0.65,
+      sheenColor: new THREE.Color(0xffbfa8),
+      clearcoat: 0.06,
+      clearcoatRoughness: 0.65
+    });
+
+    const blushMat = new THREE.MeshPhysicalMaterial({
+      color: 0xeb9b8e,
+      roughness: 0.55,
+      transparent: true,
+      opacity: 0.28,
+      depthWrite: false
+    });
+
+    const hairMat = new THREE.MeshStandardMaterial({
+      color: 0x1c1518,
+      roughness: 0.36,
+      metalness: 0.08
+    });
+
+    const hairHighlightMat = new THREE.MeshStandardMaterial({
+      color: 0x2b2024,
+      roughness: 0.32,
+      metalness: 0.1
+    });
+
+    const scleraMat = new THREE.MeshPhysicalMaterial({
+      color: 0xfcfbfa,
+      roughness: 0.14,
+      metalness: 0.0,
+      clearcoat: 0.9,
+      clearcoatRoughness: 0.08
+    });
+
+    const irisMat = new THREE.MeshPhysicalMaterial({
+      map: createIrisTexture(),
+      roughness: 0.18,
+      metalness: 0.02,
+      clearcoat: 0.85,
+      clearcoatRoughness: 0.06
+    });
+
+    const pupilMat = new THREE.MeshBasicMaterial({
+      color: 0x070506
+    });
+
+    const catchlightMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff
+    });
+
+    const lashMat = new THREE.MeshStandardMaterial({
+      color: 0x120d10,
+      roughness: 0.42
+    });
+
+    const browMat = new THREE.MeshStandardMaterial({
+      color: 0x22191c,
+      roughness: 0.52
+    });
+
+    const lipUpperMat = new THREE.MeshPhysicalMaterial({
+      color: 0xd97978,
+      roughness: 0.34,
+      clearcoat: 0.35,
+      clearcoatRoughness: 0.35
+    });
+
+    const lipLowerMat = new THREE.MeshPhysicalMaterial({
+      color: 0xe48988,
+      roughness: 0.28,
+      clearcoat: 0.45,
+      clearcoatRoughness: 0.28
+    });
+
+    const topFabricMat = new THREE.MeshStandardMaterial({
+      color: 0x191d28,
+      roughness: 0.78,
+      metalness: 0.04
+    });
+
+    // =========================================================================
+    // 4. SCULPTED 3D GIRL CHARACTER ARCHITECTURE
+    // =========================================================================
+    const characterRoot = new THREE.Group();
+    scene.add(characterRoot);
+
+    // --- Torso & Off-Shoulder Bust ---
+    const shouldersGroup = new THREE.Group();
+    shouldersGroup.position.set(0, -0.58, -0.02);
+    characterRoot.add(shouldersGroup);
+
+    // Smooth upper chest & shoulders
+    const chestGeo = new THREE.SphereGeometry(0.54, 48, 36);
+    const chestPos = chestGeo.attributes.position;
+    for (let i = 0; i < chestPos.count; i++) {
+      let x = chestPos.getX(i);
+      let y = chestPos.getY(i);
+      let z = chestPos.getZ(i);
+
+      // Widen into graceful feminine shoulders and flatten front-to-back
+      x *= 1.48;
+      y *= 0.56;
+      z *= 0.62;
+
+      if (y > 0) {
+        x *= 1.0 - y * 0.35;
+      }
+      chestPos.setXYZ(i, x, y, z);
+    }
+    chestGeo.computeVertexNormals();
+    const chestMesh = new THREE.Mesh(chestGeo, skinMat);
+    chestMesh.receiveShadow = true;
+    chestMesh.castShadow = true;
+    shouldersGroup.add(chestMesh);
+
+    // Subtle collarbone sculpting
+    [-1, 1].forEach((side) => {
+      const clavicleGeo = new THREE.CapsuleGeometry(0.016, 0.24, 8, 16);
+      const clavicle = new THREE.Mesh(clavicleGeo, skinMat);
+      clavicle.position.set(side * 0.21, 0.145, 0.24);
+      clavicle.rotation.set(0.18, side * -0.22, Math.PI * 0.46 * side);
+      shouldersGroup.add(clavicle);
+    });
+
+    // Minimalist dark knit off-shoulder top
+    const topGeo = new THREE.CylinderGeometry(0.45, 0.58, 0.36, 48, 16, false);
+    const topPos = topGeo.attributes.position;
+    for (let i = 0; i < topPos.count; i++) {
+      let x = topPos.getX(i);
+      let y = topPos.getY(i);
+      let z = topPos.getZ(i);
+      x *= 1.56;
+      z *= 0.68;
+      // Gentle sweetheart neckline dip in front
+      if (z > 0 && y > 0.05) {
+        y -= Math.cos((x / 0.7) * Math.PI * 0.5) * 0.045;
+      }
+      topPos.setXYZ(i, x, y, z);
+    }
+    topGeo.computeVertexNormals();
+    const topMesh = new THREE.Mesh(topGeo, topFabricMat);
+    topMesh.position.set(0, -0.14, 0.01);
+    topMesh.receiveShadow = true;
+    shouldersGroup.add(topMesh);
+
+    // --- Neck Pivot ---
+    const neckPivot = new THREE.Group();
+    neckPivot.position.set(0, -0.34, -0.01);
+    characterRoot.add(neckPivot);
+
+    const neckGeo = new THREE.CylinderGeometry(0.128, 0.155, 0.38, 36, 12);
+    const neckPos = neckGeo.attributes.position;
+    for (let i = 0; i < neckPos.count; i++) {
+      let x = neckPos.getX(i);
+      let y = neckPos.getY(i);
+      let z = neckPos.getZ(i);
+      // Slight natural flare at base of neck
+      if (y < -0.08) {
+        const t = (-y - 0.08) / 0.11;
+        x *= 1 + t * 0.22;
+        z *= 1 + t * 0.16;
+      }
+      neckPos.setXYZ(i, x, y, z);
+    }
+    neckGeo.computeVertexNormals();
+    const neckMesh = new THREE.Mesh(neckGeo, skinMat);
+    neckMesh.position.set(0, 0.11, 0);
+    neckMesh.castShadow = true;
+    neckMesh.receiveShadow = true;
+    neckPivot.add(neckMesh);
+
+    // --- Head Pivot ---
+    const headPivot = new THREE.Group();
+    headPivot.position.set(0, 0.27, 0.02);
+    neckPivot.add(headPivot);
+
+    // --- Sculpted Head Geometry (Soft Oval Feminine Contours) ---
+    const headGeo = new THREE.SphereGeometry(0.31, 64, 64);
+    const hPos = headGeo.attributes.position;
+    for (let i = 0; i < hPos.count; i++) {
+      let x = hPos.getX(i);
+      let y = hPos.getY(i);
+      let z = hPos.getZ(i);
+
+      // Vertical facial proportion
+      y *= 1.18;
+
+      // Tapering jawline & delicate chin
+      if (y < 0) {
+        const t = Math.min(1, Math.abs(y) / 0.36);
+        const jawTaper = 1.0 - Math.pow(t, 1.55) * 0.36;
+        x *= jawTaper;
+        z *= 1.0 - Math.pow(t, 1.7) * 0.24;
+        // Soft chin projection forward
+        if (z > 0 && t > 0.55) {
+          z += Math.sin(((t - 0.55) / 0.45) * Math.PI) * 0.022 * Math.cos((x / 0.2) * 1.4);
+        }
+      } else {
+        // Slightly fuller cranium & temples
+        const t = Math.min(1, y / 0.36);
+        x *= 1.0 + Math.sin(t * Math.PI) * 0.03;
+      }
+
+      // Soft cheekbones
+      if (y > -0.10 && y < 0.04 && z > 0.08) {
+        const cheekFactor = Math.exp(-Math.pow((y + 0.035) / 0.06, 2)) * Math.exp(-Math.pow((Math.abs(x) - 0.135) / 0.075, 2));
+        z += cheekFactor * 0.024;
+        x += Math.sign(x) * cheekFactor * 0.012;
+      }
+
+      // Subtle eye-socket concavity so eyeballs sit naturally inside the face
+      if (y > -0.01 && y < 0.09 && z > 0.16) {
+        const socketFactor = Math.exp(-Math.pow((y - 0.042) / 0.038, 2)) * Math.exp(-Math.pow((Math.abs(x) - 0.105) / 0.048, 2));
+        z -= socketFactor * 0.026;
+      }
+
+      // Back of skull fullness
+      if (z < 0) {
+        z *= 1.06;
+      }
+
+      hPos.setXYZ(i, x, y, z);
+    }
+    headGeo.computeVertexNormals();
+
+    const headMesh = new THREE.Mesh(headGeo, skinMat);
+    headMesh.position.set(0, 0.22, 0);
+    headMesh.castShadow = true;
+    headMesh.receiveShadow = true;
+    headPivot.add(headMesh);
+
+    // Subtle warm cheek blush overlays
+    [-1, 1].forEach((side) => {
+      const cheekBlush = new THREE.Mesh(new THREE.SphereGeometry(0.055, 20, 20), blushMat);
+      cheekBlush.scale.set(1.25, 0.72, 0.35);
+      cheekBlush.position.set(side * 0.145, 0.185, 0.258);
+      cheekBlush.rotation.set(-0.1, side * 0.42, side * -0.15);
+      headPivot.add(cheekBlush);
+    });
+
+    // --- Delicate Ears ---
+    [-1, 1].forEach((side) => {
+      const earGroup = new THREE.Group();
+      earGroup.position.set(side * 0.285, 0.215, -0.015);
+      earGroup.rotation.set(0.06, side * -0.25, side * -0.08);
+
+      const earGeo = new THREE.SphereGeometry(0.048, 20, 20);
+      earGeo.scale(0.36, 1.18, 0.68);
+      const ear = new THREE.Mesh(earGeo, skinMat);
+      earGroup.add(ear);
+      headPivot.add(earGroup);
+    });
+
+    // --- Sculpted Nose (Bridge, Tip & Soft Nostrils) ---
+    const noseGroup = new THREE.Group();
+    noseGroup.position.set(0, 0.21, 0.295);
+    headPivot.add(noseGroup);
+
+    // Nose bridge
+    const bridgeGeo = new THREE.CapsuleGeometry(0.013, 0.075, 10, 16);
+    const bridgeMesh = new THREE.Mesh(bridgeGeo, skinMat);
+    bridgeMesh.position.set(0, 0.015, 0.002);
+    bridgeMesh.rotation.x = -0.24;
+    noseGroup.add(bridgeMesh);
+
+    // Soft rounded nose tip
+    const tipGeo = new THREE.SphereGeometry(0.021, 24, 24);
+    tipGeo.scale(1.06, 0.88, 1.05);
+    const tipMesh = new THREE.Mesh(tipGeo, skinMat);
+    tipMesh.position.set(0, -0.026, 0.017);
+    noseGroup.add(tipMesh);
+
+    // Subtle nostrils
+    [-1, 1].forEach((side) => {
+      const wingGeo = new THREE.SphereGeometry(0.013, 16, 16);
+      wingGeo.scale(1.05, 0.78, 0.9);
+      const wing = new THREE.Mesh(wingGeo, skinMat);
+      wing.position.set(side * 0.016, -0.031, 0.006);
+      noseGroup.add(wing);
+    });
+
+    // --- Expressive Soft Lips (Articulated for Subtle Smile/Surprise Micro-Reactions) ---
+    const mouthGroup = new THREE.Group();
+    mouthGroup.position.set(0, 0.112, 0.282);
+    headPivot.add(mouthGroup);
+
+    // Upper lip (Cupid's bow curve)
+    const upperLipCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(-0.056, -0.003, -0.016),
+      new THREE.Vector3(-0.026, 0.007, 0.006),
+      new THREE.Vector3(-0.010, 0.011, 0.014),
+      new THREE.Vector3(0.0, 0.008, 0.015),
+      new THREE.Vector3(0.010, 0.011, 0.014),
+      new THREE.Vector3(0.026, 0.007, 0.006),
+      new THREE.Vector3(0.056, -0.003, -0.016)
+    ]);
+    const upperLipGeo = new THREE.TubeGeometry(upperLipCurve, 32, 0.0105, 14, false);
+    const uPos = upperLipGeo.attributes.position;
+    for (let i = 0; i < uPos.count; i++) {
+      const x = uPos.getX(i);
+      const taper = Math.max(0.28, 1.0 - Math.pow(Math.abs(x) / 0.058, 1.6));
+      uPos.setY(i, uPos.getY(i) * taper);
+    }
+    upperLipGeo.computeVertexNormals();
+    const upperLipMesh = new THREE.Mesh(upperLipGeo, lipUpperMat);
+    mouthGroup.add(upperLipMesh);
+
+    // Lower lip (Plush soft curve)
+    const lowerLipCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(-0.052, -0.004, -0.015),
+      new THREE.Vector3(-0.024, -0.012, 0.008),
+      new THREE.Vector3(0.0, -0.014, 0.014),
+      new THREE.Vector3(0.024, -0.012, 0.008),
+      new THREE.Vector3(0.052, -0.004, -0.015)
+    ]);
+    const lowerLipGeo = new THREE.TubeGeometry(lowerLipCurve, 32, 0.0125, 14, false);
+    const lPos = lowerLipGeo.attributes.position;
+    for (let i = 0; i < lPos.count; i++) {
+      const x = lPos.getX(i);
+      const taper = Math.max(0.25, 1.0 - Math.pow(Math.abs(x) / 0.054, 1.7));
+      lPos.setY(i, lPos.getY(i) * taper);
+    }
+    lowerLipGeo.computeVertexNormals();
+    const lowerLipMesh = new THREE.Mesh(lowerLipGeo, lipLowerMat);
+    mouthGroup.add(lowerLipMesh);
+
+    // =========================================================================
+    // 5. EXPRESSIVE EYES (PUPILS, IRISES, CATCHLIGHTS, EYELIDS, LASHES, BROWS)
+    // =========================================================================
+    const eyeTargets = [];
+
+    function buildEyeAssembly(side) {
+      // side: -1 = character's right eye (viewer's left), +1 = character's left eye (viewer's right)
+      const eyeSideName = side === 1 ? 'left' : 'right';
+
+      const socketGroup = new THREE.Group();
+      socketGroup.position.set(side * 0.106, 0.258, 0.252);
+      socketGroup.rotation.y = side * 0.08;
+      headPivot.add(socketGroup);
+
+      // Rotating eyeball assembly (follows cursor)
+      const eyeballPivot = new THREE.Group();
+      socketGroup.add(eyeballPivot);
+
+      const eyeRadius = 0.044;
+      const scleraMesh = new THREE.Mesh(new THREE.SphereGeometry(eyeRadius, 32, 32), scleraMat);
+      eyeballPivot.add(scleraMesh);
+
+      // Detailed textured Iris disc/dome on front of sclera
+      const irisGeo = new THREE.SphereGeometry(eyeRadius * 1.006, 28, 20, 0, Math.PI * 2, 0, 0.44);
+      irisGeo.rotateX(Math.PI * 0.5);
+      const irisMesh = new THREE.Mesh(irisGeo, irisMat);
+      eyeballPivot.add(irisMesh);
+
+      // Deep Pupil
+      const pupilGeo = new THREE.SphereGeometry(eyeRadius * 1.012, 24, 16, 0, Math.PI * 2, 0, 0.21);
+      pupilGeo.rotateX(Math.PI * 0.5);
+      const pupilMesh = new THREE.Mesh(pupilGeo, pupilMat);
+      eyeballPivot.add(pupilMesh);
+
+      // Studio Catchlight Reflections (gives life and sparkle to eyes)
+      const catchMain = new THREE.Mesh(new THREE.SphereGeometry(0.0042, 12, 12), catchlightMat);
+      catchMain.position.set(0.0085, 0.0095, eyeRadius * 0.99);
+      eyeballPivot.add(catchMain);
+
+      const catchSub = new THREE.Mesh(new THREE.SphereGeometry(0.0021, 10, 10), catchlightMat);
+      catchSub.position.set(-0.007, -0.007, eyeRadius * 0.99);
+      eyeballPivot.add(catchSub);
+
+      // --- Articulated Upper Eyelid + Eyelashes ---
+      const upperLidPivot = new THREE.Group();
+      socketGroup.add(upperLidPivot);
+
+      const lidRadius = eyeRadius * 1.065;
+      const upperLidGeo = new THREE.SphereGeometry(
+        lidRadius,
+        32,
+        20,
+        0,
+        Math.PI * 2,
+        0,
+        Math.PI * 0.53
+      );
+      const upperLidMesh = new THREE.Mesh(upperLidGeo, skinMat);
+      upperLidMesh.scale.set(1.14, 0.98, 1.04);
+      upperLidPivot.add(upperLidMesh);
+
+      // Upper Eyelash Line (curved along eyelid rim)
+      const lashCurve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(-lidRadius * 1.08, -0.004, lidRadius * 0.15),
+        new THREE.Vector3(-lidRadius * 0.55, 0.004, lidRadius * 0.92),
+        new THREE.Vector3(0, 0.006, lidRadius * 1.06),
+        new THREE.Vector3(lidRadius * 0.55, 0.004, lidRadius * 0.92),
+        new THREE.Vector3(lidRadius * 1.08, -0.004, lidRadius * 0.15)
+      ]);
+      const lashRimGeo = new THREE.TubeGeometry(lashCurve, 28, 0.0024, 8, false);
+      const lashRim = new THREE.Mesh(lashRimGeo, lashMat);
+      upperLidPivot.add(lashRim);
+
+      // Individual delicate corner eyelashes
+      for (let k = 0; k < 7; k++) {
+        const t = 0.25 + (k / 6) * 0.65;
+        const pt = lashCurve.getPoint(t);
+        const singleLash = new THREE.Mesh(new THREE.ConeGeometry(0.0012, 0.013, 6), lashMat);
+        singleLash.position.copy(pt);
+        singleLash.position.z += 0.004;
+        singleLash.position.y += 0.003;
+        singleLash.rotation.x = 0.95;
+        singleLash.rotation.z = side * (-0.15 - (k / 6) * 0.35);
+        upperLidPivot.add(singleLash);
+      }
+
+      // --- Articulated Lower Eyelid ---
+      const lowerLidPivot = new THREE.Group();
+      socketGroup.add(lowerLidPivot);
+
+      const lowerLidGeo = new THREE.SphereGeometry(
+        lidRadius * 0.99,
+        32,
+        16,
+        0,
+        Math.PI * 2,
+        Math.PI * 0.5,
+        Math.PI * 0.48
+      );
+      const lowerLidMesh = new THREE.Mesh(lowerLidGeo, skinMat);
+      lowerLidMesh.scale.set(1.13, 0.96, 1.02);
+      lowerLidPivot.add(lowerLidMesh);
+
+      // Open / Closed Angles
+      const upperOpenAngle = -1.02;
+      const upperClosedAngle = 0.06;
+      const lowerOpenAngle = 0.56;
+      const lowerClosedAngle = -0.04;
+
+      upperLidPivot.rotation.x = upperOpenAngle;
+      lowerLidPivot.rotation.x = lowerOpenAngle;
+
+      // --- Expressive Eyebrow ---
+      const browPivot = new THREE.Group();
+      browPivot.position.set(side * 0.105, 0.326, 0.278);
+      headPivot.add(browPivot);
+
+      const browCurve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(-side * 0.052, -0.006, 0.014),
+        new THREE.Vector3(-side * 0.015, 0.006, 0.010),
+        new THREE.Vector3(side * 0.024, 0.009, -0.002),
+        new THREE.Vector3(side * 0.058, -0.007, -0.024)
+      ]);
+      const browGeo = new THREE.TubeGeometry(browCurve, 24, 0.0052, 10, false);
+      const bPos = browGeo.attributes.position;
+      for (let i = 0; i < bPos.count; i++) {
+        const bx = bPos.getX(i) * side;
+        // Taper brow tail cleanly
+        if (bx > 0.015) {
+          const tailT = Math.min(1, (bx - 0.015) / 0.045);
+          const scale = 1.0 - tailT * 0.65;
+          bPos.setY(i, bPos.getY(i) * scale);
+        }
+      }
+      browGeo.computeVertexNormals();
+      const browMesh = new THREE.Mesh(browGeo, browMat);
+      browPivot.add(browMesh);
+
+      // --- Invisible Raycast Hit Sphere for Eye Hover Wink ---
+      const hitSphere = new THREE.Mesh(
+        new THREE.SphereGeometry(0.064, 16, 16),
+        new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
+      );
+      hitSphere.position.set(0, 0.002, 0.025);
+      hitSphere.userData.eyeSide = eyeSideName;
+      socketGroup.add(hitSphere);
+      eyeTargets.push(hitSphere);
+
+      return {
+        side: eyeSideName,
+        eyeballPivot,
+        upperLidPivot,
+        lowerLidPivot,
+        browPivot,
+        upperOpenAngle,
+        upperClosedAngle,
+        lowerOpenAngle,
+        lowerClosedAngle
+      };
+    }
+
+    const leftEyeRig = buildEyeAssembly(1);   // Character's Left Eye (Viewer's Right)
+    const rightEyeRig = buildEyeAssembly(-1); // Character's Right Eye (Viewer's Left)
+
+    // =========================================================================
+    // 6. SILKY LAYERED HAIR (CROWN, SIDE-PARTED BANGS & FLOWING LOCKS)
+    // =========================================================================
+    const hairGroup = new THREE.Group();
+    headPivot.add(hairGroup);
+
+    // Main Hair Cap Volume
+    const hairCapGeo = new THREE.SphereGeometry(0.332, 48, 48);
+    const hcPos = hairCapGeo.attributes.position;
+    for (let i = 0; i < hcPos.count; i++) {
+      let x = hcPos.getX(i);
+      let y = hcPos.getY(i);
+      let z = hcPos.getZ(i);
+
+      y *= 1.18;
+      // Carve open face area in front so face features are completely unobstructed
+      if (z > 0.04 && y < 0.24) {
+        z *= 0.65;
+      }
+      if (z < 0) {
+        z *= 1.12;
+        x *= 1.05;
+      }
+      hcPos.setXYZ(i, x, y, z);
+    }
+    hairCapGeo.computeVertexNormals();
+    const hairCapMesh = new THREE.Mesh(hairCapGeo, hairMat);
+    hairCapMesh.position.set(0, 0.245, -0.018);
+    hairCapMesh.castShadow = true;
+    hairGroup.add(hairCapMesh);
+
+    // Helper to build smooth sculpted hair strands
+    function createHairStrand(points, radiusStart, radiusEnd, mat = hairMat) {
+      const curve = new THREE.CatmullRomCurve3(points.map((p) => new THREE.Vector3(p[0], p[1], p[2])));
+      const geo = new THREE.TubeGeometry(curve, 36, radiusStart, 12, false);
+      const pos = geo.attributes.position;
+      const len = points.length;
+
+      for (let i = 0; i < pos.count; i++) {
+        const ringIdx = Math.floor(i / 13);
+        const t = Math.min(1, ringIdx / 36);
+        const center = curve.getPointAt(t);
+        const taper = THREE.MathUtils.lerp(1.0, radiusEnd / radiusStart, Math.pow(t, 1.3));
+        pos.setXYZ(
+          i,
+          center.x + (pos.getX(i) - center.x) * taper,
+          center.y + (pos.getY(i) - center.y) * taper,
+          center.z + (pos.getZ(i) - center.z) * taper
+        );
+      }
+      geo.computeVertexNormals();
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      return mesh;
+    }
+
+    // Soft Side-Swept Curtain Bangs (framing forehead & temples without blocking eyes)
+    hairGroup.add(createHairStrand([
+      [-0.04, 0.56, 0.14],
+      [-0.12, 0.47, 0.25],
+      [-0.21, 0.34, 0.24],
+      [-0.26, 0.18, 0.17],
+      [-0.27, 0.02, 0.11]
+    ], 0.046, 0.014, hairHighlightMat));
+
+    hairGroup.add(createHairStrand([
+      [-0.02, 0.57, 0.12],
+      [0.08, 0.49, 0.24],
+      [0.19, 0.37, 0.24],
+      [0.25, 0.20, 0.18],
+      [0.27, 0.03, 0.12]
+    ], 0.048, 0.014, hairMat));
+
+    hairGroup.add(createHairStrand([
+      [-0.08, 0.54, 0.18],
+      [-0.17, 0.43, 0.24],
+      [-0.24, 0.28, 0.20],
+      [-0.26, 0.12, 0.14]
+    ], 0.034, 0.010, hairMat));
+
+    hairGroup.add(createHairStrand([
+      [0.05, 0.55, 0.18],
+      [0.15, 0.44, 0.24],
+      [0.23, 0.29, 0.21],
+      [0.26, 0.12, 0.14]
+    ], 0.035, 0.010, hairHighlightMat));
+
+    // Flowing Long Side & Back Locks draping down past neck and shoulders
+    const backAndSideStrands = [
+      // Left side flowing locks
+      [[-0.24, 0.45, 0.08], [-0.32, 0.26, 0.06], [-0.34, 0.04, 0.07], [-0.33, -0.20, 0.10], [-0.30, -0.44, 0.13]],
+      [[-0.27, 0.40, -0.02], [-0.35, 0.18, -0.03], [-0.37, -0.06, -0.01], [-0.36, -0.32, 0.03], [-0.33, -0.52, 0.07]],
+      [[-0.22, 0.48, -0.12], [-0.31, 0.22, -0.15], [-0.33, -0.06, -0.15], [-0.32, -0.36, -0.12], [-0.29, -0.56, -0.08]],
+      // Right side flowing locks
+      [[0.24, 0.45, 0.08], [0.32, 0.26, 0.06], [0.34, 0.04, 0.07], [0.33, -0.20, 0.10], [0.30, -0.44, 0.13]],
+      [[0.27, 0.40, -0.02], [0.35, 0.18, -0.03], [0.37, -0.06, -0.01], [0.36, -0.32, 0.03], [0.33, -0.52, 0.07]],
+      [[0.22, 0.48, -0.12], [0.31, 0.22, -0.15], [0.33, -0.06, -0.15], [0.32, -0.36, -0.12], [0.29, -0.56, -0.08]],
+      // Back volume locks
+      [[-0.14, 0.50, -0.22], [-0.19, 0.20, -0.28], [-0.21, -0.12, -0.28], [-0.20, -0.45, -0.24]],
+      [[0.0, 0.52, -0.24], [0.0, 0.20, -0.31], [0.0, -0.14, -0.31], [0.0, -0.48, -0.26]],
+      [[0.14, 0.50, -0.22], [0.19, 0.20, -0.28], [0.21, -0.12, -0.28], [0.20, -0.45, -0.24]]
+    ];
+
+    backAndSideStrands.forEach((pts, idx) => {
+      hairGroup.add(createHairStrand(pts, 0.072, 0.026, idx % 2 === 0 ? hairMat : hairHighlightMat));
+    });
+
+    // =========================================================================
+    // 7. CURSOR TRACKING, EYE RAYCAST WINK & MICRO-EXPRESSION INTERACTIONS
+    // =========================================================================
+    const raycaster = new THREE.Raycaster();
+    const pointerNDC = new THREE.Vector2(99, 99);
+
+    const state = {
+      targetX: 0,
+      targetY: 0,
+      smoothX: 0,
+      smoothY: 0,
+      prevX: 0,
+      prevY: 0,
+      hoveredEye: null, // 'left' | 'right' | null
+      leftClose: 0,
+      rightClose: 0,
+      isBlinking: false,
+      blinkProgress: 0,
+      blinkDuration: 0.15,
+      nextBlinkTimer: 2.8,
+      // Micro-expression reaction values (triggered by fast pointer swipe or click)
+      tiltImpulse: 0,
+      browLift: 0,
+      smileAmount: 0
+    };
+
+    function handlePointerMove(clientX, clientY) {
+      const nx = (clientX / window.innerWidth) * 2 - 1;
+      const ny = -((clientY / window.innerHeight) * 2 - 1);
+
+      const clampedX = THREE.MathUtils.clamp(nx, -1, 1);
+      const clampedY = THREE.MathUtils.clamp(ny, -1, 1);
+
+      // Detect rapid cursor movement for subtle playful head tilt & brow lift
+      const dx = clampedX - state.prevX;
+      const dy = clampedY - state.prevY;
+      const speed = Math.hypot(dx, dy);
+      if (speed > 0.14) {
+        state.tiltImpulse = THREE.MathUtils.clamp(state.tiltImpulse - dx * 0.45, -0.16, 0.16);
+        state.browLift = Math.min(1, state.browLift + speed * 1.4);
+      }
+
+      state.prevX = clampedX;
+      state.prevY = clampedY;
+      state.targetX = clampedX;
+      state.targetY = clampedY;
+
+      pointerNDC.set(nx, ny);
+      raycaster.setFromCamera(pointerNDC, camera);
+      const hits = raycaster.intersectObjects(eyeTargets, false);
+
+      if (hits.length > 0) {
+        state.hoveredEye = hits[0].object.userData.eyeSide;
+        document.body.style.cursor = 'pointer';
+      } else {
+        state.hoveredEye = null;
+        document.body.style.cursor = 'default';
+      }
+    }
+
+    function handlePointerDown(clientX, clientY) {
+      handlePointerMove(clientX, clientY);
+      // Subtle warm smile & playful head tilt on click/tap
+      state.smileAmount = 1.0;
+      state.browLift = 0.75;
+      state.tiltImpulse = (state.targetX >= 0 ? -1 : 1) * 0.11;
+    }
+
+    window.addEventListener('pointermove', (e) => {
+      handlePointerMove(e.clientX, e.clientY);
+    }, { passive: true });
+
+    window.addEventListener('pointerdown', (e) => {
+      handlePointerDown(e.clientX, e.clientY);
+    }, { passive: true });
+
+    document.addEventListener('pointerleave', () => {
+      state.targetX = 0;
+      state.targetY = 0;
+      state.hoveredEye = null;
+      document.body.style.cursor = 'default';
+    });
+
+    // =========================================================================
+    // 8. ANIMATION LOOP (GAZE, AUTO-BLINK, HOVER WINK & MICRO-REACTIONS)
+    // =========================================================================
+    const clock = new THREE.Clock();
+
+    function applyEyeClosure(eyeRig, amount) {
+      eyeRig.upperLidPivot.rotation.x = THREE.MathUtils.lerp(
+        eyeRig.upperOpenAngle,
+        eyeRig.upperClosedAngle,
+        amount
+      );
+      eyeRig.lowerLidPivot.rotation.x = THREE.MathUtils.lerp(
+        eyeRig.lowerOpenAngle,
+        eyeRig.lowerClosedAngle,
+        amount
+      );
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      const dt = Math.min(clock.getDelta(), 0.05);
+      const elapsed = clock.getElapsedTime();
+
+      // 1. Smoothly interpolate gaze coordinates
+      const gazeLerp = 1 - Math.exp(-7.5 * dt);
+      state.smoothX = THREE.MathUtils.lerp(state.smoothX, state.targetX, gazeLerp);
+      state.smoothY = THREE.MathUtils.lerp(state.smoothY, state.targetY, gazeLerp);
+
+      // Decay micro-expression impulses smoothly
+      const decay = 1 - Math.exp(-4.2 * dt);
+      state.tiltImpulse = THREE.MathUtils.lerp(state.tiltImpulse, 0, decay);
+      state.browLift = THREE.MathUtils.lerp(state.browLift, 0, decay);
+      state.smileAmount = THREE.MathUtils.lerp(state.smileAmount, 0, 1 - Math.exp(-3.0 * dt));
+
+      // Gentle lifelike breathing & idle micro-sway
+      const breath = Math.sin(elapsed * 1.5);
+      const idleSwayX = Math.cos(elapsed * 0.7) * 0.015;
+      const idleSwayZ = Math.sin(elapsed * 0.5) * 0.012;
+
+      shouldersGroup.position.y = -0.58 + breath * 0.006;
+
+      // Neck follows cursor with natural lag & restraint
+      neckPivot.rotation.y = state.smoothX * 0.16 + idleSwayX * 0.5;
+      neckPivot.rotation.x = -state.smoothY * 0.11 + breath * 0.008;
+      neckPivot.rotation.z = -state.smoothX * 0.03 + state.tiltImpulse * 0.35 + idleSwayZ;
+
+      // Head tracks cursor smoothly with subtle tilt
+      headPivot.rotation.y = state.smoothX * 0.28 + idleSwayX;
+      headPivot.rotation.x = -state.smoothY * 0.21 - breath * 0.005;
+      headPivot.rotation.z = -state.smoothX * 0.045 + state.tiltImpulse;
+
+      // Eye pupils lead the head movement toward the cursor
+      const eyeYaw = THREE.MathUtils.clamp(state.smoothX * 0.24, -0.30, 0.30);
+      const eyePitch = THREE.MathUtils.clamp(-state.smoothY * 0.19, -0.24, 0.24);
+
+      leftEyeRig.eyeballPivot.rotation.y = eyeYaw;
+      leftEyeRig.eyeballPivot.rotation.x = eyePitch;
+      rightEyeRig.eyeballPivot.rotation.y = eyeYaw;
+      rightEyeRig.eyeballPivot.rotation.x = eyePitch;
+
+      // 2. Natural Automatic Blinking every 3 to 5 seconds
+      let autoBlinkVal = 0;
+      if (!state.isBlinking) {
+        state.nextBlinkTimer -= dt;
+        if (state.nextBlinkTimer <= 0) {
+          state.isBlinking = true;
+          state.blinkProgress = 0;
+          state.blinkDuration = 0.15;
+          state.nextBlinkTimer = 3.0 + Math.random() * 2.0;
+        }
+      } else {
+        state.blinkProgress += dt / state.blinkDuration;
+        if (state.blinkProgress >= 1) {
+          state.blinkProgress = 0;
+          state.isBlinking = false;
+          autoBlinkVal = 0;
+        } else {
+          const p = state.blinkProgress;
+          const tri = p < 0.45 ? p / 0.45 : 1 - (p - 0.45) / 0.55;
+          autoBlinkVal = tri * tri * (3 - 2 * tri);
+        }
+      }
+
+      // 3. Individual Eye Hover Wink (closes hovered eye while keeping the other open)
+      const targetLeftClose = state.hoveredEye === 'left' ? 1.0 : autoBlinkVal;
+      const targetRightClose = state.hoveredEye === 'right' ? 1.0 : autoBlinkVal;
+
+      const lidLerp = 1 - Math.exp(-22.0 * dt);
+      state.leftClose = THREE.MathUtils.lerp(state.leftClose, targetLeftClose, lidLerp);
+      state.rightClose = THREE.MathUtils.lerp(state.rightClose, targetRightClose, lidLerp);
+
+      applyEyeClosure(leftEyeRig, state.leftClose);
+      applyEyeClosure(rightEyeRig, state.rightClose);
+
+      // 4. Expressive Eyebrow & Lip Micro-Reactions
+      const baseBrowY = 0.326;
+      const browUp = state.browLift * 0.011 + Math.max(0, state.smoothY) * 0.005;
+      // Subtle expressive brow asymmetry during a wink
+      const leftWinkBrowOffset = state.hoveredEye === 'left' ? -0.005 : (state.hoveredEye === 'right' ? 0.004 : 0);
+      const rightWinkBrowOffset = state.hoveredEye === 'right' ? -0.005 : (state.hoveredEye === 'left' ? 0.004 : 0);
+
+      leftEyeRig.browPivot.position.y = baseBrowY + browUp + leftWinkBrowOffset;
+      rightEyeRig.browPivot.position.y = baseBrowY + browUp + rightWinkBrowOffset;
+      leftEyeRig.browPivot.rotation.z = state.browLift * 0.06 - (state.hoveredEye === 'left' ? 0.07 : 0);
+      rightEyeRig.browPivot.rotation.z = -state.browLift * 0.06 + (state.hoveredEye === 'right' ? 0.07 : 0);
+
+      // Subtle warm smile curve on click / wink
+      const winkSmile = state.hoveredEye ? 0.35 : 0;
+      const activeSmile = Math.max(state.smileAmount, winkSmile);
+      mouthGroup.scale.x = 1.0 + activeSmile * 0.08;
+      mouthGroup.scale.y = 1.0 + activeSmile * 0.06;
+      mouthGroup.position.y = 0.112 + activeSmile * 0.003;
+
+      renderer.render(scene, camera);
+    }
+
+    // =========================================================================
+    // 9. RESPONSIVE RESIZE HANDLER
+    // =========================================================================
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      updateCameraFraming();
+    });
+
+    animate();
+  </script>
+</body>
+</html>
