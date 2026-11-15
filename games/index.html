@@ -180,6 +180,7 @@ const firebaseConfig = { databaseURL: 'https://talkrush3-default-rtdb.asia-south
 const W = 7000, H = 7000, R = 20, MAX_HUMANS = 5, NCOINS = 310, NBOXES = 100, BOMB_R = 95;
 const AMMO_N = 10, AMMO_PACK = 50, BSPD = 1100, BLIFE = .7, BDMG = 5, FIRE_MS = 100, BCAP = 120;
 const ZONE = { first: 25, gapMin: 35, gapMax: 55, warn: 7, dur: 24, every: .38, fuse: 1.1, rMin: 650, rMax: 950 };
+const CRIT_EV = new Set(['k', 'r', 'h', 'B', 'X']);
 const ROOMS_PATH = 'games/racing/rooms';
 const NICK_KEY = 'talkrush_nickname';
 const UID_KEY = 'talkrush_uid';
@@ -406,6 +407,8 @@ let coins = [], cops = [], nextCid = 1, myPid = null, isHost = false, nextPid = 
 let zone = null, zoneWait = 0, bombs = [], bombAcc = 0, zoneView = null;
 const bombView = [];
 const evq = [];
+let evSeq = 0, evHist = [], freshEv = [];
+const seenEv = new Set();
 let ammos = [], localFcd = 0, fireSeq = 0, seenLocalFc = 0;
 const bullets = [], bview = [];
 
@@ -825,13 +828,17 @@ function setInput(p, d, q, fc){
 function snapshot(){
   const now = performance.now(), r1 = v => Math.round(v * 10) / 10;
   NET.snapSeq++;
+  freshEv = evq.splice(0);
+  for (const e of freshEv) evHist.push({ id: ++evSeq, e, left: CRIT_EV.has(e[0]) ? 3 : 1 });
+  const ev = evHist.map(x => [x.id, x.e]);
+  for (let i = evHist.length - 1; i >= 0; i--) if (--evHist[i].left <= 0) evHist.splice(i, 1);
   return {
     t: 's',
     seq: NET.snapSeq,
     p: humans().map(p => [p.pid, r1(p.x), r1(p.y), Math.round(p.a * 100) / 100, Math.round(p.vx), Math.round(p.vy), p.score, Math.round(p.nitro), p.boost, Math.round(p.hp), p.inv > now ? 1 : 0, Math.round(p.sc), p.rvf | 0, p.ack | 0, Math.round(p.ammo)]),
     z: zone ? [zone.ph, Math.round(zone.x), Math.round(zone.y), Math.round(zone.r), Math.round(zone.left * 10) / 10] : 0,
     am: packAmmo(),
-    ev: evq.splice(0)
+    ev
   };
 }
 function setZoneView(z, now){
@@ -858,6 +865,7 @@ function startHost(peer, existingRoomKey, restoredScores){
   NET.lastSeq = 0;
   NET.hostPid = 1;
   coinSeq = 0;
+  evSeq = 0; evHist = []; freshEv = []; evq.length = 0; seenEv.clear();
   const saved = restoredScores || new Map(), recent = new Map();
   const claim = (p, u) => {
     if (!u) return;
@@ -962,7 +970,7 @@ function startHost(peer, existingRoomKey, restoredScores){
         coinSeq++;
         broadcast({ t: 'cu', q: coinSeq, o: cops.splice(0) });
       }
-      applyEvents(s.ev);
+      applyEvents(freshEv);
     }
     if (chk >= 1){
       chk = 0;
@@ -1028,7 +1036,9 @@ function applySnapshot(d){
   }
   setZoneView(d.z, now);
   ammos = unpackAmmo(d.am);
-  applyEvents(d.ev);
+  const evs = [];
+  for (const x of d.ev || []) if (Array.isArray(x) && remember(seenEv, x[0])) evs.push(x[1]);
+  applyEvents(evs);
   if (myPid != null && players.get(myPid) && players.get(myPid).x > -5000) hideLoader();
 }
 function setRoster(list){
@@ -1059,7 +1069,7 @@ function cleanupNet(keepPeer){
   NET.lastSeq = 0; NET.snapSeq = 0;
   isHost = false;
 }
-function resetWorld(){ players.clear(); coins = []; ammos = []; bview.length = 0; bullets.length = 0; bombView.length = 0; zoneView = null; myPid = null; roomLabel = ''; resetPrediction(); }
+function resetWorld(){ players.clear(); coins = []; ammos = []; bview.length = 0; bullets.length = 0; bombView.length = 0; hornAlerts.length = 0; seenEv.clear(); zoneView = null; myPid = null; roomLabel = ''; resetPrediction(); }
 function retryLater(){ clearTimeout(NET.retry); NET.retry = setTimeout(connectFlow, 600 + Math.random() * 1200); }
 
 function joinRetry(peer, hostId, gen, left){
@@ -1182,6 +1192,7 @@ function joinClient(p, hostId, onFull, onFail){
       settle();
       joined = true;
       resetPrediction();
+      seenEv.clear();
       inSeq = 0;
       fireSeq = 0;
       seenLocalFc = 0;
@@ -1250,8 +1261,11 @@ function triggerHorn(){
   lastHornPress = now;
   sfx.horn(1);
   if (isHost) hostHorn(myPid);
-  else if (NET.hostConn && NET.hostConn.open){
-    try { NET.hostConn.send({ t: 'horn' }); } catch {}
+  else {
+    const c = NET.hostConn;
+    const send = () => { if (c && c.open) try { c.send({ t: 'horn' }); } catch {} };
+    send();
+    setTimeout(send, 60);
   }
 }
 
@@ -1363,7 +1377,9 @@ function sendChat(text){
   const mid = 'm_' + (myPid || 0) + '_' + (++msgSeq) + '_' + Date.now();
   if (isHost) hostChat(myPid, text, mid);
   else if (NET.hostConn && NET.hostConn.open){
-    try { NET.hostConn.send({ t: 'chat', m: text, mid }); } catch {}
+    const c = NET.hostConn, msg = { t: 'chat', m: text, mid };
+    try { c.send(msg); } catch {}
+    setTimeout(() => { if (c.open) try { c.send(msg); } catch {} }, 120);
   }
 }
 function openChat(){
@@ -1430,7 +1446,7 @@ function applyEvents(evs){
       if (e[1] !== myPid){
         const d = mp && mp.rx !== null ? Math.hypot(e[2] - mp.rx, e[3] - mp.ry) : 600;
         sfx.horn(clamp(1 - d / 2800, .2, .95));
-        hornAlerts.push({ x: e[2], y: e[3], life: 1.4, max: 1.4 });
+        hornAlerts.push({ x: e[2], y: e[3], life: 1, max: 1 });
       }
     } else if (e[0] === 'B'){
       if (bombView.length > 80) bombView.shift();
@@ -1573,37 +1589,27 @@ function drawHornEdges(dt){
     const ha = hornAlerts[i];
     ha.life -= dt;
     if (ha.life <= 0){ hornAlerts.splice(i, 1); continue; }
-    const dx = ha.x - cam.x, dy = ha.y - cam.y;
-    if (Math.hypot(dx, dy) < 1) continue;
-    const tx = dx !== 0 ? (dx > 0 ? cw / 2 : -cw / 2) / dx : Infinity;
-    const ty = dy !== 0 ? (dy > 0 ? ch / 2 : -ch / 2) / dy : Infinity;
-    const t = Math.min(tx, ty);
-    const ex = cw / 2 + dx * t, ey = ch / 2 + dy * t;
+    const dx = (ha.x - cam.x) * cam.z, dy = (ha.y - cam.y) * cam.z;
+    const hw = cw / 2, hh = ch / 2;
+    if (Math.abs(dx) < hw - 30 && Math.abs(dy) < hh - 30) continue;
+    const t = Math.min(hw / Math.max(Math.abs(dx), 1e-3), hh / Math.max(Math.abs(dy), 1e-3));
+    const ex = hw + dx * t, ey = hh + dy * t;
     const p = ha.life / ha.max;
-    const pulse = .75 + .25 * Math.sin((1 - p) * 24);
-    const alpha = clamp(p * 1.4, 0, 1) * pulse;
-    const rad = Math.max(130, Math.min(cw, ch) * .34);
-    const grad = ctx.createRadialGradient(ex, ey, 6, ex, ey, rad);
-    grad.addColorStop(0, `rgba(255, 224, 70, ${(.85 * alpha).toFixed(3)})`);
-    grad.addColorStop(.45, `rgba(255, 196, 20, ${(.42 * alpha).toFixed(3)})`);
-    grad.addColorStop(1, 'rgba(255, 213, 74, 0)');
+    const alpha = clamp(p * 1.4, 0, 1) * (.8 + .2 * Math.sin((1 - p) * 24));
+    const rad = Math.max(80, Math.min(cw, ch) * .2);
+    const grad = ctx.createRadialGradient(ex, ey, 4, ex, ey, rad);
+    grad.addColorStop(0, `rgba(255,224,70,${(.4 * alpha).toFixed(3)})`);
+    grad.addColorStop(.5, `rgba(255,196,20,${(.15 * alpha).toFixed(3)})`);
+    grad.addColorStop(1, 'rgba(255,213,74,0)');
     ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.arc(ex, ey, rad, 0, 6.283);
-    ctx.fill();
+    ctx.beginPath(); ctx.arc(ex, ey, rad, 0, 6.283); ctx.fill();
     const ang = Math.atan2(dy, dx);
     ctx.save();
     ctx.translate(ex - Math.cos(ang) * 18, ey - Math.sin(ang) * 18);
     ctx.rotate(ang);
-    ctx.strokeStyle = `rgba(255, 232, 102, ${(alpha * .9).toFixed(3)})`;
-    ctx.lineWidth = 3;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.arc(-6, 0, 14, -.55, .55);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(-12, 0, 22, -.45, .45);
-    ctx.stroke();
+    ctx.strokeStyle = `rgba(255,232,102,${(alpha * .6).toFixed(3)})`;
+    ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(-6, 0, 14, -.55, .55); ctx.stroke();
     ctx.restore();
   }
 }
@@ -1665,8 +1671,6 @@ function drawWorld(dt, now){
     if (b.x > vx1 || b.x + b.w < vx0 || b.y > vy1 || b.y + b.h < vy0) continue;
     ctx.fillStyle = '#1f1f26'; ctx.fillRect(b.x, b.y, b.w, b.h);
     ctx.strokeStyle = 'rgba(255,107,74,.55)'; ctx.lineWidth = 3; ctx.strokeRect(b.x, b.y, b.w, b.h);
-    ctx.strokeStyle = 'rgba(255,255,255,.06)'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(b.x + 8, b.y + 8); ctx.lineTo(b.x + b.w - 8, b.y + b.h - 8); ctx.moveTo(b.x + b.w - 8, b.y + 8); ctx.lineTo(b.x + 8, b.y + b.h - 8); ctx.stroke();
   }
 
   ctx.fillStyle = 'rgba(0,0,0,.5)';
