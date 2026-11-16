@@ -3,19 +3,16 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<title>3D Interactive Character</title>
+<title>Interactive Character</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
-  html,body{width:100%;height:100%;overflow:hidden;background:#0b0d13;user-select:none;-webkit-user-select:none}
+  html,body{width:100%;height:100%;overflow:hidden;background:transparent;user-select:none;-webkit-user-select:none}
   canvas{display:block;width:100%;height:100%;outline:none;touch-action:none}
 </style>
 <script type="importmap">
-{
-  "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
-  }
-}
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }
 </script>
 </head>
 <body>
@@ -23,362 +20,253 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
-// =====================  YAHAN APNA MODEL LINK DAALO  =====================
-const MODEL_URL = '/assets/model3d.glb';
-const FACE_CLOSEUP = true;   // true = chehra close, false = poori body
-const FLIP_180 = false;      // model ulta dikhe to true karo
-// ========================================================================
+// ================= SETTINGS =================
+const MODEL_URL = './model3d.glb';   // apna path yahan
+const BG = null;                     // null = transparent (landing page ka bg dikhega), ya '#0b0d13'
+const EYE_SPEED = 24;                // aankh follow speed (zyada = tez)
+const HEAD_SPEED = 8;                // gardan follow speed
+// ============================================
 
-const TARGET_HEIGHT = 1.7;
+// ---- Face landmarks (model ke object-space me, measured from your mesh) ----
+const EYE_L = { c: [-0.121, 0.352], r: [0.062, 0.028] };
+const EYE_R = { c: [ 0.155, 0.352], r: [0.056, 0.028] };
+const MOUTH = { c: [0.009, 0.100], cl: [-0.108, 0.103], cr: [0.122, 0.103] };
+const FACE_Z = 0.46;
 
-// ---------- renderer / scene / camera ----------
-const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0b0d13);
+if (BG) scene.background = new THREE.Color(BG);
+const camera = new THREE.PerspectiveCamera(30, innerWidth / innerHeight, 0.1, 50);
 
-const pmrem = new THREE.PMREMGenerator(renderer);
-scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-
-const camera = new THREE.PerspectiveCamera(28, innerWidth / innerHeight, 0.05, 50);
-camera.position.set(0, 1.5, 2.6);
-
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-controls.dampingFactor = 0.08;
-controls.enablePan = false;
-controls.minDistance = 0.5;
-controls.maxDistance = 7;
-controls.minPolarAngle = Math.PI * 0.25;
-controls.maxPolarAngle = Math.PI * 0.62;
-controls.minAzimuthAngle = -Math.PI * 0.45;
-controls.maxAzimuthAngle = Math.PI * 0.45;
-
-// ---------- lights ----------
-scene.add(new THREE.HemisphereLight(0xfff4ea, 0x151926, 0.45));
-
-const key = new THREE.DirectionalLight(0xfff0e0, 2.2);
-key.position.set(1.8, 3.0, 2.8);
-key.castShadow = true;
-key.shadow.mapSize.set(2048, 2048);
-key.shadow.camera.left = -2; key.shadow.camera.right = 2;
-key.shadow.camera.top = 2.5; key.shadow.camera.bottom = -1;
-key.shadow.camera.near = 0.5; key.shadow.camera.far = 10;
-key.shadow.bias = -0.0003;
-key.shadow.normalBias = 0.02;
-key.shadow.radius = 4;
-scene.add(key);
-
-const fill = new THREE.DirectionalLight(0xcfe0ff, 0.7);
-fill.position.set(-2.2, 1.2, 2.2);
-scene.add(fill);
-
-const rim = new THREE.DirectionalLight(0xffd0a8, 1.6);
-rim.position.set(-1.2, 2.6, -2.4);
-scene.add(rim);
-
-const floor = new THREE.Mesh(new THREE.PlaneGeometry(12, 12), new THREE.ShadowMaterial({ opacity: 0.38 }));
-floor.rotation.x = -Math.PI / 2;
-floor.receiveShadow = true;
-scene.add(floor);
-
-// ---------- post processing ----------
-const rt = new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: 4 });
-const composer = new EffectComposer(renderer, rt);
-composer.addPass(new RenderPass(scene, camera));
-composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.12, 0.6, 0.92));
-composer.addPass(new OutputPass());
-
-// ---------- loader ----------
-const draco = new DRACOLoader();
-draco.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
-const loader = new GLTFLoader();
-loader.setDRACOLoader(draco);
-loader.setMeshoptDecoder(MeshoptDecoder);
-const maxAniso = renderer.capabilities.getMaxAnisotropy();
-
-let model = null, mixer = null, clips = [];
-let rig = null, morphMeshes = [];
-let headY = TARGET_HEIGHT * 0.9;
-
-const norm = (s) => s.toLowerCase().replace(/[^a-z]/g, '');
-
-function enhanceMaterials(root) {
-  root.traverse((o) => {
-    if (!o.isMesh) return;
-    o.castShadow = true;
-    o.receiveShadow = true;
-    o.frustumCulled = false;
-    const mats = Array.isArray(o.material) ? o.material : [o.material];
-    mats.forEach((m) => {
-      if (!m) return;
-      ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'emissiveMap', 'alphaMap'].forEach((k) => {
-        if (m[k]) m[k].anisotropy = maxAniso;
-      });
-      if (m.isMeshStandardMaterial) {
-        m.envMapIntensity = 0.95;
-        if (!m.metalnessMap && m.metalness > 0.6 && !/metal|steel|gold|silver|chain|zip/i.test(m.name)) m.metalness = 0.05;
-        if (!m.roughnessMap) m.roughness = Math.max(m.roughness, 0.35);
-      }
-      if (/hair|lash|brow|fringe/i.test(m.name + ' ' + o.name)) {
-        if (m.map || m.alphaMap) { m.transparent = false; m.alphaTest = 0.4; m.alphaToCoverage = true; m.depthWrite = true; m.side = THREE.DoubleSide; }
-      } else if (m.alphaTest > 0) {
-        m.alphaToCoverage = true;
-      }
-      if (/eye|cornea/i.test(m.name + ' ' + o.name) && m.isMeshStandardMaterial) { m.roughness = Math.min(m.roughness, 0.12); m.envMapIntensity = 1.4; }
-      m.needsUpdate = true;
-    });
-  });
-}
-
-function buildRig(root, gltfClips) {
-  const animated = new Set();
-  gltfClips.forEach((c) => c.tracks.forEach((t) => animated.add(t.name.split('.')[0])));
-  const bones = [];
-  root.traverse((o) => { if (o.isBone) bones.push(o); });
-  const pick = (fn) => bones.find((o) => fn(norm(o.name), o.name.toLowerCase()));
-  const wrap = (o) => o && { o, base: o.quaternion.clone(), anim: animated.has(o.name) };
-
-  const head = pick((n) => n.endsWith('head') && !n.includes('top') && !n.includes('end'));
-  const neck = pick((n) => n.endsWith('neck'));
-  const chest = pick((n, raw) => /spine2|upperchest|chest/.test(raw)) || pick((n, raw) => /spine1/.test(raw));
-  const isEye = (n) => n.includes('eye') && !/lash|brow|lid/.test(n);
-  const eyeL = pick((n) => isEye(n) && (n.includes('left') || n.endsWith('l')));
-  const eyeR = pick((n) => isEye(n) && (n.includes('right') || n.endsWith('r')));
-  return { head: wrap(head), neck: wrap(neck), chest: wrap(chest), eyeL: wrap(eyeL), eyeR: wrap(eyeR) };
-}
-
-function buildMorphs(root) {
-  const list = [];
-  root.traverse((o) => {
-    if (o.isMesh && o.morphTargetDictionary && o.morphTargetInfluences) {
-      const map = {};
-      for (const k in o.morphTargetDictionary) map[norm(k)] = o.morphTargetDictionary[k];
-      list.push({ mesh: o, map });
-    }
-  });
-  return list;
-}
-function setMorphs(names, v) {
-  for (const m of morphMeshes) for (const n of names) {
-    const i = m.map[n];
-    if (i !== undefined) m.mesh.morphTargetInfluences[i] = v;
-  }
-}
-const hasMorph = (names) => morphMeshes.some((m) => names.some((n) => n in m.map));
-
-const M = {
-  blinkL: ['eyeblinkleft', 'eyeblinkl', 'blinkl', 'blinkleft', 'eyecloseleft', 'eyeclosel', 'eyeclosedleft'],
-  blinkR: ['eyeblinkright', 'eyeblinkr', 'blinkr', 'blinkright', 'eyecloseright', 'eyecloser', 'eyeclosedright'],
-  blinkBoth: ['blink', 'eyesclosed', 'eyeclosed', 'eyesclose'],
-  smile: ['mouthsmileleft', 'mouthsmileright', 'mouthsmile', 'smile', 'happy'],
-  brow: ['browinnerup', 'browouterupleft', 'browouterupright'],
-  lookInL: ['eyelookinleft'], lookOutL: ['eyelookoutleft'], lookUpL: ['eyelookupleft'], lookDownL: ['eyelookdownleft'],
-  lookInR: ['eyelookinright'], lookOutR: ['eyelookoutright'], lookUpR: ['eyelookupright'], lookDownR: ['eyelookdownright']
-};
+scene.add(new THREE.HemisphereLight(0xffffff, 0x888899, 1.6));
+const key = new THREE.DirectionalLight(0xfff1e0, 1.4); key.position.set(1.5, 2.5, 3); scene.add(key);
+const rim = new THREE.DirectionalLight(0xbfd4ff, 0.8); rim.position.set(-2, 1.5, -2); scene.add(rim);
 
 function frameCamera() {
-  const fovRad = THREE.MathUtils.degToRad(camera.fov / 2);
-  const dist = (h) => (h / 2) / Math.tan(fovRad);
-  const a = camera.aspect;
-  let target, d;
-  if (FACE_CLOSEUP) {
-    target = new THREE.Vector3(0, headY - 0.06, 0);
-    d = dist(0.62 / Math.min(1, a / 0.8));
-  } else {
-    target = new THREE.Vector3(0, TARGET_HEIGHT * 0.5, 0);
-    d = dist(TARGET_HEIGHT * 1.18 / Math.min(1, a / 0.6));
-  }
-  controls.target.copy(target);
-  camera.position.set(0, target.y + d * 0.04, d);
-  controls.update();
+  const a = innerWidth / innerHeight, t = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+  const d = Math.max((1.45 / 2) / t, (1.25 / 2) / (t * a));
+  camera.aspect = a; camera.updateProjectionMatrix();
+  camera.position.set(0, 0.36, d); camera.lookAt(0, 0.36, 0);
 }
+frameCamera();
+
+// ---- shared uniforms driven by the "face rig" ----
+const U = {
+  uSmile: { value: 0 }, uBlinkL: { value: 0 }, uBlinkR: { value: 0 }, uGaze: { value: new THREE.Vector2() }
+};
+
+function patchMaterial(mat) {
+  mat.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, U);
+    const f2 = (a) => `vec2(${a[0]},${a[1]})`;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', `#include <common>
+        uniform float uSmile; varying vec3 vBind;`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        vBind = position;
+        if (position.z > 0.25 && uSmile > 0.001) {
+          vec2 p = position.xy;
+          vec2 cl = ${f2(MOUTH.cl)}, cr = ${f2(MOUTH.cr)};
+          float wl = exp(-dot(p-cl,p-cl)/0.005), wr = exp(-dot(p-cr,p-cr)/0.005);
+          transformed.y += uSmile * 0.020 * (wl + wr);
+          transformed.x += uSmile * 0.014 * (wr - wl);
+          transformed.z += uSmile * 0.006 * (wl + wr);
+          vec2 a = vec2(-0.10,0.19), b = vec2(0.13,0.19);
+          float cw = exp(-dot(p-a,p-a)/0.0098) + exp(-dot(p-b,p-b)/0.0098);
+          transformed.y += uSmile * 0.008 * cw;
+        }`);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>
+        uniform float uBlinkL, uBlinkR; uniform vec2 uGaze; varying vec3 vBind;
+        vec4 eyeFx(vec2 uv, vec2 c, vec2 r, float blink, vec3 gU, vec3 gV, sampler2D m) {
+          vec2 q = (vBind.xy - c) / r;
+          float rr = length(q);
+          float inside = 1.0 - smoothstep(0.6, 1.0, rr);
+          // eyeball: iris/sclera ko gaze direction me shift karo
+          vec3 d = vec3(uGaze.x * r.x * 0.38, uGaze.y * r.y * 0.30, 0.0);
+          vec2 uvI = uv - vec2(dot(gU, d), dot(gV, d));
+          vec4 col = texture2D(m, mix(uv, uvI, inside));
+          // eyelid: upar se neeche band hota hai
+          float lid = 1.0 - blink * 1.75;
+          float cover = smoothstep(lid - 0.06, lid + 0.02, q.y) * (1.0 - smoothstep(1.05, 1.3, rr));
+          vec3 dd = vec3(0.0, -1.7 * r.y, 0.0);
+          vec4 skin = texture2D(m, uv - vec2(dot(gU, dd), dot(gV, dd)));
+          skin.rgb *= 0.92;
+          float lash = (1.0 - smoothstep(0.0, 0.14, abs(q.y - lid))) * step(0.02, blink) * (1.0 - smoothstep(0.85, 1.15, rr));
+          col = mix(col, skin, cover * step(0.02, blink));
+          col.rgb = mix(col.rgb, vec3(0.05, 0.03, 0.03), lash * 0.7);
+          return col;
+        }`)
+      .replace('#include <map_fragment>', `
+        #ifdef USE_MAP
+        vec3 dp1 = dFdx(vBind), dp2 = dFdy(vBind);
+        vec2 du1 = dFdx(vMapUv), du2 = dFdy(vMapUv);
+        vec3 N = normalize(cross(dp1, dp2));
+        vec3 d2p = cross(dp2, N), d1p = cross(N, dp1);
+        float det = dot(dp1, d2p);
+        det = abs(det) < 1e-12 ? 1e-12 : det;
+        vec3 gU = (d2p * du1.x + d1p * du2.x) / det;
+        vec3 gV = (d2p * du1.y + d1p * du2.y) / det;
+        vec4 sampledDiffuseColor = texture2D(map, vMapUv);
+        if (vBind.z > 0.25) {
+          if (vBind.x < 0.017) sampledDiffuseColor = eyeFx(vMapUv, ${f2(EYE_L.c)}, ${f2(EYE_L.r)}, uBlinkL, gU, gV, map);
+          else sampledDiffuseColor = eyeFx(vMapUv, ${f2(EYE_R.c)}, ${f2(EYE_R.r)}, uBlinkR, gU, gV, map);
+        }
+        diffuseColor *= sampledDiffuseColor;
+        #endif`);
+  };
+}
+
+// ---- model load + REAL skeleton (chest -> neck -> head) ----
+let head, neck, chest, skel, headInv, mesh;
+const draco = new DRACOLoader(); draco.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
+const loader = new GLTFLoader(); loader.setDRACOLoader(draco);
 
 loader.load(MODEL_URL, (gltf) => {
-  model = gltf.scene;
-  clips = gltf.animations || [];
-
-  const box = new THREE.Box3().setFromObject(model);
-  const size = box.getSize(new THREE.Vector3());
-  model.scale.multiplyScalar(TARGET_HEIGHT / (size.y || 1));
-  model.updateMatrixWorld(true);
-  const box2 = new THREE.Box3().setFromObject(model);
-  const c = box2.getCenter(new THREE.Vector3());
-  model.position.x -= c.x;
-  model.position.z -= c.z;
-  model.position.y -= box2.min.y;
-  model.rotation.y = FLIP_180 ? Math.PI : 0;
-  scene.add(model);
-  model.updateMatrixWorld(true);
-
-  enhanceMaterials(model);
-  rig = buildRig(model, clips);
-  morphMeshes = buildMorphs(model);
-
-  if (rig.head) { const v = new THREE.Vector3(); rig.head.o.getWorldPosition(v); headY = v.y + 0.07; }
-
-  if (clips.length) {
-    mixer = new THREE.AnimationMixer(model);
-    let idx = clips.findIndex((cl) => /idle|breath|stand|loop/i.test(cl.name));
-    if (idx < 0) idx = 0;
-    mixer.clipAction(clips[idx]).play();
+  let src; gltf.scene.traverse((o) => { if (o.isMesh && !src) src = o; });
+  const geo = src.geometry, pos = geo.attributes.position, n = pos.count;
+  const si = new Uint16Array(n * 4), sw = new Float32Array(n * 4);
+  const ss = (a, b, x) => { x = Math.min(1, Math.max(0, (x - a) / (b - a))); return x * x * (3 - 2 * x); };
+  for (let i = 0; i < n; i++) {
+    const y = pos.getY(i);
+    const h = ss(-0.20, 0.02, y);                 // head weight
+    const nk = ss(-0.50, -0.28, y) * (1 - h);     // neck weight
+    sw[i * 4] = h; sw[i * 4 + 1] = nk; sw[i * 4 + 2] = 1 - h - nk;
+    si[i * 4] = 2; si[i * 4 + 1] = 1; si[i * 4 + 2] = 0;
   }
-  frameCamera();
-}, undefined, (err) => console.error('Model load nahi hua:', err));
+  geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4));
+  geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4));
 
-// ---------- interaction ----------
-const S = {
-  tx: 0, ty: 0, sx: 0, sy: 0, lastMove: -10,
-  sacX: 0, sacY: 0, sacNext: 1.5, sacTx: 0, sacTy: 0,
-  tilt: 0, smile: 0, brow: 0,
-  blinking: false, blinkP: 0, nextBlink: 2.5, doubleBlink: false,
-  prevX: 0, prevY: 0
-};
-const clock = new THREE.Clock();
-let T = 0;
+  chest = new THREE.Bone(); chest.name = 'chest'; chest.position.set(0, -0.38, 0);
+  neck = new THREE.Bone();  neck.name = 'neck';  neck.position.set(0, 0.26, 0);
+  head = new THREE.Bone();  head.name = 'head';  head.position.set(0, 0.08, 0);
+  chest.add(neck); neck.add(head);
+  skel = new THREE.Skeleton([chest, neck, head]);
 
-function onMove(x, y) {
-  const nx = THREE.MathUtils.clamp((x / innerWidth) * 2 - 1, -1, 1);
-  const ny = THREE.MathUtils.clamp(-((y / innerHeight) * 2 - 1), -1, 1);
-  const speed = Math.hypot(nx - S.prevX, ny - S.prevY);
-  if (speed > 0.14) {
-    S.brow = Math.min(1, S.brow + speed * 1.3);
-    S.tilt = THREE.MathUtils.clamp(S.tilt - (nx - S.prevX) * 0.4, -0.15, 0.15);
-  }
-  S.prevX = nx; S.prevY = ny; S.tx = nx; S.ty = ny; S.lastMove = T;
-}
-addEventListener('pointermove', (e) => onMove(e.clientX, e.clientY), { passive: true });
-addEventListener('pointerdown', (e) => {
-  onMove(e.clientX, e.clientY);
-  S.smile = 1; S.brow = Math.max(S.brow, 0.7);
-  S.tilt = (S.tx >= 0 ? -1 : 1) * 0.1;
-}, { passive: true });
-document.addEventListener('pointerleave', () => { S.tx = 0; S.ty = 0; });
-
-// ---------- procedural life layer ----------
-const _e = new THREE.Euler();
-const _q = new THREE.Quaternion();
-const lerp = THREE.MathUtils.lerp;
-
-function applyBone(b, rx, ry, rz) {
-  if (!b) return;
-  _e.set(rx, ry, rz, 'XYZ');
-  _q.setFromEuler(_e);
-  if (!b.anim) b.o.quaternion.copy(b.base);
-  b.o.quaternion.multiply(_q);
-}
-
-function updateLife(dt) {
-  if (!model) return;
-
-  let gx = S.tx, gy = S.ty;
-  if (T - S.lastMove > 4) { gx = Math.sin(T * 0.37) * 0.35; gy = Math.sin(T * 0.29 + 1.3) * 0.15; }
-
-  S.sacNext -= dt;
-  if (S.sacNext <= 0) {
-    S.sacNext = 0.8 + Math.random() * 2.2;
-    S.sacTx = (Math.random() - 0.5) * 0.12;
-    S.sacTy = (Math.random() - 0.5) * 0.08;
-  }
-  S.sacX = lerp(S.sacX, S.sacTx, 1 - Math.exp(-18 * dt));
-  S.sacY = lerp(S.sacY, S.sacTy, 1 - Math.exp(-18 * dt));
-
-  const k = 1 - Math.exp(-6 * dt);
-  S.sx = lerp(S.sx, gx, k);
-  S.sy = lerp(S.sy, gy, k);
-  S.tilt = lerp(S.tilt, 0, 1 - Math.exp(-4 * dt));
-  S.brow = lerp(S.brow, 0, 1 - Math.exp(-3.5 * dt));
-  S.smile = lerp(S.smile, 0, 1 - Math.exp(-2.5 * dt));
-
-  const breath = Math.sin(T * 1.6);
-  const swayY = Math.sin(T * 0.6) * 0.02 + Math.sin(T * 0.23) * 0.015;
-  const swayZ = Math.sin(T * 0.45) * 0.012;
-
-  const yaw = S.sx * 0.55, pitch = -S.sy * 0.3;
-  if (rig) {
-    applyBone(rig.chest, breath * 0.012, S.sx * 0.05, 0);
-    applyBone(rig.neck, pitch * 0.35, yaw * 0.3 + swayY * 0.5, -S.sx * 0.02 + S.tilt * 0.4 + swayZ);
-    applyBone(rig.head, pitch * 0.65, yaw * 0.7 + swayY, -S.sx * 0.03 + S.tilt + swayZ);
-
-    if (!hasMorph(M.lookOutL)) {
-      const ey = THREE.MathUtils.clamp(S.sx * 0.55 * 0.5 + S.sacX, -0.45, 0.45);
-      const ep = THREE.MathUtils.clamp(-S.sy * 0.3 + S.sacY, -0.3, 0.3);
-      applyBone(rig.eyeL, ep, ey, 0);
-      applyBone(rig.eyeR, ep, ey, 0);
-    }
-  }
-
-  // blink (occasionally double)
-  let blinkVal = 0;
-  if (!S.blinking) {
-    S.nextBlink -= dt;
-    if (S.nextBlink <= 0) { S.blinking = true; S.blinkP = 0; }
-  } else {
-    S.blinkP += dt / 0.16;
-    if (S.blinkP >= 1) {
-      S.blinking = false;
-      if (!S.doubleBlink && Math.random() < 0.18) { S.doubleBlink = true; S.nextBlink = 0.12; }
-      else { S.doubleBlink = false; S.nextBlink = 2.6 + Math.random() * 3.2; }
-    } else {
-      const p = S.blinkP, tri = p < 0.42 ? p / 0.42 : 1 - (p - 0.42) / 0.58;
-      blinkVal = tri * tri * (3 - 2 * tri);
-    }
-  }
-  blinkVal = Math.max(blinkVal, Math.max(0, -S.sy) * 0.18);
-
-  if (morphMeshes.length) {
-    if (!hasMorph(M.blinkL)) setMorphs(M.blinkBoth, blinkVal);
-    else { setMorphs(M.blinkL, blinkVal); setMorphs(M.blinkR, blinkVal); }
-
-    setMorphs(M.smile, Math.max(S.smile * 0.8, 0.06));
-    setMorphs(M.brow, S.brow * 0.7 + Math.max(0, S.sy) * 0.15);
-
-    if (hasMorph(M.lookOutL)) {
-      const x = THREE.MathUtils.clamp(S.sx * 0.9 + S.sacX * 3, -1, 1);
-      const y = THREE.MathUtils.clamp(S.sy * 0.9 + S.sacY * 3, -1, 1);
-      setMorphs(M.lookOutL, Math.max(0, x));  setMorphs(M.lookInL, Math.max(0, -x));
-      setMorphs(M.lookInR, Math.max(0, x));   setMorphs(M.lookOutR, Math.max(0, -x));
-      setMorphs(M.lookUpL, Math.max(0, y));   setMorphs(M.lookUpR, Math.max(0, y));
-      setMorphs(M.lookDownL, Math.max(0, -y)); setMorphs(M.lookDownR, Math.max(0, -y));
-    }
-  }
-}
-
-// ---------- loop / resize ----------
-function tick() {
-  requestAnimationFrame(tick);
-  const dt = Math.min(clock.getDelta(), 0.05);
-  T += dt;
-  if (mixer) mixer.update(dt);
-  updateLife(dt);
-  controls.update();
-  composer.render();
-}
-
-addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
-  composer.setSize(innerWidth, innerHeight);
-  if (model) frameCamera();
+  src.material.roughness = 0.65; src.material.metalness = 0;
+  patchMaterial(src.material);
+  mesh = new THREE.SkinnedMesh(geo, src.material);
+  mesh.frustumCulled = false;
+  mesh.add(chest); mesh.bind(skel);
+  scene.add(mesh);
+  scene.updateMatrixWorld(true);
+  headInv = skel.boneInverses[2].clone();
 });
 
+// ---- behaviour state ----
+const S = {
+  cx: innerWidth / 2, cy: innerHeight / 2, lastMove: -10, prevX: 0, prevY: 0,
+  gaze: new THREE.Vector2(), tgt: new THREE.Vector2(), sac: new THREE.Vector2(), sacT: new THREE.Vector2(), sacNext: 1,
+  yaw: 0, pitch: 0, roll: 0, smile: 0, smileTgt: 0,
+  blink: 0, blinkP: 1, nextBlink: 2, eyeHover: 0, wink: 0, winkP: 1, 
+  dart: 0, dartNext: 4, curious: 0
+};
+let T = 0;
+const clock = new THREE.Clock();
+const lerp = THREE.MathUtils.lerp, clamp = THREE.MathUtils.clamp;
+
+function startBlink() { if (S.blinkP >= 1) S.blinkP = 0; }
+
+function onMove(x, y) {
+  const sp = Math.hypot(x - S.prevX, y - S.prevY) / innerHeight;
+  S.prevX = x; S.prevY = y; S.cx = x; S.cy = y; S.lastMove = T;
+  if (sp > 0.25 && Math.random() < 0.5) startBlink();   // tez cursor jump pe blink
+}
+addEventListener('pointermove', (e) => onMove(e.clientX, e.clientY), { passive: true });
+addEventListener('pointerdown', (e) => { onMove(e.clientX, e.clientY); S.winkP = 0; S.smile = Math.max(S.smile, 1); S.roll = 0.12; }, { passive: true });
+document.addEventListener('pointerleave', () => { S.lastMove = -10; });
+
+const _v = new THREE.Vector3();
+function toScreen(x, y) {
+  _v.set(x, y, FACE_Z).applyMatrix4(head.matrixWorld).applyMatrix4(headInv).project(camera);
+  return [(_v.x * 0.5 + 0.5) * innerWidth, (-_v.y * 0.5 + 0.5) * innerHeight];
+}
+
+function update(dt) {
+  const idle = T - S.lastMove > 3.5;
+  const eL = toScreen(...EYE_L.c), eR = toScreen(...EYE_R.c), m = toScreen(...MOUTH.c);
+  const eyeMid = [(eL[0] + eR[0]) / 2, (eL[1] + eR[1]) / 2];
+  const eyeDist = Math.abs(eR[0] - eL[0]) || 100;
+
+  // --- target gaze: cursor kidhar hai ---
+  let tx, ty;
+  if (idle) { tx = Math.sin(T * 0.7) * 0.7 + Math.sin(T * 1.9) * 0.15; ty = Math.sin(T * 0.5 + 1) * 0.25; }
+  else { tx = (S.cx - eyeMid[0]) / (innerHeight * 0.4); ty = -(S.cy - eyeMid[1]) / (innerHeight * 0.4); }
+  const L = Math.hypot(tx, ty); if (L > 1) { tx /= L; ty /= L; }
+
+  // natkhat: cursor ruka hua ho to nazar chura ke wapas dekhe
+  const still = !idle && T - S.lastMove > 1.6;
+  S.dartNext -= dt;
+  if (still && S.dartNext <= 0) { S.dart = 0.55; S.dartNext = 3 + Math.random() * 3; S.smileTgt = 0.5; }
+  if (S.dart > 0) { S.dart -= dt; tx = -Math.sign(tx || 1) * 0.8; ty = 0.3; if (S.dart <= 0) startBlink(); }
+
+  S.tgt.set(tx, ty);
+  // chhote random eye saccades (jeevant aankhein)
+  S.sacNext -= dt;
+  if (S.sacNext <= 0) { S.sacNext = 0.4 + Math.random() * 1.6; S.sacT.set((Math.random() - .5) * 0.18, (Math.random() - .5) * 0.12); }
+  S.sac.lerp(S.sacT, 1 - Math.exp(-30 * dt));
+
+  const prev = S.gaze.clone();
+  S.gaze.lerp(S.tgt, 1 - Math.exp(-EYE_SPEED * dt));          // aankh: bahut tez
+  if (S.gaze.distanceTo(prev) / dt > 6 && Math.random() < 0.15) startBlink();
+  const kh = 1 - Math.exp(-HEAD_SPEED * dt);                   // gardan: thodi der baad follow
+  S.yaw = lerp(S.yaw, S.tgt.x * 0.42, kh);
+  S.pitch = lerp(S.pitch, -S.tgt.y * 0.24, kh);
+  S.roll = lerp(S.roll, -S.tgt.x * 0.05 + S.curious * 0.14, 1 - Math.exp(-5 * dt));
+
+  U.uGaze.value.set(clamp(S.gaze.x + S.sac.x, -1, 1), clamp(S.gaze.y + S.sac.y, -1, 1));
+
+  // --- cursor aankh pe -> blink ---
+  const dEye = Math.min(Math.hypot(S.cx - eL[0], S.cy - eL[1]), Math.hypot(S.cx - eR[0], S.cy - eR[1]));
+  const onEye = !idle && dEye < eyeDist * 0.28;
+  S.eyeHover -= dt;
+  if (onEye && S.eyeHover <= 0) { startBlink(); S.eyeHover = 0.85; }
+
+  // --- cursor hoth pe -> smile ---
+  const dMouth = Math.hypot(S.cx - m[0], S.cy - m[1]);
+  const onMouth = !idle && dMouth < eyeDist * 0.4;
+  S.curious = lerp(S.curious, onMouth ? 1 : 0, 1 - Math.exp(-6 * dt));
+  if (S.smileTgt > 0 && !onMouth) S.smileTgt = Math.max(0, S.smileTgt - dt * 0.8);
+  const target = onMouth ? 1 : Math.max(S.smileTgt, 0.14);
+  S.smile = lerp(S.smile, target, 1 - Math.exp(-(target > S.smile ? 10 : 3) * dt));
+  U.uSmile.value = S.smile;
+
+  // --- blink: human timing (close ~70ms, open ~110ms) ---
+  S.nextBlink -= dt;
+  if (S.nextBlink <= 0) { startBlink(); S.nextBlink = Math.random() < 0.2 ? 0.25 : 2 + Math.random() * 3.5; }
+  let b = 0;
+  if (S.blinkP < 1) {
+    S.blinkP += dt / 0.19;
+    const p = Math.min(S.blinkP, 1);
+    b = p < 0.38 ? p / 0.38 : 1 - (p - 0.38) / 0.62;
+    b = b * b * (3 - 2 * b);
+  }
+  let w = 0;
+  if (S.winkP < 1) { S.winkP += dt / 0.7; const p = Math.min(S.winkP, 1); w = p < 0.2 ? p / 0.2 : p < 0.65 ? 1 : 1 - (p - 0.65) / 0.35; }
+  U.uBlinkL.value = b;
+  U.uBlinkR.value = Math.max(b, w);       // click = ek aankh se wink
+
+  // --- bones ---
+  const breath = Math.sin(T * 1.5), sway = Math.sin(T * 0.6) * 0.02;
+  chest.rotation.set(breath * 0.006, S.yaw * 0.15, 0);
+  neck.rotation.set(S.pitch * 0.35, S.yaw * 0.35, S.roll * 0.4);
+  head.rotation.set(S.pitch * 0.65, S.yaw * 0.65 + sway, S.roll * 0.6);
+}
+
+function tick() {
+  requestAnimationFrame(tick);
+  const dt = Math.min(clock.getDelta(), 0.05); T += dt;
+  if (mesh) update(dt);
+  renderer.render(scene, camera);
+}
+addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); frameCamera(); });
 tick();
 </script>
 </body>
