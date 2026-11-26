@@ -260,6 +260,13 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
 
 .msg img { max-width: 100%; max-height: 260px; border-radius: 8px; display: block; margin-bottom: 4px; }
 
+.blur-media {
+  filter: blur(20px);
+  clip-path: inset(0 round 8px);
+  cursor: pointer;
+  transition: filter 0.3s ease;
+}
+
 .msg.msg-single-emoji { background: transparent !important; padding: 0 !important; border-radius: 0; box-shadow: none; position: relative; }
 .light-mode .msg-row.me .msg.msg-single-emoji,
 .light-mode .msg-row.stranger .msg.msg-single-emoji,
@@ -678,6 +685,22 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
     });
   }
 
+  function isStrangerMessage(key) {
+    if (typeof key !== "string") return false;
+    const row = document.querySelector(`.msg-row[data-key="${CSS.escape(key)}"]`);
+    return !!row && row.classList.contains("stranger");
+  }
+
+  function safeImageSrc(src) {
+    if (typeof src !== 'string' || !src) return null;
+    if (/^data:image\/(png|jpe?g|gif|webp);base64,/i.test(src)) return src;
+    try {
+      const u = new URL(src, window.location.href);
+      if (u.protocol === 'https:' || u.protocol === 'http:') return u.href;
+    } catch (e) {}
+    return null;
+  }
+
   function isSingleEmoji(text) {
     if (!text) return false;
     const t = text.trim();
@@ -967,10 +990,29 @@ body.light-mode { background: var(--light-bg); color: var(--light-text); }
       const audioBubble = MediaHub.createAudioBubble(msgData.blob, msgData.duration);
       bubble.appendChild(audioBubble);
     } else {
-      const img = document.createElement("img");
-      img.src = msgData.blob || msgData.url;
-      img.alt = msgData.type;
-      bubble.appendChild(img);
+      const src = safeImageSrc(msgData.blob || msgData.url);
+      if (!src) {
+        const unavailable = document.createElement("div");
+        unavailable.textContent = "Media unavailable";
+        unavailable.style.cssText = "font-style: italic; opacity: 0.7;";
+        bubble.appendChild(unavailable);
+      } else {
+        const img = document.createElement("img");
+        img.src = src;
+        img.alt = msgData.type;
+
+        if (msgData.type === "image") {
+          img.classList.add("blur-media");
+          img.title = "Tap to view image";
+          img.addEventListener("click", function (e) {
+            e.stopPropagation();
+            this.classList.remove("blur-media");
+            this.title = "";
+          }, { once: true });
+        }
+
+        bubble.appendChild(img);
+      }
     }
 
     const time = document.createElement("div");
@@ -1405,8 +1447,14 @@ if (window.innerWidth <= 768) {
         appendMessage({ key: msgKey, type: 'text', text: data, timestamp: Date.now(), nickname: currentStrangerNickname }, false);
       }
       else if (data.type === "chat_msg") appendMessage(data.message, false);
-      else if (data.type === "edit_msg") updateMessageInDOM(data);
-      else if (data.type === "delete_msg") removeMessageFromDOM(data.key);
+      else if (data.type === "edit_msg") {
+        if (isStrangerMessage(data.key) && typeof data.text === "string") {
+          updateMessageInDOM({ key: data.key, type: "text", text: data.text, edited: true });
+        }
+      }
+      else if (data.type === "delete_msg") {
+        if (isStrangerMessage(data.key)) removeMessageFromDOM(data.key);
+      }
       else if (data.type === "image") appendMessage({ key: 'img_' + Date.now(), type: 'image', blob: data.blob, timestamp: Date.now(), nickname: currentStrangerNickname }, false);
       else if (data.type === "gif") appendMessage({ key: 'gif_' + Date.now(), type: 'gif', url: data.url, timestamp: Date.now(), nickname: currentStrangerNickname }, false);
       else if (data.type === "audio") appendMessage({ key: 'audio_' + Date.now(), type: 'audio', blob: data.blob, duration: data.duration, timestamp: Date.now(), nickname: currentStrangerNickname }, false);
@@ -1509,7 +1557,7 @@ if (window.innerWidth <= 768) {
     if (!msg) return;
     if (editingMsgKey) {
       const updatePayload = { type: 'edit_msg', key: editingMsgKey, text: msg, edited: true };
-      updateMessageInDOM(updatePayload);
+      updateMessageInDOM({ ...updatePayload, type: 'text' });
       if (myConn && isConnected) myConn.send(updatePayload);
       clearEdit();
       msgInput.value = "";
